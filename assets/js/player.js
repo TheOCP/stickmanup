@@ -139,6 +139,12 @@ export class Body {
       pvx = (tmp.x - this.x) / dt; pvy = (tmp.y - this.y) / dt; pvz = (tmp.z - this.z) / dt;
       this.x = tmp.x; this.y = tmp.y; this.z = tmp.z;
     }
+    // Conveyor belts carry you along their length (and you keep that speed if you jump off).
+    if (g && g.conv) {
+      const m = g.m, sp = g.conv.sp;
+      this.x += m[0] * sp * dt; this.z += m[2] * sp * dt;
+      pvx += m[0] * sp; pvz += m[2] * sp;
+    }
 
     // Steering. Strong wind loosens your footing.
     wind.x = wind.y = wind.z = 0;

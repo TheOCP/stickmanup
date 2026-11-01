@@ -1,5 +1,5 @@
 // Multiplayer. A star network: clients talk only to the host, the host relays.
-// Transports: Online (PeerJS/WebRTC), Internet direct and Wi-Fi (native TCP sockets via the Android
+// Transports: Online (PeerJS/WebRTC), Internet direct and WiFi (native TCP sockets via the Android
 // bridge; direct opens the router port with UPnP), Bluetooth, and a BroadcastChannel stand-in so two
 // browser tabs can test the netcode on a desktop.
 import { LEVEL_VERSION } from './level.js';
@@ -13,7 +13,7 @@ export const MAX_PLAYERS = 4;
 
 export const hasNative = () => !!(window.Native && window.Native.netHostLan);
 
-// ---------- native bridge (Wi-Fi / Bluetooth) ----------
+// ---------- native bridge (WiFi / Bluetooth) ----------
 const NB = { active: null, onFound: null, onBt: null };
 window.NET_open = (id) => NB.active && NB.active.cb.open(id);
 window.NET_msg = (id, s) => NB.active && NB.active.cb.msg(id, s);
@@ -40,9 +40,9 @@ export function addrToCode(ip, port) {
   let n = (BigInt(p[0]) << 40n) | (BigInt(p[1]) << 32n) | (BigInt(p[2]) << 24n) | (BigInt(p[3]) << 16n) | BigInt(port);
   let s = '';
   for (let i = 0; i < 10; i++) { s = B32[Number(n & 31n)] + s; n >>= 5n; }
-  return s.slice(0, 5) + '-' + s.slice(5);
+  return s.slice(0, 5) + ' ' + s.slice(5);
 }
-// Accepts a code (dashes, spaces and lowercase are fine) or a plain "ip:port". Returns { ip, port } or null.
+// Accepts a code (spaces, any punctuation and lowercase are fine) or a plain "ip:port". Returns { ip, port } or null.
 export function parseAddr(text) {
   const t = text.trim();
   const m = t.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
@@ -174,7 +174,7 @@ class PeerLink {
   join(code, cb) {
     this.cb = cb;
     const peer = (this.peer = new window.Peer({ debug: 0, config: { iceServers: ICE } }));
-    const fail = setTimeout(() => cb.error('Could not connect. Some networks (often mobile data) block direct connections: ask the host to use Internet (direct) from a home Wi-Fi.'), 15000);
+    const fail = setTimeout(() => cb.error('Could not connect. Some networks (often mobile data) block direct connections: ask the host to use Internet (direct) from a home WiFi.'), 15000);
     peer.on('open', () => {
       const c = peer.connect(PREFIX + code.toUpperCase(), { reliable: true, serialization: 'raw' });
       this.wire(c, () => clearTimeout(fail));

@@ -39,7 +39,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Local multiplayer transport. Wi-Fi uses TCP with UDP broadcast discovery, Bluetooth uses RFCOMM.
+ * Local multiplayer transport. WiFi uses TCP with UDP broadcast discovery, Bluetooth uses RFCOMM.
  * Both carry newline-separated JSON messages and report to JavaScript through NET_* callbacks.
  */
 final class Net {
@@ -191,7 +191,7 @@ final class Net {
         players = n;
     }
 
-    // ---------- Wi-Fi ----------
+    // ---------- WiFi ----------
 
     JSONArray addrs() {
         JSONArray a = new JSONArray();
@@ -359,7 +359,7 @@ final class Net {
                     c.setKeepAlive(true);
                     register("h", c, c.getInputStream(), c.getOutputStream());
                 } catch (Exception e) {
-                    out.js("NET_fail(" + q("Could not reach " + ip + ". On Wi-Fi: are you on the same network or hotspot? Direct: the host's router has to let you in (see the host's lobby).") + ")");
+                    out.js("NET_fail(" + q("Could not reach " + ip + ". On WiFi: are you on the same network or hotspot? Direct: the host's router has to let you in (see the host's lobby).") + ")");
                 }
             }
         });

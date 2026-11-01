@@ -9,7 +9,8 @@ import { Sound } from './audio.js';
 import { Storm } from './storm.js';
 import { Session, makeLink, lanDiscover, btPrepare, btDevices, lanAddresses, hasNative, MAX_PLAYERS, exposeHost, addrToCode, parseAddr } from './net.js';
 import { Game } from './game.js';
-import { COLOR_CSS, makePool } from './robot.js';
+import { COLOR_CSS, COLORS, makePool } from './robot.js';
+import { Chain } from './chain.js';
 import { Fx } from './fx.js';
 import { PR } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
@@ -22,7 +23,8 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
-  res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1 }, store.get('settings', {}));
+  res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
+  camAssist: true, aimAssist: true }, store.get('settings', {}));
 if (!settings.name || /^Robot \d+$/.test(settings.name)) settings.name = 'Climber ' + (100 + ((Math.random() * 900) | 0));
 if (!MAPS[settings.map]) settings.map = 0;
 const saveSettings = () => store.set('settings', settings);
@@ -273,13 +275,13 @@ function title() {
   show(`<div class="title">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
-      <p class="tag">Up to four stickmen, tied together by a glowing cord. Three giant climbs: a storm tower, a sunny lighthouse and a monster forest. If one falls, everyone feels it.</p>
+      <p class="tag">Up to four stickmen, tied together by a glowing cord. Five giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano and a neon city. If one falls, everyone feels it.</p>
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
     </div>
     <div class="mainbtns">
       ${save ? `<button class="btn primary" data-a="cont"><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
-      <button class="btn" data-a="host"><b>Host a game</b><small>Online, Wi‑Fi or Bluetooth</small></button>
+      <button class="btn" data-a="host"><b>Host a game</b><small>Online, WiFi or Bluetooth</small></button>
       <button class="btn" data-a="join"><b>Join a game</b><small>Room code or a game nearby</small></button>
       <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     </div></div>`, {
@@ -304,7 +306,7 @@ function soloPick() {
   const save = validSave('save.solo');
   show(`<div class="panel">${header('Solo climb')}
     ${mapCards(settings.map)}
-    <p class="sub">Pick a difficulty to start. Solo has no cord partner, so the co-op tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
+    <p class="sub">Pick a difficulty to start. Solo has no cord partner, so the teamwork tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
     ${diffCards(-1)}</div>`, {
     back: title,
     map: (b) => pickMap(+b.dataset.m, soloPick),
@@ -323,10 +325,10 @@ function hostPick() {
   show(`<div class="panel">${header('Host a game')}
     <p class="sub">Up to 4 climbers. Everyone needs StickManUp, and the same version.</p>
     <div class="cards">
-      <button class="card" data-a="go" data-k="online"><span class="ic">🌐</span><b>Online</b><small>A 5-letter room code. Easiest, but some networks (often mobile data) block it.</small></button>
-      <button class="card" data-a="go" data-k="direct"><span class="ic">⇄</span><b>Internet (direct)</b><small>No server at all: friends connect straight to your phone. Host from a home Wi-Fi.</small></button>
-      <button class="card" data-a="go" data-k="lan"><span class="ic">📶</span><b>Wi‑Fi / hotspot</b><small>Same Wi‑Fi, or friends join your phone's hotspot. No internet needed, lowest lag.</small></button>
-      <button class="card" data-a="go" data-k="bt"><span class="ic">ᛒ</span><b>Bluetooth</b><small>No Wi‑Fi at all. Pair the phones in Android settings first. Slower link.</small></button>
+      <button class="card" data-a="go" data-k="online"><span class="ic">🌐</span><b>Online</b><small>A 5 letter room code. Easiest, but some networks (often mobile data) block it.</small></button>
+      <button class="card" data-a="go" data-k="direct"><span class="ic">⇄</span><b>Internet (direct)</b><small>No server at all: friends connect straight to your phone. Host from a home WiFi.</small></button>
+      <button class="card" data-a="go" data-k="lan"><span class="ic">📶</span><b>WiFi / hotspot</b><small>Same WiFi, or friends join your phone's hotspot. No internet needed, lowest lag.</small></button>
+      <button class="card" data-a="go" data-k="bt"><span class="ic">ᛒ</span><b>Bluetooth</b><small>No WiFi at all. Pair the phones in Android settings first. Slower link.</small></button>
     </div></div>`, {
     back: title,
     go: (b) => hostWith(b.dataset.k),
@@ -383,17 +385,17 @@ function lobby(s) {
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
   if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '…'} ms</p>`;
-  else if (room.kind === 'online') info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game → Online</b> and type this code.</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
+  else if (room.kind === 'online') info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   else if (room.kind === 'direct') {
     const x = room.direct || {};
     info = !x.ok ? `<div class="kind">Internet (direct)</div><p>Could not find this phone's internet address (${esc(x.err || 'no internet?')}). Try Online instead.</p>`
-      : `<div class="kind">Internet (direct)</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game → Direct</b> and type this code (or <b>${esc(x.ip)}:${x.port}</b>).</p>`
-        + (x.cgnat ? `<p class="warn">Your internet provider shares one address between many customers (carrier NAT), so friends probably can't reach you. Use Online, or host from a home Wi-Fi.</p>`
+      : `<div class="kind">Internet (direct)</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Direct</b>, and type this code (or <b>${esc(x.ip)}:${x.port}</b>).</p>`
+        + (x.cgnat ? `<p class="warn">Your internet provider shares one address between many customers (carrier NAT), so friends probably can't reach you. Use Online, or host from a home WiFi.</p>`
           : x.upnp ? `<p class="good">Router opened automatically. Friends anywhere can join.</p>`
             : `<p class="warn">The router didn't open the port by itself (UPnP off). In your router settings, forward TCP port ${x.port} to this phone, or use Online.</p>`)
         + (N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : '');
-  } else if (room.kind === 'lan') info = `<div class="kind">Wi‑Fi / hotspot</div><p class="ip">${(room.ips || []).map(esc).join('<br>') || 'No Wi‑Fi found'}</p><p>Friends on the same Wi‑Fi (or connected to your hotspot) tap <b>Join a game → Wi‑Fi</b>. Your game shows up automatically.</p>`;
-  else info = `<div class="kind">Bluetooth</div><p>Waiting for climbers. Friends pair with this phone once in <b>Android Settings → Bluetooth</b>, then tap <b>Join a game → Bluetooth</b> and pick this phone.</p>`;
+  } else if (room.kind === 'lan') info = `<div class="kind">WiFi / hotspot</div><p class="ip">${(room.ips || []).map(esc).join('<br>') || 'No WiFi found'}</p><p>Friends on the same WiFi (or connected to your hotspot) tap <b>Join a game</b>, then <b>WiFi</b>. Your game shows up automatically.</p>`;
+  else info = `<div class="kind">Bluetooth</div><p>Waiting for climbers. Friends pair with this phone once in <b>Android Settings</b> under Bluetooth, then tap <b>Join a game</b>, then <b>Bluetooth</b>, and pick this phone.</p>`;
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
@@ -410,12 +412,12 @@ function lobby(s) {
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
-        ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join mid-climb)' : ''}</small></button>`
+        ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
     : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start…</p>`}
       </div>
     </div></div>`, {
     back: () => { s.close(); title(); },
-    share: () => N.share(room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp → Join a game → Direct → code ${room.code}` : `Join my StickManUp climb! Open StickManUp → Join a game → Online → code ${room.code}`),
+    share: () => N.share(room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp, tap Join a game, then Direct, and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
@@ -437,19 +439,19 @@ function joinScreen(tab) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
   let body = '';
   if (tab === 'online') {
-    body = `<p class="sub">Type the 5-letter code from the host's screen.</p>
+    body = `<p class="sub">Type the 5 letter code from the host's screen.</p>
       <div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
   } else if (tab === 'direct') {
     body = `<p class="sub">Type the code from the host's screen (or their address, like 84.12.3.9:47800).</p>
-      <div class="field"><input class="code" id="daddr" maxlength="21" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX"><button class="btn primary sm" data-a="direct">Join</button></div>`;
+      <div class="field"><input class="code" id="daddr" maxlength="21" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX XXXXX"><button class="btn primary sm" data-a="direct">Join</button></div>`;
   } else if (tab === 'lan') {
-    body = `<p class="sub">Games on your Wi‑Fi or hotspot appear here by themselves.</p><div class="list" id="found"><div class="empty"><span class="spin"></span>&nbsp; Looking for games…</div></div>
+    body = `<p class="sub">Games on your WiFi or hotspot appear here by themselves.</p><div class="list" id="found"><div class="empty"><span class="spin"></span>&nbsp; Looking for games…</div></div>
       <div class="field"><input id="ip" placeholder="Or type the host's IP, e.g. 192.168.1.20" inputmode="decimal"><button class="btn sm" data-a="ip">Join</button></div>`;
   } else {
-    body = `<p class="sub">Pick the host's phone. It must be paired with yours in Android Settings → Bluetooth.</p><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>`;
+    body = `<p class="sub">Pick the host's phone. It must be paired with yours in Android Settings under Bluetooth.</p><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>`;
   }
   show(`<div class="panel">${header('Join a game')}
-    <div class="tabs"><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button><button data-a="tab" data-t="direct" class="${tab === 'direct' ? 'on' : ''}">Direct</button><button data-a="tab" data-t="lan" class="${tab === 'lan' ? 'on' : ''}">Wi‑Fi</button><button data-a="tab" data-t="bt" class="${tab === 'bt' ? 'on' : ''}">Bluetooth</button></div>
+    <div class="tabs"><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button><button data-a="tab" data-t="direct" class="${tab === 'direct' ? 'on' : ''}">Direct</button><button data-a="tab" data-t="lan" class="${tab === 'lan' ? 'on' : ''}">WiFi</button><button data-a="tab" data-t="bt" class="${tab === 'bt' ? 'on' : ''}">Bluetooth</button></div>
     ${body}</div>`, {
     back: () => { if (stopDisc) stopDisc(); stopDisc = null; title(); },
     tab: (b) => joinScreen(b.dataset.t),
@@ -489,7 +491,7 @@ function joinScreen(tab) {
       if (!el) return;
       const list = ok ? btDevices() : [];
       el.innerHTML = list.length ? list.map((d) => `<button class="item" data-a="host" data-addr="${esc(d.addr)}"><div><b>${esc(d.name || d.addr)}</b><small>${esc(d.addr)}</small></div><span class="go">JOIN ›</span></button>`).join('')
-        : `<div class="empty">${ok ? 'No paired phones. Pair with the host in Android Settings → Bluetooth.' : 'Bluetooth is not ready.'}</div>`;
+        : `<div class="empty">${ok ? 'No paired phones. Pair with the host in Android Settings under Bluetooth.' : 'Bluetooth is not ready.'}</div>`;
     });
   }
 }
@@ -534,7 +536,9 @@ function settingsScreen(back) {
     <label>Aim sensitivity ${val('aimSens', '%')}${range('aimSens', 0.3, 4, 0.05, '%')}</label>
     <label>Buttons on the${seg('lefty', [[false, 'Right'], [true, 'Left']])}</label>
     <button class="btn sm" data-a="layout">Move buttons…</button>
-    ${chk('invert', 'Invert camera up/down')}
+    ${chk('invert', 'Invert camera up and down')}
+    ${chk('camAssist', 'Camera follows you (swings behind you while you run)')}
+    ${chk('aimAssist', 'Aim assist (pulls the crosshair onto targets a little)')}
     <h3>Sound and other</h3>
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
@@ -667,6 +671,8 @@ function howTo(back) {
     <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
     <div><b>Sunny Isles</b>The route zig-zags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
+    <div><b>Magma Chimney</b>You climb up the inside of a volcano. Stand on a vent when it erupts and it launches you up to the ledge above, but standing next to it gets you shoved off. Shadows show where boulders are about to land.</div>
+    <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (Hardcore: back at the start).</div>
     <div><b>Keyboard and gamepad</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look. Controllers work too.</div>
@@ -691,8 +697,8 @@ function beginGame(s, g) {
   $('#touch').classList.add('on');
   $('#hud').classList.add('on');
   loadMap(g.map || 0);
-  app.pool.robots[0].hide();
-  app.pool.robots[0].flip = 0;
+  for (const r of app.pool.robots) { r.hide(); r.flip = 0; }
+  for (const l of app.pool.ropes) l.mesh.visible = false;
   app.game = new Game(app, s, g);
   if (N && N.keepAwake) N.keepAwake(true);
 }
@@ -917,73 +923,110 @@ function checkGpu() {
   if (health.white >= 3) gfxTrouble(white === 5 ? 'render buffer white' : 'render buffer black');
 }
 
-// Behind the menus: a stickman free-running up the first stretch of the climb, hopping from platform
-// to platform with the odd flip, followed by the camera. When it runs out of route it starts over.
-const RUN = { path: null, level: null, k: 0, u: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, ground: true, cam: null };
+// Behind the menus: all four stickmen free-run up the first stretch of the climb in a line, tied
+// together by their cords, hopping from platform to platform with flips. The camera stays high and
+// cycles through a few shots (high chase, overhead orbit, side track, wide view of the tower).
+const RUN = { path: null, level: null, segs: null, total: 0, t: 0, prev: [], chains: null, cam: null, look: null, shot: 0, shotT: 0 };
+app.titleRun = RUN; // for the dev screenshot scripts
 function runnerPath(L) {
+  // The first zone's route platforms in the order the climb goes. It's a show, so the runners take big
+  // superhero leaps over bridges and gaps; they only stop where the route jumps somewhere far away.
+  const C = L.cols.filter((c) => (c.kind === 'plat' || c.kind === 'branch' || c.kind === 'pad' || c.kind === 'conveyor') && c.zone === 0 && c.y < 90);
   const pts = [];
-  for (const c of L.cols) {
-    if ((c.kind !== 'plat' && c.kind !== 'branch' && c.kind !== 'pad') || c.zone > 0 || c.y > 40) continue;
-    const p = { x: c.x, y: c.y + c.hy, z: c.z, s: Math.min(c.hx, c.hz) };
-    const q = pts[pts.length - 1];
-    // Only easy hops (no lifts, grapples or doors needed).
-    if (q && (Math.hypot(p.x - q.x, p.z - q.z) > 6.5 || p.y - q.y > 1.4 || p.y - q.y < -2.5)) break;
+  for (const c of C) {
+    const p = { x: c.x, y: c.y + c.hy, z: c.z }, q = pts[pts.length - 1];
+    if (q) {
+      const d = Math.hypot(p.x - q.x, p.z - q.z), dy = p.y - q.y;
+      if (d < 1.5) continue;
+      if (d > 16 || dy > 6 || dy < -5) { if (pts.length >= 8) break; pts.length = 0; }
+    }
     pts.push(p);
-    if (pts.length >= 28) break;
+    if (pts.length >= 36) break;
   }
   return pts;
 }
-function titleRunner(dt) {
-  const L = app.level, r = app.pool.robots[0];
-  if (RUN.level !== L) { RUN.level = L; RUN.path = runnerPath(L); RUN.k = 0; RUN.u = 0; RUN.cam = null; }
-  const P = RUN.path;
-  if (!P || P.length < 3 || !app.pool || app.pool.warm > 0) return null;
-  // Segment k: a short run across platform k, then a hop to k + 1 (a flip on every third hop).
-  const a = P[RUN.k], b = P[RUN.k + 1], dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
-  const runT = 0.32, hopT = 0.42 + d * 0.045, T = runT + hopT, flip = RUN.k % 3 === 2;
-  RUN.u += dt;
-  const u = RUN.u, prev = { ...RUN.pos }, ox = a.x - ux * 0.5, oz = a.z - uz * 0.5;
-  if (u < runT) {
-    const f = u / runT;
-    RUN.pos = { x: ox + ux * f, y: a.y, z: oz + uz * f };
-    RUN.ground = true;
+
+// Where a runner is t seconds into the loop: a short run across each platform, then a hop (every third a flip).
+function runnerAt(t, out) {
+  const P = RUN.path, S = RUN.segs;
+  t = ((t % RUN.total) + RUN.total) % RUN.total;
+  let k = 0;
+  while (k < S.length - 1 && t >= S[k].end) k++;
+  const a = P[k], b = P[k + 1], s = S[k], u = t - s.start, ux = s.ux, uz = s.uz;
+  out.flip = 0;
+  if (u < s.run) {
+    const f = u / s.run;
+    out.x = a.x - ux * 0.5 + ux * f; out.y = a.y; out.z = a.z - uz * 0.5 + uz * f; out.ground = true;
   } else {
-    const f = Math.min(1, (u - runT) / hopT), sx = a.x + ux * 0.5, sz = a.z + uz * 0.5, ex = b.x - ux * 0.5, ez = b.z - uz * 0.5;
-    const h = Math.max(0.9, b.y - a.y + 0.9);
-    RUN.pos = { x: sx + (ex - sx) * f, y: a.y + (b.y - a.y) * f + 4 * h * f * (1 - f), z: sz + (ez - sz) * f };
-    RUN.ground = false;
-    r.flip = flip ? -Math.PI * 2 * (f * f * (3 - 2 * f)) : 0;
+    const f = Math.min(1, (u - s.run) / s.hop), sx = a.x + ux * 0.5, sz = a.z + uz * 0.5, ex = b.x - ux * 0.5, ez = b.z - uz * 0.5;
+    const h = Math.max(0.9, b.y - a.y + 0.9, Math.hypot(ex - sx, ez - sz) * 0.18);
+    out.x = sx + (ex - sx) * f; out.y = a.y + (b.y - a.y) * f + 4 * h * f * (1 - f); out.z = sz + (ez - sz) * f; out.ground = false;
+    if (k % 3 === 2) out.flip = -Math.PI * 2 * (f * f * (3 - 2 * f));
   }
-  if (u >= T) {
-    r.flip = 0;
-    RUN.u = 0;
-    RUN.k++;
-    if (RUN.k >= P.length - 1) { RUN.k = 0; RUN.cam = null; }
+  out.k = k;
+  return out;
+}
+function titleRunners(dt) {
+  const L = app.level;
+  if (RUN.level !== L) {
+    RUN.level = L; RUN.path = runnerPath(L); RUN.t = 0; RUN.cam = null; RUN.chains = null;
+    const P = RUN.path, S = [];
+    let t = 0;
+    for (let k = 0; k + 1 < P.length; k++) {
+      const dx = P[k + 1].x - P[k].x, dz = P[k + 1].z - P[k].z, d = Math.hypot(dx, dz) || 1, run = 0.32, hop = 0.42 + d * 0.045;
+      S.push({ start: t, end: t + run + hop, run, hop, ux: dx / d, uz: dz / d });
+      t += run + hop;
+    }
+    RUN.segs = S; RUN.total = t;
   }
-  const PR = 0.42, p = RUN.pos;
-  RUN.vel = { x: (p.x - prev.x) / Math.max(dt, 1e-3), y: (p.y - prev.y) / Math.max(dt, 1e-3), z: (p.z - prev.z) / Math.max(dt, 1e-3) };
-  if (RUN.u === 0 && RUN.k === 0) RUN.vel = { x: 0, y: 0, z: 0 };
-  r.show();
-  r.update(dt, p.x, p.y + PR, p.z, RUN.vel.x, RUN.ground ? 0 : RUN.vel.y, RUN.vel.z, RUN.ground ? 1 | 64 : 0, 0, p.y);
-  return p;
+  if (!RUN.path || RUN.path.length < 4 || !app.pool || app.pool.warm > 0) return null;
+  RUN.t += dt;
+  const pool = app.pool, PR = 0.42, pos = [], c = { x: 0, y: 0, z: 0 };
+  if (!RUN.chains) RUN.chains = [0, 1, 2].map(() => new Chain(12));
+  for (let j = 0; j < 4; j++) {
+    const r = pool.robots[j], o = runnerAt(RUN.t - j * 0.45, {}), prev = RUN.prev[j] || o;
+    const vx = (o.x - prev.x) / Math.max(dt, 1e-3), vy = (o.y - prev.y) / Math.max(dt, 1e-3), vz = (o.z - prev.z) / Math.max(dt, 1e-3);
+    const jumpBack = Math.hypot(o.x - prev.x, o.z - prev.z) > 4; // looped back to the start
+    RUN.prev[j] = o;
+    r.flip = o.flip;
+    r.show();
+    r.update(dt, o.x, o.y + PR, o.z, jumpBack ? 0 : vx, o.ground || jumpBack ? 0 : vy, jumpBack ? 0 : vz, o.ground ? 1 | 64 : 0, 0, o.y);
+    if (jumpBack && j < 3) RUN.chains[j].ok = false;
+    if (jumpBack && j > 0) RUN.chains[j - 1].ok = false;
+    pos.push({ x: o.x, y: o.y + PR, z: o.z, k: o.k });
+    c.x += o.x / 4; c.y += o.y / 4; c.z += o.z / 4;
+  }
+  // Cords between neighbours in the line.
+  for (let j = 0; j < 3; j++) {
+    const ch = RUN.chains[j], rope = pool.ropes[j], A = pos[j], B = pos[j + 1];
+    rope.setColors(COLORS[j], COLORS[j + 1]);
+    ch.step(A, B, 6.5, app.world, Math.min(dt, 0.05));
+    rope.mesh.visible = true;
+    rope.update(ch.p, Math.max(0, Math.min(1, (Math.hypot(A.x - B.x, A.y - B.y, A.z - B.z) / 6.5 - 0.85) / 0.15)), titleT);
+  }
+  return { lead: pos[0], center: c };
 }
 
 function titleScene(dt) {
   titleT += dt;
   app.sound.setStyle('menu');
   app.sound.setIntensity(0.6);
-  const R = app.renderer, cam = R.camera, p = titleRunner(dt);
-  if (p) {
-    // Follow from outside the tower and well above, looking down at the route ahead of the runner,
-    // so the menu shows the stickman and the platforms it is about to jump.
-    const r = Math.hypot(p.x, p.z) || 1, ox = p.x / r, oz = p.z / r, sway = Math.sin(titleT * 0.3) * 0.5;
-    const tx = p.x + ox * 8.5 - oz * sway * 3, ty = p.y + 6.2, tz = p.z + oz * 8.5 + ox * sway * 3;
-    const c = RUN.cam || (RUN.cam = { x: tx, y: ty, z: tz });
-    const k = Math.min(1, dt * 2.5);
-    c.x += (tx - c.x) * k; c.y += (ty - c.y) * k; c.z += (tz - c.z) * k;
-    cam.position.set(c.x, c.y, c.z);
-    const nx = RUN.path[Math.min(RUN.k + 2, RUN.path.length - 1)];
-    cam.lookAt(p.x + (nx.x - p.x) * 0.25, p.y + 0.4, p.z + (nx.z - p.z) * 0.25);
+  const R = app.renderer, cam = R.camera, g = titleRunners(dt);
+  if (g) {
+    // Shots, each about 8 s, blended smoothly. All of them look down from well above the route.
+    const p = g.center, lead = g.lead, r = Math.hypot(p.x, p.z) || 1, ox = p.x / r, oz = p.z / r;
+    RUN.shotT += dt;
+    if (RUN.shotT > 8) { RUN.shotT = 0; RUN.shot = (RUN.shot + 1) % 4; }
+    const s = RUN.shot, a = titleT * 0.25;
+    let want, look;
+    if (s === 0) { want = { x: p.x + ox * 7, y: p.y + 7, z: p.z + oz * 7 }; look = { x: lead.x, y: lead.y, z: lead.z }; }
+    else if (s === 1) { want = { x: p.x + Math.cos(a) * 7, y: p.y + 12, z: p.z + Math.sin(a) * 7 }; look = { x: p.x, y: p.y, z: p.z }; }
+    else if (s === 2) { want = { x: lead.x + ox * 8 - oz * 3, y: lead.y + 5, z: lead.z + oz * 8 + ox * 3 }; look = { x: lead.x, y: lead.y + 0.6, z: lead.z }; }
+    else { want = { x: ox * 30 + Math.cos(a * 0.4) * 6, y: p.y + 16, z: oz * 30 + Math.sin(a * 0.4) * 6 }; look = { x: p.x * 0.6, y: p.y + 4, z: p.z * 0.6 }; }
+    const C = RUN.cam || (RUN.cam = { ...want }), Lk = RUN.look || (RUN.look = { ...look }), k = Math.min(1, dt * 1.6);
+    for (const ax of ['x', 'y', 'z']) { C[ax] += (want[ax] - C[ax]) * k; Lk[ax] += (look[ax] - Lk[ax]) * Math.min(1, dt * 3); }
+    cam.position.set(C.x, C.y, C.z);
+    cam.lookAt(Lk.x, Lk.y, Lk.z);
   } else {
     const a = titleT * 0.045 + 0.6, y = 16 + Math.sin(titleT * 0.08) * 9;
     cam.position.set(Math.cos(a) * 36, y, Math.sin(a) * 36);

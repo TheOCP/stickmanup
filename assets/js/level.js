@@ -6,7 +6,7 @@
 import { makeBox, makeCyl } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 
-export const LEVEL_VERSION = 4;
+export const LEVEL_VERSION = 5;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
@@ -58,6 +58,32 @@ export const MAPS = [
       Z('Treetop Sanctum', 'The top of the world', 745, 0xc6ff8f, 0x6a5a44, 0x9ec4a8, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, monster: 2, bats: 1, grapple: 1, crumble: 1, pillars: 1, beam: 1, door: 1, arrows: 2, swing: 2 }),
     ],
   },
+  {
+    id: 3, key: 'volcano', name: 'Magma Chimney', desc: 'Climb the inside of a giant volcano. Ride lava geysers up and dodge falling rocks.',
+    seed: 30517, core: 'crater', pattern: 2, accent: '#ff6a2a', route: 'crater',
+    zones: [
+      Z('Lava Lake', 'Stand on a vent and ride the eruption', 100, 0xff6a2a, 0x3a2a26, 0x2a0e08, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { gap: 5, stairs: 2, pillars: 2, beam: 2, geyser: 2, crumble: 1 }),
+      Z('Ash Vents', 'Watch for shadows from above', 208, 0xff9a3d, 0x3d2e28, 0x2a120a, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { gap: 4, geyser: 3, rocks: 2, mover: 2, bob: 1, grapple: 1 }),
+      Z('Obsidian Spires', 'Glassy and sharp', 316, 0xb06bff, 0x2a2430, 0x1a0c18, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { pillars: 3, gap: 3, rocks: 2, lift: 2, crumble: 2, door: 1 }),
+      Z('Magma Falls', 'Rocks raining down', 424, 0xff4a2a, 0x40261e, 0x2e0c06, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { rocks: 3, gap: 3, swing: 2, geyser: 2, tilt: 1, grapple: 1 }),
+      Z('Cinder Bridges', 'Mind the drop', 532, 0xffc23d, 0x3a3026, 0x26140a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { beam: 3, gap: 2, crumble: 3, bob: 2, geyser: 1, door: 1 }),
+      Z('Fire Throat', 'Hot, hot, hot', 640, 0xff3a1a, 0x3a1e18, 0x300a04, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { geyser: 3, rocks: 3, mover: 2, gap: 2, lift: 1, grapple: 1 }),
+      Z('Crater Rim', 'Out into the sky', 745, 0xffd76a, 0x4a3a30, 0x1c120c, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, geyser: 2, rocks: 2, crumble: 2, pillars: 1, beam: 1, swing: 1, door: 1 }),
+    ],
+  },
+  {
+    id: 4, key: 'city', name: 'Neon Skyline', desc: 'Hop around a ring of skyscrapers on sky bridges and ziplines. Conveyors, drones and laser gates.',
+    seed: 64229, core: 'spire', pattern: 1, accent: '#ff4fd8', route: 'towers',
+    zones: [
+      Z('Harbor Roofs', 'Climb a tower, cross to the next', 100, 0x3fd0ff, 0x2a3040, 0x3a2a4a, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { gap: 5, stairs: 2, beam: 2, conveyor: 2, crates: 1 }),
+      Z('Neon Alley', 'Conveyors everywhere', 208, 0xff4fd8, 0x2e2a3e, 0x40284a, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { conveyor: 3, gap: 3, gate: 2, mover: 2, grapple: 1 }),
+      Z('Drone Patrol', 'Shoot them down', 316, 0x7cff6a, 0x283440, 0x2a3048, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { bats: 3, gap: 3, conveyor: 2, lift: 2, door: 1 }),
+      Z('Billboard Heights', 'Ride the lifts', 424, 0xffb43d, 0x34303a, 0x4a2e3a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { lift: 3, mover: 3, gap: 2, swing: 1, gate: 1, conveyor: 1 }),
+      Z('Sky Gardens', 'Green on the roofs', 532, 0x6aff9e, 0x2c3a34, 0x36344a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { gap: 3, bob: 2, tilt: 2, crumble: 2, bats: 2, grapple: 1 }),
+      Z('Antenna Forest', 'Lasers and wind', 640, 0xa080ff, 0x2a2840, 0x241c3a, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gate: 3, laser: 2, conveyor: 2, gap: 2, bats: 1, door: 1 }),
+      Z('Spire Crown', 'The tallest roof in town', 745, 0xffe066, 0x3a3440, 0x2a1e3a, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, mover: 1, grapple: 1 }),
+    ],
+  },
 ];
 export const ZONES = MAPS[0].zones;
 
@@ -90,7 +116,7 @@ export function generateLevel(mapId = 0) {
   const out = {
     map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
-    anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [],
+    anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [];
@@ -98,8 +124,8 @@ export function generateLevel(mapId = 0) {
   let zone = 0, ZD = ZONE_LIST[0], zonePlats = 0, lastY = 2;
   // Route frame: platforms are placed in polar coordinates around (CX, CZ), going round in direction DIR,
   // with centres between BAND.lo (+ half the platform depth) and BAND.hi.
-  const ROUTE = MAP.route || 'spiral', MAIN = { lo: 7.5, hi: 14.2 };
-  let CX = 0, CZ = 0, DIR = ROUTE === 'trees' ? -1 : 1, BAND = MAIN, pathLen = 0, lastP = null;
+  const ROUTE = MAP.route || 'spiral', MAIN = ROUTE === 'crater' ? { lo: 10.0, hi: 16.5 } : { lo: 7.5, hi: 14.2 };
+  let CX = 0, CZ = 0, DIR = ROUTE === 'trees' || ROUTE === 'crater' ? -1 : 1, BAND = MAIN, pathLen = 0, lastP = null;
   const intro = { grapple: false, door: false, monster: false };
 
   const add = (c, kind, extra) => {
@@ -214,6 +240,17 @@ export function generateLevel(mapId = 0) {
   // Switchback lanes (sunny) and side trees (forest).
   const LANES = { inner: { lo: 7.6, hi: 10.0 }, outer: { lo: 12.6, hi: 15.6 } };
   const SAT_D = 27, SAT_TR = 2.6;
+  // City: five skyscrapers in a ring round the central spire; the route climbs round one, crosses to the next.
+  const TOWERS = [], TW = 4.2, TBAND = { lo: TW * Math.SQRT2 + 1.3, hi: TW * Math.SQRT2 + 5.2 };
+  let tower = -1, visitStart = 0, visitLaps = 1;
+  if (ROUTE === 'towers') {
+    for (let k = 0; k < 5; k++) {
+      const a = 0.45 + (k / 5) * TAU, x = Math.cos(a) * 28, z = Math.sin(a) * 28;
+      TOWERS.push({ x, z, a, half: TW });
+    }
+    out.towers = TOWERS;
+  }
+  function newVisit(p) { visitStart = p.th; visitLaps = rr(0.75, 1.05); }
   let legStart = 0, legLen = 0, legN = 0, sinceTurn = 99;
   function newLeg(p) {
     legStart = p.th;
@@ -560,6 +597,50 @@ export function generateLevel(mapId = 0) {
       cur = walkTo(cur, hx, hz, cur.y + 0.8 + Math.max(0, need(hx, hz, 1.5, 1.5, -(back + Math.PI / 2), cur.y + 0.8)));
       return reframe(cur);
     },
+    // Volcano: a vent in the middle of a platform erupts every few seconds. Standing on it launches you
+    // up to the ledge high above; standing next to it gets you shoved off.
+    geyser(cur) {
+      const p = T.gap(cur, { size: [rr(3.4, 4.2), rr(3.0, 3.6)], g: rr(1.3, 1.9), dy: rr(-0.2, 0.4) });
+      out.geysers.push({ i: out.geysers.length, x: p.x, y: p.y, z: p.z, per: rr(3.2, 4.2), ph: R(), dur: 1.2, zone });
+      return T.gap(p, { g: rr(1.0, 1.5), dy: rr(4.4, 5.2) });
+    },
+    // Volcano: boulders drop onto a wide ledge. A shadow grows where the next one will land.
+    rocks(cur) {
+      const p = T.gap(cur, { size: [rr(5, 6), rr(3.6, 4.2)], g: rr(1.3, 1.9), dy: rr(-0.2, 0.5) });
+      const n = 2 + (R() < 0.5 ? 1 : 0), ax = Math.cos(p.ry), az = -Math.sin(p.ry), per = rr(3.4, 4.6);
+      for (let k = 0; k < n; k++) {
+        const o = (k / (n - 1) - 0.5) * (p.sx - 1.6);
+        out.rocks.push({ i: out.rocks.length, x: p.x + ax * o, y: p.y, z: p.z + az * o, per, ph: k / n + R() * 0.15, zone });
+      }
+      return T.gap(p, { g: rr(1.3, 1.9) });
+    },
+    // City: a long conveyor belt that carries you along (with you or against you).
+    conveyor(cur) {
+      const sx = rr(6, 7.5), sz = rr(2.2, 2.6), r = nextR(cur, sz);
+      const p = plat(thetaFor(cur, rr(1.2, 1.8), r, sx, sz), r, cur.y + rr(-0.2, 0.5), sx, sz, { kind: 'conveyor', surf: null });
+      p.col.conv = { sp: rr(2.4, 3.6) * (R() < 0.5 ? 1 : -1) };
+      return T.gap(p, { g: rr(1.3, 1.9) });
+    },
+    // City: leave this tower for the next one, over a sky bridge or by zipline from a hook in the gap.
+    cross(cur) {
+      const nb = (tower + 1) % TOWERS.length, A = TOWERS[tower], B = TOWERS[nb];
+      const dx = A.x - B.x, dz = A.z - B.z, d = Math.hypot(dx, dz), ux = dx / d, uz = dz / d, lx = B.x + ux * 9.4, lz = B.z + uz * 9.4;
+      let land;
+      if (R() < 0.45) {
+        CX = B.x; CZ = B.z; BAND = TBAND;
+        land = plat(Math.atan2(lz - CZ, lx - CX), 9.4, cur.y + rr(0.4, 1.6), 3.2, 3.0, { nosign: true });
+        const hx = (cur.x + land.x) / 2, hz = (cur.z + land.z) / 2, hy = Math.max(cur.y, land.y) + rr(5, 6);
+        out.anchors.push({ i: out.anchors.length, x: hx, y: hy, z: hz, tx: land.x, ty: land.y + PR_TOP, tz: land.z, zone });
+        recBox(hx, hz, 1, 1, 0, hy + 1.6, 2.2);
+      } else {
+        land = walkTo(cur, lx, lz, cur.y + rr(1, 2));
+        CX = B.x; CZ = B.z; BAND = TBAND;
+      }
+      tower = nb;
+      land = reframe(land);
+      newVisit(land);
+      return land;
+    },
     iceslope(cur) {
       return T.beam(cur, { len: rr(6, 7.5), w: 1.3, rise: rr(1.0, 1.4), surf: 'ice' });
     },
@@ -568,12 +649,12 @@ export function generateLevel(mapId = 0) {
   // Every section is checked right after it is placed. If anything in it sits too close above or below
   // older route, the section is undone and the route climbs straight up with a lift instead, so the
   // finished level always keeps its clearances (dev/leveltest.js checks the same rule).
-  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees'];
+  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks'];
   function snapshot() {
     const n = {};
     for (const k of LISTS) n[k] = out[k].length;
     return { n, recs: recs.length, pathLen, lastP, lastY, zonePlats, plats: out.plats, intro: Object.assign({}, intro),
-      CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn };
+      CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn, tower, visitStart, visitLaps };
   }
   function restore(q) {
     for (const k of LISTS) out[k].length = q.n[k];
@@ -582,7 +663,7 @@ export function generateLevel(mapId = 0) {
       b.splice(b.lastIndexOf(r), 1);
     }
     recs.length = q.recs;
-    ({ pathLen, lastP, lastY, zonePlats, CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn } = q);
+    ({ pathLen, lastP, lastY, zonePlats, CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn, tower, visitStart, visitLaps } = q);
     out.plats = q.plats;
     Object.assign(intro, q.intro);
   }
@@ -679,12 +760,29 @@ export function generateLevel(mapId = 0) {
   let cur = virt(0.12 + DIR * 0.38, 12.5, 2, 2.4, 6);
   if (ROUTE === 'switchback') { BAND = LANES.outer; newLeg(cur); }
   let nextExc = 0;
+  if (ROUTE === 'towers') {
+    // Off the dock and over to the nearest skyscraper.
+    tower = 0;
+    let best = 1e9;
+    TOWERS.forEach((t, k) => { const dd = Math.hypot(t.x - cur.x, t.z - cur.z); if (dd < best) { best = dd; tower = k; } });
+    const t = TOWERS[tower], d = Math.hypot(t.x, t.z);
+    cur = walkTo(cur, t.x - (t.x / d) * 9.4, t.z - (t.z / d) * 9.4, 3.2);
+    CX = t.x; CZ = t.z; BAND = TBAND; DIR = 1;
+    cur = reframe(cur);
+    newVisit(cur);
+  }
 
   for (zone = 0; zone < ZONE_LIST.length; zone++) {
     ZD = ZONE_LIST[zone];
     zonePlats = 0;
     const zi = { name: ZD.name, sub: ZD.sub, color: ZD.color, fog: ZD.fog, tint: ZD.tint, y0: cur.y, y1: ZD.y1 };
-    if (zone > 0) {
+    if (zone > 0 && ROUTE === 'towers') {
+      // No ring round a core here: a wide rooftop pad starts the zone.
+      const at0 = cur;
+      cur = place(() => T.gap(at0, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at0);
+      zi.y0 = cur.y;
+      checkpoint(cur.th, cur.r, cur.y, { normal: zone % 2 === 0 });
+    } else if (zone > 0) {
       // Zone gate: a wide three-quarter ring that doubles as a safety net and checkpoint.
       const rIn = 7.0, rOut = 16.5, rm = 11.75, span = TAU * 0.72;
       let th0;
@@ -725,6 +823,11 @@ export function generateLevel(mapId = 0) {
       if (ROUTE === 'switchback' && finalStretch() && BAND === LANES.inner) { cur = place(() => T.turn(at), at); continue; }
       // Sunny: turn round at the end of each leg. Forest: now and then a trip out to a side tree.
       if (ROUTE === 'switchback' && DIR * (cur.th - legStart) > legLen && !finalStretch()) { cur = place(() => T.turn(at), at); continue; }
+      if (ROUTE === 'towers') {
+        // Done with this tower once round far enough and facing the next one: cross over.
+        const nt = TOWERS[(tower + 1) % TOWERS.length], face = Math.atan2(nt.z - CZ, nt.x - CX);
+        if (Math.abs(cur.th - visitStart) / TAU > visitLaps && Math.abs(angDiff(cur.th, face)) < 0.45) { cur = place(() => T.cross(at), at); continue; }
+      }
       if (ROUTE === 'trees' && zone < ZONE_LIST.length - 1 && cur.y > nextExc && cur.y < ZD.y1 - 24 && (zone > 0 || zonePlats > 16)) {
         cur = place(() => T.excursion(at), at);
         nextExc = cur.y + 34;
@@ -739,6 +842,7 @@ export function generateLevel(mapId = 0) {
         // Big sweeping things stay away from the switchback turns, where the other lane is close by.
         let k = pickTpl();
         if (ROUTE === 'switchback' && (k === 'spinner' || k === 'fan') && (sinceTurn < 4 || BAND === LANES.inner)) k = 'mover';
+        if ((ROUTE === 'towers' || ROUTE === 'crater') && (k === 'spinner' || k === 'fan')) k = 'mover';
         cur = place(() => T[k](at), at);
       }
     }
@@ -748,6 +852,13 @@ export function generateLevel(mapId = 0) {
   // Summit: a disc capping the core, reached from one last ledge.
   zone = ZONE_LIST.length - 1;
   if (ROUTE === 'switchback' && BAND === LANES.inner) cur = T.turn(cur);
+  if (ROUTE === 'towers') {
+    // From the last tower over to the central spire, whose roof is the summit.
+    const b = Math.atan2(cur.z, cur.x);
+    cur = walkTo(cur, Math.cos(b) * 12.5, Math.sin(b) * 12.5, cur.y + 1);
+    CX = 0; CZ = 0; BAND = MAIN; DIR = 1;
+    cur = reframe(cur);
+  }
   for (let k = 0; k < 40; k++) {
     if (need(0, 0, 9.8, 9.8, 0, cur.y + 1.8) <= 0) break;
     cur = T.stairs(cur, 2);
@@ -758,7 +869,8 @@ export function generateLevel(mapId = 0) {
   out.summit = { x: 0, y: top, z: 0, r: 4.5 };
   out.top = top;
   out.zones[out.zones.length - 1].y1 = top;
-  add(makeCyl(0, (top - 1.2 - 40) / 2, 0, CORE_R, (top - 1.2 + 40) / 2), 'core');
+  if (ROUTE !== 'crater') add(makeCyl(0, (top - 1.2 - 40) / 2, 0, CORE_R, (top - 1.2 + 40) / 2), 'core');
+  for (const t of TOWERS) add(makeBox(t.x, (top - 20) / 2, t.z, TW, (top + 20) / 2, TW, 0, -t.a, 0), 'tower');
 
   // Zone decorations, all visual only, different for each map.
   const dz = (k, n, f) => { for (let i = 0; i < n; i++) out.decor.push(Object.assign({ k }, f(i))); };

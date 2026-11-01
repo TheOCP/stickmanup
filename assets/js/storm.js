@@ -71,6 +71,23 @@ export class Storm {
     return out;
   }
 
+  // Volcano vent: erupting for the first `dur` seconds of each period; warn 0..1 just before it goes.
+  geyser(g, t) {
+    const u = ((((t / g.per + g.ph) % 1) + 1) % 1) * g.per;
+    return { on: u < g.dur, k: u < g.dur ? u / g.dur : 0, warn: g.per - u < 0.9 ? 1 - (g.per - u) / 0.9 : 0 };
+  }
+
+  // Falling boulder: a shadow grows for 1.4 s, the rock falls for the last 0.45 s, lands at the end of
+  // the period and sits there for half a second. out: { warn 0..1, fall 0..1 or -1, rest, y }.
+  rock(r, t, out) {
+    const u = ((((t / r.per + r.ph) % 1) + 1) % 1) * r.per;
+    out.warn = r.per - u < 1.4 ? 1 - (r.per - u) / 1.4 : 0;
+    out.fall = r.per - u < 0.45 ? 1 - (r.per - u) / 0.45 : -1;
+    out.rest = u < 0.5;
+    out.y = out.fall >= 0 ? r.y + 0.7 + 16 * (1 - out.fall * out.fall) : r.y + 0.7;
+    return out;
+  }
+
   rodWarn(r, t) {
     const ph = (((t / r.per + r.ph) % 1) + 1) % 1, left = (1 - ph) * r.per;
     return left < 1.4 ? 1 - left / 1.4 : 0;

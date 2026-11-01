@@ -1,11 +1,12 @@
-"""Draws the StickManUp launcher icon once and writes it as Android vector drawables (adaptive icon
-background, foreground and monochrome layers) plus an SVG preview. Run: python3 dev/icon/make_icon.py"""
+"""Draws the StickManUp launcher icon and writes it as Android vector drawables (adaptive icon background,
+foreground and monochrome layers) plus an SVG preview: a stickman from the game leaping onto a glowing
+platform at night, with the storm tower, lightning and the cord behind it.
+Run: python3 dev/icon/make_icon.py"""
 import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-C = 54  # centre of the 108 x 108 adaptive-icon canvas
-INK, TEAL, WHITE, PINK, TONGUE = '#FF12091C', '#FF3FF0D0', '#FFFFFFFF', '#FFFF3E9E', '#FFFF5A7A'
+INK, TEAL, HEAD, WHITE, GOLD = '#FF0A0F1C', '#FF3FF0D0', '#FF6CF5DF', '#FFFFFFFF', '#FFFFE15A'
 
 def circle(cx, cy, r):
     return f'M{cx - r:.2f},{cy:.2f} a{r:.2f},{r:.2f} 0 1,0 {2 * r:.2f},0 a{r:.2f},{r:.2f} 0 1,0 {-2 * r:.2f},0 z'
@@ -13,46 +14,60 @@ def circle(cx, cy, r):
 def ellipse(cx, cy, rx, ry):
     return f'M{cx - rx:.2f},{cy:.2f} a{rx:.2f},{ry:.2f} 0 1,0 {2 * rx:.2f},0 a{rx:.2f},{ry:.2f} 0 1,0 {-2 * rx:.2f},0 z'
 
-# Background: hot pink with a crazy sunburst of orange and yellow rays.
-bg = [{'d': 'M0,0 h108 v108 h-108 z', 'fill': PINK}]
-for k in range(14):
-    a0, a1 = (k / 14) * 2 * math.pi + 0.1, ((k + 0.5) / 14) * 2 * math.pi + 0.1
-    p = [(C, C), (C + 90 * math.cos(a0), C + 90 * math.sin(a0)), (C + 90 * math.cos(a1), C + 90 * math.sin(a1))]
-    bg.append({'d': 'M' + ' L'.join(f'{x:.2f},{y:.2f}' for x, y in p) + ' z', 'fill': '#FFFF8A3D' if k % 2 else '#FFFFC93C'})
-bg.append({'d': circle(C, C, 30), 'fill': '#33FFFFFF'})
+def poly(*pts):
+    return 'M' + ' L'.join(f'{x:.2f},{y:.2f}' for x, y in pts) + ' z'
 
-# Foreground: the stickman mid-flail. Limbs are drawn twice: a dark outline, then teal on top.
+# ---- background: storm night, the neon tower on the left, a lightning bolt and rain
+bg = [
+    {'d': 'M0,0 h108 v108 h-108 z', 'fill': '#FF0C1530'},
+    {'d': circle(66, 30, 34), 'fill': '#3326407A'},
+    {'d': circle(66, 30, 20), 'fill': '#2E3A5AAA'},
+    # Tower: dark core with glowing rings and lit windows.
+    {'d': 'M8,0 h24 v108 h-24 z', 'fill': '#FF151C2A'},
+    {'d': 'M28,0 h4 v108 h-4 z', 'fill': '#FF0E141F'},
+]
+for y in (22, 52, 82):
+    bg.append({'d': f'M8,{y} L32,{y}', 'stroke': '#FF3FF0D0', 'w': 1.6})
+for i, (x, y) in enumerate([(12, 12), (19, 16), (24, 30), (14, 36), (21, 43), (12, 60), (25, 64), (17, 72), (23, 92), (13, 98), (20, 104)]):
+    bg.append({'d': f'M{x},{y} h2.6 v3.2 h-2.6 z', 'fill': '#FF7FD8FF' if i % 3 else '#FFFFC266'})
+bg.append({'d': poly((86, 38), (78, 51), (82.5, 51), (76, 64), (89, 46.5), (84.5, 46.5), (89.5, 38)), 'fill': '#FFFFF6C8'})
+for x, y in [(44, 10), (58, 6), (90, 40), (40, 26), (86, 58), (36, 60)]:
+    bg.append({'d': f'M{x},{y} L{x - 2.4},{y + 7}', 'stroke': '#557FAFFF', 'w': 0.9})
+
+# ---- foreground: platform with neon trim, the stickman landing on it, the cord trailing back
+top = [(34, 76), (70, 71), (77, 80), (41, 86)]
+fg = [
+    {'d': poly((41, 86), (77, 80), (77, 87), (41, 93)), 'fill': '#FF1A2232'},
+    {'d': poly((34, 76), (41, 86), (41, 93), (34, 83)), 'fill': '#FF121826'},
+    {'d': poly(*top), 'fill': '#FF2B3446'},
+    {'d': 'M' + ' L'.join(f'{x},{y}' for x, y in top + [top[0]]), 'stroke': '#FF3FF0D0', 'w': 1.8},
+    {'d': ellipse(55, 79.5, 9, 2.2), 'fill': '#88000000'},
+]
+cord = 'M51,57 C40,62 30,52 24,44 S14,30 6,26'
+fg += [{'d': cord, 'stroke': INK, 'w': 4.6}, {'d': cord, 'stroke': GOLD, 'w': 2.4}]
 limbs = [
-    'M55,57 L52,71',                      # torso
-    'M54,61 L42,64 L33,53',               # left arm, flailing up
-    'M55,60 L68,58 L77,47',               # right arm, waving
-    'M52,71 L44,79 L36,85',               # left leg, flung back
-    'M52,71 L62,77 L71,72',               # right leg, kicking
+    'M56,44 L52,58',               # torso, leaning into the jump
+    'M55,47 L46,44 L40,35',        # arm swung back and up
+    'M56,47 L65,45 L72,37',        # arm reaching forward
+    'M52,58 L61,62 L64,71',        # front leg, about to land
+    'M52,58 L45,64 L43,72',        # back leg
 ]
-cord = 'M52,72 C60,86 72,78 78,92 S90,98 96,104'
-fg = [{'d': cord, 'stroke': INK, 'w': 5.2}, {'d': cord, 'stroke': '#FFFFE15A', 'w': 2.6}]
-for l in limbs: fg.append({'d': l, 'stroke': INK, 'w': 8.4})
-for l in limbs: fg.append({'d': l, 'stroke': TEAL, 'w': 5.2})
-for x, y in [(33, 53), (77, 47)]: fg += [{'d': circle(x, y, 3.9), 'fill': INK}, {'d': circle(x, y, 2.6), 'fill': TEAL}]
-for x, y in [(36, 85), (71, 72)]: fg += [{'d': ellipse(x, y, 4.6, 3.2), 'fill': INK}, {'d': ellipse(x, y, 3.3, 2.0), 'fill': TEAL}]
-# Head: big, teal, with mismatched googly eyes looking two ways, a huge grin and the tongue out.
+for l in limbs: fg.append({'d': l, 'stroke': INK, 'w': 7.6})
+for l in limbs: fg.append({'d': l, 'stroke': TEAL, 'w': 4.8})
+for x, y in [(40, 35), (72, 37)]: fg += [{'d': circle(x, y, 3.4), 'fill': INK}, {'d': circle(x, y, 2.3), 'fill': TEAL}]
+for x, y in [(65, 72.2), (44, 73.2)]: fg += [{'d': ellipse(x, y, 4.0, 2.6), 'fill': INK}, {'d': ellipse(x, y, 2.9, 1.6), 'fill': TEAL}]
+# Head in the body colour with the game's face: dark eyes and a big excited open smile.
 fg += [
-    {'d': circle(56, 40, 17.6), 'fill': INK}, {'d': circle(56, 40, 16.0), 'fill': TEAL},
-    {'d': circle(48.5, 36.5, 8.2), 'fill': INK}, {'d': circle(48.5, 36.5, 7.0), 'fill': WHITE},
-    {'d': circle(64.0, 34.0, 6.0), 'fill': INK}, {'d': circle(64.0, 34.0, 4.9), 'fill': WHITE},
-    {'d': circle(45.6, 39.4, 3.3), 'fill': INK}, {'d': circle(66.2, 32.0, 2.4), 'fill': INK},
-    {'d': circle(44.6, 38.3, 1.0), 'fill': WHITE}, {'d': circle(65.6, 31.3, 0.7), 'fill': WHITE},
-    {'d': 'M44,45 Q56,51 69,43 Q66,57 55,56 Q46,55 44,45 z', 'fill': INK},
-    {'d': 'M47,47 Q56,50.5 66,46 L65.5,48 Q56,52 47.5,49 z', 'fill': WHITE},
-    {'d': 'M55,53 Q60,50 64,53 Q66,60 60,61 Q55,60 55,53 z', 'fill': TONGUE},
-    {'d': 'M59.6,53.2 L60.2,58.6', 'stroke': '#FFC23A5A', 'w': 0.9},
-    # Sweat drop and motion lines: it is having the time of its life.
-    {'d': 'M74,23.5 Q76.8,28 75.5,30.3 Q73.2,31.7 71.9,29.7 Q71.3,27.6 74,23.5 z', 'fill': '#FF9BE7FF'},
-    {'d': 'M24,62 L30,62', 'stroke': WHITE, 'w': 2.2}, {'d': 'M22,68 L29,68', 'stroke': WHITE, 'w': 2.2},
-    {'d': 'M25,74 L30,74', 'stroke': WHITE, 'w': 2.2},
+    {'d': circle(59, 33, 11.2), 'fill': INK}, {'d': circle(59, 33, 9.8), 'fill': HEAD},
+    {'d': ellipse(55.2, 31, 1.7, 2.4), 'fill': INK}, {'d': ellipse(62.6, 30.4, 1.7, 2.4), 'fill': INK},
+    {'d': circle(55.7, 30.1, 0.55), 'fill': WHITE}, {'d': circle(63.1, 29.5, 0.55), 'fill': WHITE},
+    {'d': 'M53.2,35.6 Q59,38.4 65,34.6 Q63.6,41.6 58.8,41.4 Q54.2,41 53.2,35.6 z', 'fill': INK},
+    {'d': 'M56.4,39.4 Q59,37.8 61.6,39.4 Q60.2,41 58.9,41 Q57.4,40.9 56.4,39.4 z', 'fill': '#FFFF6B8A'},
+    # Speed lines behind the leap.
+    {'d': 'M30,66 L37,64', 'stroke': WHITE, 'w': 1.6}, {'d': 'M28,72 L35,70', 'stroke': WHITE, 'w': 1.6},
 ]
-mono = [dict(s, fill=WHITE if s.get('fill') else None, stroke=WHITE if s.get('stroke') else None) for s in fg
-        if not (s.get('fill') in (WHITE,) or s.get('fill') == TONGUE)]
+mono = [dict(s, fill=WHITE if s.get('fill') else None, stroke=WHITE if s.get('stroke') else None)
+        for s in fg if s.get('fill') not in (HEAD, WHITE, '#FFFF6B8A', '#88000000', '#FF1A2232', '#FF121826')]
 
 def vector(shapes):
     out = ['<?xml version="1.0" encoding="utf-8"?>',
@@ -67,11 +82,11 @@ def vector(shapes):
     out.append('</vector>')
     return '\n'.join(out) + '\n'
 
-def css(c):  # #AARRGGBB -> rgba()
+def css(c):  # #AARRGGBB to rgba()
     a, r, g, b = (int(c[i:i + 2], 16) for i in (1, 3, 5, 7))
     return f'rgba({r},{g},{b},{a / 255:.3f})'
 
-def svg(layers, size=512, mask=True):
+def svg(layers, size=512):
     body = []
     for shapes in layers:
         for s in shapes:
@@ -79,10 +94,9 @@ def svg(layers, size=512, mask=True):
                 body.append(f'<path d="{s["d"]}" fill="none" stroke="{css(s["stroke"])}" stroke-width="{s["w"]}" stroke-linecap="round" stroke-linejoin="round"/>')
             else:
                 body.append(f'<path d="{s["d"]}" fill="{css(s["fill"])}"/>')
-    clip = '<clipPath id="m"><circle cx="54" cy="54" r="36"/></clipPath>' if mask else ''
-    g = f'<g clip-path="url(#m)" transform="translate(-18,-18)">' if mask else '<g>'
-    vb = '0 0 72 72' if mask else '0 0 108 108'
-    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="{vb}"><defs>{clip}</defs>{g}{"".join(body)}</g></svg>'
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 72 72"><defs>'
+            '<clipPath id="m"><circle cx="54" cy="54" r="36"/></clipPath></defs>'
+            f'<g clip-path="url(#m)" transform="translate(-18,-18)">{"".join(body)}</g></svg>')
 
 (ROOT / 'res/drawable/ic_launcher_bg.xml').write_text(vector(bg))
 (ROOT / 'res/drawable/ic_launcher_fg.xml').write_text(vector(fg))

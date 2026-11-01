@@ -15,6 +15,14 @@ const STYLES = {
   forest: { bpm: 118, chords: [[64, 67, 71], [57, 60, 64], [59, 62, 66], [64, 67, 71]],
     bass: [1, 0, 0, 8, 0, 0, 1, 0, 13, 0, 0, 1, 0, 0, 8, 0], hat: [0.5, 0, 0.8, 0.3, 0.5, 0, 0.8, 0.3, 0.5, 0, 0.8, 0.3, 0.5, 0.3, 0.8, 0.3],
     arp: [0, 2, 1, -1, 0, 2, 4, -1, 2, 1, 0, -1, 2, 4, 5, -1], perc: [0, 0, 0, 1.3, 0, 0, 0, 1, 0, 0, 1.2, 0, 0, 0.9, 0, 0] },
+  // Volcano: heavy and fast, E minor with a dark flat second.
+  volcano: { bpm: 132, chords: [[64, 67, 71], [65, 69, 72], [64, 67, 71], [62, 65, 69]],
+    bass: [1, 1, 0, 1, 1, 0, 2, 0, 1, 1, 0, 1, 13, 0, 8, 0], hat: [0.8, 0.3, 0.6, 0.3, 0.8, 0.3, 0.6, 0.5, 0.8, 0.3, 0.6, 0.3, 0.8, 0.5, 0.6, 0.8],
+    arp: [0, 1, 0, 2, 0, 1, 0, 4, 0, 1, 0, 2, 5, 4, 2, 1], perc: [0, 0, 0, 0, 0, 0, 1.1, 0, 0, 0, 0, 0, 0.9, 0, 1.2, 0] },
+  // City: synthwave at sunset, A minor, laid back.
+  city: { bpm: 110, chords: [[57, 60, 64], [53, 57, 60], [55, 59, 62], [52, 55, 59]],
+    bass: [1, 0, 13, 0, 1, 0, 13, 0, 1, 0, 13, 0, 1, 0, 8, 13], hat: [0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.4],
+    arp: [0, 2, 4, 2, 1, 2, 4, 5, 0, 2, 4, 2, 1, 4, 5, 4] },
   // Menu: mid-tempo and catchy, D minor.
   menu: { bpm: 124, chords: [[62, 65, 69], [58, 62, 65], [60, 64, 67], [57, 61, 64]],
     bass: [1, 0, 1, 0, 0, 13, 1, 0, 1, 0, 1, 0, 0, 8, 1, 0], hat: [0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.6],
@@ -168,7 +176,7 @@ export class Sound {
   }
 
   // ---------------------------------------------------------------- music
-  // An original generative electro/techno track, synthesized live: four-on-the-floor kick with sidechain
+  // An original generative electro/techno track, synthesized live: four on the floor kick with sidechain
   // pumping, claps, hats, a rolling bass, an arpeggio with echo and pads. Each map has its own style
   // (tempo, key, chords, bass rhythm), the menu has one too. It builds in 8-bar sections and gets busier
   // the higher you climb (setIntensity).

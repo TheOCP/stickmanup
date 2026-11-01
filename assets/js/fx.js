@@ -24,10 +24,11 @@ export class Fx {
       return { m, life: 0 };
     });
     const ringGeo = new THREE.RingGeometry(1.95, 2.4, 48).rotateX(-Math.PI / 2), dotGeo = new THREE.CircleGeometry(2.4, 48).rotateX(-Math.PI / 2);
-    this.markers = COLORS.map(() => {
+    // Lightning warning rings in each player's own colour, so everyone can tell whose strike is coming.
+    this.markers = COLORS.map((c) => {
       const g = new THREE.Group();
-      const ring = new THREE.Mesh(ringGeo, live(new THREE.MeshBasicMaterial({ color: HDR(0xffe066, 3), transparent: true, depthWrite: false })));
-      const fill = new THREE.Mesh(dotGeo, live(new THREE.MeshBasicMaterial({ color: HDR(0xfff3b0, 1.5), transparent: true, depthWrite: false, opacity: 0.2 })));
+      const ring = new THREE.Mesh(ringGeo, live(new THREE.MeshBasicMaterial({ color: HDR(c, 3.2), transparent: true, depthWrite: false })));
+      const fill = new THREE.Mesh(dotGeo, live(new THREE.MeshBasicMaterial({ color: HDR(c, 1.4), transparent: true, depthWrite: false, opacity: 0.2 })));
       g.add(ring, fill);
       g.visible = false;
       scene.add(g);

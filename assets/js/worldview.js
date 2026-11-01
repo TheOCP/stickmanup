@@ -129,11 +129,14 @@ export class WorldView {
     this.lasers = [];
     this.arrowFx = [];
     this.swingFx = [];
+    this.geyserFx = [];
+    this.rockFx = [];
+    this.convFx = null;
     this.camPos = null;
     this.key = level.mapKey;
     PATTERN = level.pattern;
     // Neon at night, painted trims by day, soft glow in the forest.
-    this.glowK = { storm: 2.4, sunny: 1.05, forest: 1.15 }[this.key];
+    this.glowK = { storm: 2.4, sunny: 1.05, forest: 1.15, volcano: 1.8, city: 2.2 }[this.key];
     this.zoneMats = level.zones.map((z) => panelMat(z.tint));
     this.iceMat = panelMat(0xa8d8ee, { roughness: 0.18, metalness: 0.1 });
     this.crumbleMat = panelMat(0x7a4a44);
@@ -154,6 +157,8 @@ export class WorldView {
     this.buildCreatures();
     this.buildHazards();
     this.buildSideTrees();
+    this.buildVolcano();
+    this.buildCity();
     this.freeze();
   }
 
@@ -162,7 +167,7 @@ export class WorldView {
   }
 
   // Performance: only animated things recompute transforms each frame, and only animated materials are
-  // re-checked by the native mirror. Everything else in the tower is frozen.
+  // checked again by the native mirror. Everything else in the tower is frozen.
   freeze() {
     const anim = [...this.dyn.map((d) => d.mesh), ...this.pads.map((c) => c.fx), ...this.cps.map((e) => e.halo),
       ...this.rods.map((r) => r.tip), ...this.fans.map((f) => f.rotor), ...this.spin.map((s) => s.o), this.summitOrb, ...this.anim];
@@ -261,7 +266,7 @@ export class WorldView {
     const L = this.level;
     for (const ring of L.rings) {
       const { y, rIn, rOut, a0, a1 } = ring, span = a1 - a0, seg = Math.max(12, Math.ceil((span / TAU) * 128));
-      const tint = ring.zone === 0 ? { storm: 0x333944, sunny: 0xd9c49c, forest: 0x4f6b3a }[this.key] : L.zones[ring.zone].tint;
+      const tint = ring.zone === 0 ? { storm: 0x333944, sunny: 0xd9c49c, forest: 0x4f6b3a, volcano: 0x2e2420, city: 0x2a3040 }[this.key] : L.zones[ring.zone].tint;
       const mat = panelMat(tint, { side: THREE.DoubleSide });
       const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, seg, 3, -a1, span).rotateX(-Math.PI / 2), mat);
       top.position.y = y;
@@ -291,15 +296,17 @@ export class WorldView {
   }
 
   buildCore() {
-    if (this.key !== 'storm') return this.buildCoreAlt();
-    const L = this.level, R = rng(5);
+    if (this.key === 'volcano') return;
+    if (this.key !== 'storm' && this.key !== 'city') return this.buildCoreAlt();
+    const L = this.level, R = rng(5), city = this.key === 'city';
     const H = L.top - 1.2 + 40;
     const win = canvasTex(256, 1024, (g, w, h) => {
       g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
       for (let y = 8; y < h; y += 22) {
         for (let x = 6; x < w; x += 18) {
           if (R() < 0.22) {
-            g.fillStyle = R() < 0.7 ? `hsl(${190 + R() * 30},80%,${45 + R() * 25}%)` : `hsl(${30 + R() * 20},90%,${50 + R() * 20}%)`;
+            g.fillStyle = city ? `hsl(${[300, 200, 45][(R() * 3) | 0] + R() * 20},90%,${50 + R() * 20}%)`
+              : R() < 0.7 ? `hsl(${190 + R() * 30},80%,${45 + R() * 25}%)` : `hsl(${30 + R() * 20},90%,${50 + R() * 20}%)`;
             g.fillRect(x, y, 10, 12);
           }
         }
@@ -584,7 +591,7 @@ export class WorldView {
 
   // The ground the tower stands on: open sea (storm), a sandy beach island (sunny) or a forest island.
   buildIsland() {
-    if (this.key === 'storm') return;
+    if (this.key === 'storm' || this.key === 'volcano' || this.key === 'city') return;
     const sunny = this.key === 'sunny', R = sunny ? 40 : 88;
     const top = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 9, 3, 96, 1), new THREE.MeshStandardMaterial({ color: sunny ? 0xe9d6a4 : 0x47732f, roughness: 1, metalness: 0 }));
     top.position.y = -1.1;
@@ -829,6 +836,7 @@ export class WorldView {
       this.anim.push(o);
       this.monsters.push({ m, o, p: {} });
     }
+    if (this.key === 'city') return this.buildDrones(mm);
     const wing = new THREE.BufferGeometry();
     wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -0.15, 0.75, 0.1, -0.05, 0.55, 0, 0.25, 0, 0, -0.15, 0.55, 0, 0.25, 0, 0, 0.2], 3));
     wing.computeVertexNormals();
@@ -848,6 +856,23 @@ export class WorldView {
     }
   }
 
+  // City: a skyline of lit buildings all round the bay.
+  buildSkyline() {
+    const R = rng(4244), n = 70;
+    const tex = canvasTex(128, 512, (g, w, h) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+      for (let y = 4; y < h; y += 10) for (let x = 4; x < w; x += 9) if (R() < 0.35) { g.fillStyle = `hsl(${[40, 200, 290][(R() * 3) | 0]},80%,${45 + R() * 25}%)`; g.fillRect(x, y, 5, 6); }
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 6);
+    const m = new THREE.InstancedMesh(BOXG, new THREE.MeshStandardMaterial({ color: 0x141826, roughness: 0.8, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.9 }), n);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + R() * 0.05, r = 140 + R() * 220, h = 30 + R() * R() * 260, w = 12 + R() * 20;
+      m.setMatrixAt(i, mat4(Math.cos(a) * r, h / 2 - 2, Math.sin(a) * r, w, h, w * (0.6 + R() * 0.6), 0, R() * 3, 0));
+    }
+    this.root.add(m);
+  }
+
   buildDistant() {
     if (this.key !== 'storm') return this.buildDistantAlt();
     const R = rng(4242), n = 18;
@@ -864,7 +889,7 @@ export class WorldView {
 
   // Lasers (spinning bars and on/off curtains), arrow traps and the ropes of swinging platforms.
   buildHazards() {
-    const L = this.level, col = { storm: 0xff2448, sunny: 0xff7a1a, forest: 0xff4a3a }[this.key];
+    const L = this.level, col = { storm: 0xff2448, sunny: 0xff7a1a, forest: 0xff4a3a, volcano: 0xff5a2a, city: 0xff2a8a }[this.key];
     const beamGeo = new THREE.CylinderGeometry(0.05, 0.05, 1, 8).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
     const emitter = new THREE.MeshStandardMaterial({ color: 0x2a2e38, roughness: 0.35, metalness: 0.8, emissive: col, emissiveIntensity: 0.5 });
     const capGeo = new THREE.CylinderGeometry(0.24, 0.28, 0.22, 16);
@@ -966,8 +991,152 @@ export class WorldView {
     }
   }
 
+  // City drones: a body, four rotor rings and a red eye, one merged mesh each.
+  buildDrones() {
+    const body = HDR(0xff2a2a, 3), rotor = HDR(0x7fd8ff, 1.4);
+    const parts = [
+      { geo: new THREE.BoxGeometry(0.42, 0.16, 0.42), m: mat4(0, 0, 0, 1, 1, 1), glow: null },
+      { geo: new THREE.SphereGeometry(0.07, 8, 6), m: mat4(0, -0.02, 0.22, 1, 1, 1), glow: body },
+    ];
+    for (const [x, z] of [[-0.32, -0.32], [0.32, -0.32], [-0.32, 0.32], [0.32, 0.32]]) {
+      parts.push({ geo: new THREE.BoxGeometry(0.34, 0.04, 0.05), m: mat4(x / 2, 0.02, z / 2, 1, 1, 1, 0, Math.atan2(x, z), 0), glow: null });
+      parts.push({ geo: new THREE.TorusGeometry(0.15, 0.02, 4, 16).rotateX(Math.PI / 2), m: mat4(x, 0.05, z, 1, 1, 1), glow: rotor });
+    }
+    const g = merge(parts), mat = panelMat(0x30343e, { roughness: 0.4, metalness: 0.7, pattern: 0 });
+    for (const b of this.level.bats) {
+      const o = this.add(new THREE.Mesh(g, mat));
+      o.scale.setScalar(1.5);
+      this.anim.push(o);
+      this.bats.push({ b, o, p: {} });
+    }
+  }
+
+  // Volcano: the inside of a hollow chimney (glowing cracks in dark rock), vents, boulders and embers.
+  buildVolcano() {
+    if (this.key !== 'volcano') return;
+    const L = this.level, R = rng(17), H = L.top + 60;
+    const cracks = canvasTex(512, 1024, (g, w, h) => {
+      g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+      g.lineCap = 'round';
+      for (let i = 0; i < 40; i++) {
+        let x = R() * w, y = R() * h;
+        g.strokeStyle = `rgba(255,${80 + R() * 90},20,${0.5 + R() * 0.5})`;
+        g.lineWidth = 1 + R() * 3.5;
+        g.beginPath(); g.moveTo(x, y);
+        for (let k = 0; k < 6; k++) { x += (R() - 0.5) * 50; y += 10 + R() * 40; g.lineTo(x, y); }
+        g.stroke();
+      }
+    });
+    cracks.wrapS = cracks.wrapT = THREE.RepeatWrapping;
+    cracks.repeat.set(6, H / 70);
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(24, 27, H, 72, 1, true),
+      panelMat(0x2a1e1a, { side: THREE.DoubleSide, roughness: 0.95, metalness: 0, emissive: 0xffffff, emissiveMap: cracks, emissiveIntensity: 0.9, pattern: 2 }));
+    wall.position.y = H / 2 - 30;
+    this.add(wall);
+    // Vents: a dark ring with a glowing middle; when erupting, a column of fire.
+    const ringG = new THREE.TorusGeometry(0.75, 0.16, 8, 24).rotateX(Math.PI / 2), coreG = new THREE.CircleGeometry(0.62, 20).rotateX(-Math.PI / 2);
+    const colG = new THREE.CylinderGeometry(0.55, 0.9, 1, 16, 1, true).translate(0, 0.5, 0);
+    const ringM = panelMat(0x1a1210, { roughness: 0.9, pattern: 0 });
+    const colM = new THREE.MeshBasicMaterial({ color: HDR(0xff8a2a, 3), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
+    for (const v of L.geysers) {
+      const ring = this.add(new THREE.Mesh(ringG, ringM));
+      ring.position.set(v.x, v.y + 0.05, v.z);
+      const glowM = new THREE.MeshBasicMaterial({ color: HDR(0xff6a1a, 1.5) });
+      glowM.userData.live = true;
+      const core = new THREE.Mesh(coreG, glowM);
+      core.position.set(v.x, v.y + 0.03, v.z);
+      this.add(core, false);
+      const col = new THREE.Mesh(colG, colM);
+      col.position.set(v.x, v.y, v.z);
+      col.visible = false;
+      this.root.add(col);
+      this.anim.push(col);
+      this.geyserFx.push({ v, glowM, col });
+    }
+    // Boulders: one rock and one shadow per drop spot.
+    const rockG = new THREE.DodecahedronGeometry(0.75, 0), rockM = panelMat(0x3a2a24, { roughness: 1, emissive: 0xff4a10, emissiveIntensity: 0.15, pattern: 0 });
+    const shadowG = new THREE.CircleGeometry(1.2, 24).rotateX(-Math.PI / 2);
+    for (const r of L.rocks) {
+      const m = this.add(new THREE.Mesh(rockG, rockM));
+      m.visible = false;
+      const shM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
+      shM.userData.live = true;
+      const sh = new THREE.Mesh(shadowG, shM);
+      sh.position.set(r.x, r.y + 0.04, r.z);
+      this.add(sh, false);
+      this.anim.push(m);
+      this.rockFx.push({ r, m, sh, shM, p: {} });
+    }
+    // Embers drifting up through the chimney around the camera.
+    const n = 160, emb = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 5, 4), new THREE.MeshBasicMaterial({ color: HDR(0xffa040, 3.5) }), n);
+    for (let i = 0; i < n; i++) { const a = R() * TAU, rr2 = 4 + R() * 18; emb.setMatrixAt(i, mat4(Math.cos(a) * rr2, R() * 40, Math.sin(a) * rr2, 1, 1, 1)); }
+    emb.frustumCulled = false;
+    this.embers = new THREE.Group();
+    this.embers.add(emb);
+    this.root.add(this.embers);
+    this.anim.push(this.embers);
+  }
+
+  // City: the ring of skyscrapers (lit windows, billboards, roof antennas) and the conveyor belts.
+  buildCity() {
+    const L = this.level;
+    if (this.key === 'city') {
+      const R = rng(23), H = L.top + 20;
+      for (const t of L.towers) {
+        const tex = canvasTex(256, 1024, (g, w, h) => {
+          g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+          for (let y = 6; y < h; y += 16) for (let x = 6; x < w; x += 14) {
+            if (R() < 0.42) { g.fillStyle = `hsl(${[45, 200, 300][(R() * 3) | 0]},${60 + R() * 30}%,${40 + R() * 30}%)`; g.fillRect(x, y, 8, 9); }
+          }
+          for (let k = 0; k < 5; k++) { g.fillStyle = `hsl(${R() * 360},100%,60%)`; g.fillRect(20 + R() * 120, R() * h, 90, 40); }
+        });
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(1, H / 60);
+        const m = new THREE.Mesh(BOXG, panelMat(0x1c2230, { metalness: 0.6, roughness: 0.4, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.1, pattern: 1 }));
+        m.scale.set(t.half * 2, H, t.half * 2);
+        m.position.set(t.x, H / 2 - 20, t.z);
+        m.rotation.y = -t.a;
+        this.add(m);
+        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.3, 14, 8), panelMat(0x3a3f4c, { metalness: 0.8, pattern: 0 }));
+        ant.position.set(t.x, H - 20 + 7, t.z);
+        this.add(ant);
+        const tipM = new THREE.MeshBasicMaterial({ color: HDR(0xff3040, 3) });
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), tipM);
+        tip.position.set(t.x, H - 20 + 14.3, t.z);
+        this.add(tip, false);
+        this.blink.push({ m: tipM, base: 3, hex: 0xff3040, sp: 2.1, sq: true });
+      }
+    }
+    // Conveyor belts: chevrons scrolling the way the belt moves.
+    const belts = L.cols.filter((c) => c.conv);
+    if (!belts.length) return;
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x11141c) }, uB: { value: HDR(0xffc23d, 2.2) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform float uTime; uniform vec3 uA, uB; varying vec2 vUv;
+        void main(){ float s = fract(vUv.x - uTime * 0.9 - abs(vUv.y - 0.5) * 0.8);
+          float k = smoothstep(0.42, 0.5, s) * (1.0 - smoothstep(0.62, 0.7, s));
+          gl_FragColor = vec4(mix(uA, uB, k), 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    for (const c of belts) {
+      const g = new THREE.PlaneGeometry(c.hx * 2 - 0.2, c.hz * 2 - 0.2).rotateX(-Math.PI / 2);
+      const uv = g.attributes.uv, k = (c.hx * 2) / 1.4, dir = c.conv.sp > 0 ? 1 : -1;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * k * dir);
+      const m = new THREE.Mesh(g, mat);
+      m.position.set(c.x, c.y + c.hy + 0.015, c.z);
+      m.rotation.y = c.ry;
+      this.add(m, false);
+    }
+    this.convFx = mat;
+  }
+
   // Sunny: far-off green islands. Forest: rolling hills of trees on the horizon.
   buildDistantAlt() {
+    if (this.key === 'volcano') return;
+    if (this.key === 'city') return this.buildSkyline();
     const R = rng(4243), sunny = this.key === 'sunny', n = sunny ? 9 : 26;
     const geo = sunny ? new THREE.SphereGeometry(1, 20, 10, 0, TAU, 0, Math.PI / 2) : new THREE.ConeGeometry(1, 1, 10);
     const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: sunny ? 0x4f8a48 : 0x2c4a2a, roughness: 1, flatShading: !sunny }), n);
@@ -1063,6 +1232,26 @@ export class WorldView {
       e.m.visible = p.fly;
       if (p.fly) e.m.position.set(p.x, p.y, p.z);
     }
+    for (const e of this.geyserFx) {
+      const v = e.v;
+      if (!near(v.y)) { e.col.visible = false; continue; }
+      const st = storm.geyser(v, t);
+      e.col.visible = st.on;
+      if (st.on) e.col.scale.set(1 + Math.sin(t * 30) * 0.08, 6.5 * Math.min(1, st.k * 6) * (1 - Math.max(0, st.k - 0.8) * 4), 1 + Math.cos(t * 26) * 0.08);
+      e.glowM.color.setHex(0xff6a1a).multiplyScalar(st.on ? 4 : 1.2 + st.warn * (2 + Math.sin(t * 40) * 1.5));
+    }
+    for (const e of this.rockFx) {
+      const r = e.r;
+      if (!near(r.y)) { e.m.visible = false; continue; }
+      const st = storm.rock(r, t, e.p);
+      e.m.visible = st.fall >= 0 || st.rest;
+      if (e.m.visible) { e.m.position.set(r.x, st.rest && st.fall < 0 ? r.y + 0.7 - (t % 1) * 0 : st.y, r.z); e.m.rotation.set(t * 3 + r.i, t * 2, 0); }
+      e.shM.opacity = st.warn * 0.55;
+      const k = 0.4 + st.warn * 0.6;
+      e.sh.scale.set(k, 1, k);
+    }
+    if (this.embers && cam) { this.embers.position.y = cam.y - 20 + ((t * 1.6) % 10); this.embers.rotation.y = t * 0.05; }
+    if (this.convFx) this.convFx.uniforms.uTime.value = t;
     for (const e of this.swingFx) {
       const d = e.d, c = e.sw.col;
       for (const r of e.ropes) {
@@ -1088,7 +1277,7 @@ export class WorldView {
       const p = storm.batPos(b, t, e.p), o = e.o;
       o.position.set(p.x, p.y, p.z);
       o.rotation.set(p.stunned ? 0.9 : 0, -p.a + (b.per > 0 ? 0 : Math.PI), p.stunned ? t * 12 : 0, 'YXZ');
-      const fl = p.stunned ? 0.5 : 1 + 0.45 * Math.sin(t * 22 + b.i);
+      const fl = this.key === 'city' ? 1 : p.stunned ? 0.5 : 1 + 0.45 * Math.sin(t * 22 + b.i);
       o.scale.set(1.5 * fl, 1.5, 1.5);
     }
   }

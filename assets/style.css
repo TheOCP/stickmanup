@@ -110,7 +110,7 @@ input { font: inherit; color: var(--tx); }
 .dsel button b { font-size: 14px; } .dsel button small { color: var(--tx2); font-size: 11.5px; }
 .dsel button.sel { border-color: var(--a); background: rgba(63, 240, 208, 0.1); }
 .dsel.ro button:not(.sel) { display: none; }
-.dsel.mrow { flex-direction: row; } .dsel.mrow button { flex: 1; align-items: center; text-align: center; padding: 9px 6px; } .dsel.mrow button b { font-size: 13px; }
+.dsel.mrow { flex-direction: row; flex-wrap: wrap; } .dsel.mrow button { flex: 1 1 30%; align-items: center; text-align: center; padding: 9px 6px; } .dsel.mrow button b { font-size: 13px; }
 .toggle { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px; background: rgba(255, 255, 255, 0.04); margin-top: 8px; font-size: 13px; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--a); }
 
@@ -185,6 +185,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 .map.m0 { --bg: linear-gradient(160deg, #0b1424 10%, #1d1440 60%, #3ff0d055); --mc: #3ff0d0; }
 .map.m1 { --bg: linear-gradient(160deg, #2f7fd0 0%, #7cc7f0 55%, #f3d58a); --mc: #ffb703; }
 .map.m2 { --bg: linear-gradient(160deg, #10241a 0%, #2c4a2a 55%, #6b5338); --mc: #9be564; }
+.map.m3 { --bg: linear-gradient(160deg, #1c0806 0%, #5a1608 55%, #ff6a2a); --mc: #ff8a3a; }
+.map.m4 { --bg: linear-gradient(160deg, #221a4a 0%, #5a2a6a 55%, #ff8a5a); --mc: #ff4fd8; }
 .map.m1 b, .map.m1 small { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 
 /* ---------- HUD ---------- */

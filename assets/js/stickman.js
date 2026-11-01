@@ -124,7 +124,7 @@ export class Stickman {
     this.t = Math.random() * 10;
     this.blinkT = 2;
     this.wasGround = true;
-    // Life: idle moods, a cheer, head follow-through on turns, and a flip angle the title runner sets.
+    // Life: idle moods, a cheer, head follow through on turns, and a flip angle the title runner sets.
     this.idleT = 0;
     this.idleNext = 2 + Math.random() * 3;
     this.idleAct = null;
@@ -191,7 +191,7 @@ export class Stickman {
     } else if (!ground) {
       if (vy > 1) { armX = [-2.5, -2.6]; armZ = [0.4, 0.4]; legX = [-0.9, 0.2]; knee = [1.3, 0.6]; mouthO = 0.6; }
       else if (vy < -7) {
-        // Cartoon panic: arms windmill, legs keep running in mid-air, mouth wide open.
+        // Cartoon panic: arms windmill, legs keep running in midair, mouth wide open.
         const w = t * 16;
         armX = [w % 6.283 - 3.14, (w + 3.14) % 6.283 - 3.14]; armZ = [0.7, 0.7]; elbow = [-0.2, -0.2];
         const r = Math.sin(t * 18);

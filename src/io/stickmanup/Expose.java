@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * this phone (UPnP), and learns the public internet address with one STUN request (a standard address
  * lookup, the same one WebRTC uses). Friends then connect straight to that address.
  *
- * Works when the host is on a home Wi-Fi whose router allows UPnP. Most mobile networks put phones behind
+ * Works when the host is on a home WiFi whose router allows UPnP. Most mobile networks put phones behind
  * carrier NAT, which no app can open; that case is detected and reported.
  */
 final class Expose {

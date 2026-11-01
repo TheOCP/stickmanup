@@ -269,6 +269,23 @@ export class Game {
         }
       }
     }
+    // Lava geysers: ride an eruption up from the vent; right next to it you get shoved away.
+    for (const g of L.geysers) {
+      if (Math.abs(g.y - feet) > 5 || Math.abs(g.x - me.x) + Math.abs(g.z - me.z) > 6) continue;
+      const st = S.geyser(g, t);
+      if (!st.on || feet < g.y - 0.4 || feet > g.y + 5) continue;
+      const d = Math.hypot(me.x - g.x, me.z - g.z);
+      if (d < 1.0) {
+        if (me.vy < 15) { me.vy = 16.8; me.grounded = false; me.ground = null; this.app.sound.pad(); this.app.ui.haptic('tick'); }
+      } else if (d < 1.9 && st.k < 0.3) this.zapKnock(((me.x - g.x) / d) * 6, 4, ((me.z - g.z) / d) * 6, 'geyser');
+    }
+    // Falling boulders.
+    for (const r of L.rocks) {
+      if (Math.abs(r.y - feet) > 3 || Math.abs(r.x - me.x) + Math.abs(r.z - me.z) > 5) continue;
+      const st = S.rock(r, t, tmpP);
+      const d = Math.hypot(me.x - r.x, me.z - r.z);
+      if (st.fall > 0.75 && d < 1.25 && feet < r.y + 2.2) this.zapKnock(((me.x - r.x) / (d || 1)) * 8, 5, ((me.z - r.z) / (d || 1)) * 8, 'rock');
+    }
     // Arrow traps.
     for (const a of L.arrows) {
       if (Math.abs(a.y - me.y) > 3 || Math.abs(a.x - me.x) + Math.abs(a.z - me.z) > 8) continue;
@@ -284,10 +301,11 @@ export class Game {
     this.knockCd = 0.8;
     const k = this.storm.k;
     if (this.me.knock(vx * k, vy * k, vz * k, 0.5)) {
-      this.app.sound[src === 'arrow' ? 'bonk' : 'zap']();
+      this.app.sound[src === 'laser' ? 'zap' : 'bonk']();
       this.app.ui.haptic('heavy');
       if (src === 'laser') this.app.ui.flash('#ff3050');
-      this.app.ui.toast(src === 'arrow' ? 'Hit by an arrow!' : 'Zapped by a laser!', 'bad');
+      if (src === 'geyser') this.app.ui.flash('#ff7a1a');
+      this.app.ui.toast({ arrow: 'Hit by an arrow!', laser: 'Zapped by a laser!', geyser: 'Blasted by the eruption!', rock: 'Flattened by a boulder!' }[src] || 'Ouch!', 'bad');
     }
   }
 
@@ -330,15 +348,16 @@ export class Game {
   }
 
   // What is under the crosshair: the first solid surface or target along the camera's centre ray.
-  // { t, x, y, z, kind?, i? }. No aim assist: the ray has to actually pass through the target.
+  // { t, x, y, z, kind?, i? }. The ray has to pass through the target; with aim assist on, targets count
+  // as a little bigger, so a shot that only just misses still hits.
   aimHit(T) {
     const cam = this.R.camera, o = cam.position, L = this.L, me = this.me;
     cam.getWorldDirection(fwd);
     const dx = fwd.x, dy = fwd.y, dz = fwd.z;
     let t = this.W.raycast(o.x, o.y, o.z, dx, dy, dz, RANGE, skipSoft), kind = null, idx = -1;
-    const near = (y) => Math.abs(y - me.y) < 40;
+    const near = (y) => Math.abs(y - me.y) < 40, grow = this.app.settings.aimAssist ? 1.4 : 1;
     const tryHit = (k, i, x, y, z, r) => {
-      const h = raySphere(o.x, o.y, o.z, dx, dy, dz, x, y, z, r);
+      const h = raySphere(o.x, o.y, o.z, dx, dy, dz, x, y, z, r * grow);
       if (h >= 0 && h < t) { t = h; kind = k; idx = i; }
     };
     for (const d of L.doors) if (!this.doors.has(d.i) && near(d.by)) tryHit('door', d.i, d.bx, d.by, d.bz, 0.68);
@@ -515,7 +534,8 @@ export class Game {
         const th = Math.atan2(p[2], p[0]);
         Object.assign(this.cam, { yaw: Math.PI - th, x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.diff, this.cp);
-        ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.diff === 2 ? 'Into the sea. Back to the start!' : 'Into the sea. Back to the checkpoint.', 'bad');
+        const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.' }[this.L.mapKey] || 'Into the sea.';
+        ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.diff === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
       }
       case 'cp':
@@ -591,6 +611,8 @@ export class Game {
     const c = this.cam, [dx, dy] = app.input.takeCam(this.aiming), ak = (this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 12, dt));
     c.yaw -= dx;
     c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak), 1.25);
+    if (dx || dy) this.camTouched = T;
+    this.assistCamera(dt, T, ak);
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
     c.y = damp(c.y, me.y + 0.8, me.vy < -14 || me.hook ? 14 : 7, dt);
     const cp = Math.cos(c.pitch), ox = Math.sin(c.yaw) * cp, oy = Math.sin(c.pitch), oz = Math.cos(c.yaw) * cp;
@@ -648,6 +670,42 @@ export class Game {
     app.ui.cross(this.aiming && ak > 0.5, this.aimHot);
     app.ui.tags(this);
     app.ui.tips(this);
+  }
+
+  // Camera assist: while you run and leave the camera alone, it swings round behind you. Aim assist:
+  // while aiming, the crosshair is pulled gently onto a target that is already close to it.
+  assistCamera(dt, T, ak) {
+    const S = this.app.settings, c = this.cam, me = this.me;
+    if (S.camAssist && !this.aiming && !me.hook && T - (this.camTouched || -9) > 0.7) {
+      const sp = Math.hypot(me.vx, me.vz);
+      if (sp > 1.5) {
+        let e = Math.atan2(-me.vx, -me.vz) - c.yaw;
+        e = Math.atan2(Math.sin(e), Math.cos(e));
+        // Running straight at the camera: leave it, so it never whips round.
+        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, dt * 1.6) * Math.min(1, sp / 5);
+        c.pitch += (0.32 - c.pitch) * Math.min(1, dt * 0.8);
+      }
+    }
+    if (!S.aimAssist || !this.aiming || ak < 0.5) return;
+    const cam = this.R.camera, o = cam.position, L = this.L;
+    cam.getWorldDirection(fwd);
+    let best = null, bestA = 0.11;
+    const consider = (x, y, z) => {
+      const vx = x - o.x, vy = y - o.y, vz = z - o.z, d = Math.hypot(vx, vy, vz);
+      if (d < 1 || d > RANGE) return;
+      const a = Math.acos(clamp((vx * fwd.x + vy * fwd.y + vz * fwd.z) / d, -1, 1));
+      if (a < bestA && this.W.raycast(o.x, o.y, o.z, vx / d, vy / d, vz / d, d, skipSoft) > d - 0.9) { bestA = a; best = { vx, vy, vz, d }; }
+    };
+    for (const dr of L.doors) if (!this.doors.has(dr.i) && Math.abs(dr.by - me.y) < 30) consider(dr.bx, dr.by, dr.bz);
+    for (const m of L.monsters) if (Math.abs(m.y - me.y) < 20) { const p = this.storm.monsterPos(m, T, tmpP); if (!p.stunned) consider(p.x, p.y, p.z); }
+    for (const b of L.bats) if (Math.abs(b.cy - me.y) < 20) { const p = this.storm.batPos(b, T, tmpP); if (!p.stunned) consider(p.x, p.y, p.z); }
+    if (!best) return;
+    // Turn a share of the way toward it each frame (the camera looks along yaw + PI, pitch down = +).
+    let ey = Math.atan2(best.vx, best.vz) - Math.atan2(fwd.x, fwd.z);
+    ey = Math.atan2(Math.sin(ey), Math.cos(ey));
+    const ep = Math.asin(clamp(best.vy / best.d, -1, 1)) - Math.asin(clamp(fwd.y, -1, 1)), k = Math.min(1, dt * 5) * 0.5;
+    c.yaw += ey * k;
+    c.pitch -= ep * k;
   }
 
   // What the REEL button does right now: PULL a partner hanging below, CLIMB when I'm the one hanging.

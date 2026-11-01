@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements Net.Out {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "2.3";
+    static final String VERSION = "2.4";
     private Net net;
     private final Expose expose = new Expose();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -512,7 +512,7 @@ public class MainActivity extends Activity implements Net.Out {
             }).start();
         }
 
-        /** Direct internet hosting: open the router port and find the public address (async → NET_expose). */
+        /** Direct internet hosting: open the router port and find the public address (async, the answer arrives via NET_expose). */
         @JavascriptInterface
         public void netExpose(final int port) {
             new Thread(new Runnable() {

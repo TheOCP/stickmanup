@@ -24,7 +24,12 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
-  camAssist: true, aimAssist: true }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true }, store.get('settings', {}));
+// Earlier versions had on/off switches for the two assists; carry them over to the sliders.
+if (settings.camAssist === false) settings.camFollow = 0;
+if (settings.aimAssist === false) settings.aimHelp = 0;
+delete settings.camAssist;
+delete settings.aimAssist;
 if (!settings.name || /^Robot \d+$/.test(settings.name)) settings.name = 'Climber ' + (100 + ((Math.random() * 900) | 0));
 if (!MAPS[settings.map]) settings.map = 0;
 const saveSettings = () => store.set('settings', settings);
@@ -134,12 +139,13 @@ const ui = (app.ui = {
     }
     for (const el of document.querySelectorAll('#hPlayers div')) {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s), pl = g.s.players.get(s);
-      el.querySelector('small').textContent = (p ? Math.round(p.y - 2) + ' m' : '…') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : '');
+      el.querySelector('small').textContent = (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : '');
     }
   },
   // Tips: a small "!" floats over each tip spot; tap it to read the tip. Each tip also pops up by
   // itself the first time you come near it. The card is see-through and fades out on its own.
   tips(g) {
+    if (!settings.tips) { if (this.tipLevel) this.clearTips(); return; }
     const L = app.level, me = g.me, box = $('#tipMarks'), cam = app.renderer.camera, v = this.tv || (this.tv = new THREE.Vector3());
     if (this.tipLevel !== L) { box.innerHTML = ''; this.tipEls = new Map(); this.tipLevel = L; }
     const seen = this.seen || (this.seen = new Set(store.get('tipsSeen', []))), W = window.innerWidth, H = window.innerHeight;
@@ -351,7 +357,7 @@ async function hostWith(kind) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
   const s = new Session('host', settings.name, makeLink(kind));
   let cancelled = false;
-  busy(kind === 'online' ? 'Opening an online room…' : kind === 'direct' ? 'Opening your router for friends…' : 'Starting…', () => { cancelled = true; s.close(); hostPick(); });
+  busy(kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
   const r = await s.host();
   if (cancelled) return;
@@ -384,7 +390,7 @@ function lobby(s) {
   app.screen = 'lobby';
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
-  if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '…'} ms</p>`;
+  if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '...'} ms</p>`;
   else if (room.kind === 'online') info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   else if (room.kind === 'direct') {
     const x = room.direct || {};
@@ -413,7 +419,7 @@ function lobby(s) {
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
-    : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start…</p>`}
+    : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start...</p>`}
       </div>
     </div></div>`, {
     back: () => { s.close(); title(); },
@@ -445,7 +451,7 @@ function joinScreen(tab) {
     body = `<p class="sub">Type the code from the host's screen (or their address, like 84.12.3.9:47800).</p>
       <div class="field"><input class="code" id="daddr" maxlength="21" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX XXXXX"><button class="btn primary sm" data-a="direct">Join</button></div>`;
   } else if (tab === 'lan') {
-    body = `<p class="sub">Games on your WiFi or hotspot appear here by themselves.</p><div class="list" id="found"><div class="empty"><span class="spin"></span>&nbsp; Looking for games…</div></div>
+    body = `<p class="sub">Games on your WiFi or hotspot appear here by themselves.</p><div class="list" id="found"><div class="empty"><span class="spin"></span>&nbsp; Looking for games...</div></div>
       <div class="field"><input id="ip" placeholder="Or type the host's IP, e.g. 192.168.1.20" inputmode="decimal"><button class="btn sm" data-a="ip">Join</button></div>`;
   } else {
     body = `<p class="sub">Pick the host's phone. It must be paired with yours in Android Settings under Bluetooth.</p><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>`;
@@ -483,7 +489,7 @@ function joinScreen(tab) {
       if (!el || key === shown) return;
       shown = key;
       el.innerHTML = list.length ? list.map((h) => `<button class="item" data-a="host" data-ip="${esc(h.ip)}" data-port="${h.port}"><div><b>${esc(h.name)}'s game</b><small>${h.n}/4 climbers · ${esc(h.ip)}</small></div><span class="go">JOIN ›</span></button>`).join('')
-        : '<div class="empty"><span class="spin"></span>&nbsp; Looking for games…</div>';
+        : '<div class="empty"><span class="spin"></span>&nbsp; Looking for games...</div>';
     });
   } else {
     bluetoothReady().then((ok) => {
@@ -499,7 +505,7 @@ function joinScreen(tab) {
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
   const s = new Session('client', settings.name, makeLink(kind));
-  busy('Connecting…', () => { s.close(); joinScreen(kind); });
+  busy('Connecting...', () => { s.close(); joinScreen(kind); });
   wireLobby(s);
   s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else lobby(s); });
   s.join(target);
@@ -535,20 +541,21 @@ function settingsScreen(back) {
     <label>Camera speed ${val('sens', '%')}${range('sens', 0.4, 4, 0.05, '%')}</label>
     <label>Aim sensitivity ${val('aimSens', '%')}${range('aimSens', 0.3, 4, 0.05, '%')}</label>
     <label>Buttons on the${seg('lefty', [[false, 'Right'], [true, 'Left']])}</label>
-    <button class="btn sm" data-a="layout">Move buttons…</button>
+    <button class="btn sm" data-a="layout">Move buttons...</button>
     ${chk('invert', 'Invert camera up and down')}
-    ${chk('camAssist', 'Camera follows you (swings behind you while you run)')}
-    ${chk('aimAssist', 'Aim assist (pulls the crosshair onto targets a little)')}
+    <label>Camera follow ${val('camFollow', '%')}${range('camFollow', 0, 2, 0.05, '%')}</label>
+    <label>Aim assist ${val('aimHelp', '%')}${range('aimHelp', 0, 1, 0.05, '%')}</label>
+    <p class="sub full" style="margin:0">Camera follow swings the camera behind you while you run (0% is off, higher is faster and further). Aim assist pulls the crosshair onto targets (0% is off).</p>
     <h3>Sound and other</h3>
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
-    <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}</div>
+    <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
     ${getSafe() ? '<button class="btn sm full" data-a="unsafe">Try full graphics again</button>' : ''}
   </div></div>`, {
-    unsafe: () => { setSafe(0); restartApp('Restarting with full graphics…'); },
+    unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
     back: () => { saveSettings(); back(); },
     layout: () => layoutEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
@@ -557,7 +564,7 @@ function settingsScreen(back) {
       settings[k] = k === 'cap' ? +v : k === 'lefty' ? v === 'true' : v;
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
       if (k === 'quality') {
-        if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics…'); }
+        if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics...'); }
         Object.assign(settings, PRESETS[v]);
         saveSettings();
         applyGraphics();
@@ -879,7 +886,7 @@ function gfxTrouble(why) {
     return;
   }
   setSafe(cur + 1);
-  restartApp('Fixing graphics for this phone…');
+  restartApp('Fixing graphics for this phone...');
 }
 
 const health = { t: performance.now(), beat: 0, white: 0, rb: null, px: new Uint8Array(4), since: performance.now(), healthy: false, frames: 0 };

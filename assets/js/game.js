@@ -355,7 +355,7 @@ export class Game {
     cam.getWorldDirection(fwd);
     const dx = fwd.x, dy = fwd.y, dz = fwd.z;
     let t = this.W.raycast(o.x, o.y, o.z, dx, dy, dz, RANGE, skipSoft), kind = null, idx = -1;
-    const near = (y) => Math.abs(y - me.y) < 40, grow = this.app.settings.aimAssist ? 1.4 : 1;
+    const near = (y) => Math.abs(y - me.y) < 40, grow = 1 + (this.app.settings.aimHelp || 0) * 0.8;
     const tryHit = (k, i, x, y, z, r) => {
       const h = raySphere(o.x, o.y, o.z, dx, dy, dz, x, y, z, r * grow);
       if (h >= 0 && h < t) { t = h; kind = k; idx = i; }
@@ -676,20 +676,25 @@ export class Game {
   // while aiming, the crosshair is pulled gently onto a target that is already close to it.
   assistCamera(dt, T, ak) {
     const S = this.app.settings, c = this.cam, me = this.me;
-    if (S.camAssist && !this.aiming && !me.hook && T - (this.camTouched || -9) > 0.7) {
+    // Follow strength (Settings, 0 off to 2): how fast it turns, and how far behind you it goes.
+    const F = S.camFollow ?? 1;
+    if (F > 0.01 && !this.aiming && !me.hook && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
       const sp = Math.hypot(me.vx, me.vz);
       if (sp > 1.5) {
         let e = Math.atan2(-me.vx, -me.vz) - c.yaw;
         e = Math.atan2(Math.sin(e), Math.cos(e));
+        // How far round it goes: weak settings only turn part of the way.
+        e *= Math.min(1, 0.35 + F * 0.65);
         // Running straight at the camera: leave it, so it never whips round.
-        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, dt * 1.6) * Math.min(1, sp / 5);
-        c.pitch += (0.32 - c.pitch) * Math.min(1, dt * 0.8);
+        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
+        c.pitch += (0.32 - c.pitch) * Math.min(1, dt * 0.8 * F);
       }
     }
-    if (!S.aimAssist || !this.aiming || ak < 0.5) return;
+    const A = S.aimHelp ?? 0.5;
+    if (A < 0.01 || !this.aiming || ak < 0.5) return;
     const cam = this.R.camera, o = cam.position, L = this.L;
     cam.getWorldDirection(fwd);
-    let best = null, bestA = 0.11;
+    let best = null, bestA = 0.05 + A * 0.12;
     const consider = (x, y, z) => {
       const vx = x - o.x, vy = y - o.y, vz = z - o.z, d = Math.hypot(vx, vy, vz);
       if (d < 1 || d > RANGE) return;
@@ -703,7 +708,7 @@ export class Game {
     // Turn a share of the way toward it each frame (the camera looks along yaw + PI, pitch down = +).
     let ey = Math.atan2(best.vx, best.vz) - Math.atan2(fwd.x, fwd.z);
     ey = Math.atan2(Math.sin(ey), Math.cos(ey));
-    const ep = Math.asin(clamp(best.vy / best.d, -1, 1)) - Math.asin(clamp(fwd.y, -1, 1)), k = Math.min(1, dt * 5) * 0.5;
+    const ep = Math.asin(clamp(best.vy / best.d, -1, 1)) - Math.asin(clamp(fwd.y, -1, 1)), k = Math.min(1, dt * 5) * A;
     c.yaw += ey * k;
     c.pitch -= ep * k;
   }

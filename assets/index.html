@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>StickManUp</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }</script>
+<script src="lib/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fx"></div>
+
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <div id="btns">
+    <button class="tb" id="bReel"><i class="ring"></i><span>REEL</span></button>
+    <button class="tb" id="bGrab"><i class="ring"></i><span>GRAB</span></button>
+    <button class="tb big" id="bJump"><span>JUMP</span></button>
+    <button class="tb act" id="bAct"><span>GRAPPLE</span></button>
+    <button class="tb" id="bShoot"><i class="sight"></i><span>SHOOT</span></button>
+    <button class="tb" id="bShield"><i class="ring"></i><span>SHIELD</span></button>
+  </div>
+  <div id="editBar"><b>Drag the buttons where you want them</b><button data-e="reset">Reset</button><button data-e="done" class="pri">Done</button></div>
+</div>
+
+<div id="hud">
+  <button class="hb" id="hPause" aria-label="Pause"><i></i><i></i></button>
+  <div id="hZone"><b></b><span></span></div>
+  <div id="hTime"></div>
+  <div id="hAlt"><div class="track"></div><div class="marks"></div></div>
+  <div id="hWarn"></div>
+  <div id="hPlayers"></div>
+  <div id="hFps"></div>
+  <div id="cross"><i></i></div>
+</div>
+<div id="tipMarks"></div>
+<div id="tipCard"><b>Tip</b><p></p></div>
+<div id="tags"></div>
+<div id="zoneTitle"><small></small><h2></h2><p></p></div>
+<div id="toasts"></div>
+<div id="menu"></div>
+<div id="loading"><div class="logo">STICKMAN<span>UP</span></div><p>Building the world…</p></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

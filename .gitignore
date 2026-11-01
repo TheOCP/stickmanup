@@ -1,0 +1,8 @@
+build/
+*.jks
+*.keystore
+dev/out/
+__pycache__/
+node_modules/
+dev/diag.log
+dev/rec/

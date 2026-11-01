@@ -1,5 +1,7 @@
 # StickManUp
 
+<img src="docs/icon.png" width="128" alt="StickManUp icon">
+
 A co-op climbing game for Android. Up to four stickmen are tied together by a glowing cord and climb a giant tower
 on one of three maps. If one falls, the cord drags everyone with it.
 

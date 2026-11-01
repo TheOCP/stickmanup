@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg">#FF05080D</color>
-    <color name="icon_bg">#FF070C16</color>
     <style name="Theme.StickManUp" parent="android:Theme.Material.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorAccent">#FF3FF0D0</item>

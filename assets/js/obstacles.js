@@ -1,4 +1,4 @@
-// Themed obstacles, twenty per map. Each one is a generic mechanic ("prim") with its own look and tuning:
+// Themed obstacles, twenty per map plus six endgame ones. Each one is a generic mechanic ("prim") with its own look and tuning:
 //   sweep     bars spinning low over a wide platform (jump them)
 //   pendulum  a weight swinging across a bridge (time your crossing)
 //   slider    something moving back and forth along a platform: shape 'ball' and 'log' roll along it
@@ -16,6 +16,13 @@
 // and themed takes on the older hazards: drop (falling things), shooter (traps that fire across a
 // bridge), flyer (things circling the gaps), vent (eruptions that launch you), gate (barriers that
 // switch on and off).
+// Six more per map are endgame obstacles (end: true), harder combinations that only show up near the top:
+//   gauntlet  a long bridge with two weights swinging opposite ways
+//   checker   a platform in four squares whose spikes pop up two at a time (keep hopping)
+//   beamroll  something rolling back and forth along a narrow bridge (jump it)
+//   crushrow  three presses slamming one after another down a narrow platform
+//   crossfire two jets across a bridge taking turns, with one safe spot between them
+//   spinsweep a turntable with bars spinning the other way over it
 // lvl: the hazard setting that switches it on (0 calm and up, 1 normal and up, 2 wild only).
 // look: c main colour, g glow colour, s shape.
 
@@ -43,6 +50,13 @@ export const OBSTACLES = {
     O('scrapFall', 'Falling scrap', 'drop', 1, { c: 0x5a6070, g: 0xff8a3d }),
     O('sparkGate', 'Spark gate', 'gate', 1, { c: 0x2a2e3a, g: 0x7fd8ff }),
     O('greaseMud', 'Grease pit', 'mud', 0, { c: 0x2a2620, g: 0xff8a3d }),
+    // Endgame: harder ones near the top.
+    O('teslaGauntlet', 'Tesla gauntlet', 'gauntlet', 0, { c: 0x2a2e3a, g: 0xb48cff, s: 'ball' }, { end: true }),
+    O('liveGrid', 'Live wire grid', 'checker', 0, { c: 0x8a9ab0, g: 0x3ff0d0 }, { end: true }),
+    O('generatorRoll', 'Runaway generator', 'beamroll', 0, { c: 0x4a4f5c, g: 0xffc23d, s: 'log' }, { end: true }),
+    O('pistonRow', 'Piston row', 'crushrow', 1, { c: 0x3a3f4c, g: 0xff4040 }, { end: true }),
+    O('plasmaCross', 'Plasma crossfire', 'crossfire', 1, { c: 0x2a2e3a, g: 0xff4fb4 }, { end: true }),
+    O('stormRotor', 'Storm rotor', 'spinsweep', 2, { c: 0x5a6070, g: 0x8fe9ff, s: 'laser' }, { end: true }),
   ],
   sunny: [
     O('coconutDrop', 'Coconut drop', 'drop', 0, { c: 0x6a4a2a, g: 0xffe08a }),
@@ -65,6 +79,13 @@ export const OBSTACLES = {
     O('gullFlock', 'Diving gulls', 'flyer', 1, { c: 0xf2f2f2, g: 0xffb040 }),
     O('blowhole', 'Blowholes', 'vent', 0, { c: 0x3a4a5a, g: 0x9fe8ff }),
     O('ropeGate', 'Rope barrier', 'gate', 2, { c: 0x8a6a44, g: 0xffd76a }),
+    // Endgame: harder ones near the top.
+    O('twinAnchors', 'Twin anchors', 'gauntlet', 0, { c: 0x3a4250, g: 0xffd76a, s: 'anchor' }, { end: true }),
+    O('urchinReef', 'Urchin reef', 'checker', 0, { c: 0x4a2a5a, g: 0xff7ab8 }, { end: true }),
+    O('barrelRoll', 'Barrel roll', 'beamroll', 0, { c: 0x8a5a2a, g: 0xffd08a, s: 'log' }, { end: true }),
+    O('crateStampers', 'Crate stampers', 'crushrow', 1, { c: 0xb08850, g: 0xff8a3d }, { end: true }),
+    O('waterCannons', 'Water cannons', 'crossfire', 1, { c: 0x2a4a6a, g: 0x5ad1ff }, { end: true }),
+    O('beamCarousel', 'Lighthouse carousel', 'spinsweep', 2, { c: 0xe8e2d4, g: 0xffe45c, s: 'bar' }, { end: true }),
   ],
   forest: [
     O('logRoll', 'Rolling log', 'slider', 0, { c: 0x6a4a2c, g: 0x9be564, s: 'log' }),
@@ -87,6 +108,13 @@ export const OBSTACLES = {
     O('beeSwarm', 'Bee swarm', 'flyer', 1, { c: 0xffd23f, g: 0xff5d5d }),
     O('dartFrogs', 'Dart traps', 'shooter', 2, { c: 0x3a5a2a, g: 0x7cfc00 }),
     O('fireflyGate', 'Firefly curtain', 'gate', 1, { c: 0x3e5244, g: 0xf9f871 }),
+    // Endgame: harder ones near the top.
+    O('twinLogs', 'Twin log swings', 'gauntlet', 0, { c: 0x6a4a2a, g: 0xc6ff8f, s: 'log' }, { end: true }),
+    O('brambleField', 'Bramble field', 'checker', 0, { c: 0x3a5a2a, g: 0xff5d5d }, { end: true }),
+    O('acornAvalanche', 'Acorn avalanche', 'beamroll', 0, { c: 0x8a5a2a, g: 0xffc857, s: 'ball' }, { end: true }),
+    O('stompRoots', 'Stomping roots', 'crushrow', 1, { c: 0x4a3a2a, g: 0x9be564 }, { end: true }),
+    O('sporeCross', 'Spore crossfire', 'crossfire', 1, { c: 0x5a3a5a, g: 0xff7eb6 }, { end: true }),
+    O('whirlStump', 'Whirling stump', 'spinsweep', 2, { c: 0x6a4a2a, g: 0xc6ff8f, s: 'bar' }, { end: true }),
   ],
   volcano: [
     O('lavaBall', 'Rolling lava ball', 'slider', 0, { c: 0x3a1a10, g: 0xff6a1a, s: 'ball' }),
@@ -109,6 +137,13 @@ export const OBSTACLES = {
     O('meteorDrop', 'Meteor shower', 'drop', 2, { c: 0x3a2a24, g: 0xff8a2a }),
     O('fireBats', 'Fire bats', 'flyer', 1, { c: 0x2a1410, g: 0xff6a1a }),
     O('magmaGate', 'Magma curtain', 'gate', 1, { c: 0x3a1a10, g: 0xff4a10 }),
+    // Endgame: harder ones near the top.
+    O('magmaBells', 'Twin magma bells', 'gauntlet', 0, { c: 0x3a2420, g: 0xff6a2a, s: 'ball' }, { end: true }),
+    O('eruptGrid', 'Eruption grid', 'checker', 0, { c: 0x2a2024, g: 0xff3a1a }, { end: true }),
+    O('boulderRun', 'Lava boulder run', 'beamroll', 0, { c: 0x3a2a24, g: 0xff8a2a, s: 'ball' }, { end: true }),
+    O('obsidianStamp', 'Obsidian stampers', 'crushrow', 1, { c: 0x1e1a24, g: 0xb06bff }, { end: true }),
+    O('flameCross', 'Flame crossfire', 'crossfire', 1, { c: 0x2a1e1a, g: 0xff9a3d }, { end: true }),
+    O('magmaWhirl', 'Magma whirl', 'spinsweep', 2, { c: 0x3a2420, g: 0xff4a2a, s: 'laser' }, { end: true }),
   ],
   city: [
     O('securitySweep', 'Security sweep', 'sweep', 0, { c: 0x2a3040, g: 0xff2a8a, s: 'laser' }, { n: 2 }),
@@ -131,17 +166,32 @@ export const OBSTACLES = {
     O('gumPatch', 'Chewing gum patch', 'mud', 0, { c: 0xff7ab8, g: 0xffffff }),
     O('sawDrone', 'Saw drone', 'slider', 2, { c: 0x8a96aa, g: 0xff2a2a, s: 'disc' }),
     O('pigeonFlock', 'Pigeon flock', 'flyer', 2, { c: 0x8a8a96, g: 0xffb43d }),
+    // Endgame: harder ones near the top.
+    O('twinWrecking', 'Twin wrecking balls', 'gauntlet', 0, { c: 0x3a3f4c, g: 0xffb43d, s: 'ball', big: true }, { end: true }),
+    O('laserFloor', 'Laser floor', 'checker', 0, { c: 0x2a2e3a, g: 0xff4fd8 }, { end: true }),
+    O('sawRun', 'Rolling saw blade', 'beamroll', 0, { c: 0x8a96aa, g: 0xff2a2a, s: 'disc' }, { end: true }),
+    O('stampPresses', 'Stamping presses', 'crushrow', 1, { c: 0x3a3f4c, g: 0xffe066 }, { end: true }),
+    O('steamCross', 'Steam crossfire', 'crossfire', 1, { c: 0x4a4f5c, g: 0xd8f0ff }, { end: true }),
+    O('roofFan', 'Rooftop fan', 'spinsweep', 2, { c: 0x2a2e3a, g: 0x7cff6a, s: 'bar' }, { end: true }),
   ],
 };
 
-// Spread each map's twenty obstacles over its seven zones: every obstacle appears, and the ones that need a
-// higher hazard setting lean toward the upper zones.
-export function zoneObstacles(mapKey, zone) {
-  const list = OBSTACLES[mapKey] || [], out = {};
+// Spread each map's twenty obstacles over the first seven zones: every obstacle appears, and the ones that need a
+// higher hazard setting lean toward the upper zones. The endgame ones come in near the top, the top zones mix
+// in everything, and the higher the zone the more often obstacles are picked at all.
+export function zoneObstacles(mapKey, zone, nz = 9) {
+  const list = OBSTACLES[mapKey] || [], out = {}, ramp = 1, nReg = list.filter((o) => !o.end).length;
   list.forEach((o, i) => {
-    const home = (i * 7 + o.lvl * 3) % 7, near = Math.abs(home - zone);
-    if (near === 0) out[o.key] = 2;
-    else if (near === 1 || (zone >= 4 && o.lvl === 2)) out[o.key] = 1;
+    let w = 0;
+    if (o.end) w = zone >= nz - 2 ? 2.5 : zone === nz - 3 ? 1 : 0;
+    else {
+      // Spread in catalogue order over zones 0 to 6, nudged up one zone per hazard level.
+      const home = Math.min(6, Math.floor((i * 7) / nReg) + o.lvl), near = Math.abs(home - zone);
+      if (near === 0) w = 2;
+      else if (near === 1 || (zone >= 4 && o.lvl === 2)) w = 1;
+      else if (zone >= nz - 2) w = 0.5;
+    }
+    if (w) out[o.key] = w * ramp;
   });
   return out;
 }

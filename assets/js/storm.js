@@ -63,19 +63,19 @@ export class Storm {
 
   // Spinning bars (lasers, fire bars, branches...): angle of bar k at time t.
   laserAngle(l, t, k = 0) {
-    return TAU * ((t * this.hs) / l.per + l.ph) + (k * TAU) / (l.n || 1);
+    return TAU * ((t * this.hs * (l.sp || 1)) / l.per + l.ph) + (k * TAU) / (l.n || 1);
   }
 
   // Pendulum: where the swinging weight is (out: x, y, z, a = swing angle).
   pendulum(o, t, out) {
-    const a = o.amp * Math.sin(TAU * ((t * this.hs) / o.per + o.ph)), s = Math.sin(a) * o.L;
+    const a = o.amp * Math.sin(TAU * ((t * this.hs * (o.sp || 1)) / o.per + o.ph)), s = Math.sin(a) * o.L;
     out.x = o.x + o.nx * s; out.y = o.y - Math.cos(a) * o.L; out.z = o.z + o.nz * s; out.a = a;
     return out;
   }
 
   // Slider: rolling ball/log/saw along the platform, or a ram shoving across it (fast out, slow back).
   slider(o, t, out) {
-    const u = ((((t * this.hs) / o.per + o.ph) % 1) + 1) % 1;
+    const u = ((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1;
     let f, dir;
     if (o.shape === 'ram') {
       f = u < 0.18 ? u / 0.18 : u < 0.45 ? 1 : 1 - (u - 0.45) / 0.55;
@@ -98,7 +98,7 @@ export class Storm {
   // Crusher: how high the block's underside is above the floor (2.2 up to 0 slammed), and a shake
   // warning before it drops.
   crusher(o, t) {
-    const u = ((((t * this.hs) / o.per + o.ph) % 1) + 1) % 1, P = o.per;
+    const u = ((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1, P = o.per;
     const tUp = 0.55, tFall = tUp + 0.12 / P, tDown = tFall + 0.45 / P;
     if (u < tUp) return { h: 2.2, shake: u > tUp - 0.6 / P ? 1 - (tUp - u) / (0.6 / P) : 0, down: false };
     if (u < tFall) return { h: 2.2 * (1 - (u - tUp) / (tFall - tUp)), shake: 0, down: true };
@@ -108,31 +108,31 @@ export class Storm {
 
   // On/off things (spikes, jets): on for `duty` of the period; warn 0..1 just before they come on.
   pulse(o, t, lead = 0.6) {
-    const u = ((((t * this.hs) / o.per + o.ph) % 1) + 1) % 1, left = (1 - u) * o.per;
+    const u = ((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1, left = (1 - u) * o.per;
     return { on: u < o.duty, warn: u >= o.duty && left < lead ? 1 - left / lead : 0, k: u < o.duty ? u / o.duty : 0 };
   }
 
   // Blinking platforms: solid for `duty` of the period, flickering for the last 0.6 s before they go.
   blink(b, t) {
-    const u = ((((t * this.hs) / b.per + b.ph) % 1) + 1) % 1, left = (b.duty - u) * b.per;
+    const u = ((((t * this.hs * (b.sp || 1)) / b.per + b.ph) % 1) + 1) % 1, left = (b.duty - u) * b.per;
     return { on: u < b.duty, warn: u < b.duty && left < 0.6 ? 1 - left / 0.6 : 0 };
   }
 
   // Trapdoors: open for `open` seconds of each period, rattling for half a second before.
   trap(tr, t) {
-    const u = ((((t * this.hs) / tr.per + tr.ph) % 1) + 1) % 1 * tr.per;
+    const u = ((((t * this.hs * (tr.sp || 1)) / tr.per + tr.ph) % 1) + 1) % 1 * tr.per;
     return { open: u < tr.open, warn: u > tr.per - 0.5 ? (u - (tr.per - 0.5)) / 0.5 : 0, k: u < tr.open ? u / tr.open : 0 };
   }
 
   // Laser curtain: on for `duty` of each period, flickering for the last 0.45 s before it switches on.
   gate(l, t) {
-    const u = ((((t * this.hs) / l.per + l.ph) % 1) + 1) % 1, left = (1 - u) * l.per;
+    const u = ((((t * this.hs * (l.sp || 1)) / l.per + l.ph) % 1) + 1) % 1, left = (1 - u) * l.per;
     return { on: u < l.duty, warn: u >= l.duty && left < 0.45 ? 1 - left / 0.45 : 0 };
   }
 
   // Arrow trap: where its arrow is (if flying) and how close it is to firing (warn 0..1).
   arrow(a, t, out) {
-    const u = (((((t * this.hs) / a.per + a.ph) % 1) + 1) % 1) * a.per, flight = a.range / a.speed;
+    const u = (((((t * this.hs * (a.sp || 1)) / a.per + a.ph) % 1) + 1) % 1) * a.per, flight = a.range / a.speed;
     out.fly = u < flight;
     const d = Math.min(u, flight) * a.speed;
     out.x = a.x + a.dx * d; out.y = a.y; out.z = a.z + a.dz * d;
@@ -142,14 +142,14 @@ export class Storm {
 
   // Volcano vent: erupting for the first `dur` seconds of each period; warn 0..1 just before it goes.
   geyser(g, t) {
-    const u = (((((t * this.hs) / g.per + g.ph) % 1) + 1) % 1) * g.per;
+    const u = (((((t * this.hs * (g.sp || 1)) / g.per + g.ph) % 1) + 1) % 1) * g.per;
     return { on: u < g.dur, k: u < g.dur ? u / g.dur : 0, warn: g.per - u < 0.9 ? 1 - (g.per - u) / 0.9 : 0 };
   }
 
   // Falling boulder: a shadow grows for 1.4 s, the rock falls for the last 0.45 s, lands at the end of
   // the period and sits there for half a second. out: { warn 0..1, fall 0..1 or -1, rest, y }.
   rock(r, t, out) {
-    const u = (((((t * this.hs) / r.per + r.ph) % 1) + 1) % 1) * r.per;
+    const u = (((((t * this.hs * (r.sp || 1)) / r.per + r.ph) % 1) + 1) % 1) * r.per;
     out.warn = r.per - u < 1.4 ? 1 - (r.per - u) / 1.4 : 0;
     out.fall = r.per - u < 0.45 ? 1 - (r.per - u) / 0.45 : -1;
     out.rest = u < 0.5;
@@ -169,7 +169,7 @@ export class Storm {
   }
 
   fanOn(f, t) {
-    return this.on(f) && ((((t * this.hs) / f.per + f.ph) % 1) + 1) % 1 < 0.5;
+    return this.on(f) && ((((t * this.hs * (f.sp || 1)) / f.per + f.ph) % 1) + 1) % 1 < 0.5;
   }
 
   // Gust state for a zone at time t: { warn 0..1, on, sign, radial, str }.

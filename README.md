@@ -18,7 +18,8 @@ giant maps. If one falls, everyone feels it.
 
 ## Five maps
 
-Each map is a 745 m climb in seven zones, and each one climbs its own way.
+Each map is a 1000 m climb in nine zones, and each one climbs its own way. The higher you get, the harder it gets:
+smaller platforms, more obstacles, and everything moves faster.
 
 * **Storm Tower**: round and round a neon tower in a lightning storm at night. Lightning hunts you: when a ring in
   your colour appears under you, tap **SHIELD**. Lightning rods, spinning laser bars, laser gates, fans and ice.
@@ -38,7 +39,10 @@ platforms away from the tower before heading back in.
 
 **Obstacles**
 
-Each map has 20 obstacles of its own, built to fit it, and the higher zones bring in the harder ones:
+Each map has 26 obstacles of its own, built to fit it. The higher zones bring in the harder ones, and from about
+650 m up come six endgame obstacles: twin pendulums over a long bridge, spike grids that pop up two squares at a
+time, things rolling along narrow bridges, rows of presses slamming in turn, crossfire jets with one safe spot,
+and turntables with bars spinning over them.
 
 * **Storm Tower**: turbine sweeps, Tesla pendulums, piston rams, hydraulic presses, arc spikes, plasma jets, phase
   platforms, a saw track, a wrecking ball, grease pits and more
@@ -56,7 +60,7 @@ Most of them shake, flicker or glow just before they strike.
 **Difficulties**
 
 * **Easy**: a checkpoint in every zone, a long cord, a calmer storm and only the gentler obstacles, running slower
-* **Normal**: three checkpoints on the whole climb and most obstacles
+* **Normal**: four checkpoints on the whole climb and most obstacles
 * **Hardcore**: no checkpoints and a shorter cord. Every obstacle is on and faster. Fall all the way down and the
   team starts over.
 

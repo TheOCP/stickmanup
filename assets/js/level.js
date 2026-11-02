@@ -7,17 +7,17 @@ import { makeBox, makeCyl } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle } from './obstacles.js';
 
-export const LEVEL_VERSION = 9;
+export const LEVEL_VERSION = 10;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
 export const DIFFS = [
   { id: 0, name: 'Easy', rope: 7.5, storm: 0.7, grip: 0.7, desc: 'Checkpoints in every zone, a long cord, a calmer storm and fewer, slower obstacles.' },
-  { id: 1, name: 'Normal', rope: 6.2, storm: 1.0, grip: 1.0, desc: 'Three checkpoints on the whole climb. The full storm and most obstacles.' },
+  { id: 1, name: 'Normal', rope: 6.2, storm: 1.0, grip: 1.0, desc: 'Four checkpoints on the whole climb. The full storm and most obstacles.' },
   { id: 2, name: 'Hardcore', rope: 5.2, storm: 1.15, grip: 1.3, desc: 'No checkpoints and a short cord. Every obstacle, and faster. A fall is a fall.' },
 ];
 
-// Three maps, seven zones each. tpl = template weights; pattern = surface look (1 metal panels, 2 stone, 3 wood).
+// Five maps, nine zones each, up to 1000 m. tpl = template weights; pattern = surface look (1 metal panels, 2 stone, 3 wood).
 const Z = (name, sub, y1, color, tint, fog, sx, sz, gap, tpl, extra) => Object.assign({ name, sub, y1, color, tint, fog, sx, sz, gap, tpl }, extra);
 export const MAPS = [
   {
@@ -30,7 +30,9 @@ export const MAPS = [
       Z('Broken Elevator Shaft', 'Ride it up', 424, 0xffc23d, 0x4a4433, 0x18140a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { gap: 3, lift: 3, mover: 2, crumble: 3, stairs: 1, grapple: 1, gate: 2, swing: 1 }),
       Z('Floating Wreckage', 'Nothing here stands still', 532, 0xff4fb4, 0x4a3446, 0x1a0c18, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { gap: 2, tilt: 3, bob: 3, crumble: 2, pad: 1, beam: 1, door: 1, laser: 2, arrows: 1 }),
       Z('Ice Crown', 'Slippery when frozen', 640, 0x8fe9ff, 0x6a8292, 0x0e1a24, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gap: 4, pillars: 2, beam: 2, iceslope: 2, bob: 1, grapple: 1, gate: 2, laser: 1 }, { ice: true }),
-      Z('Eye of the Storm', 'Everything at once', 745, 0xffd76a, 0x5a4f40, 0x1c160c, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, lift: 1, spinner: 1, rods: 2, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1, laser: 2, gate: 2 }),
+      Z('Thunderhead', 'The clouds fight back', 760, 0x5ad1ff, 0x3a4250, 0x0a1422, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { gap: 2, rods: 3, laser: 2, gate: 2, fan: 1, crumble: 2, bob: 1, grapple: 1 }),
+      Z('Supercell', 'Hold on tight', 880, 0xff5a8a, 0x4a3442, 0x1a0a14, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { gap: 2, rods: 2, spinner: 1, laser: 2, gate: 2, crumble: 2, tilt: 2, lift: 1, door: 1 }),
+      Z('Eye of the Storm', 'Everything at once', 992, 0xffd76a, 0x5a4f40, 0x1c160c, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, lift: 1, spinner: 1, rods: 2, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1, laser: 2, gate: 2 }),
     ],
   },
   {
@@ -43,7 +45,9 @@ export const MAPS = [
       Z('Cloud Gardens', 'Floating in the breeze', 424, 0x5fa8d3, 0xf4f8fb, 0xb3defa, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { bob: 3, pad: 2, gap: 2, grapple: 1, tilt: 1, swing: 2, mover: 2 }),
       Z('Sky Bridges', 'Mind the gaps', 532, 0xffb703, 0xd6c7a1, 0xb9e0f7, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { beam: 3, mover: 2, tilt: 2, door: 1, gap: 2, arrows: 2, gate: 1 }),
       Z('Sun Spire', 'Hot and high', 640, 0xfb8500, 0xf3dfa2, 0xc4e6fa, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { lift: 2, crumble: 2, gap: 2, grapple: 1, spinner: 1, swing: 2, arrows: 2 }),
-      Z('Golden Summit', 'Almost in the sun', 745, 0xffd60a, 0xf0d58d, 0xd0ecfb, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, lift: 1, spinner: 1, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1, arrows: 2, swing: 2, gate: 1 }),
+      Z('Lantern Gallery', 'Round the great lamp', 760, 0xffe45c, 0xf2ead8, 0xc8e8fb, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { gap: 2, arrows: 3, swing: 2, crumble: 2, mover: 2, tilt: 1, gate: 1, grapple: 1 }),
+      Z('Rainbow Heights', 'Higher than the gulls', 880, 0xc77dff, 0xe8dcf0, 0xd4e2fb, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { gap: 2, bob: 2, arrows: 2, swing: 2, crumble: 2, spinner: 1, lift: 1, door: 1 }),
+      Z('Golden Summit', 'Almost in the sun', 992, 0xffd60a, 0xf0d58d, 0xd0ecfb, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, lift: 1, spinner: 1, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1, arrows: 2, swing: 2, gate: 1 }),
     ],
   },
   {
@@ -56,7 +60,9 @@ export const MAPS = [
       Z('Vine Tangle', 'Swing from the hooks', 424, 0x7cfc00, 0x4a5a3a, 0x5f8a6a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { grapple: 3, beam: 2, bob: 1, monster: 1, gap: 1, swing: 3 }),
       Z('Firefly Canopy', 'Bats in the dark', 532, 0xf9f871, 0x3e5244, 0x34504a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { bats: 3, gap: 2, crumble: 2, mover: 2, monster: 1, arrows: 2 }),
       Z('Thorn Crown', 'Everything bites', 640, 0xff5d5d, 0x574436, 0x7a5a50, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { monster: 3, tilt: 2, gap: 2, door: 1, bats: 1, arrows: 2, swing: 1 }),
-      Z('Treetop Sanctum', 'The top of the world', 745, 0xc6ff8f, 0x6a5a44, 0x9ec4a8, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, monster: 2, bats: 1, grapple: 1, crumble: 1, pillars: 1, beam: 1, door: 1, arrows: 2, swing: 2 }),
+      Z('Storm Branches', 'The whole tree sways', 760, 0x8ad4ff, 0x4a4a3a, 0x5a6a70, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { gap: 2, tilt: 3, bob: 2, bats: 2, monster: 1, arrows: 2, swing: 1 }),
+      Z('Hornet Heights', 'Do not wake them', 880, 0xffb000, 0x5a4a2a, 0x7a6a48, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { gap: 2, bats: 3, monster: 2, crumble: 2, arrows: 2, grapple: 1, door: 1 }),
+      Z('Treetop Sanctum', 'The top of the world', 992, 0xc6ff8f, 0x6a5a44, 0x9ec4a8, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, monster: 2, bats: 1, grapple: 1, crumble: 1, pillars: 1, beam: 1, door: 1, arrows: 2, swing: 2 }),
     ],
   },
   {
@@ -69,7 +75,9 @@ export const MAPS = [
       Z('Magma Falls', 'Rocks raining down', 424, 0xff4a2a, 0x40261e, 0x2e0c06, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { rocks: 3, gap: 3, swing: 2, geyser: 2, tilt: 1, grapple: 1 }),
       Z('Cinder Bridges', 'Mind the drop', 532, 0xffc23d, 0x3a3026, 0x26140a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { beam: 3, gap: 2, crumble: 3, bob: 2, geyser: 1, door: 1 }),
       Z('Fire Throat', 'Hot, hot, hot', 640, 0xff3a1a, 0x3a1e18, 0x300a04, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { geyser: 3, rocks: 3, mover: 2, gap: 2, lift: 1, grapple: 1 }),
-      Z('Crater Rim', 'Out into the sky', 745, 0xffd76a, 0x4a3a30, 0x1c120c, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, geyser: 2, rocks: 2, crumble: 2, pillars: 1, beam: 1, swing: 1, door: 1 }),
+      Z('Pressure Chamber', 'It is about to blow', 760, 0xff2a5a, 0x3a1e22, 0x2a0610, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { geyser: 3, rocks: 2, crumble: 2, gap: 2, bob: 1, lift: 1 }),
+      Z('Smoke Stack', 'Climb through the smoke', 880, 0x9a8aa0, 0x34302e, 0x1e1614, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { rocks: 3, geyser: 2, swing: 2, gap: 2, tilt: 1, grapple: 1, door: 1 }),
+      Z('Crater Rim', 'Out into the sky', 992, 0xffd76a, 0x4a3a30, 0x1c120c, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, geyser: 2, rocks: 2, crumble: 2, pillars: 1, beam: 1, swing: 1, door: 1 }),
     ],
   },
   {
@@ -82,7 +90,9 @@ export const MAPS = [
       Z('Billboard Heights', 'Ride the lifts', 424, 0xffb43d, 0x34303a, 0x4a2e3a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { lift: 3, mover: 3, gap: 2, swing: 1, gate: 1, conveyor: 1 }),
       Z('Sky Gardens', 'Green on the roofs', 532, 0x6aff9e, 0x2c3a34, 0x36344a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { gap: 3, bob: 2, tilt: 2, crumble: 2, bats: 2, grapple: 1 }),
       Z('Antenna Forest', 'Lasers and wind', 640, 0xa080ff, 0x2a2840, 0x241c3a, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gate: 3, laser: 2, conveyor: 2, gap: 2, bats: 1, door: 1 }),
-      Z('Spire Crown', 'The tallest roof in town', 745, 0xffe066, 0x3a3440, 0x2a1e3a, [1.6, 2.5], [1.6, 2.4], [1.9, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, mover: 1, grapple: 1 }),
+      Z('Helipad Deck', 'Choppers overhead', 760, 0x3dffd0, 0x263a3a, 0x1e3040, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { bats: 3, conveyor: 2, gate: 2, gap: 2, lift: 1, grapple: 1 }),
+      Z('Glass Canopy', 'Do not look down', 880, 0x9ad8ff, 0x2a3446, 0x22284a, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { gap: 3, gate: 2, laser: 2, crumble: 2, conveyor: 1, bats: 1, door: 1 }),
+      Z('Spire Crown', 'The tallest roof in town', 977, 0xffe066, 0x3a3440, 0x2a1e3a, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, mover: 1, grapple: 1 }),
     ],
   },
 ];
@@ -121,7 +131,7 @@ export function generateLevel(mapId = 0) {
     obs: [], blinks: [], traps: [], bumpers: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
-  const recs = [], buckets = [], usedObs = [];
+  const recs = [], buckets = [], usedObs = [], obsZone = [];
   let TAG = 'start';
   let zone = 0, ZD = ZONE_LIST[0], ZW = ZD.tpl, zonePlats = 0, lastY = 2;
   // Route frame: platforms are placed in polar coordinates around (CX, CZ), going round in direction DIR,
@@ -400,6 +410,62 @@ export function generateLevel(mapId = 0) {
       for (let k = 0; k < 2; k++) cur = T.gap(cur, { size: [rr(3.2, 4.2), rr(2.6, 3.2)], g: rr(1.2, 1.7), dy: rr(-0.2, 0.5), surf: 'ice', look: o.look });
       return cur;
     },
+    // ---------- endgame: harder combinations near the top ----------
+    gauntlet(cur, o) {
+      const nxt = T.beam(cur, { len: rr(8.5, 9.5), w: 1.1, rise: rr(0, 0.3) });
+      const b = between(cur, nxt, 0.25), L = o.look.big ? 2.75 : 2.55, per = rr(2.2, 2.8);
+      [1 / 3, 2 / 3].forEach((f, k) => {
+        const fy = cur.y + (nxt.y - cur.y) * f;
+        obPush(o, { prim: 'pendulum', x: b.ax + (b.bx - b.ax) * f, y: fy + 0.6 + L, z: b.az + (b.bz - b.az) * f, fy, nx: -b.uz, nz: b.ux, L, r: o.look.big ? 0.7 : 0.58, amp: 1.1, per, ph: k * 0.5 });
+      });
+      return nxt;
+    },
+    checker(cur, o) {
+      const s2 = rr(4.4, 4.8), p = wide(cur, [s2, s2], [s2, s2]), A = axes(p), per = rr(2.4, 2.8);
+      for (const i of [-1, 1]) for (const j of [-1, 1]) {
+        const u = (i * p.sx) / 4, v = (j * p.sz) / 4;
+        obPush(o, { prim: 'spikes', x: p.x + A.ax * u + A.bx * v, y: p.y, z: p.z + A.az * u + A.bz * v, hx: p.sx / 4 - 0.12, hz: p.sz / 4 - 0.12, ry: p.ry, per, ph: i * j > 0 ? 0 : 0.5, duty: 0.5 });
+      }
+      return T.gap(p, { g: rr(1.3, 1.9) });
+    },
+    beamroll(cur, o) {
+      const nxt = T.beam(cur, { len: rr(8, 9), w: 1.1, rise: 0 });
+      const b = between(cur, nxt, 0.25), half = Math.hypot(b.bx - b.ax, b.bz - b.az) / 2, sh = o.look.s;
+      obPush(o, { prim: 'slider', shape: sh, x: (b.ax + b.bx) / 2, y: cur.y, z: (b.az + b.bz) / 2, ux: b.ux, uz: b.uz, a: -(half - 0.4), b: half - 0.4,
+        r: sh === 'ball' ? 0.5 : sh === 'disc' ? 0.6 : 0.36, w: 1.3, per: rr(2.8, 3.4), ph: R(), ry: b.ry });
+      return nxt;
+    },
+    crushrow(cur, o) {
+      const p = wide(cur, [6.6, 7.2], [2.5, 2.7]), A = axes(p), per = rr(2.6, 3.0);
+      for (let k = 0; k < 3; k++) {
+        const off = (k - 1) * 2.2;
+        obPush(o, { prim: 'crusher', x: p.x + A.ax * off, y: p.y, z: p.z + A.az * off, hs: 0.85, per, ph: k / 3, ry: p.ry });
+      }
+      return T.gap(p, { g: rr(1.3, 1.9) });
+    },
+    crossfire(cur, o) {
+      const nxt = T.beam(cur, { len: rr(7.5, 8.5), w: 1.0, rise: rr(0, 0.4) });
+      const b = between(cur, nxt, 0.25), per = rr(2.4, 2.8);
+      [1 / 3, 2 / 3].forEach((f, k) => {
+        const mx = b.ax + (b.bx - b.ax) * f, mz = b.az + (b.bz - b.az) * f, my = cur.y + (nxt.y - cur.y) * f;
+        let nx = -b.uz, nz = b.ux;
+        if (nx * (mx - CX) + nz * (mz - CZ) < 0) { nx = -nx; nz = -nz; }
+        const ex = mx + nx * 2.3, ez = mz + nz * 2.3;
+        add(makeCyl(ex, my - 0.3, ez, 0.16, 0.9), 'post');
+        obPush(o, { prim: 'jet', x: ex, y: my + 0.75, z: ez, dx: -nx, dz: -nz, range: 4.6, per, ph: k * 0.5, duty: 0.5 });
+      });
+      return nxt;
+    },
+    spinsweep(cur, o) {
+      const s2 = rr(3.6, 4.0), r = Math.max(nextR(cur, s2 * 1.42), BAND.lo + s2 * 0.71);
+      const p = plat(thetaFor(cur, rr(1.4, 1.9), r, s2 * 1.42, s2 * 1.42), r, cur.y + rr(-0.1, 0.4), s2, s2, { kind: 'turn', look: o.look, surf: null });
+      const w = rr(0.6, 0.9) * (R() < 0.5 ? 1 : -1);
+      p.col.dyn = { k: 'turn', a0: p.ry, w };
+      recBox(p.x, p.z, s2 * 0.72, s2 * 0.72, 0, p.y);
+      add(makeCyl(p.x, p.y + 0.3, p.z, 0.18, 0.3), 'post');
+      obPush(o, { prim: 'sweep', x: p.x, y: p.y + 0.5, z: p.z, len: s2 * 0.62, n: 2, per: rr(2.4, 3.0) * -Math.sign(w), ph: R(), w: o.look.s === 'bar' ? 0.13 : 0.06 });
+      return T.gap(Object.assign({}, p, { sx: s2 * 1.42, sz: s2 * 1.42 }), { g: rr(1.3, 1.8) });
+    },
     drop: (cur, o) => T.rocks(cur, o),
     shooter: (cur, o) => T.arrows(cur, o),
     flyer: (cur, o) => T.bats(cur, o),
@@ -407,7 +473,7 @@ export function generateLevel(mapId = 0) {
     gate: (cur, o) => T.gate(cur, o),
   };
   // Mechanics that fit round a small side tree (no long bridges).
-  const SMALL_OK = new Set(['sweep', 'crusher', 'spikes', 'turntable', 'bumpers', 'mud', 'slick', 'drop', 'trapdoor', 'vent', 'blink']);
+  const SMALL_OK = new Set(['sweep', 'crusher', 'spikes', 'turntable', 'bumpers', 'mud', 'slick', 'drop', 'trapdoor', 'vent', 'blink', 'checker', 'spinsweep']);
 
   // ---------- templates ----------
   const T0 = {
@@ -771,6 +837,7 @@ export function generateLevel(mapId = 0) {
       const o = obstacle(MAP.key, key);
       if (!o) return T.gap(cur);
       usedObs.push(key);
+      obsZone.push(zone);
       const f = OB[o.prim];
       return f ? f(cur, o) : T.gap(cur);
     },
@@ -813,6 +880,7 @@ export function generateLevel(mapId = 0) {
     }
     recs.length = q.recs;
     usedObs.length = q.used;
+    obsZone.length = q.used;
     ({ pathLen, lastP, lastY, zonePlats, CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn, tower, visitStart, visitLaps } = q);
     out.plats = q.plats;
     Object.assign(intro, q.intro);
@@ -851,8 +919,18 @@ export function generateLevel(mapId = 0) {
   const T = {};
   for (const k in T0) T[k] = (...args) => { const prev = TAG; TAG = k; const r = T0[k](...args); TAG = prev; return r; };
 
+  // The higher the zone, the more often the next section is one of the map's obstacles: about 30% at the
+  // bottom, 75% in the top zone.
   function pickTpl() {
-    const w = ZW;
+    const obsW = {}, baseW = {};
+    for (const k in ZW) (T[k] ? baseW : obsW)[k] = ZW[k];
+    const pObs = 0.3 + (0.45 * zone) / Math.max(1, ZONE_LIST.length - 1);
+    const useObs = Object.keys(obsW).length && R() < pObs, w = useObs ? obsW : baseW;
+    // Every one of the map's obstacles shows up: usually pick one of this zone's that hasn't been used yet.
+    if (useObs) {
+      const fresh = Object.keys(obsW).filter((q) => !usedObs.includes(q));
+      if (fresh.length && R() < 0.6) return fresh[(R() * fresh.length) | 0];
+    }
     let sum = 0;
     for (const k in w) sum += w[k];
     let x = R() * sum;
@@ -924,7 +1002,7 @@ export function generateLevel(mapId = 0) {
 
   for (zone = 0; zone < ZONE_LIST.length; zone++) {
     ZD = ZONE_LIST[zone];
-    ZW = Object.assign({}, ZD.tpl, zoneObstacles(MAP.key, zone));
+    ZW = Object.assign({}, ZD.tpl, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
     zonePlats = 0;
     const zi = { name: ZD.name, sub: ZD.sub, color: ZD.color, fog: ZD.fog, tint: ZD.tint, y0: cur.y, y1: ZD.y1 };
     if (zone > 0 && ROUTE === 'towers') {
@@ -992,9 +1070,6 @@ export function generateLevel(mapId = 0) {
       else {
         // Big sweeping things stay away from the switchback turns, where the other lane is close by.
         let k = pickTpl();
-        // Every one of the map's obstacles shows up: often pick one of this zone's that hasn't been used yet.
-        const fresh = Object.keys(ZW).filter((q) => !T[q] && !usedObs.includes(q));
-        if (fresh.length && R() < 0.4) k = fresh[(R() * fresh.length) | 0];
         if (ROUTE === 'switchback' && (k === 'spinner' || k === 'fan') && (sinceTurn < 4 || BAND === LANES.inner)) k = 'mover';
         if ((ROUTE === 'towers' || ROUTE === 'crater') && (k === 'spinner' || k === 'fan')) k = 'mover';
         // Wander instead of only circling: now and then turn back after a lift, or detour outward.
@@ -1018,11 +1093,19 @@ export function generateLevel(mapId = 0) {
     CX = 0; CZ = 0; BAND = MAIN; DIR = 1;
     cur = reframe(cur);
   }
+  // A few steps so every map tops out at exactly 1000 m on the height counter, which starts from the floor
+  // at y 2 (the last zone stops a little short of it).
+  const SUMMIT = 1002;
+  for (let k = 0; k < 30 && cur.y < SUMMIT - 2.2; k++) {
+    const at = cur, dy = Math.min(1.0, SUMMIT - 2.0 - at.y);
+    cur = place(() => T.gap(at, { size: [2.6, 2.4], g: rr(1.0, 1.4), dy, surf: null }), at);
+  }
+  const topLedge = () => Math.max(cur.y + 0.4, SUMMIT - 1.0);
   for (let k = 0; k < 40; k++) {
-    if (need(0, 0, 9.8, 9.8, 0, cur.y + 1.8) <= 0) break;
+    if (need(0, 0, 9.8, 9.8, 0, topLedge() + 1.0) <= 0) break;
     cur = T.stairs(cur, 2);
   }
-  const last = plat(thetaFor(cur, 1.4, 12.0, 2.4, 2.2), 12.0, cur.y + 0.8, 2.4, 2.2);
+  const last = plat(thetaFor(cur, 1.4, 12.0, 2.4, 2.2), 12.0, topLedge(), 2.4, 2.2);
   const top = last.y + 1.0;
   add(makeCyl(0, top - 0.6, 0, 9.6, 0.6), 'summit');
   out.summit = { x: 0, y: top, z: 0, r: 4.5 };
@@ -1044,12 +1127,12 @@ export function generateLevel(mapId = 0) {
         for (let i = 0; i < 3; i++) out.decor.push({ k: 'icicle', x: c.x + rr(-c.hx, c.hx) * 0.6, y: c.y - c.hy, z: c.z + rr(-c.hz, c.hz) * 0.6, s: rr(0.5, 1.4) });
       }
     }
-    dz('halo', 8, (i) => { const a = (i / 8) * TAU, r = rr(18, 26); return { x: Math.cos(a) * r, y: rr(zy(6).y0 + 10, top + 30), z: Math.sin(a) * r, s: rr(3, 6), rx: rr(-0.6, 0.6), ry: a }; });
+    dz('halo', 8, (i) => { const a = (i / 8) * TAU, r = rr(18, 26); return { x: Math.cos(a) * r, y: rr(zy(out.zones.length - 1).y0 + 10, top + 30), z: Math.sin(a) * r, s: rr(3, 6), rx: rr(-0.6, 0.6), ry: a }; });
   } else if (MAP.key === 'sunny') {
     // A sandy island with palms, boats out at sea and puffy clouds drifting around the upper tower.
     dz('palm', 22, () => { const [x, z] = around(20, 34); return { x, y: 0.4, z, s: rr(0.8, 1.3), ry: rr(0, TAU), lean: rr(-0.35, 0.35) }; });
     dz('boat', 7, () => { const [x, z, a] = around(70, 180); return { x, y: 0, z, s: rr(1, 2), ry: a + rr(-0.5, 0.5) }; });
-    dz('cloud', 34, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
+    dz('cloud', 46, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
     dz('gull', 10, () => ({ x: 0, y: rr(20, top), z: 0, r: rr(18, 40), sp: rr(0.15, 0.3) * (R() < 0.5 ? 1 : -1), ph: R() * TAU }));
   } else {
     // A forest island: trees all around, mushrooms and vines on the climb, fireflies higher up.
@@ -1059,11 +1142,18 @@ export function generateLevel(mapId = 0) {
       if (c.kind === 'plat' && c.zone === 1 && R() < 0.5) out.decor.push({ k: 'mushroom', x: c.x + rr(-c.hx, c.hx) * 0.5, y: c.y + c.hy, z: c.z + rr(-c.hz, c.hz) * 0.5, s: rr(0.4, 0.8) });
       if (c.kind === 'plat' && (c.zone === 3 || c.zone === 4) && R() < 0.6) out.decor.push({ k: 'vine', x: c.x + rr(-c.hx, c.hx) * 0.7, y: c.y - c.hy, z: c.z + rr(-c.hz, c.hz) * 0.7, s: rr(1.5, 4) });
     }
-    dz('firefly', 70, () => { const [x, z] = around(8, 26); return { x, y: rr(zy(3).y0, top), z, sp: rr(0.4, 1.2), ph: R() * TAU }; });
+    dz('firefly', 95, () => { const [x, z] = around(8, 26); return { x, y: rr(zy(3).y0, top), z, sp: rr(0.4, 1.2), ph: R() * TAU }; });
   }
+
+  // The higher you get, the faster things move: normal speed at 100 m, 30% faster at the summit.
+  const spAt = (y) => 1 + 0.3 * clamp((y - 100) / (top - 100), 0, 1);
+  for (const k of ['obs', 'lasers', 'arrows', 'geysers', 'rocks', 'fans']) for (const o of out[k]) o.sp = spAt(o.fy ?? o.y ?? 0);
+  for (const c of out.blinks) c.blink.sp = spAt(c.y);
+  for (const c of out.traps) c.trap.sp = spAt(c.y);
 
   out.recs = recs;
   out.usedObs = [...new Set(usedObs)];
+  out.obsZone = obsZone;
   // Forest: no decorative trees standing inside a side tree's climb.
   if (out.trees.length) out.decor = out.decor.filter((d) => d.k !== 'tree' || out.trees.every((t) => Math.hypot(d.x - t.x, d.z - t.z) > 11));
   return out;

@@ -5,7 +5,7 @@
 A co op climbing game for Android. Up to four stickmen are tied together by a glowing cord and climb one of six
 giant maps. If one falls, everyone feels it.
 
-**[Download the latest APK](../../releases/latest)** · Android 8.0 or newer · no root needed · about 500 KB
+**[Download the latest APK](../../releases/latest)** · Android 8.0 or newer · no root needed · about 600 KB
 
 ![Title screen](docs/title.png)
 
@@ -17,6 +17,8 @@ giant maps. If one falls, everyone feels it.
 ![Neon Skyline](docs/city.png)
 ![Waterfall](docs/waterfall.png)
 ![A jumper kicking](docs/jumper.png)
+![The shop](docs/shop.png)
+![Records](docs/records.png)
 
 ## Six maps
 
@@ -67,9 +69,23 @@ Most of them shake, flicker or glow just before they strike.
 
 **Jumpers**
 
-Every map has angry dummies guarding ledges from zone 2 up, in the map's own style: storm dummies, beach bullies,
-wild jumpers, ash brutes, street punks and splash bullies. Come close and they run at you and jump kick you off the
-ledge. Jump past them, or SHOOT to stun them for a few seconds.
+Every map has angry dummies guarding ledges from about 500 m up, and on Hardcore already from 50 m, in the map's own
+style: storm dummies, beach bullies, wild jumpers, ash brutes, street punks and splash bullies. Come close and they run
+at you and jump kick you off the ledge. Jump past them, or SHOOT to stun them for a few seconds.
+
+**Coins, shop and records**
+
+Coins hang all along every route. Each is worth 1 on Easy, 2 on Normal and 3 on Hardcore, and the top pays a bonus of
+100, 250 or 500. A coin you took stays gone after a fall. Spend them in the shop:
+
+* **Common (green):** colours, simple faces and caps
+* **Rare (blue):** 41 country flags with a matching cape, patterns, funny faces and hats
+* **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat
+* **Legendary (orange):** living suits that move and leave a trail. Coins can't buy them. They only come from Hardcore:
+  a few are earned by what you do up there, the rest are hidden. Those who know, know.
+
+Your other climbers see what you wear. The records keep your best climbs on every map: how high you got, on which
+difficulty, how many falls, how long and how many coins.
 
 **Every map looks different**
 

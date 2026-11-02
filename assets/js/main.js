@@ -11,7 +11,10 @@ import { Storm } from './storm.js';
 import { Session, makeLink, lanDiscover, btPrepare, btDevices, lanAddresses, hasNative, MAX_PLAYERS, exposeHost, addrToCode, parseAddr } from './net.js';
 import { Game } from './game.js';
 import { COLORS, makePool } from './robot.js';
-import { PALETTE, css } from './colors.js';
+import { css } from './colors.js';
+import { SUIT, resolveLook, plainLook, roleOf, tagColor } from './skins.js';
+import { initProfile, myLook, nameChanged, coins as myCoins } from './profile.js';
+import { openShop, openRecords } from './shop.js';
 import { Chain } from './chain.js';
 import { Fx } from './fx.js';
 import { PR } from './player.js';
@@ -28,8 +31,16 @@ const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music:
   res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
-if (!(settings.color >= 0 && settings.color < PALETTE.length)) settings.color = 0;
-const myColor = () => PALETTE[settings.color];
+// The colour you picked before there were suits becomes your first suit.
+initProfile(settings.color);
+const myColor = () => tagColor(SUIT[myLook(settings.name).s].c);
+let myResolved = null;
+const myOutfit = () => myResolved || (myResolved = resolveLook(myLook(settings.name), settings.name));
+// Something you wear changed: everyone in the game should see it.
+function lookChanged() {
+  myResolved = null;
+  if (app.game) { app.game.s.setMe(settings.name, myColor(), myLook(settings.name)); app.game.refreshPlayers(); }
+}
 // Custom rules for a new climb. -1 means Auto (follow the difficulty).
 const RULES = [
   ['cps', 'Checkpoints', ['Every zone', 'A few', 'None']],
@@ -42,6 +53,7 @@ function rulesHtml(r, editable, solo) {
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
     <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
 }
+const roleTag = (p) => { const r = roleOf(p.look, p.name); return r ? `<em class="role">${r}</em>` : ''; };
 // A player's colour in the session (their pick, or their slot's default).
 const pcol = (s, slot) => { const p = s.players.get(slot); return css((p && p.color) ?? COLORS[slot % 4]); };
 // Earlier versions had on/off switches for the two assists; carry them over to the sliders.
@@ -79,6 +91,22 @@ window.SMU = app;
 
 // ---------- small UI helpers ----------
 const ui = (app.ui = {
+  coins(n, pop) {
+    const el = $('#hCoins');
+    el.innerHTML = `<i class="coin"></i>${n}`;
+    if (pop) { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  },
+  // A big message in the middle, like the zone titles.
+  banner(small, big, sub, color) {
+    const el = $('#zoneTitle');
+    el.querySelector('small').textContent = small;
+    el.querySelector('h2').textContent = big;
+    el.querySelector('p').textContent = sub;
+    el.style.setProperty('--zc', color);
+    el.classList.add('show');
+    clearTimeout(this.zt);
+    this.zt = setTimeout(() => el.classList.remove('show'), 5000);
+  },
   toast(msg, kind = '') {
     const box = $('#toasts');
     while (box.children.length > 2) box.firstChild.remove();
@@ -114,7 +142,7 @@ const ui = (app.ui = {
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
     $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
-    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span><small></small></div>`).join('');
+    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
   },
   hud(g, { T, zone, gust, thunder }) {
@@ -222,7 +250,8 @@ const ui = (app.ui = {
         el = document.createElement('div');
         el.dataset.s = slot;
         el.style.color = pcol(g.s, slot);
-        el.textContent = p.name;
+        const role = roleOf(p.look, p.name);
+        el.textContent = (role ? role + ' · ' : '') + p.name;
         box.appendChild(el);
       }
       v.set(o.x, o.y + 1.45, o.z).project(cam);
@@ -300,6 +329,8 @@ function pickMap(id, redraw) {
   redraw();
 }
 
+const shopCtx = { app, show, esc, ui, header, name: () => settings.name, lookChanged };
+
 function title() {
   app.screen = 'title';
   const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map];
@@ -315,8 +346,11 @@ function title() {
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
       <button class="btn" data-a="host"><b>Host a game</b><small>Online, WiFi or Bluetooth</small></button>
       <button class="btn" data-a="join"><b>Join a game</b><small>Room code or a game nearby</small></button>
+      <div class="row"><button class="btn sm shopbtn" data-a="shop"><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records">Records</button></div>
       <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     </div></div>`, {
+    shop: () => { app.screen = 'shop'; openShop(shopCtx, title); },
+    records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
     cont: () => startSolo(save.map || 0, save.diff, save),
     solo: soloPick,
     host: hostPick,
@@ -354,7 +388,7 @@ function soloPick() {
 }
 
 function startSolo(map, diff, save) {
-  const s = new Session('solo', settings.name, null, myColor());
+  const s = new Session('solo', settings.name, null, myColor(), myLook(settings.name));
   beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
@@ -388,7 +422,7 @@ async function bluetoothReady() {
 
 async function hostWith(kind) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
-  const s = new Session('host', settings.name, makeLink(kind), myColor());
+  const s = new Session('host', settings.name, makeLink(kind), myColor(), myLook(settings.name));
   let cancelled = false;
   busy(kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
@@ -438,7 +472,7 @@ function lobby(s) {
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
-    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span><small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
+    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span>${roleTag(p)}<small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
   loadMap(resume ? mp.map || 0 : s.lobby.map || 0);
@@ -542,7 +576,7 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
-  const s = new Session('client', settings.name, makeLink(kind), myColor());
+  const s = new Session('client', settings.name, makeLink(kind), myColor(), myLook(settings.name));
   busy('Connecting...', () => { s.close(); joinScreen(kind); });
   wireLobby(s);
   s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else lobby(s); });
@@ -589,7 +623,7 @@ function settingsScreen(back) {
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
-    <label>Your stickman colour<div class="swatches">${PALETTE.map((c, i) => `<button data-a="color" data-i="${i}" class="sw ${settings.color === i ? 'on' : ''}" style="background:${css(c)}" aria-label="Colour ${i + 1}"></button>`).join('')}</div></label>
+    ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
@@ -599,12 +633,7 @@ function settingsScreen(back) {
     back: () => { saveSettings(); back(); },
     layout: () => layoutEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
-    color: (b) => {
-      settings.color = +b.dataset.i;
-      saveSettings();
-      for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
-      if (app.game) app.game.s.setMe(settings.name, myColor());
-    },
+    wardrobe: () => { saveSettings(); app.screen = 'shop'; openShop(shopCtx, () => settingsScreen(back)); },
     seg: (b) => {
       const k = b.dataset.k, v = b.dataset.v;
       settings[k] = k === 'cap' ? +v : k === 'lefty' ? v === 'true' : v;
@@ -640,7 +669,9 @@ function settingsScreen(back) {
       if (!n) return;
       settings.name = n;
       saveSettings();
-      if (app.game) app.game.s.setMe(settings.name, myColor());
+      const owner = nameChanged(n);
+      if (owner) ui.toast(`Welcome back, ${n}. Your ${owner.name} suit is on.`, 'gold');
+      lookChanged();
     }, 450);
   });
 }
@@ -735,7 +766,10 @@ function howTo(back) {
     <div><b>Sling</b>While holding GRAB, hold REEL, then let go of REEL. A partner on a tight cord gets flung upward.</div>
     <div><b>A partner falls</b>Their weight drags you toward the edge. Hold GRAB to stop, or walk away from the edge to haul them up.</div>
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
-    <div><b>Jumpers</b>Angry dummies guard some ledges. Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
+    <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
+    <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal and 3 on Hardcore, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
+    <div><b>Legendary suits</b>Coins can't buy these. They only come from Hardcore. Some are earned by what you do up there, the others are hidden. Those who know, know.</div>
+    <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
     <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
     <div><b>Sunny Isles</b>The route zigzags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
@@ -824,7 +858,8 @@ app.finish = (r) => {
   setTimeout(() => {
     show(`<div class="results">${r.record ? '<div class="rec">New best time</div>' : ''}<h1>SUMMIT REACHED</h1>
       <p class="sub">${r.players > 1 ? `${r.players} climbers` : 'You'} reached the top of ${MAPS[r.map || 0].name} on ${DIFFS[r.diff].name}.</p>
-      <div class="stats"><div><b>${fmtTime(r.time)}</b><small>Time</small></div><div><b>${r.falls}</b><small>Falls</small></div><div><b>${fmtTime(r.best)}</b><small>Best on ${DIFFS[r.diff].name}</small></div></div>
+      <div class="stats"><div><b>${fmtTime(r.time)}</b><small>Time</small></div><div><b>${r.falls}</b><small>Falls</small></div><div><b>${fmtTime(r.best)}</b><small>Best on ${DIFFS[r.diff].name}</small></div><div><b><i class="coin"></i>${r.coins}</b><small>Coins, ${r.bonus} of them for the top</small></div></div>
+      ${(r.unlocked || []).map((n) => `<div class="rec gold">Legendary unlocked: ${esc(n)}</div>`).join('')}
       <button class="btn primary" data-a="back" style="max-width:320px;margin:auto;align-items:center"><b>Back to title</b></button></div>`, {
       back: () => { endGame(); title(); },
     });
@@ -1064,7 +1099,7 @@ function titleRunners(dt) {
     const jumpBack = Math.hypot(o.x - prev.x, o.z - prev.z) > 4; // looped back to the start
     RUN.prev[j] = o;
     r.flip = o.flip;
-    r.setColor(j === 0 ? myColor() : COLORS[j]);
+    r.setLook(j === 0 ? myOutfit() : plainLook(COLORS[j]));
     r.show();
     r.update(dt, o.x, o.y + PR, o.z, jumpBack ? 0 : vx, o.ground || jumpBack ? 0 : vy, jumpBack ? 0 : vz, o.ground ? 1 | 64 : 0, 0, o.y);
     if (jumpBack && j < 3) RUN.chains[j].ok = false;
@@ -1083,14 +1118,38 @@ function titleRunners(dt) {
   return { lead: pos[0], center: c };
 }
 
+// The shop: one climber standing on the start circle, on the left of the screen and turning slowly, with the
+// camera shifted sideways so the cards on the right don't cover them.
+function shopScene(dt) {
+  const P = app.preview, pool = app.pool, c = app.level.cps[0], cam = app.renderer.camera, r0 = pool.robots[0];
+  for (let j = 1; j < 4; j++) pool.robots[j].hide();
+  for (const l of pool.ropes) l.mesh.visible = false;
+  P.yaw = (P.yaw || 0) + dt * 0.75;
+  // Round the dock from the start circle, clear of its pole. A long lens keeps the climber from stretching
+  // out of shape over on the side of the picture.
+  const th = Math.atan2(c.z, c.x) - 0.25, rad = 13, x = Math.cos(th) * rad, z = Math.sin(th) * rad, ox = Math.cos(th), oz = Math.sin(th);
+  const fl = app.world.floorBelow(x, c.y + 3, z, 12), gy = fl > -50 ? fl : c.y, y = gy + PR;
+  r0.setLook(resolveLook(P.look, settings.name));
+  r0.show();
+  r0.flip = 0;
+  r0.yaw = Math.atan2(ox, oz) + P.yaw;
+  r0.update(dt, x, y, z, 0, 0, 0, 1, 0, gy, undefined, 9);
+  const fov = 38, D = 4.5, off = 0.62 * D * Math.tan((fov / 2) * (Math.PI / 180)) * (window.innerWidth / window.innerHeight);
+  const rx = oz, rz = -ox, x0 = x + rx * off, z0 = z + rz * off;
+  cam.position.set(x0 + ox * D, y + 0.5, z0 + oz * D);
+  cam.lookAt(x0, y + 0.12, z0);
+  if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
+}
+
 function titleScene(dt) {
   titleT += dt;
   app.sound.setStyle('menu');
   app.sound.setIntensity(0.6);
   const mk = app.level && app.level.mapKey;
   app.sound.ambient(0.2, false, 0, mk === 'storm' ? 0.7 : 0, mk === 'waterfall' ? 0.6 : 0);
-  const R = app.renderer, cam = R.camera, g = titleRunners(dt);
-  if (g) {
+  const R = app.renderer, cam = R.camera, g = app.preview ? null : titleRunners(dt);
+  if (app.preview) shopScene(dt);
+  else if (g) {
     // Shots, each about 8 s, blended smoothly. All of them look down from well above the route.
     const p = g.center, lead = g.lead, r = Math.hypot(p.x, p.z) || 1, ox = p.x / r, oz = p.z / r;
     RUN.shotT += dt;
@@ -1110,7 +1169,7 @@ function titleScene(dt) {
     cam.position.set(Math.cos(a) * 36, y, Math.sin(a) * 36);
     cam.lookAt(0, y + 6, 0);
   }
-  if (cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
+  if (!app.preview && cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
   app.world.setTime(titleT);
   R.update(dt, cam.position, app.level.zones[0], 0, { x: 0, z: 0 });
   R.shadowFocus(cam.position.x, cam.position.y - 2, cam.position.z);

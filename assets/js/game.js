@@ -6,11 +6,15 @@ import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt } from './level.js';
 import { clamp, damp, store, r3 } from './util.js';
+import { addCoins, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
+import { resolveLook, plainLook } from './skins.js';
 
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
+// A coin is worth more the harder the difficulty, and so is reaching the top.
+const COIN_VALUE = [1, 2, 3], SUMMIT_BONUS = [100, 250, 500];
 
 // Distance along a unit ray to a sphere, or -1.
 function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
@@ -86,6 +90,23 @@ export class Game {
     for (const i of this.doors) this.openDoor(i, true);
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
+    // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
+    const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === LEVEL_VERSION ? sf : null;
+    this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
+    // Real Hardcore only: the hidden places don't exist with easier custom rules.
+    this.hardcore = this.diff === 2 && !this.custom;
+    app.view.setSecrets(this.hardcore);
+    this.coinTaken = new Set((sv && sv.coins) || []);
+    this.coinB = this.L.coinB || (this.L.coinB = {});
+    if (!this.L.coinBuilt) { this.L.coinBuilt = true; for (const c of this.L.coins) (this.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
+    this.coinRow = 0;
+    this.coinAcc = 0;
+    this.relicNear = new Set();
+    this.nearRelic = null;
+    this.recAcc = 0;
+    this.run = (sv && sv.run) || { id: Date.now().toString(36) + ((Math.random() * 1296) | 0).toString(36), map: this.map, diff: this.diff, custom: this.custom, h: 0, falls: 0, t: 0, coins: 0, won: false, when: Date.now(), players: 1 };
+    if (!sv) addTotals(0, 1);
+    app.ui.coins(this.run.coins);
     // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
     this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, maxReel: this.rope - 1.2, wind: null };
     const th = Math.atan2(this.me.z, this.me.x);
@@ -116,11 +137,10 @@ export class Game {
     return this.solo ? this.soloT : (this.s.now() - this.t0) / 1000 + this.base;
   }
 
-  // Right in the middle of the checkpoint circle (never out by the edge). With company, everyone gets a
-  // spot on a small ring round the middle, far enough apart not to bump each other off.
+  // On the checkpoint's pad (never out by the edge): a spot on a small ring round its pole, far enough apart
+  // not to bump each other off.
   spawnPos(i, slot) {
     const cp = this.L.cps[i];
-    if (this.s.players.size <= 1) return [cp.x, cp.y + PR + 0.4, cp.z];
     const a = (slot / 4) * Math.PI * 2 + 0.4;
     return [cp.x + Math.cos(a) * 0.64, cp.y + PR + 0.4, cp.z + Math.sin(a) * 0.64];
   }
@@ -140,8 +160,15 @@ export class Game {
     return (p && p.color) ?? COLORS[slot % 4];
   }
 
+  // What someone wears. Their colour is for the cord, the name tag and their effects.
+  dress(s, r) {
+    const p = this.s.players.get(s), c = this.colorOf(s);
+    r.setLook(p && p.look ? resolveLook(p.look, p.name) : plainLook(c));
+    this.app.fx.setColor(s, c);
+  }
+
   refreshPlayers() {
-    for (const [s, r] of this.robots) { const c = this.colorOf(s); r.setColor(c); this.app.fx.setColor(s, c); }
+    for (const [s, r] of this.robots) this.dress(s, r);
     for (const lk of this.links) lk.mesh.setColors(this.colorOf(lk.a), this.colorOf(lk.b));
     this.app.ui.players(this);
   }
@@ -150,7 +177,7 @@ export class Game {
   syncRoster() {
     const pool = this.app.pool, slots = [...this.s.players.keys()].sort((a, b) => a - b);
     for (const s of slots) if (!this.robots.has(s)) { const r = pool.robots[s % 4]; r.show(); this.robots.set(s, r); }
-    for (const s of slots) { const c = this.colorOf(s); this.robots.get(s).setColor(c); this.app.fx.setColor(s, c); }
+    for (const s of slots) this.dress(s, this.robots.get(s));
     for (const [s, r] of this.robots) if (!this.s.players.has(s)) { r.hide(); this.robots.delete(s); }
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.links = [];
@@ -234,6 +261,8 @@ export class Game {
     }
     this.saveAcc += dt;
     if (this.s.isHost && this.saveAcc > 4 && !this.won) { this.saveAcc = 0; this.save(); }
+    this.recAcc += dt;
+    if (this.recAcc > 3 && !this.won) { this.recAcc = 0; this.noteRun(); }
     this.draw(dt);
   }
 
@@ -269,6 +298,65 @@ export class Game {
     for (const e of me.events) this.bodyEvent(e);
     me.events.length = 0;
     this.checks();
+    this.pickups();
+  }
+
+  // Coins are each climber's own, and stay gone after a fall. Relics only exist on Hardcore.
+  pickups() {
+    const me = this.me, b = Math.floor(me.y / 8);
+    if (me.grounded) { const h = Math.min(1000, Math.round(me.y - PR - 2)); if (h > this.run.h) this.run.h = h; }
+    this.coinAcc -= STEP;
+    if (this.coinAcc < 0) this.coinRow = 0;
+    for (let k = b - 1; k <= b + 1; k++) {
+      const list = this.coinB[k];
+      if (!list) continue;
+      for (const c of list) {
+        if (this.coinTaken.has(c.i)) continue;
+        const dx = c.x - me.x, dz = c.z - me.z;
+        if (dx * dx + dz * dz < 1.1 && Math.abs(c.y - me.y) < 1.3) this.takeCoin(c);
+      }
+    }
+    if (!this.hardcore) return;
+    for (const r of this.L.relics) {
+      if (hasRelic(r.id)) continue;
+      const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
+      if (d < 1.9) this.takeRelic(r);
+      else if (d < 25 && !this.relicNear.has(r.id)) {
+        this.relicNear.add(r.id);
+        this.app.sound.relicHum();
+        this.app.ui.toast('Something is humming nearby...', 'gold');
+      }
+    }
+  }
+
+  takeCoin(c) {
+    const v = COIN_VALUE[this.diff];
+    this.coinTaken.add(c.i);
+    this.run.coins += v;
+    addCoins(v);
+    // Quick ones in a row climb in pitch.
+    this.coinRow = Math.min(12, this.coinRow + 1);
+    this.coinAcc = 1.2;
+    this.app.sound.coin(this.coinRow);
+    this.app.ui.coins(this.run.coins, true);
+  }
+
+  takeRelic(r) {
+    const got = foundRelic(r.id), S = this.app.sound;
+    S.relic();
+    this.app.ui.haptic('heavy');
+    if (got[0]) this.app.ui.banner('Legendary found', got[0].name, got[1] ? `That was the last one. ${got[1].name} is yours too.` : 'Wear it from the shop', '#ff9a2e');
+    this.nearRelic = null;
+  }
+
+  // Writes this climb into the records.
+  noteRun() {
+    const r = this.run;
+    r.falls = this.falls;
+    r.t = Math.round(this.time * 10) / 10;
+    r.players = Math.max(r.players, this.s.players.size);
+    r.when = Date.now();
+    if (r.h >= 3 || r.won) recordRun(r);
   }
 
   // Monsters and bats knock you off on contact; lightning (sunny) strikes where it warned.
@@ -535,6 +623,10 @@ export class Game {
     if (!rigs || !this.jumpers.length) return;
     const cam = this.R.camera.position, list = [];
     for (const J of this.jumpers) if (J.active && Math.abs(J.y - cam.y) < 45 && Math.hypot(J.x - cam.x, J.z - cam.z) < 50) list.push(J);
+    if (list.length && !this.jumpWarned) {
+      this.jumpWarned = true;
+      this.app.ui.toast(`${list[0].j.name} ahead! Jump past or SHOOT to stun`, 'bad');
+    }
     list.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
     const used = new Set();
     for (const J of list.slice(0, rigs.length)) {
@@ -797,6 +889,7 @@ export class Game {
         this.me.spawn(p[0], p[1], p[2]);
         this.cp = e.cp;
         this.falls = e.falls;
+        if (e.why === 'splash') addTotals(1, 0);
         this.splashed = false;
         this.cpSent.clear();
         for (const l of this.links) l.chain.ok = false;
@@ -833,7 +926,7 @@ export class Game {
 
   save() {
     const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
   }
 
   finish(e) {
@@ -842,11 +935,24 @@ export class Game {
     for (const r of this.robots.values()) r.cheer();
     store.del(this.solo ? 'save.solo' : 'save.mp');
     // Best times only count when playing the difficulty's own rules (no custom rules).
-    const custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
+    const custom = this.custom;
+    const bonus = SUMMIT_BONUS[this.diff], unlocked = [];
+    addCoins(bonus);
+    this.run.coins += bonus;
+    this.run.won = true;
+    this.run.h = Math.max(this.run.h, Math.min(1000, Math.round(this.L.top - 2)));
+    this.falls = e.falls;
+    if (this.hardcore) {
+      const a = award('summit'), b = e.falls === 0 ? award('flawless') : null;
+      if (a) unlocked.push(a.name);
+      if (b) unlocked.push(b.name);
+    }
+    this.noteRun();
+    flushProfile();
     const key = this.map + ':' + this.diff + (custom ? ':custom' : ''), best = store.get('best2', {}), prev = best[key];
     if (!prev || e.t < prev) { best[key] = e.t; store.set('best2', best); }
     this.app.sound.win();
-    this.app.finish({ time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size });
+    this.app.finish({ time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size, coins: this.run.coins, bonus, unlocked });
   }
 
   // ----- per-frame visuals -----
@@ -931,6 +1037,8 @@ export class Game {
       this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, this.L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     app.view.update(T, dt, this.storm);
+    app.pool.coins.update(dt, T, this.L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, this.coinB);
+    app.pool.relic.show(this.nearRelic, T);
     // The soundtrack follows the map and gets busier the higher the climb.
     app.sound.setStyle(this.L.mapKey);
     app.sound.setIntensity(0.3 + clamp(me.y / this.L.top, 0, 1) * 0.7);
@@ -940,6 +1048,8 @@ export class Game {
       this.hudAcc = 0;
       this.action = this.findAction(T);
       this.reelMode = this.cordMode();
+      this.nearRelic = null;
+      if (this.hardcore) for (const r of this.L.relics) if (!hasRelic(r.id) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
       app.ui.hud(this, { T, zone: zi, gust, thunder: this.storm.thunder(T, this.slot) });
     }
     // Crosshair turns red over a target (checked ~12 times a second while aiming).
@@ -1008,6 +1118,11 @@ export class Game {
   }
 
   destroy() {
+    if (!this.won) this.noteRun();
+    flushProfile();
+    this.app.pool.coins.clear();
+    this.app.pool.relic.show(null);
+    this.app.view.setSecrets(false);
     for (const r of this.robots.values()) r.hide();
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.app.fx.clear();

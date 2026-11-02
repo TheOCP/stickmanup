@@ -31,7 +31,7 @@ export class Mirror {
 
   // Forget what the native side has, so the next frame resends every object and material state.
   reset() {
-    for (const e of this.objs.values()) { e.vis = -1; e.m.fill(NaN); }
+    for (const e of this.objs.values()) { e.vis = -1; e.m.fill(NaN); e.mat = null; }
     for (const e of this.mats.values()) e.sig = '';
     this.forceAll = true;
   }
@@ -134,7 +134,7 @@ export class Mirror {
       d.metal = m.metalness ?? 0;
       d.panel = m.userData.panel ? m.userData.pattern ?? 1 : 0;
       if (m.map) d.map = this.defineTexture(m.map);
-      else if (m.emissiveMap) d.em = this.defineTexture(m.emissiveMap);
+      if (m.emissiveMap) d.em = this.defineTexture(m.emissiveMap);
     }
     const e = { mat: m, sig: d.st.join() };
     this.mats.set(id, e);
@@ -161,7 +161,7 @@ export class Mirror {
     const geoR = o.isInstancedMesh ? d.bs[3] : o.isSprite ? 1 : o.geometry.boundingSphere.radius;
     // Float64 so the change check compares exactly what three.js holds (Float32 copies never matched).
     this.objs.set(id, { obj: o, m: new Float64Array(16).fill(NaN), vis: -1, imv: o.isInstancedMesh ? o.instanceMatrix.version : 0,
-      always: !o.frustumCulled || o.isInstancedMesh || geoR > 40, bs: o.isInstancedMesh ? d.bs : null });
+      always: !o.frustumCulled || o.isInstancedMesh || geoR > 40, bs: o.isInstancedMesh && o.frustumCulled ? d.bs : null, mat: o.material });
     this.defs().o.push(d);
     return id;
   }
@@ -169,7 +169,7 @@ export class Mirror {
   // One frame: update world matrices, find what changed nearby, send definitions first, then the frame.
   // Frame text (one section per line, parsed in place by NRender without allocating):
   //   h:<env>  c:<view16,proj16,camPos3>  o:<id,vis[,px,py,pz,qx,qy,qz,qw,sx,sy,sz]>...  u:<matId,n,values>...
-  //   a:<g|o|r>,id,name-or-start,payload;...
+  //   a:<g|o|r|m>,id,name-or-start,payload;...
   sync(scene, camera, env) {
     scene.updateMatrixWorld();
     camera.updateMatrixWorld();
@@ -189,6 +189,8 @@ export class Mirror {
           const dx = m[12] - cx, dy = m[13] - cy, dz = m[14] - cz;
           if (dx * dx + dy * dy + dz * dz > FAR * FAR) { for (const c of o.children) walk(c, vis); return; }
         }
+        // A climber changing skins swaps materials on existing objects.
+        if (o.material !== e.mat) { e.mat = o.material; au.push('m,' + id + ',' + this.defineMaterial(o.material)); }
         let moved = false;
         if (v) for (let i = 0; i < 16; i++) if (e.m[i] !== m[i]) { moved = true; break; }
         if (moved || v !== e.vis) {
@@ -201,7 +203,8 @@ export class Mirror {
           e.vis = v;
         }
         // Instance buffers (drifting debris) only need ~15 updates a second.
-        if (o.isInstancedMesh && o.instanceMatrix.version !== e.imv && (all || stamp % 4 === 0)) {
+        // Flagged ones (spinning coins) get every second frame.
+        if (o.isInstancedMesh && o.instanceMatrix.version !== e.imv && (all || stamp % (o.userData.fastIM ? 2 : 4) === 0)) {
           const b = e.bs, far = b && Math.hypot(b[0] - cx, b[1] - cy, b[2] - cz) - b[3] > FAR;
           if (all || !far) { e.imv = o.instanceMatrix.version; au.push('o,' + id + ',im,' + b64(o.instanceMatrix.array)); }
         }

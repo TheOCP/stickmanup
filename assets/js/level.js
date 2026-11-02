@@ -3,11 +3,11 @@
 //   storm  - 'spiral': round and round the tower, counter-clockwise
 //   sunny  - 'switchback': back and forth across the lighthouse in two lanes, turning at the ends
 //   forest - 'trees': clockwise round the giant trunk, with branch walks out to side trees and up around them
-import { makeBox, makeCyl } from './physics.js';
+import { makeBox, makeCyl, BOX } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle } from './obstacles.js';
 
-export const LEVEL_VERSION = 11;
+export const LEVEL_VERSION = 12;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
@@ -123,6 +123,9 @@ export const JUMPER = {
   waterfall: { name: 'Splash bully', look: { c: 0x1a5a8a, g: 0x7fe8ff } },
 };
 
+// Height (world y, the floor is at 2) where jumpers start on every difficulty.
+const JUMP_ALL = 502;
+
 const PR_TOP = 0.6;
 const SIGNS = [
   'Climb to the very top. You are tied together: if one falls, everyone feels it.',
@@ -132,6 +135,15 @@ const SIGNS = [
   'While clamped, hold REEL, then let go: you fling your partner upward.',
   'Fall into the ocean and the team restarts from the last checkpoint.',
 ];
+
+const PIERS = [0.9, 2.47, 4.04, 5.61], PIER_R0 = 19, PIER_LEN = 13, PIER_W = 1.6;
+// Is this spot on a pier (or within m of one)?
+function onPier(x, z, m = 0) {
+  return PIERS.some((a) => {
+    const u = x * Math.cos(a) + z * Math.sin(a), v = -x * Math.sin(a) + z * Math.cos(a);
+    return u > PIER_R0 - m && u < PIER_R0 + PIER_LEN + m && Math.abs(v) < PIER_W + m;
+  });
+}
 
 export function cpEnabled(cp, diff) {
   if (cp.start) return true;
@@ -315,9 +327,11 @@ export function generateLevel(mapId = 0) {
       const x = last ? tx : climb ? at.x - uz * (s + g) * (n % 2 ? 1 : -1) * 0.5 + ux * 0.2 : at.x + ux * off;
       const z = last ? tz : climb ? at.z + ux * (s + g) * (n % 2 ? 1 : -1) * 0.5 + uz * 0.2 : at.z + uz * off;
       const remain = Math.max(1, Math.ceil(left() / 4.2));
+      const y0 = y;
       y = last ? Math.max(y - 0.4, Math.min(y + 1.05, ty)) : Math.min(y + 1.05, y + Math.max(-0.4, climb ? 1.0 : (ty - y) / remain));
+      // Clear of older route when that is still an easy step up.
       const nd = need(x, z, s / 2, s / 2, ry, y);
-      if (nd > 0 && nd <= 0.6) y += nd;
+      if (nd > 0 && (nd <= 0.6 || y + nd - y0 <= 1.3)) y += nd + 0.01;
       const t = 0.7, c = add(makeBox(x, y - t / 2, z, s / 2, t / 2, s / 2, 0, ry, 0), 'branch', { surf: null });
       at = { x, z, y, sx: s, sz: s, ry, col: c, th: 0, r: 0 };
       if (lastP) pathLen += Math.hypot(x - lastP.x, z - lastP.z);
@@ -1049,11 +1063,123 @@ export function generateLevel(mapId = 0) {
     out.cps.push(Object.assign({ i: out.cps.length, x, y, z, th, zone }, o));
   }
 
+  // ---------- coins ----------
+  // Lines over platforms and arcs over gaps, every so often along the route. Only on things that stay put.
+  function buildCoins() {
+    const CR = rng(MAP.seed ^ 0xc0115), list = (out.coins = []);
+    const push = (x, y, z) => list.push({ i: list.length, x, y, z, ph: CR() * TAU });
+    const ok = (c) => (c.kind === 'plat' || c.kind === 'beam') && c.t === BOX && !c.dyn && !c.blink && !c.trap && !c.crumble;
+    const P = out.cols.filter(ok);
+    // A little line off the start so nobody misses what these are.
+    const s0 = out.cps[0];
+    for (let k = 1; k <= 4; k++) push(Math.cos(s0.th + DIR0 * 0.1 * k) * 12.5, s0.y + 1.0, Math.sin(s0.th + DIR0 * 0.1 * k) * 12.5);
+    let next = 2 + ((CR() * 4) | 0);
+    for (let n = 0; n < P.length - 1; n++) {
+      if (n < next) continue;
+      const a = P[n], b = P[n + 1], topA = a.y + a.hy, topB = b.y + b.hy, d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d > 3 && d < 8 && Math.abs(topB - topA) < 2.2 && CR() < 0.55) {
+        // An arc along the jump between two platforms.
+        for (let k = 0; k < 5; k++) {
+          const f = (k + 0.5) / 5;
+          push(a.x + (b.x - a.x) * f, topA + (topB - topA) * f + 1.0 + Math.sin(f * Math.PI) * 1.5, a.z + (b.z - a.z) * f);
+        }
+      } else {
+        // A line along the platform's long side.
+        const ax = a.hx >= a.hz, len = Math.max(a.hx, a.hz), c = Math.cos(a.ry), s = Math.sin(a.ry), n3 = len > 1.5 ? 3 : 1;
+        for (let k = 0; k < n3; k++) {
+          const u = n3 === 1 ? 0 : ((k - 1) * len) / 1.8;
+          push(a.x + (ax ? c * u : s * u), topA + 1.0, a.z + (ax ? -s * u : c * u));
+        }
+      }
+      next = n + 7 + ((CR() * 8) | 0);
+    }
+  }
+
+  // ---------- hidden places ----------
+  // Stepping stones leading off the route to a relic, one low and one high on every map. They only exist on
+  // Hardcore (game.js switches the colliders on, worldview.js shows them). The camera looks in at the tower
+  // from outside, so anything further out than the route is behind you until you turn round.
+  function buildSecrets() {
+    const SR = rng(MAP.seed ^ 0x51ec7e7), sr = (a, b) => a + SR() * (b - a);
+    out.relics = [];
+    const pool = out.cols.filter((c) => c.kind === 'plat' && c.t === BOX && !c.dyn && !c.crumble && !c.blink && !c.trap && !c.surf && !c.look && Math.min(c.hx, c.hz) > 0.75);
+    const hazards = [];
+    for (const k of ['obs', 'lasers', 'arrows', 'bats', 'swings', 'geysers', 'rocks', 'monsters', 'fans', 'rods', 'jumpers']) {
+      for (const o of out[k]) {
+        const x = o.x ?? o.cx ?? o.ax, y = o.y ?? o.cy ?? o.fy, z = o.z ?? o.cz ?? o.az;
+        if (x !== undefined && y !== undefined && z !== undefined) hazards.push([x, y, z]);
+      }
+    }
+    // Is a stone here clear of everything else: colliders, route footprints and hazards?
+    const clearAt = (x, y, z, h, skip) => {
+      const m = h + 1.1, y0 = y - 1.6, y1 = y + HEAD + 0.8;
+      for (const c of out.cols) {
+        if (c === skip || c.kind === 'secret') continue;
+        if (c.maxx >= x - m && c.minx <= x + m && c.maxz >= z - m && c.minz <= z + m && c.maxy >= y0 && c.miny <= y1) return false;
+      }
+      const a = { x, z, hx: h, hz: h, c: 1, s: 0 };
+      for (const q of recs) {
+        if (q.tag === 'secret' || q.y + q.h < y - 1.2 || q.y > y1 || Math.hypot(q.x - x, q.z - z) > q.rad + h * 1.5 + 1.2) continue;
+        if (overlap(a, q, 1.0)) return false;
+      }
+      for (const p of hazards) if (Math.abs(p[1] - y) < 8 && Math.hypot(p[0] - x, p[2] - z) < 6.5) return false;
+      for (const t of out.trees) if (Math.hypot(t.x - x, t.z - z) < 9) return false;
+      return true;
+    };
+    const plans = [{ y: [170, 300], hops: 3, g: [1.5, 2.1], size: [1.9, 2.3], dy: 0.5 }, { y: [560, 720], hops: 5, g: [1.9, 2.4], size: [1.4, 1.8], dy: 0.7 }];
+    plans.forEach((plan, pi) => {
+      const list = pool.filter((c) => c.y + c.hy - 2 > plan.y[0] && c.y + c.hy - 2 < plan.y[1]);
+      // Shuffle (seeded), then take the first platform a chain fits off.
+      for (let i = list.length - 1; i > 0; i--) { const j = (SR() * (i + 1)) | 0, t = list[i]; list[i] = list[j]; list[j] = t; }
+      for (const st of list) {
+        if (out.relics.length > pi) break;
+        const out0 = Math.atan2(st.z, st.x) + (ROUTE === 'crater' ? Math.PI : 0);
+        for (const jit of [0, 0.5, -0.5, 1.0, -1.0]) {
+          const chain = [];
+          let px = st.x, pz = st.z, py = st.y + st.hy, ph, ang = out0 + jit;
+          {
+            const ux = Math.cos(ang), uz = Math.sin(ang), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);
+            ph = Math.abs(ux * acx + uz * acz) * st.hx + Math.abs(ux * bcx + uz * bcz) * st.hz;
+          }
+          let good = true;
+          for (let k = 0; k < plan.hops && good; k++) {
+            const last = k === plan.hops - 1, size = last ? 3.2 : sr(plan.size[0], plan.size[1]), half = size / 2, gap = sr(plan.g[0], plan.g[1]);
+            // The first hop drops out of sight below the platform; the rest wander a little.
+            const dy = k === 0 ? sr(-1.0, -0.7) : last ? sr(0.2, plan.dy) : sr(-plan.dy, plan.dy);
+            const ud = Math.cos(Math.PI / 4), d = ph + gap + half / ud * 0.75, x = px + Math.cos(ang) * d, z = pz + Math.sin(ang) * d, y = py + dy;
+            const rad = Math.hypot(x, z);
+            if (!clearAt(x, y, z, half, k === 0 ? st : null) || (ROUTE === 'crater' && rad > 17) || rad > 46 || y < 12) { good = false; break; }
+            chain.push({ x, y, z, half, ang });
+            px = x; pz = z; py = y; ph = half / ud * 0.75;
+            ang += sr(-0.4, 0.4);
+          }
+          if (!good) continue;
+          // The start must not itself be right next to a hazard, and stones must not crowd each other.
+          TAG = 'secret';
+          pathLen += 2000;
+          const stones = chain.map((s) => {
+            const z0 = zoneAt(out, s.y), ry = -s.ang;
+            const c = makeBox(s.x, s.y - 0.35, s.z, s.half, 0.35, s.half, 0, ry, 0);
+            c.kind = 'secret'; c.zone = z0; c.on = false;
+            out.cols.push(c);
+            recBox(s.x, s.z, s.half, s.half, ry, s.y);
+            return c;
+          });
+          const e = chain[chain.length - 1];
+          out.relics.push({ i: pi, id: MAP.key + ':' + pi, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones });
+          break;
+        }
+      }
+    });
+  }
+
   // ---------- build ----------
+  const DIR0 = DIR;
   ring(2, CORE_R + 0.3, 19, 0, TAU, 'dock', false);
-  for (let i = 0; i < 4; i++) {
-    const a = 0.9 + i * 1.57, [x, z] = polar(a, 25);
-    add(makeBox(x, 1.4, z, 1.6, 0.6, 6.5, 0, -(a + Math.PI / 2), 0), 'pier');
+  // Four piers from the edge of the dock out over the water. They start where the dock ends: no overlap.
+  for (const a of PIERS) {
+    const [x, z] = polar(a, PIER_R0 + PIER_LEN / 2);
+    add(makeBox(x, 1.4, z, PIER_W, 0.6, PIER_LEN / 2, 0, -(a + Math.PI / 2), 0), 'pier');
   }
   for (let i = 0; i < 14; i++) {
     const a = 1.4 + i * 0.37, r = rr(13, 17.5), s = rr(0.8, 1.3), [x, z] = polar(a, r);
@@ -1070,7 +1196,7 @@ export function generateLevel(mapId = 0) {
   out.signs.push({ x: Math.cos(0.12) * 17.5, y: 4.6, z: Math.sin(0.12) * 17.5, text: SIGNS[0] });
   let cur = virt(0.12 + DIR * 0.38, 12.5, 2, 2.4, 6);
   if (ROUTE === 'switchback') { BAND = LANES.outer; newLeg(cur); }
-  let nextExc = 0, sinceRev = 0, sinceDet = 0, jumpZone = 0;
+  let nextExc = 0, sinceRev = 0, sinceDet = 0, nextJump = 52, jumpN = 0;
   if (ROUTE === 'towers') {
     // Off the dock and over to the nearest skyscraper.
     tower = 0;
@@ -1085,7 +1211,6 @@ export function generateLevel(mapId = 0) {
 
   for (zone = 0; zone < ZONE_LIST.length; zone++) {
     ZD = ZONE_LIST[zone];
-    jumpZone = 0;
     // A zone's own template list can also name obstacles to make them more common there (they add up).
     ZW = Object.assign({}, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
     for (const k in ZD.tpl) ZW[k] = (ZW[k] || 0) + ZD.tpl[k];
@@ -1153,10 +1278,12 @@ export function generateLevel(mapId = 0) {
       if (zone === 0 && zonePlats >= 6 && !intro.grapple) cur = place(() => T.grapple(at), at);
       else if (zone === 0 && zonePlats >= 12 && !intro.door) cur = place(() => T.door(at), at);
       else if (zone === 0 && MAP.key === 'forest' && zonePlats >= 3 && !intro.monster) cur = place(() => T.monster(at), at);
-      else if (zone >= 1 && jumpZone < (zone >= 5 ? 2 : 1) && zonePlats >= 6 + jumpZone * 9 && !finalStretch()) {
-        const J = JUMPER[MAP.key] || JUMPER.storm, o = { name: J.name, look: J.look, lvl: jumpZone };
+      else if (cur.y >= nextJump && !finalStretch()) {
+        // Below 500 m these ledges stand empty unless obstacles are on Wild (Hardcore): lvl 2. From 500 m up
+        // every difficulty gets them; Easy only every other one.
+        const J = JUMPER[MAP.key] || JUMPER.storm, low = cur.y < JUMP_ALL, o = { name: J.name, look: J.look, lvl: low ? 2 : jumpN++ % 2 };
         cur = place(() => OB.jumper(at, o), at);
-        jumpZone++;
+        nextJump = low ? (cur.y + 50 > JUMP_ALL ? Math.max(JUMP_ALL, cur.y + 20) : cur.y + 50) : cur.y + 36;
       }
       else if (finalStretch()) { const k = ['gap', 'gap', 'stairs', 'pillars', 'beam', 'crumble'][(R() * 6) | 0]; cur = place(() => T[k](at), at); }
       else {
@@ -1224,7 +1351,12 @@ export function generateLevel(mapId = 0) {
     // A green island in a clear lagoon: palms, lily pads, fountains and fish jumping, clouds and birds above.
     dz('palm', 24, () => { const [x, z] = around(19, 32); return { x, y: 0.4, z, s: rr(0.8, 1.3), ry: rr(0, TAU), lean: rr(-0.35, 0.35) }; });
     dz('lily', 60, () => { const [x, z] = around(39, 52); return { x, y: 0.12, z, s: rr(0.6, 1.5), ry: rr(0, TAU), flower: R() < 0.3 }; });
-    dz('fountain', 5, (i) => { const a = (i / 5) * TAU + 0.3, r = rr(22, 28); return { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r, s: rr(0.9, 1.2) }; });
+    dz('fountain', 5, (i) => {
+      const r = rr(22, 28);
+      let a = (i / 5) * TAU + 0.3;
+      while (onPier(Math.cos(a) * r, Math.sin(a) * r, 2.6)) a += 0.08;
+      return { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r, s: rr(0.9, 1.2) };
+    });
     dz('fish', 14, () => { const [x, z, a] = around(42, 85); return { x, y: 0, z, ry: a + Math.PI / 2, per: rr(3.5, 7), ph: R(), s: rr(0.8, 1.4) }; });
     dz('cloud', 46, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
     dz('gull', 12, () => ({ x: 0, y: rr(20, top), z: 0, r: rr(18, 40), sp: rr(0.15, 0.3) * (R() < 0.5 ? 1 : -1), ph: R() * TAU }));
@@ -1250,6 +1382,12 @@ export function generateLevel(mapId = 0) {
   for (const k of ['obs', 'lasers', 'arrows', 'geysers', 'rocks', 'fans']) for (const o of out[k]) o.sp = spAt(o.fy ?? o.y ?? 0);
   for (const c of out.blinks) c.blink.sp = spAt(c.y);
   for (const c of out.traps) c.trap.sp = spAt(c.y);
+
+  // Nothing on the island grows through a pier.
+  out.decor = out.decor.filter((d) => d.y > 1.5 || d.k === 'fountain' || !onPier(d.x, d.z, 1.0));
+
+  buildCoins();
+  buildSecrets();
 
   out.recs = recs;
   out.usedObs = [...new Set(usedObs)];

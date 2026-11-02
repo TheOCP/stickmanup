@@ -246,6 +246,16 @@ export const noTrim = (key, shape) => (key === 'sunny' || key === 'forest' || ke
 
 // How each map dresses its platforms: { shape, pat, col (hex or null for the zone tint), under (hanging part) }.
 export function styleFor(key, c, zi, R) {
+  if (c.kind === 'pier') {
+    switch (key) {
+      case 'sunny': return { shape: 'planks', pat: 3, col: 0xc9a06a };
+      case 'waterfall': return { shape: 'planks', pat: 3, col: 0xb89464 };
+      case 'forest': return { shape: 'planks', pat: 3, col: 0x8a6a46 };
+      case 'volcano': return { shape: 'basalt0', pat: 7, col: 0xa08a82 };
+      case 'city': return { shape: 'chamfer', pat: 12, col: 0xa8acb8 };
+      default: return { shape: 'chamfer', pat: 4, col: 0x8e98a8 };
+    }
+  }
   const beam = c.kind === 'beam' || c.kind === 'branch';
   if (c.kind !== 'plat' && !beam) return null;
   if (c.look || c.surf === 'ice' || c.surf === 'mud') return null;
@@ -392,7 +402,12 @@ export function modelGeo(name) {
 }
 let VEG = null;
 export function vegMat() {
-  if (!VEG) VEG = panelMat(0xffffff, { map: paletteTex(), roughness: 0.82, metalness: 0, pattern: 0 });
+  // The phone gets the palette once, so every model's colours must be in it before the first map is drawn.
+  // Otherwise trees that first appear on a later map come out black there.
+  if (!VEG) {
+    for (const k of Object.keys(MODELS)) modelGeo(k);
+    VEG = panelMat(0xffffff, { map: paletteTex(), roughness: 0.82, metalness: 0, pattern: 0 });
+  }
   return VEG;
 }
 

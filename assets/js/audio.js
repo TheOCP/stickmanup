@@ -156,6 +156,10 @@ export class Sound {
   door() { this.tone(120, 240, 0.6, 'sawtooth', 0.12); this.noiseHit('lowpass', 400, 0.6, 0.3); this.tone(880, 1320, 0.25, 'triangle', 0.15, 0.4); }
   stun() { [900, 700, 900, 700].forEach((f, i) => this.tone(f, f * 0.9, 0.08, 'triangle', 0.1, i * 0.07)); }
   crumble() { this.noiseHit('lowpass', 300, 0.6, 0.5); this.tone(90, 40, 0.5, 'sawtooth', 0.12); }
+  // n: how many in quick succession; each one climbs a step.
+  coin(n = 1) { const f = 988 * Math.pow(2, Math.min(n - 1, 12) / 12); this.tone(f, f, 0.05, 'square', 0.04); this.tone(f * 1.5, f * 1.5, 0.16, 'triangle', 0.1, 0.04); }
+  relicHum() { [196, 294, 392].forEach((f, i) => this.tone(f, f * 1.01, 1.4, 'sine', 0.09, i * 0.14)); this.tone(1568, 1760, 0.8, 'sine', 0.03, 0.4); }
+  relic() { [392, 523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => this.tone(f, f, 0.9, 'triangle', 0.16, i * 0.08)); [131, 196].forEach((f) => this.tone(f, f, 2.4, 'sawtooth', 0.05)); }
   checkpoint() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, f, 0.35, 'triangle', 0.18, i * 0.09)); }
   zone() { [131, 196, 262, 330].forEach((f) => this.tone(f, f * 1.01, 2.6, 'sawtooth', 0.05)); this.tone(523, 523, 1.6, 'triangle', 0.12, 0.3); }
   win() { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, f, 0.8, 'triangle', 0.2, i * 0.12)); [262, 330, 392].forEach((f) => this.tone(f, f, 4, 'sawtooth', 0.06, 0.6)); }

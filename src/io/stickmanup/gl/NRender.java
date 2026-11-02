@@ -403,7 +403,8 @@ public final class NRender {
         }
     }
 
-    // Entries "g,id,name,b64" (geometry attribute), "o,id,im,b64" (instance matrices), "r,id,start,count".
+    // Entries "g,id,name,b64" (geometry attribute), "o,id,im,b64" (instance matrices), "r,id,start,count",
+    // "m,id,material" (an object changes material: a climber changing skins).
     private void buffers(String s, int st, int en) {
         int k = st;
         while (k < en) {
@@ -417,6 +418,10 @@ public final class NRender {
                 Geo g = id < geos.length ? geos[id] : null;
                 int a = (int) num(s, end), c = (int) num(s, end);
                 if (g != null) { g.drStart = a; g.drCount = c; }
+            } else if (type == 'm') {
+                Obj o = id < byId.length ? byId[id] : null;
+                int mat = (int) num(s, end);
+                if (o != null) o.m = mat;
             } else {
                 int nameSt = c1 + 1, nameEnd = s.indexOf(',', nameSt), ds = nameEnd + 1;
                 if (type == 'o') {
@@ -769,7 +774,8 @@ public final class NRender {
         boolean albedo = m.lit && m.map != 0;
         int texId = m.lit ? (albedo ? m.map : m.em) : m.map;
         Tex t = texId != 0 ? texs.get(texId) : null;
-        ui(p, "uHasTex", t == null ? 0 : albedo ? 2 : 1);
+        // 3: the same map colours the surface and makes it glow (skins that stay readable in the dark).
+        ui(p, "uHasTex", t == null ? 0 : albedo ? (m.em == m.map ? 3 : 2) : 1);
         Integer l = p.u.get("uUv");
         if (t != null) {
             if (t.gl == 0) uploadTex(t);
@@ -960,7 +966,8 @@ public final class NRender {
             + "  vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;\n"
             + "  vec3 base = uColor * vIC;\n"
             + "  if (uPanel > 0) base *= smuPattern(uPanel, vW, n);\n"
-            + "  if (uHasTex == 2) base *= smuLin(texture(uTex, vUv).rgb);\n"
+            + "  vec3 texc = uHasTex > 0 ? smuLin(texture(uTex, vUv).rgb) : vec3(1.0);\n"
+            + "  if (uHasTex >= 2) base *= texc;\n"
             + "  vec3 v = normalize(cameraPosition - vW);\n"
             + "  float r = clamp(max(uRough, 0.0525), 0.0, 1.0), a = r * r;\n"
             + "  vec3 diff = base * (1.0 - uMetal), f0 = mix(vec3(0.04), base, uMetal);\n"
@@ -968,7 +975,7 @@ public final class NRender {
             + "  float nl = dot(n, uMoonDir);\n"
             + "  if (nl > 0.0) { vec3 h = normalize(uMoonDir + v); float nv = max(dot(n, v), 1e-4);\n"
             + "    col += uMoonColor * uMoonI * nl * (diff * 0.3183099 + Fs(f0, max(dot(v, h), 0.0)) * Vg(a, nl, nv) * Dg(a, max(dot(n, h), 0.0))); }\n"
-            + "  vec3 em = uEmissive; if (uHasTex == 1) em *= smuLin(texture(uTex, vUv).rgb);\n"
+            + "  vec3 em = uEmissive; if (uHasTex == 1 || uHasTex == 3) em *= texc;\n"
             + "  col += em + vGlow;\n"
             + "  col = smuFog(col);\n"
             + "  outColor = vec4(smuSRGB(smuTone(min(col, vec3(40.0)))), uOpacity);\n"

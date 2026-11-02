@@ -2,9 +2,109 @@
 import * as THREE from 'three';
 import { COLORS } from './colors.js';
 import { Stickman } from './stickman.js';
+import { panelMat } from './worldview.js';
 export { COLORS, COLOR_CSS } from './colors.js';
 
 const S = 48, RS = 6, RAD = 0.05;
+
+// The coins near the camera: a handful of instances moved to whichever are closest, spinning.
+const COIN_N = 36, _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+export class CoinPool {
+  constructor(scene) {
+    // A bright rim round a darker raised face, so it reads as a coin and not a yellow dot.
+    const parts = [[new THREE.TorusGeometry(0.17, 0.038, 6, 18), [1.0, 0.68, 0.14]], [new THREE.CylinderGeometry(0.15, 0.15, 0.05, 18).rotateX(Math.PI / 2), [0.5, 0.31, 0.03]], [new THREE.BoxGeometry(0.045, 0.17, 0.066), [1.0, 0.68, 0.14]]];
+    const pos = [], nor = [], glo = [], uvs = [];
+    for (const [g0, c] of parts) {
+      const g = g0.index ? g0.toNonIndexed() : g0, a = g.attributes.position.array, n = g.attributes.normal.array;
+      for (let i = 0; i < a.length; i += 3) { pos.push(a[i], a[i + 1], a[i + 2]); nor.push(n[i], n[i + 1], n[i + 2]); glo.push(c[0], c[1], c[2]); uvs.push(0, 0); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('aGlow', new THREE.Float32BufferAttribute(glo, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.computeBoundingSphere();
+    const mat = panelMat(0xffc830, { roughness: 0.42, metalness: 0.25, pattern: 0, side: THREE.DoubleSide });
+    this.mesh = new THREE.InstancedMesh(geo, mat, COIN_N);
+    this.mesh.frustumCulled = false;
+    this.mesh.userData.fastIM = true;
+    this.mesh.castShadow = false;
+    this.near = [];
+    this.acc = 9;
+    this.clear();
+    scene.add(this.mesh);
+  }
+
+  clear() {
+    _m.makeScale(0, 0, 0);
+    for (let i = 0; i < COIN_N; i++) this.mesh.setMatrixAt(i, _m);
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.near.length = 0;
+    this.acc = 9;
+    this.mesh.visible = false;
+  }
+
+  // list: the map's coins; taken: a Set of the ones gone; cx, cy, cz: the camera.
+  update(dt, t, list, taken, cx, cy, cz, buckets) {
+    this.acc += dt;
+    if (this.acc > 0.2) {
+      this.acc = 0;
+      const near = this.near;
+      near.length = 0;
+      const b0 = Math.floor((cy - 34) / 8), b1 = Math.floor((cy + 34) / 8);
+      for (let b = b0; b <= b1; b++) {
+        const B = buckets[b];
+        if (!B) continue;
+        for (const c of B) {
+          if (taken.has(c.i)) continue;
+          const d = (c.x - cx) ** 2 + (c.y - cy) ** 2 + (c.z - cz) ** 2;
+          if (d < 1600) near.push([d, c]);
+        }
+      }
+      near.sort((a, b) => a[0] - b[0]);
+      near.length = Math.min(near.length, COIN_N);
+      this.dirty = true;
+    }
+    this.mesh.visible = this.near.length > 0;
+    if (!this.mesh.visible) return;
+    for (let i = 0; i < COIN_N; i++) {
+      const e = this.near[i];
+      if (e && !taken.has(e[1].i)) {
+        const c = e[1];
+        _q.setFromAxisAngle(_up, t * 3.2 + c.ph);
+        _p.set(c.x, c.y + Math.sin(t * 2 + c.ph) * 0.06, c.z);
+        _s.set(1, 1, 1);
+        _m.compose(_p, _q, _s);
+      } else _m.makeScale(0, 0, 0);
+      this.mesh.setMatrixAt(i, _m);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// The relic you find in a hidden place: a slowly turning gem with a ring round it.
+export class RelicMark {
+  constructor(scene) {
+    this.g = new THREE.Group();
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0xff8a10, emissiveIntensity: 2.6, roughness: 0.2, metalness: 0.4 }));
+    gem.scale.y = 1.5;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.028, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc060).multiplyScalar(3) }));
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.018, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a30).multiplyScalar(2.4) }));
+    this.gem = gem; this.ring = ring; this.ring2 = ring2;
+    this.g.add(gem, ring, ring2);
+    this.g.visible = false;
+    scene.add(this.g);
+  }
+
+  show(r, t) {
+    this.g.visible = !!r;
+    if (!r) return;
+    this.g.position.set(r.x, r.y + Math.sin(t * 1.6) * 0.1, r.z);
+    this.gem.rotation.y = t * 1.2;
+    this.ring.rotation.set(t * 1.1, t * 0.7, 0);
+    this.ring2.rotation.set(-t * 0.8, 0, t * 0.9);
+  }
+}
 
 export class RopeMesh {
   constructor(scene, colA, colB) {
@@ -102,6 +202,7 @@ export function makePool(scene) {
     return r;
   });
   const ropes = [0, 1, 2].map(() => new RopeMesh(scene, COLORS[0], COLORS[1]));
+  const coins = new CoinPool(scene), relic = new RelicMark(scene);
   const hidden = [];
   [...robots, ...jumpers].forEach((r, i) => {
     r.g.position.set(i * 2, 1.2, 0);
@@ -111,6 +212,8 @@ export function makePool(scene) {
     robots,
     jumpers,
     ropes,
+    coins,
+    relic,
     warm: 4,
     tick() {
       if (this.warm <= 0 || --this.warm > 0) return;

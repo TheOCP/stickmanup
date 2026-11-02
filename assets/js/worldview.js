@@ -177,11 +177,31 @@ export class WorldView {
     buildAnimals(this);
     this.buildSmallFalls();
     buildMist(this, this.mistSpots);
+    this.buildSecrets();
     this.freeze();
   }
 
   dispose() {
     this.scene.remove(this.root);
+  }
+
+  // The stones to the hidden relics: one instanced mesh, only shown on Hardcore.
+  buildSecrets() {
+    const list = this.level.cols.filter((c) => c.kind === 'secret');
+    this.secretMesh = null;
+    if (!list.length) return;
+    const pat = { storm: 8, sunny: 6, forest: 13, volcano: 7, city: 12, waterfall: 14 }[this.key] ?? 8;
+    const im = new THREE.InstancedMesh(shapeGeo(this.key === 'city' ? 'chamfer' : 'rock1'), patMat(pat), list.length);
+    const col = new THREE.Color();
+    list.forEach((c, i) => { im.setMatrixAt(i, colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2)); im.setColorAt(i, col.setHex(this.key === 'city' ? 0x8a90a8 : 0xffffff)); });
+    this.add(im);
+    im.visible = false;
+    this.secretMesh = im;
+  }
+
+  setSecrets(on) {
+    if (this.secretMesh) this.secretMesh.visible = !!on;
+    for (const c of this.level.cols) if (c.kind === 'secret') c.on = !!on;
   }
 
   // Performance: only animated things recompute transforms each frame, and only animated materials are
@@ -226,7 +246,7 @@ export class WorldView {
 
   buildStatic() {
     const L = this.level, R = rng(99);
-    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door');
+    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
     const col = new THREE.Color();
@@ -255,7 +275,6 @@ export class WorldView {
       if (c.kind === 'crate') col.setHex(this.key === 'sunny' ? 0xc9a36b : 0x7a5a3c);
       else if (c.kind === 'branch') col.setHex(0x7a5634);
       else if (c.kind === 'wall') col.setHex(this.key === 'storm' ? 0x2a2f3a : this.key === 'sunny' ? 0xe8e2d4 : 0x4a3a2a);
-      else if (c.kind === 'pier') col.setHex(0x3a3f48);
       else if (c.kind === 'pad') col.setHex(z.color).multiplyScalar(0.5);
       else if (c.look) col.setHex(c.look.c);
       else if (c.surf === 'ice') col.setHex(0xb0dcf0);

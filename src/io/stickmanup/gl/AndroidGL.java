@@ -8,6 +8,12 @@ import java.nio.Buffer;
 public final class AndroidGL implements GLApi {
     private final int[] one = new int[1];
 
+    private final int[] depth = {GLES30.GL_DEPTH_ATTACHMENT};
+
+    public long fenceSync() { return GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
+    public void clientWaitSync(long sync, long nanos) { GLES30.glClientWaitSync(sync, GLES30.GL_SYNC_FLUSH_COMMANDS_BIT, nanos); }
+    public void deleteSync(long sync) { GLES30.glDeleteSync(sync); }
+    public void invalidateDepth() { GLES30.glInvalidateFramebuffer(GLES30.GL_FRAMEBUFFER, 1, depth, 0); }
     public int createShader(int type) { return GLES30.glCreateShader(type); }
     public void shaderSource(int s, String src) { GLES30.glShaderSource(s, src); }
     public void compileShader(int s) { GLES30.glCompileShader(s); }

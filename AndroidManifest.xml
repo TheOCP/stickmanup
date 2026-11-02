@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.stickmanup"
-    android:versionCode="23"
-    android:versionName="3.6">
+    android:versionCode="24"
+    android:versionName="3.7">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
 
@@ -22,7 +22,8 @@
         android:label="StickManUp"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.StickManUp"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        android:isGame="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

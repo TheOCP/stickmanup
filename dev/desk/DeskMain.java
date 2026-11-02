@@ -14,7 +14,7 @@ public class DeskMain {
     public static void main(String[] a) throws Exception {
         final Path dir = Path.of(a[0]);
         final String out = a[1];
-        final int W = 915, H = 412;
+        final int W = Integer.parseInt(System.getenv().getOrDefault("DW", "915")), H = Integer.parseInt(System.getenv().getOrDefault("DH", "412"));
         GLProfile.initSingleton();
         GLProfile p = GLProfile.get(GLProfile.GL4ES3);
         GLCapabilities caps = new GLCapabilities(p);
@@ -43,12 +43,13 @@ public class DeskMain {
                         r.post(kind, Files.readString(f.toPath()));
                     }
                 } catch (Exception e) { throw new RuntimeException(e); }
-                long t0 = System.nanoTime();
                 // RS=0.7 tests dynamic resolution (scene drawn smaller, scaled up in the final pass).
                 r.renderScale = Float.parseFloat(System.getenv().getOrDefault("RS", "1"));
-                r.draw();
-                r.draw();
-                System.out.println("draws " + r.draws + ", " + (System.nanoTime() - t0) / 2_000_000 + " ms/frame (software GPU), GL error " + g.glGetError());
+                // The first frames also compile shaders and upload everything, so they don't count.
+                for (int k = 0; k < 40; k++) { r.draw(); g.glFinish(); }
+                long t0 = System.nanoTime();
+                for (int k = 0; k < 5; k++) { r.draw(); g.glFinish(); }
+                System.out.println("draws " + r.draws + ", tris " + r.tris + ", " + (System.nanoTime() - t0) / 5_000_000 + " ms/frame (software GPU), GL error " + g.glGetError());
                 ByteBuffer px = ByteBuffer.allocate(W * H * 4);
                 g.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0);
                 g.glReadPixels(0, 0, W, H, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, px);

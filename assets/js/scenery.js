@@ -2,6 +2,7 @@
 // that suit each zone, small plants on the ledges, animals animated on the GPU (birds, butterflies and
 // critters), and better waterfalls with spray. Everything here is drawn with few draw calls: plants and props
 // are instanced and coloured from one small palette texture; animals are whole flocks in one mesh each.
+import { noiseGlsl } from './pattern.js';
 import * as THREE from 'three';
 import { TAU, rng } from './util.js';
 import { CORE_R } from './level.js';
@@ -589,9 +590,7 @@ export function fallMat(view, o = {}) {
       }`,
     fragmentShader: `#include <fog_pars_fragment>
       uniform float uT, uS, uA; uniform vec3 uC, uD; varying vec2 vUv;
-      float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+      ${noiseGlsl()}
       void main(){
         float v = vUv.y + uT * uS;
         float n1 = n21(vec2(vUv.x * 16.0, v * 0.8));
@@ -641,8 +640,9 @@ export function buildMist(view, spots) {
         vec3 c = aP.xyz + vec3(sin(aP.w * 40.0) * life * 1.5, life * aQ.z, cos(aP.w * 33.0) * life * 1.5);
         vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
         vec3 wp = c + (right * position.x + up * position.y) * size;
-        vQ = position.xy; vA = (1.0 - life) * smoothstep(0.0, 0.15, life);
         vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
+        // Fades out close to the camera: spray is scenery, it must never blank out your view of the jump.
+        vQ = position.xy; vA = (1.0 - life) * smoothstep(0.0, 0.15, life) * smoothstep(4.0, 16.0, -mvPosition.z);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,

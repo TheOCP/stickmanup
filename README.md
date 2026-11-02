@@ -125,6 +125,10 @@ saved climb from the lobby.
 
 Keyboard and game controllers work too: WASD, Space, Shift, E, F grapple, R hold to aim, Q shield.
 
+A controller works in every menu as well: move with the direction pad or left stick, A selects, B goes back, LB and RB
+switch tabs, and text boxes open a letter board. Select opens the pause menu on Back to checkpoint. Settings has a dead
+zone for each stick against stick drift, with a live view of where the sticks really are.
+
 Settings let you resize the buttons, change their opacity, put them on the left, or drag each one wherever you
 like. Tips show up once as see through cards; after that, tap the small **!** markers to read them again.
 
@@ -148,11 +152,17 @@ Friends can join a climb that is already running.
 ## Smooth on any phone
 
 On Android the 3D world is drawn by the app's own OpenGL ES 3.0 renderer, not by WebGL in the WebView. The game
-sends only what changed each frame. When a phone can't keep up, the scene is drawn a little smaller and scaled up
-in the last step, so the screen never resizes during play and the frame rate stays steady.
+sends only what changed each frame. Clouds, water and surface detail read from one noise texture baked at startup
+instead of being worked out for every pixel, and shaders, models and textures are prepared before they first come
+into view. Every picture is handed to the display with the exact screen refresh it belongs to, and the climber is
+drawn between physics steps, so movement stays even.
 
-Graphics settings: resolution, sharpness, smooth edges (anti aliasing), glow, 30, 60 or 120 fps, and automatic
-resolution on or off.
+Auto graphics measures how long the GPU really needs for each frame. When a phone gets near its limit it lowers the
+resolution, then the edge smoothing, then switches to simple lighting, and it takes those back when there is room
+again. The scene is scaled inside a fixed size picture, so the screen never resizes during play.
+
+Graphics settings: resolution, sharpness, smooth edges (anti aliasing), glow, simple lighting, 30, 60 or 120 fps, and
+auto graphics on or off.
 
 The soundtrack is generated live: an original electro and techno track with its own style for every map, building
 in sections and getting busier the higher you climb.

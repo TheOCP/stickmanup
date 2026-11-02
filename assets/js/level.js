@@ -8,6 +8,9 @@ import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle } from './obstacles.js';
 
 export const LEVEL_VERSION = 12;
+// How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
+// the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
+export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
@@ -1337,6 +1340,7 @@ export function generateLevel(mapId = 0) {
   const dz = (k, n, f) => { for (let i = 0; i < n; i++) out.decor.push(Object.assign({ k }, f(i))); };
   const zy = (i) => out.zones[i];
   const around = (rMin, rMax) => { const a = rr(0, TAU), r = rr(rMin, rMax); return [Math.cos(a) * r, Math.sin(a) * r, a]; };
+  const cloud = () => ({ a: rr(0, TAU), extra: rr(22, 60) - 22, y: rr(zy(2).y0, top + 40), s: rr(4, 9), sp: rr(0.02, 0.06) });
   if (MAP.key === 'storm') {
     dz('rotor', 10, () => { const a = rr(0, TAU), y = rr(zy(1).y0 + 4, zy(1).y1); return { x: Math.cos(a) * (CORE_R + 0.2), y, z: Math.sin(a) * (CORE_R + 0.2), th: a, s: rr(2.2, 3.4) }; });
     dz('coil', 10, () => { const [x, z] = around(20, 34); return { x, y: rr(zy(2).y0, zy(2).y1), z, s: rr(1.5, 3) }; });
@@ -1358,13 +1362,13 @@ export function generateLevel(mapId = 0) {
       return { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r, s: rr(0.9, 1.2) };
     });
     dz('fish', 14, () => { const [x, z, a] = around(42, 85); return { x, y: 0, z, ry: a + Math.PI / 2, per: rr(3.5, 7), ph: R(), s: rr(0.8, 1.4) }; });
-    dz('cloud', 46, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
+    dz('cloud', 46, cloud);
     dz('gull', 12, () => ({ x: 0, y: rr(20, top), z: 0, r: rr(18, 40), sp: rr(0.15, 0.3) * (R() < 0.5 ? 1 : -1), ph: R() * TAU }));
   } else if (MAP.key === 'sunny') {
     // A sandy island with palms, boats out at sea and puffy clouds drifting around the upper tower.
     dz('palm', 22, () => { const [x, z] = around(20, 34); return { x, y: 0.4, z, s: rr(0.8, 1.3), ry: rr(0, TAU), lean: rr(-0.35, 0.35) }; });
     dz('boat', 7, () => { const [x, z, a] = around(70, 180); return { x, y: 0, z, s: rr(1, 2), ry: a + rr(-0.5, 0.5) }; });
-    dz('cloud', 46, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
+    dz('cloud', 46, cloud);
     dz('gull', 10, () => ({ x: 0, y: rr(20, top), z: 0, r: rr(18, 40), sp: rr(0.15, 0.3) * (R() < 0.5 ? 1 : -1), ph: R() * TAU }));
   } else {
     // A forest island: trees all around, mushrooms and vines on the climb, fireflies higher up.
@@ -1388,6 +1392,28 @@ export function generateLevel(mapId = 0) {
 
   buildCoins();
   buildSecrets();
+
+  // Clouds never get in the way of the climb. They slowly circle the middle, so only their distance from it counts:
+  // each stays outside the widest part of the route at its height (hidden stones included), with room for the camera
+  // behind you on top. Out there no cloud can come between you and anything on the route, whichever way you look and
+  // however long you play.
+  const routeW = [];
+  const noteWide = (y0, y1, r) => { for (let b = Math.max(0, Math.floor(y0 / 4)); b <= Math.floor(y1 / 4); b++) routeW[b] = Math.max(routeW[b] || 0, r); };
+  for (const c of out.cols) {
+    const box = c.r === undefined, r = Math.hypot(c.x, c.z) + (box ? Math.hypot(c.hx, c.hz) : c.r) + (c.dyn ? 4 : 0);
+    const v = box ? (c.rx || c.rz ? Math.hypot(c.hx, c.hy, c.hz) : c.hy) : c.hh;
+    noteWide(c.y - v, c.y + v, r);
+  }
+  for (const o of out.obs) noteWide(o.y - 4, o.y + 4, Math.hypot(o.x, o.z) + 6);
+  for (const d of out.decor) {
+    if (d.k !== 'cloud') continue;
+    const room = d.s * CLOUD_H + CAM_ROOM;
+    let r = 0;
+    for (let b = Math.max(0, Math.floor((d.y - room) / 4)); b <= Math.floor((d.y + room) / 4); b++) r = Math.max(r, routeW[b] || 0);
+    r += CAM_ROOM + d.s * CLOUD_W + d.extra;
+    d.x = Math.cos(d.a) * r;
+    d.z = Math.sin(d.a) * r;
+  }
 
   out.recs = recs;
   out.usedObs = [...new Set(usedObs)];

@@ -170,7 +170,7 @@ export class RopeMesh {
     }
     this.mesh.geometry.attributes.position.needsUpdate = true;
     this.u.uTen.value = tension;
-    this.u.uTime.value = t;
+    this.u.uTime.value = t % 3600;
   }
 
   setColors(a, b) {

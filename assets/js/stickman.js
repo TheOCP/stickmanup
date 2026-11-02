@@ -1,5 +1,6 @@
 // Neon stickmen with procedural, slightly silly animation. The physics body is a sphere (PR = 0.42)
 // centred at the waist; the figure stands about 1.6 m tall with its feet on the floor.
+import { noiseGlsl } from './pattern.js';
 import * as THREE from 'three';
 import { F } from './player.js';
 import { COLORS } from './colors.js';
@@ -131,9 +132,7 @@ function legendMat(S) {
       }`,
     fragmentShader: `#include <fog_pars_fragment>
       uniform float uT, uMode; uniform vec3 uA, uB, uC; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
-      float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+      ${noiseGlsl()}
       float fbm(vec2 p){ return 0.55 * n21(p) + 0.3 * n21(p * 2.1 + 3.7) + 0.15 * n21(p * 4.3 + 9.1); }
       vec3 hsv(float h){ return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
       void main(){
@@ -531,7 +530,7 @@ export class Stickman {
       this.eyesP.scale.y = flags & F.STUN ? 0.4 : blink * (mouthO > 1.1 ? 1.15 : 1);
       this.mouthP.scale.y = Math.min(1.25, 0.8 + this.mouth.scale.y * 0.42);
     }
-    if (this.shader) this.shader.uniforms.uT.value = t;
+    if (this.shader) this.shader.uniforms.uT.value = t % 3600;
     if (this.cape && this.cape.visible) {
       // Streams out behind when running or falling, sways a little when standing.
       const want = 0.08 + Math.min(1, sp / 6) * 0.85 + (ground ? 0 : Math.min(0.5, Math.abs(vy) * 0.05)) + Math.sin(t * (3 + sp)) * (0.04 + sp * 0.012);

@@ -5,6 +5,8 @@ import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js
 import { World } from './physics.js';
 import { WorldView, setSimple } from './worldview.js';
 import { setDetail } from './scenery.js';
+import { AutoQ, STEPS } from './autoq.js';
+import { PadNav } from './padnav.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Storm } from './storm.js';
@@ -28,7 +30,7 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
-  res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
+  res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 // The colour you picked before there were suits becomes your first suit.
@@ -199,6 +201,8 @@ const ui = (app.ui = {
     const L = app.level, me = g.me, box = $('#tipMarks'), cam = app.renderer.camera, v = this.tv || (this.tv = new THREE.Vector3());
     if (this.tipLevel !== L) { box.innerHTML = ''; this.tipEls = new Map(); this.tipLevel = L; }
     const seen = this.seen || (this.seen = new Set(store.get('tipsSeen', []))), W = window.innerWidth, H = window.innerHeight;
+    let nearD = 24;
+    this.nearTip = null;
     for (let i = 0; i < L.signs.length; i++) {
       const s = L.signs[i], key = L.map + ':' + i, d = Math.hypot(s.x - me.x, s.y - me.y, s.z - me.z);
       let el = this.tipEls.get(i);
@@ -206,6 +210,7 @@ const ui = (app.ui = {
       v.set(s.x, s.y - 0.7, s.z).project(cam);
       const show = d < 24 && v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
       if (!show) { if (el) el.style.display = 'none'; continue; }
+      if (d < nearD) { nearD = d; this.nearTip = s.text; } // the direction pad reads this one, there is no finger to tap it
       if (!el) {
         el = document.createElement('button');
         el.textContent = '!';
@@ -312,6 +317,7 @@ function loadMap(id) {
   app.level = w.level;
   app.world = w.world;
   app.view = w.view;
+  if (auto) auto.settle();
   app.view.setCheckpoints(1, 0);
   app.titleStorm = new Storm(app.level, 1);
   R.setTheme(app.level.mapKey);
@@ -585,9 +591,9 @@ function joinWith(kind, target) {
 
 // ---------- settings & help ----------
 const PRESETS = {
-  low: { res: 0.55, glow: 0, aa: false, sharp: 0.45, autoRes: true },
-  high: { res: 0.75, glow: 1, aa: true, sharp: 0.35, autoRes: true },
-  ultra: { res: 1, glow: 1, aa: true, sharp: 0.2, autoRes: true },
+  low: { res: 0.55, glow: 0, aa: false, sharp: 0.45, autoRes: true, lite: true },
+  high: { res: 0.75, glow: 1, aa: true, sharp: 0.35, autoRes: true, lite: false },
+  ultra: { res: 1, glow: 1, aa: true, sharp: 0.2, autoRes: true, lite: false },
 };
 
 function settingsScreen(back) {
@@ -606,8 +612,9 @@ function settingsScreen(back) {
     <label>Frame rate (fps)${seg('cap', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}</label>
     ${chk('aa', 'Smooth edges (anti aliasing)')}
     ${chk('vsync', 'VSync (frames wait for the screen: smooth, no tearing; off can lower input lag)')}
-    ${chk('autoRes', 'Auto resolution (drops a little if the phone struggles)')}
-    <p class="sub full" style="margin:0">Pixelated? Turn up Resolution and Sharpness and switch on Smooth edges. If the game stutters, lower Resolution or use 30 fps.</p>` : ''}
+    ${chk('autoRes', 'Auto graphics (lowers detail only when needed, to keep the frame rate steady)')}
+    ${chk('lite', 'Simple lighting (the fastest look, for older phones)')}
+    <p class="sub full" style="margin:0">Pixelated? Turn up Resolution and Sharpness and switch on Smooth edges. If it still looks soft with Auto graphics on, your phone is holding the frame rate that way; a lower frame rate gives it more room.</p>` : ''}
     <h3>Controls</h3>
     <label>Button size ${val('btnSize', '%')}${range('btnSize', 0.7, 1.5, 0.05, '%')}</label>
     <label>Button opacity ${val('btnAlpha', '%')}${range('btnAlpha', 0.3, 1, 0.05, '%')}</label>
@@ -619,6 +626,15 @@ function settingsScreen(back) {
     <label>Camera follow ${val('camFollow', '%')}${range('camFollow', 0, 2, 0.05, '%')}</label>
     <label>Aim assist ${val('aimHelp', '%')}${range('aimHelp', 0, 1, 0.05, '%')}</label>
     <p class="sub full" style="margin:0">Camera follow swings the camera behind you while you run (0% is off, higher is faster and further). Aim assist pulls the crosshair onto targets (0% is off).</p>
+    <h3>Controller</h3>
+    <div class="padtest full" id="padTest">
+      <div class="ps"><div class="pc" id="psL"><u></u><i></i></div><span>Left stick</span></div>
+      <div class="ps"><div class="pc" id="psR"><u></u><i></i></div><span>Right stick</span></div>
+      <p class="sub"><b id="psN">No controller connected</b><br>Stick drift? Let go of the sticks and raise the dead zone until each dot stays inside its dashed ring and turns grey.</p>
+    </div>
+    <label>Left stick dead zone ${val('deadL', '%')}${range('deadL', 0, 0.6, 0.02, '%')}</label>
+    <label>Right stick dead zone ${val('deadR', '%')}${range('deadR', 0, 0.6, 0.02, '%')}</label>
+    <p class="sub full" style="margin:0">In menus: direction pad or left stick to move, A to select, B to go back, LB and RB to switch tabs. In a climb: Start pauses, and Select opens the pause menu on Back to checkpoint.</p>
     <h3>Sound and other</h3>
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
@@ -641,10 +657,12 @@ function settingsScreen(back) {
       if (k === 'quality') {
         if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics...'); }
         Object.assign(settings, PRESETS[v]);
+        restartAuto();
         saveSettings();
         applyGraphics();
         return settingsScreen(back);
       }
+      if (k === 'cap' || k === 'res' || k === 'autoRes' || k === 'lite') restartAuto();
       saveSettings();
       applyGraphics();
       applyLayout();
@@ -683,15 +701,67 @@ function applyGraphics() {
   const R = app.renderer;
   if (!R || !R.native) return;
   if (N && N.glQuality) N.glQuality(settings.res);
-  if (N && N.glAuto) N.glAuto(!!settings.autoRes);
+  if (N && N.glCap) N.glCap(settings.cap);
   // Ask the screen for a refresh rate that matches the cap (phones that can't, keep theirs; the
   // frame limiter below still holds the cap exactly).
   if (N && N.setRefresh) N.setRefresh(settings.cap >= 120 ? 120 : settings.cap >= 90 ? 90 : 60);
   if (N && N.glVsync) N.glVsync(!!settings.vsync);
-  R.look.sharp = settings.sharp;
-  R.look.aa = !!settings.aa;
-  R.look.glow = settings.glow;
-  R.q.bloom = settings.glow > 0.01;
+  applyLook();
+}
+
+// The player's picture settings, less whatever automatic graphics has taken off right now.
+function applyLook() {
+  const R = app.renderer;
+  if (!R || !R.native) return;
+  const s = settings.autoRes && auto ? auto.step : STEPS[0];
+  R.look.scale = s.res;
+  R.look.sharp = settings.sharp * s.sharp;
+  R.look.aa = !!settings.aa && !!s.aa;
+  R.look.glow = settings.glow * s.glow;
+  R.q.bloom = R.look.glow > 0.01;
+  R.setLite(!!settings.lite || !!s.lite);
+}
+
+// Automatic graphics starts over (settings or frame rate changed) from the best look.
+function restartAuto() {
+  settings.autoLvl = 0;
+  auto = makeAuto();
+}
+
+function makeAuto() {
+  const cap = settings.cap || 60;
+  return new AutoQ({ budget: 1000 / cap, start: settings.autoLvl || 0, last: cap > 60 ? 3 : STEPS.length - 1 });
+}
+
+// The stick test in Settings: where each stick really is, and its dead zone as a ring.
+function padTester() {
+  const name = $('#psN');
+  if (!name) return;
+  const r = nav.raw, side = (id, x, y, d) => {
+    const c = $(id), u = c.firstElementChild, s = (d * 100).toFixed(0) + '%';
+    if (u.style.width !== s) u.style.width = u.style.height = s;
+    c.lastElementChild.style.transform = `translate(${(x * 32).toFixed(1)}px, ${(y * 32).toFixed(1)}px)`;
+    c.classList.toggle('in', Math.hypot(x, y) <= d);
+  };
+  side('#psL', r[0], r[1], settings.deadL);
+  side('#psR', r[2], r[3], settings.deadR);
+  const n = nav.name ? nav.name.slice(0, 44) : 'No controller connected';
+  if (name.textContent !== n) name.textContent = n;
+}
+
+// Once a second: how the last second went, and whether the graphics should change.
+function autoTick(now) {
+  if (now - autoAt < 1000 || !(N && N.glPerf)) return;
+  autoAt = now;
+  const [frames, late, gpu, gpuMax, slow] = N.glPerf().split(',').map(Number);
+  perf.gpu = gpu;
+  if (!settings.autoRes || !auto) return;
+  const was = auto.level;
+  auto.tick(gpu, gpuMax, late + slow, frames);
+  perf.level = auto.level;
+  if (auto.level !== was) applyLook();
+  // Remembered for the next launch, so a weak phone starts where it left off instead of finding out again.
+  if (auto.level !== settings.autoLvl && auto.stable()) { settings.autoLvl = auto.level; saveSettings(); }
 }
 
 // Touch buttons: centres measured from the bottom-right corner (bottom-left for left-handed), scaled by size.
@@ -749,6 +819,8 @@ function applySettings() {
   app.input.sens = settings.sens;
   app.input.aimSens = settings.aimSens;
   app.input.invert = settings.invert;
+  app.input.deadL = settings.deadL;
+  app.input.deadR = settings.deadR;
   applyGraphics();
   applyLayout();
   app.sound.setVolumes(settings.music, settings.sfx);
@@ -780,7 +852,8 @@ function howTo(back) {
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
-    <div><b>Keyboard and gamepad</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look. Controllers work too.</div>
+    <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
+    <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> or <kbd>LT</kbd> grab, <kbd>Y</kbd> or <kbd>RT</kbd> reel, <kbd>X</kbd> grapple, <kbd>RB</kbd> hold to aim and let go to shoot, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
     <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
   </div></div>`, { back });
 }
@@ -866,10 +939,22 @@ app.finish = (r) => {
   }, 1800);
 };
 
+// Going back, however it was asked for. Android may also turn a controller's B into its own back press, and a
+// single press must never count twice.
+let backAt = 0;
+function goBack() {
+  const t = performance.now();
+  if (t - backAt < 220) return false;
+  backAt = t;
+  if (app.back) app.back();
+  return true;
+}
+
 // ---------- Android hooks ----------
 window.SMU_back = () => {
-  if (app.back) app.back();
-  else if (app.game && !app.paused) pause();
+  const had = !!app.back;
+  if (!goBack()) return true;
+  if (!had && app.game && !app.paused) pause();
   return true;
 };
 window.SMU_vis = (v) => {
@@ -901,6 +986,8 @@ function boot() {
   }
   app.renderer = new Renderer($('#c'), settings.quality, safe, send);
   app.renderer.onLost = () => gfxTrouble('webgl context lost');
+  if (settings.lite === undefined) settings.lite = settings.quality === 'low';
+  auto = makeAuto();
   if (N && N.glInfo) app.renderer.gpu = N.glInfo() || 'native OpenGL';
   report('stage', { s: 'renderer', gpu: app.renderer.gpu, native: !!send, maxPx: app.renderer.maxPx });
   loadMap(settings.map);
@@ -912,6 +999,22 @@ function boot() {
   app.sound = new Sound();
   applySettings();
   $('#hPause').addEventListener('click', () => { app.sound.ui(); pause(); });
+  nav = new PadNav({
+    input: app.input,
+    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : app.screen === 'layout' ? $('#editBar') : null; },
+    screen: () => app.screen,
+    // On the title screen B does nothing: closing the whole app is for the phone's own back button.
+    back: () => { if (app.screen !== 'title') goBack(); },
+    start: (select) => {
+      // Select: the highlight starts on Back to checkpoint, so it is two presses away during a climb.
+      if (app.screen === 'game') { pause(); nav.aim(select ? 'respawn' : 'back'); }
+      else if (app.screen === 'pause') resume();
+    },
+    turn: (a) => { if (app.preview) app.preview.yaw = (app.preview.yaw || 0) + a * 3.5; },
+    sound: () => { app.sound.init(); app.sound.ui(); },
+    closed: () => app.input.holdPad(),
+    gameUp: () => { if (ui.nearTip) ui.tip(ui.nearTip); },
+  });
   document.addEventListener('pointerdown', () => app.sound.init(), { capture: true });
   window.addEventListener('resize', () => app.renderer.resize());
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
@@ -920,20 +1023,41 @@ function boot() {
   setTimeout(() => $('#loading').classList.add('gone'), 300);
 }
 
-let last = performance.now(), titleT = 0, bolt = 2, fpsN = 0, fpsT = 0, then = 0;
-const perf = { ms: 0, max: 0, n: 0, show: '' };
+let last = performance.now(), titleT = 0, bolt = 2, fpsN = 0, fpsT = 0, then = 0, auto = null, autoAt = 0, nav = null;
+let rafLast = 0, rafN = 0, rafPeriod = 0, rafCount = 0;
+const rafGaps = new Float32Array(32);
+const perf = { ms: 0, max: 0, n: 0, show: '', gap: 0, gpu: 0, level: 0 };
 function frame(now) {
   requestAnimationFrame(frame);
-  // Frame limiter: never more frames than the chosen frame rate, on any screen. A frame is drawn once its
-  // slot comes round (1 ms of slack for timer jitter) and the next slot is exactly one interval later, so
-  // the average lands on the cap even when the screen's refresh rate isn't a multiple of it. After a
-  // stall it starts counting again instead of rushing to catch up.
-  const iv = 1000 / (settings.cap || 60);
-  if (now - then < iv - 1) return;
-  then += iv;
-  if (now - then > iv) then = now;
-  const dt = Math.min((now - last) / 1000, 0.05);
+  // How fast the screen ticks: the middle of the last 32 gaps, so a hiccup doesn't count.
+  const rg = now - rafLast;
+  rafLast = now;
+  if (rg > 2 && rg < 40) {
+    rafGaps[rafN++ & 31] = rg;
+    if ((rafN & 31) === 0) rafPeriod = rafGaps.slice().sort()[16];
+  }
+  // Frame limiter: never more frames than the chosen frame rate, on any screen. When the screen is a whole
+  // multiple of it (60 on 60, 60 on 120) it simply draws every first, or every second, tick: the steadiest
+  // there is. Timers in between would now and then land just short and skip a frame for nothing.
+  const iv = 1000 / (settings.cap || 60), ratio = rafPeriod ? iv / rafPeriod : 0, div = Math.round(ratio);
+  if (div >= 1 && Math.abs(ratio - div) < 0.1) {
+    if (++rafCount < div) return;
+    rafCount = 0;
+    then = now;
+  } else {
+    // Otherwise a frame is drawn once its slot comes round (1 ms of slack for timer jitter) and the next slot is
+    // exactly one interval later, so the average lands on the cap. After a stall it starts counting again
+    // instead of rushing to catch up.
+    if (now - then < iv - 1) return;
+    then += iv;
+    if (now - then > iv) then = now;
+  }
+  const gap = now - last;
+  if (gap > perf.gap) perf.gap = gap;
+  const dt = Math.min(gap / 1000, 0.05);
   last = now;
+  nav.tick(now);
+  if (app.screen === 'settings') padTester();
   const w0 = performance.now();
   heartbeat(now);
   if (app.game) app.game.update(dt, app.paused);
@@ -947,11 +1071,12 @@ function frame(now) {
   if (work > perf.max) perf.max = work;
   if (++health.frames === 1 || health.frames === 60) report('stage', { s: 'frame' + health.frames, ms: Math.round(now - health.since) });
   checkGpu();
+  autoTick(now);
   fpsN++;
   if ((fpsT += dt) > 0.5) {
-    perf.show = `${Math.round(fpsN / fpsT)} fps · ${(perf.ms / Math.max(1, perf.n)).toFixed(1)}/${perf.max.toFixed(0)} ms`;
+    perf.show = `${Math.round(fpsN / fpsT)} fps · worst ${perf.gap.toFixed(0)} ms · GPU ${perf.gpu.toFixed(1)} · JS ${(perf.ms / Math.max(1, perf.n)).toFixed(1)}/${perf.max.toFixed(0)} · level ${perf.level}`;
     if (settings.fps) $('#hFps').textContent = perf.show;
-    fpsN = 0; fpsT = 0; perf.ms = 0; perf.n = 0; perf.max = 0;
+    fpsN = 0; fpsT = 0; perf.ms = 0; perf.n = 0; perf.max = 0; perf.gap = 0;
   }
 }
 

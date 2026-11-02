@@ -13,6 +13,9 @@ export class Input {
     this.sens = 1;
     this.aimSens = 1;
     this.invert = false;
+    this.deadL = 0.16; // how far a controller stick must move before it counts (stick drift stays below this)
+    this.deadR = 0.16;
+    this.padMask = [];
     this.enabled = false;
     this.stick = null;
     this.cam = null;
@@ -157,6 +160,11 @@ export class Input {
     });
   }
 
+  // A menu just closed with a button still down: it doesn't count in the game until it is let go.
+  holdPad() {
+    for (let i = 0; i < 20; i++) this.padMask[i] = true;
+  }
+
   reset() {
     this.sx = this.sy = 0;
     this.btn.jump = this.btn.grab = this.btn.reel = this.btn.act = this.btn.shield = this.btn.aim = false;
@@ -181,12 +189,23 @@ export class Input {
     let reel = this.btn.reel || k.has('KeyE') || k.has('KeyK');
     let jumpPressed = this.jumpEdge;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    // The camera turns at the same speed at any frame rate.
+    const now = performance.now(), padK = Math.min(3, (now - (this.padT || now - 16.67)) / 16.67), mask = this.padMask;
+    this.padT = now;
+    // Round dead zones, measured on the whole stick. Past the edge the range starts again from zero, so there is
+    // no jump and the full range stays usable however large the dead zone is.
+    const live = (x, y, d) => { const m = Math.sqrt(x * x + y * y); return m <= d || m === 0 ? 0 : Math.min(1, (m - d) / (1 - d)) / m; };
     for (const p of pads) {
       if (!p) continue;
-      const ax = (i) => (Math.abs(p.axes[i] || 0) > 0.15 ? p.axes[i] : 0);
-      sx += ax(0); sy -= ax(1);
-      this.camDX += ax(2) * 14; this.camDY += ax(3) * 10;
-      const b = (i) => p.buttons[i] && p.buttons[i].pressed;
+      const a0 = p.axes[0] || 0, a1 = p.axes[1] || 0, a2 = p.axes[2] || 0, a3 = p.axes[3] || 0;
+      const kl = live(a0, a1, this.deadL), kr = live(a2, a3, this.deadR);
+      sx += a0 * kl; sy -= a1 * kl;
+      this.camDX += a2 * kr * 14 * padK; this.camDY += a3 * kr * 10 * padK;
+      const b = (i) => {
+        const on = !!(p.buttons[i] && p.buttons[i].pressed);
+        if (!on) mask[i] = false;
+        return on && !mask[i];
+      };
       if (b(0) && !this.padJump) jumpPressed = true;
       this.padJump = b(0);
       jump = jump || b(0);
@@ -199,8 +218,6 @@ export class Input {
       else if (this.padAim) { this.padAim = false; this.btn.aim = false; this.edge.fire = true; }
       if (b(4) && !this.padShield) this.edge.shield = true;
       this.padShield = b(4);
-      if (b(9) && !this.padStart && this.onPause) this.onPause();
-      this.padStart = b(9);
     }
     const l = Math.hypot(sx, sy);
     if (l > 1) { sx /= l; sy /= l; }

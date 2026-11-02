@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { BOX } from './physics.js';
 import { CORE_R, cpEnabled } from './level.js';
 import { TAU, rng, clamp } from './util.js';
-import { PATTERN_GLSL } from './pattern.js';
+import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
 import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist } from './scenery.js';
 
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
@@ -753,8 +753,9 @@ export class WorldView {
       const sm = new THREE.InstancedMesh(sail, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide }), boats.length);
       boats.forEach((d, i) => { const m = mat4(d.x, d.y, d.z, d.s, d.s, d.s, 0, d.ry, 0); bm.setMatrixAt(i, m); sm.setMatrixAt(i, m); sm.setColorAt(i, col.setHex([0xffffff, 0xff6b5a, 0x5ab8ff, 0xffd25a][i % 4])); });
       this.add(bm); this.add(sm);
-      // Puffy clouds around the upper tower, slowly circling.
-      const clouds = D('cloud'), puff = new THREE.IcosahedronGeometry(1, 2), n = clouds.length * 5;
+      // Puffy clouds around the upper tower, slowly circling, well outside the route (level.js sees to that). Always
+      // far off now, so fewer corners each.
+      const clouds = D('cloud'), puff = new THREE.IcosahedronGeometry(1, 1), n = clouds.length * 5;
       const cm = new THREE.InstancedMesh(puff, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, emissive: 0xc8d8ff, emissiveIntensity: 0.25 }), n);
       let k = 0;
       for (const d of clouds) for (let j = 0; j < 5; j++) {
@@ -1284,9 +1285,7 @@ export class WorldView {
         }`,
       fragmentShader: `#include <fog_pars_fragment>
         uniform float uT, uS, uA, uE; uniform vec3 uC, uF; varying vec2 vUv;
-        float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+        ${noiseGlsl()}
         void main(){
           vec2 p = vec2(vUv.x, vUv.y + uT * uS);
           float n = n21(p * vec2(10.0, 1.4)) * 0.6 + n21(p * vec2(26.0, 4.0) + 7.3) * 0.4;
@@ -1724,11 +1723,26 @@ export class WorldView {
   }
 
   // Animate everything that moves. t is shared game time, warn(r) returns rod warning 0..1.
-  update(t, dt, storm) {
+  // Before each physics step: where the moving platforms are now, so they can be drawn between two steps.
+  snapDyn() {
+    for (const d of this.dyn) { const c = d.c; d.ox = c.x; d.oy = c.y; d.oz = c.z; d.ory = c.ry; }
+  }
+
+  update(t, dt, storm, alpha = 1) {
+    // The clock the water and glow shaders see. It restarts every hour, so it stays small on long or resumed
+    // climbs: phone GPUs lose precision on big numbers, and the moving water went flat and faded out.
+    const wt = t % 3600;
     for (const d of this.dyn) {
       const c = d.c, m = d.mesh;
-      m.position.set(c.x, c.y, c.z);
-      m.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+      if (d.ox === undefined) {
+        m.position.set(c.x, c.y, c.z);
+        m.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+      } else {
+        // The same moment the climber is drawn at, so standing on one stays exact.
+        m.position.set(d.ox + (c.x - d.ox) * alpha, d.oy + (c.y - d.oy) * alpha, d.oz + (c.z - d.oz) * alpha);
+        const dr = c.ry - d.ory;
+        m.rotation.set(c.rx, Math.abs(dr) < 1 ? d.ory + dr * alpha : c.ry, c.rz, 'YXZ');
+      }
       if (c.blink) {
         const st = storm.on(c.blink) ? storm.blink(c.blink, t) : { on: true, warn: 0 };
         m.visible = st.on;
@@ -1749,7 +1763,7 @@ export class WorldView {
       const k = 1 + 0.12 * Math.sin(t * 6);
       c.fx.scale.set(k, 1, k);
     }
-    for (const e of this.cps) { e.halo.rotation.y = t * 1.5; e.halo.rotation.x = Math.sin(t) * 0.4; e.beam.material.uniforms.uT.value = t; }
+    for (const e of this.cps) { e.halo.rotation.y = t * 1.5; e.halo.rotation.x = Math.sin(t) * 0.4; e.beam.material.uniforms.uT.value = wt; }
     for (const r of this.rods) {
       const w = storm.rodWarn(r.r, t);
       r.warnMat.opacity = w * (0.55 + 0.45 * Math.sin(t * 30));
@@ -1760,7 +1774,7 @@ export class WorldView {
       const on = storm.fanOn(f.f, t);
       f.spin += dt * (on ? 28 : 2.5);
       f.rotor.rotation.z = f.spin;
-      f.sm.uniforms.uT.value = t;
+      f.sm.uniforms.uT.value = wt;
       f.sm.uniforms.uOn.value += ((on ? 1 : 0) - f.sm.uniforms.uOn.value) * Math.min(1, dt * 8);
     }
     for (const s of this.spin) s.o.rotation[s.axis] += s.sp * dt;
@@ -1774,7 +1788,7 @@ export class WorldView {
       this.rocks.setMatrixAt(i, mat4(d.x, d.y + Math.sin(t * 0.3 + i) * 1.5, d.z, d.s, d.s * 0.8, d.s, d.rx + t * d.sp, d.ry + t * d.sp * 0.7, 0));
     }
     this.rocks.instanceMatrix.needsUpdate = true;
-    this.beam.material.uniforms.uT.value = t;
+    this.beam.material.uniforms.uT.value = wt;
     this.summitOrb.scale.setScalar(1 + 0.1 * Math.sin(t * 2));
     if (this.foam) this.foam.material.opacity = 0.4 + 0.2 * Math.sin(t * 1.3);
     if (this.cloudGroup) this.cloudGroup.rotation.y = t * 0.012;
@@ -1840,9 +1854,9 @@ export class WorldView {
       e.sh.scale.set(k, 1, k);
     }
     if (this.embers && cam) { this.embers.position.y = cam.y - 20 + ((t * 1.6) % 10); this.embers.rotation.y = t * 0.05; }
-    if (this.convFx) this.convFx.uniforms.uTime.value = t;
-    for (const m of this.waters) m.uniforms.uT.value = t;
-    for (const m of this.timeMats) m.uniforms.uT.value = t;
+    if (this.convFx) this.convFx.uniforms.uTime.value = wt;
+    for (const m of this.waters) m.uniforms.uT.value = wt;
+    for (const m of this.timeMats) m.uniforms.uT.value = wt;
     this.updateBands();
     for (const e of this.fishFx) e(t, cam);
     for (const e of this.swingFx) {

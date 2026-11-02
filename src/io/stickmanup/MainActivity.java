@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements Net.Out {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "3.6";
+    static final String VERSION = "3.7";
     private Net net;
     private final Expose expose = new Expose();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -162,6 +162,13 @@ public class MainActivity extends Activity implements Net.Out {
                 return true;
             }
         });
+        web.setFocusable(true);
+        web.setFocusableInTouchMode(true);
+        // No grey overlay over the whole game while a controller is in use (API 26, not in the jar this builds against).
+        try {
+            View.class.getMethod("setDefaultFocusHighlightEnabled", boolean.class).invoke(web, false);
+        } catch (Exception ignored) {
+        }
         web.loadUrl(ORIGIN + "index.html");
     }
 
@@ -248,7 +255,12 @@ public class MainActivity extends Activity implements Net.Out {
     @Override
     public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
-        if (focus) immersive();
+        if (focus) {
+            immersive();
+            // A controller's buttons and sticks go to the view with focus. On phones nothing has focus until the
+            // first touch, so without this the controller would do nothing until the screen had been tapped.
+            web.requestFocus();
+        }
     }
 
     @Override
@@ -356,14 +368,15 @@ public class MainActivity extends Activity implements Net.Out {
             glView.setVsync(on);
         }
 
+        /** The last second's frame numbers, for the game's automatic graphics. */
         @JavascriptInterface
-        public void glAuto(final boolean on) {
-            ui.post(new Runnable() {
-                @Override
-                public void run() {
-                    glView.setAuto(on);
-                }
-            });
+        public String glPerf() {
+            return glView.stats;
+        }
+
+        @JavascriptInterface
+        public void glCap(int cap) {
+            glView.setCap(cap);
         }
 
         /** Display refresh rate the game asks for (60 normally; 120 on fast phones if the player wants it). */

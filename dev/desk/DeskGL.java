@@ -1,3 +1,5 @@
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GL3ES3;
 import com.jogamp.opengl.GL4ES3;
 import io.stickmanup.gl.GLApi;
 
@@ -12,6 +14,11 @@ public final class DeskGL implements GLApi {
 
     public DeskGL(GL4ES3 g) { this.g = g; }
 
+    private final int[] depth = {GL.GL_DEPTH_ATTACHMENT};
+    public long fenceSync() { return g.glFenceSync(GL3ES3.GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
+    public void clientWaitSync(long sync, long nanos) { g.glClientWaitSync(sync, GL3ES3.GL_SYNC_FLUSH_COMMANDS_BIT, nanos); }
+    public void deleteSync(long sync) { g.glDeleteSync(sync); }
+    public void invalidateDepth() { g.glInvalidateFramebuffer(GL.GL_FRAMEBUFFER, 1, depth, 0); }
     public int createShader(int type) { return g.glCreateShader(type); }
     public void shaderSource(int s, String src) { g.glShaderSource(s, 1, new String[]{src}, null); }
     public void compileShader(int s) { g.glCompileShader(s); }

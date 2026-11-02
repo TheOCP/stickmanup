@@ -5,11 +5,12 @@ import { RenderPass } from 'three/addons/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/OutputPass.js';
 import { Mirror } from './mirror.js';
+import { useBakedNoise } from './pattern.js';
 
 export const QUALITY = {
-  low: { dpr: 1.0, bloom: false, shadow: 0, rain: 1200, ocean: 72, samples: 0 },
-  high: { dpr: 1.5, bloom: true, shadow: 1024, rain: 2600, ocean: 128, samples: 4 },
-  ultra: { dpr: 2.0, bloom: true, shadow: 2048, rain: 4200, ocean: 192, samples: 4 },
+  low: { dpr: 1.0, bloom: false, shadow: 0, rain: 1200, ocean: 48, samples: 0 },
+  high: { dpr: 1.5, bloom: true, shadow: 1024, rain: 2600, ocean: 96, samples: 4 },
+  ultra: { dpr: 2.0, bloom: true, shadow: 2048, rain: 4200, ocean: 128, samples: 4 },
 };
 
 const BOLT_PTS = 15;
@@ -40,6 +41,11 @@ float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); 
 float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }`;
+// On Android: the same noise read from one texture baked at startup. That one sum (ten layers per pixel for the
+// clouds, ten more for the sea) used to be the most expensive thing in the picture.
+const NOISE_BAKED = `uniform sampler2D uNoise;
+float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return textureLod(uNoise, (i + f + 0.5) / 512.0, 0.0).r; }
+float fbm(vec2 p){ return textureLod(uNoise, p / 16.0, 0.0).b; }`;
 
 // GPU names that need care. Pixel 10 (PowerVR D-Series) drivers crash when WebGL programs are deleted
 // at runtime and fail at large render sizes, so on these GPUs the canvas stays under ~0.7 megapixels.
@@ -63,6 +69,7 @@ export class Renderer {
       this.native = true;
       this.r = null;
       this.mirror = new Mirror(sendNative);
+      useBakedNoise(true);
       this.gpu = 'native';
       this.powervr = false;
       canvas.style.display = 'none';
@@ -97,7 +104,7 @@ export class Renderer {
     this.eye = 0;
     this.theme = THEMES.storm;
     // Player picture settings: sharpening 0..1, edge anti-aliasing on/off, glow strength multiplier.
-    this.look = { sharp: 0.35, aa: true, glow: 1 };
+    this.look = { sharp: 0.35, aa: true, glow: 1, scale: 1, lite: 0 };
 
     this.hemi = new THREE.HemisphereLight(0x8a98c8, 0x141824, 0.6);
     this.moon = new THREE.DirectionalLight(0xb8c4ff, 1.15);
@@ -178,31 +185,32 @@ export class Renderer {
     this.skyU = {
       uTime: { value: 0 }, uFlash: { value: 0 }, uEye: { value: 0 },
       uTop: { value: new THREE.Color(0x0d1426) }, uHor: { value: new THREE.Color(0x1b2a3a) }, uGlow: { value: new THREE.Color(0xffd890) },
-      uSunDir: { value: new THREE.Vector3(0.45, 1, 0.3).normalize() }, uSunCol: { value: new THREE.Color(0xffe2b0) }, uSun: { value: 0 }, uCloud: { value: 1 }, uDay: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.45, 1, 0.3).normalize() }, uSunCol: { value: new THREE.Color(0xffe2b0) }, uSun: { value: 0 }, uCloud: { value: 1 }, uDay: { value: 0 }, uLite: { value: 0 },
     };
     const m = new THREE.ShaderMaterial({
       uniforms: this.skyU, side: THREE.BackSide, depthWrite: false, fog: false,
       vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float uTime, uFlash, uEye, uSun, uCloud, uDay; uniform vec3 uTop, uHor, uGlow, uSunDir, uSunCol; varying vec3 vDir; ${NOISE}
+      fragmentShader: `uniform float uTime, uFlash, uEye, uSun, uCloud, uDay, uLite; uniform vec3 uTop, uHor, uGlow, uSunDir, uSunCol; varying vec3 vDir; ${this.native ? NOISE_BAKED : NOISE}
         void main(){
           vec3 d = normalize(vDir); float h = d.y;
           vec3 col = mix(uHor, uTop, smoothstep(-0.05, 0.55, h));
           float sd = max(dot(d, uSunDir), 0.0);
-          col += uSunCol * pow(sd, 8.0) * 0.25 * uSun;
+          float sd2 = sd * sd, sd4 = sd2 * sd2;
+          col += uSunCol * sd4 * sd4 * 0.25 * uSun;
           vec2 uv = d.xz / (abs(h) + 0.22) * 1.3;
           float c = fbm(uv + vec2(uTime * 0.012, uTime * 0.007));
-          float c2 = fbm(uv * 2.4 - vec2(uTime * 0.025, 0.0));
+          float c2 = uLite > 0.5 ? c : fbm(uv * 2.4 - vec2(uTime * 0.025, 0.0));
           float cloud = smoothstep(0.32 + (1.0 - uCloud) * 0.32, 0.86, c * 0.75 + c2 * 0.4);
           vec3 cc = mix(uHor * 0.55, uTop * 1.9 + vec3(0.035, 0.04, 0.06), c2);
           // Daylight clouds: bright tops, soft grey bellies, a silver lining toward the sun.
-          vec3 dc = mix(vec3(0.62, 0.68, 0.78), vec3(1.05, 1.04, 1.02), c2) + uSunCol * pow(sd, 6.0) * 0.6;
+          vec3 dc = mix(vec3(0.62, 0.68, 0.78), vec3(1.05, 1.04, 1.02), c2) + uSunCol * sd4 * sd2 * 0.6;
           cc = mix(cc, dc, uDay);
-          col += uSunCol * (pow(sd, 1400.0) * 40.0 + pow(sd, 90.0) * 1.2) * uSun * (1.0 - cloud * 0.85);
+          if (uSun > 0.0 && sd > 0.8) col += uSunCol * (pow(sd, 1400.0) * 40.0 + pow(sd, 90.0) * 1.2) * uSun * (1.0 - cloud * 0.85);
           col = mix(col, cc, cloud * smoothstep(-0.25, 0.12, h));
           col += uFlash * (0.15 + cloud * 0.7) * vec3(0.55, 0.62, 1.0) * smoothstep(-0.15, 0.3, h);
           float eye = uEye > 0.001 ? smoothstep(1.0 - 0.32 * uEye, 1.0 - 0.06 * uEye, h) * uEye : 0.0;
           col = mix(col, uGlow * 1.4, eye * (1.0 - cloud * 0.5));
-          col += uGlow * pow(max(h, 0.0), 6.0) * uEye * 0.45;
+          if (uEye > 0.001) col += uGlow * pow(max(h, 0.0), 6.0) * uEye * 0.45;
           col = mix(col, uHor * 0.75, 1.0 - smoothstep(-0.35, 0.0, h));
           gl_FragColor = vec4(clamp(col, 0.0, 20.0), 1.0);
           #include <tonemapping_fragment>
@@ -211,7 +219,8 @@ export class Renderer {
     });
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), m);
     this.sky.frustumCulled = false;
-    this.sky.renderOrder = -10;
+    // Drawn after everything solid, so it only colours the pixels nothing else covers.
+    this.sky.renderOrder = 1000;
     this.scene.add(this.sky);
   }
 
@@ -235,7 +244,7 @@ export class Renderer {
       uTime: { value: 0 }, uFlash: { value: 0 }, uDeep: { value: new THREE.Color(0x03080c) }, uSky: { value: new THREE.Color(0x1d3040) },
       uTop: { value: new THREE.Color(0x0d1426) }, uShallow: { value: new THREE.Color(0x03080c) }, uShallowR: { value: 0 },
       uSunDir: { value: new THREE.Vector3(0.45, 1, 0.3).normalize() }, uSunCol: { value: new THREE.Color(0xffe2b0) }, uSun: { value: 0 },
-      uAmp: { value: 1 }, uFoam: { value: 0.5 }, uScatter: { value: new THREE.Color(0x0b2a30) }, uClear: { value: 0 }, uShore: { value: 0 }, uLava: { value: 0 },
+      uAmp: { value: 1 }, uFoam: { value: 0.5 }, uScatter: { value: new THREE.Color(0x0b2a30) }, uClear: { value: 0 }, uShore: { value: 0 }, uLava: { value: 0 }, uLite: { value: 0 },
     }]);
     // Gerstner waves (peaked crests, flat troughs). The vertex shader moves the grid with the long ones; the
     // fragment shader works out the exact slope of all of them per pixel. Shorter waves fade out with distance
@@ -247,34 +256,52 @@ export class Renderer {
         tn += vec3(d.x * k * a * c, Q * k * a * s, d.y * k * a * c);
       }
       float shoreDamp(vec2 p){ return uShore > 0.0 ? mix(0.12, 1.0, smoothstep(uShore, uShore + 35.0, length(p))) : 1.0; }
-      void waves(vec2 p, float dist, float lod, float amp, inout vec3 disp, inout vec3 tn){
+      void longWaves(vec2 p, float dist, float lod, float amp, inout vec3 disp, inout vec3 tn){
         gw(p, vec2(0.970, 0.243), 64.0, 0.85 * amp, 0.55, 1.0 - smoothstep(500.0 * lod, 900.0 * lod, dist), disp, tn);
         gw(p, vec2(-0.330, 0.944), 33.0, 0.48 * amp, 0.6, 1.0 - smoothstep(260.0 * lod, 520.0 * lod, dist), disp, tn);
         gw(p, vec2(0.824, -0.566), 19.0, 0.27 * amp, 0.7, 1.0 - smoothstep(150.0 * lod, 300.0 * lod, dist), disp, tn);
+      }
+      void shortWaves(vec2 p, float dist, float lod, float amp, inout vec3 disp, inout vec3 tn){
         gw(p, vec2(0.150, 0.989), 11.0, 0.13 * amp, 0.7, 1.0 - smoothstep(90.0 * lod, 180.0 * lod, dist), disp, tn);
         gw(p, vec2(-0.949, -0.316), 6.5, 0.06 * amp, 0.6, 1.0 - smoothstep(50.0 * lod, 110.0 * lod, dist), disp, tn);
+      }
+      void waves(vec2 p, float dist, float lod, float amp, inout vec3 disp, inout vec3 tn){
+        longWaves(p, dist, lod, amp, disp, tn);
+        shortWaves(p, dist, lod, amp, disp, tn);
       }`;
+    // On Android the long waves' slope is worked out per corner of the water grid and only the short ones per pixel.
+    const NAT = this.native ? '#define SMU_NATIVE\n' : '';
     const m = new THREE.ShaderMaterial({
       uniforms: this.oceanU, fog: true,
-      vertexShader: `#include <fog_pars_vertex>
+      vertexShader: `${NAT}#include <fog_pars_vertex>
         ${WAVES}
         varying vec3 vW; varying float vH; varying float vAmp;
+        #ifdef SMU_NATIVE
+        varying vec3 vTn;
+        #endif
         void main(){
           vec4 w = modelMatrix * vec4(position, 1.0);
           float amp = uAmp * shoreDamp(w.xz), dist = length(cameraPosition.xz - w.xz);
           vec3 disp = vec3(0.0), tn = vec3(0.0);
           waves(w.xz, dist, 0.3, amp, disp, tn);
+          #ifdef SMU_NATIVE
+          vec3 dn = vec3(0.0); vTn = vec3(0.0);
+          longWaves(w.xz, dist, 1.0, amp, dn, vTn);
+          #endif
           w.xyz += disp;
           vH = disp.y / max(amp * 1.2, 0.05); vW = w.xyz; vAmp = amp;
           vec4 mvPosition = viewMatrix * w;
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`,
-      fragmentShader: `#include <fog_pars_fragment>
+      fragmentShader: `${NAT}#include <fog_pars_fragment>
         ${WAVES}
-        uniform float uFlash, uShallowR, uSun, uFoam, uClear, uLava; uniform vec3 uDeep, uSky, uTop, uShallow, uSunDir, uSunCol, uScatter;
+        uniform float uFlash, uShallowR, uSun, uFoam, uClear, uLava, uLite; uniform vec3 uDeep, uSky, uTop, uShallow, uSunDir, uSunCol, uScatter;
         varying vec3 vW; varying float vH; varying float vAmp;
-        ${NOISE}
+        #ifdef SMU_NATIVE
+        varying vec3 vTn;
+        #endif
+        ${this.native ? NOISE_BAKED : NOISE}
         void main(){
           vec3 toCam = cameraPosition - vW; float dist = length(toCam); vec3 v = toCam / max(dist, 1e-3);
           vec2 p = vW.xz;
@@ -286,43 +313,61 @@ export class Renderer {
             col = mix(uDeep * (0.85 + 0.35 * pulse), uDeep * 0.05 + vec3(0.035, 0.018, 0.012), crust);
             col += uDeep * 0.35 * (1.0 - smoothstep(0.0, 0.08, abs(k1 * 0.65 + k2 * 0.35 - 0.47)));
           } else {
-            vec3 disp = vec3(0.0), tn = vec3(0.0);
+            vec3 disp = vec3(0.0);
+            #ifdef SMU_NATIVE
+            vec3 tn = vTn;
+            if (uLite < 0.5) shortWaves(p, dist, 1.0, vAmp, disp, tn);
+            #else
+            vec3 tn = vec3(0.0);
             waves(p, dist, 1.0, vAmp, disp, tn);
+            #endif
             vec3 n = vec3(-tn.x, 1.0 - tn.y, -tn.z);
             // Fine ripples: two layers of drifting noise, as a slope, fading with distance.
             float rk = (1.0 - smoothstep(25.0, 170.0, dist)) * (0.45 + 0.55 * min(uAmp, 1.0));
             vec2 q1 = p * 0.55 + vec2(uTime * 0.31, uTime * 0.17), q2 = p * 1.35 + vec2(-uTime * 0.23, uTime * 0.37);
+            #ifdef SMU_NATIVE
+            // The two soft noise layers in one read each stand in for a slope in x and z.
+            vec2 rg = vec2(0.0);
+            if (rk > 0.001 && uLite < 0.5) rg = ((textureLod(uNoise, q1 / 16.0, 0.0).ba - 0.484) * 0.42 + (textureLod(uNoise, q2 / 16.0, 0.0).ba - 0.484) * 0.21) * rk;
+            #else
             float a0 = noise(q1), b0 = noise(q2), e = 0.07;
             vec2 g1 = vec2(noise(q1 + vec2(e, 0.0)) - a0, noise(q1 + vec2(0.0, e)) - a0) / e;
             vec2 g2 = vec2(noise(q2 + vec2(e, 0.0)) - b0, noise(q2 + vec2(0.0, e)) - b0) / e;
             vec2 rg = (g1 * 0.07 + g2 * 0.035) * rk;
+            #endif
             n = normalize(n - vec3(rg.x, 0.0, rg.y));
             // Reflection: the sky (horizon colour low down, sky colour higher up) weighted by Fresnel.
             float ndv = max(dot(n, v), 0.0), F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
             vec3 r = reflect(-v, n); r.y = abs(r.y);
             vec3 refl = mix(uSky, uTop, smoothstep(0.03, 0.6, r.y));
             float sd = max(dot(r, uSunDir), 0.0);
-            vec3 spec = uSunCol * (pow(sd, 1600.0) * 70.0 + pow(sd, 140.0) * 1.6 + pow(sd, 14.0) * 0.07) * uSun;
+            vec3 spec = vec3(0.0);
+            if (uSun > 0.0 && sd > 0.5) spec = uSunCol * (pow(sd, 1600.0) * 70.0 + pow(sd, 140.0) * 1.6 + pow(sd, 14.0) * 0.07) * uSun;
             // The water itself: deep colour, clear and bright over sand near the shore, lit through the crests.
             float near = uShallowR > 0.0 ? 1.0 - smoothstep(uShallowR * 0.55, uShallowR * 1.6, length(p)) : 0.0;
             vec3 body = mix(uDeep, uShallow, near);
             vec2 sunH = normalize(uSunDir.xz + vec2(1e-4)), look = -v.xz / max(length(v.xz), 1e-3);
             float crest = smoothstep(-0.15, 0.95, vH), toward = 0.35 + 0.65 * max(dot(look, sunH), 0.0);
             body += uScatter * crest * toward * (0.45 + 0.55 * uSun);
-            float c1 = noise(p * 0.33 + vec2(uTime * 0.21, -uTime * 0.16)), c2 = noise(p * 0.47 - vec2(uTime * 0.17, uTime * 0.12));
-            float caus = pow(1.0 - abs(c1 + c2 - 1.0), 9.0);
-            body += uShallow * caus * near * uClear * 0.7 * (1.0 - smoothstep(20.0, 140.0, dist));
+            if (near * uClear > 0.001 && dist < 140.0 && uLite < 0.5) {
+              float c1 = noise(p * 0.33 + vec2(uTime * 0.21, -uTime * 0.16)), c2 = noise(p * 0.47 - vec2(uTime * 0.17, uTime * 0.12));
+              float caus = pow(1.0 - abs(c1 + c2 - 1.0), 9.0);
+              body += uShallow * caus * near * uClear * 0.7 * (1.0 - smoothstep(20.0, 140.0, dist));
+            }
             col = mix(body, refl, F) + spec * (0.2 + F);
             // Foam: whitecaps on the crests and surf rolling onto the beach, broken up by noise.
+            // Only worked out where there can be foam at all.
+            float foam = 0.0, d = uShore > 0.0 ? length(p) - uShore : 99.0;
+            if (uLite < 0.5 && dist < 450.0 && (d < 5.0 || (uFoam > 0.0 && vH > 0.5))) {
             float fn = noise(p * 1.7 + vec2(uTime * 0.5, 0.0)) * 0.6 + noise(p * 4.3 - vec2(uTime * 0.4)) * 0.4;
-            float foam = smoothstep(0.5, 0.95, vH) * smoothstep(0.55, 0.8, fn) * uFoam;
+            foam = smoothstep(0.5, 0.95, vH) * smoothstep(0.55, 0.8, fn) * uFoam;
             if (uShore > 0.0) {
               // Thin broken lines of surf running up the beach, and a lacy edge where the water meets the sand.
-              float d = length(p) - uShore;
               float band = (1.0 - smoothstep(0.0, 5.0, d)) * smoothstep(-0.6, 0.3, d);
               float lines = smoothstep(0.65, 0.95, 0.5 + 0.5 * sin(d * 1.7 - uTime * 1.5 + fn * 2.5));
               float edge = (1.0 - smoothstep(0.0, 1.1, d)) * smoothstep(-0.6, 0.0, d);
               foam = max(foam, (band * lines * 0.8 + edge * 0.7) * smoothstep(0.3, 0.65, fn));
+            }
             }
             vec3 foamCol = mix(uSky * 1.5 + vec3(0.06), vec3(0.93, 0.97, 1.0), clamp(uSun, 0.0, 1.0));
             col = mix(col, foamCol, foam * (1.0 - smoothstep(150.0, 450.0, dist)));
@@ -336,6 +381,7 @@ export class Renderer {
     });
     this.ocean = new THREE.Mesh(g, m);
     this.ocean.frustumCulled = false;
+    this.ocean.renderOrder = 999;
     this.scene.add(this.ocean);
   }
 
@@ -464,18 +510,29 @@ export class Renderer {
     this.flashV = Math.max(this.flashV, v);
   }
 
+  // The cheapest picture for weak phones: lit per corner (native side), plain sky and sea, a third of the rain.
+  setLite(on) {
+    const v = on ? 1 : 0;
+    this.look.lite = v;
+    this.skyU.uLite.value = v;
+    this.oceanU.uLite.value = v;
+    this.rain.geometry.setDrawRange(0, Math.round(this.q.rain * (on ? 0.35 : 1)) * 2);
+  }
+
   // Per-frame storm animation. zone carries fog and accent colours, eye opens toward the summit.
   update(dt, cam, zone, eye, wind) {
     this.t += dt;
     const fl = this.flashV * (0.75 + 0.25 * Math.sin(this.t * 60));
     this.flashV *= Math.exp(-dt * 6);
-    this.skyU.uTime.value = this.t;
+    // Small numbers for the shaders, however long the game has been open (see WorldView.update).
+    const wt = this.t % 3600;
+    this.skyU.uTime.value = wt;
     this.skyU.uFlash.value = fl;
     this.eye += (eye - this.eye) * Math.min(1, dt * 0.8);
     this.skyU.uEye.value = this.eye;
-    this.oceanU.uTime.value = this.t;
+    this.oceanU.uTime.value = wt;
     this.oceanU.uFlash.value = fl;
-    this.rainU.uTime.value = this.t;
+    this.rainU.uTime.value = wt;
     this.rainU.uCam.value.copy(cam);
     this.rainU.uWind.value.set(3 + wind.x * 0.6, 1 + wind.z * 0.6);
     this.rainU.uAmt.value = 1 - this.eye * 0.75;
@@ -522,10 +579,17 @@ export class Renderer {
 
   // Lights, fog and post settings for the native renderer (layout matches NRender.env).
   env() {
-    const f = this.scene.fog, hs = this.hemi.color, hg = this.hemi.groundColor, mc = this.moon.color;
-    const d = this.moon.position.clone().sub(this.moon.target.position).normalize();
-    return [f.color.r, f.color.g, f.color.b, f.density, hs.r, hs.g, hs.b, hg.r, hg.g, hg.b, this.hemi.intensity,
-      mc.r, mc.g, mc.b, this.moon.intensity, d.x, d.y, d.z, this.theme.exposure, this.q.bloom && this.look.glow > 0.01 ? 1 : 0,
-      this.theme.bloom[0] * this.look.glow, this.theme.bloom[1], this.theme.bloom[2], this.look.sharp, this.look.aa ? 1 : 0];
+    const e = this.envA || (this.envA = new Array(27).fill(0));
+    const f = this.scene.fog, hs = this.hemi.color, hg = this.hemi.groundColor, mc = this.moon.color, mp = this.moon.position, mt = this.moon.target.position, T = this.theme, L = this.look;
+    let dx = mp.x - mt.x, dy = mp.y - mt.y, dz = mp.z - mt.z;
+    const dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    dx /= dl; dy /= dl; dz /= dl;
+    e[0] = f.color.r; e[1] = f.color.g; e[2] = f.color.b; e[3] = f.density;
+    e[4] = hs.r; e[5] = hs.g; e[6] = hs.b; e[7] = hg.r; e[8] = hg.g; e[9] = hg.b; e[10] = this.hemi.intensity;
+    e[11] = mc.r; e[12] = mc.g; e[13] = mc.b; e[14] = this.moon.intensity; e[15] = dx; e[16] = dy; e[17] = dz;
+    e[18] = T.exposure; e[19] = this.q.bloom && L.glow > 0.01 ? 1 : 0;
+    e[20] = T.bloom[0] * L.glow; e[21] = T.bloom[1]; e[22] = T.bloom[2]; e[23] = L.sharp; e[24] = L.aa ? 1 : 0;
+    e[25] = L.scale; e[26] = L.lite;
+    return e;
   }
 }

@@ -216,7 +216,7 @@ export class Game {
   update(dt, paused) {
     const app = this.app;
     if (this.solo) {
-      if (paused) return this.draw(dt);
+      if (paused) return this.drawSmooth(dt);
       this.soloT += dt;
     }
     const T = this.time;
@@ -244,6 +244,7 @@ export class Game {
     while (this.simT + STEP <= T && n < 6) {
       const jp = this.jumpQueued;
       this.jumpQueued = false;
+      this.prevX = this.me.x; this.prevY = this.me.y; this.prevZ = this.me.z;
       this.step(jp === inp.jumpPressed ? inp : Object.assign({}, inp, { jumpPressed: jp }));
       n++;
     }
@@ -263,11 +264,28 @@ export class Game {
     if (this.s.isHost && this.saveAcc > 4 && !this.won) { this.saveAcc = 0; this.save(); }
     this.recAcc += dt;
     if (this.recAcc > 3 && !this.won) { this.recAcc = 0; this.noteRun(); }
+    this.drawSmooth(dt);
+  }
+
+  // Physics runs in fixed steps, which never line up exactly with the screen: some frames get no step and some
+  // get two. Drawn as is, the climber jitters against the camera even at a perfect 60. So each frame draws the
+  // climber at the exact point in time between the last two steps. (A jump in position is a teleport: no blend.)
+  drawSmooth(dt) {
+    const me = this.me, x = me.x, y = me.y, z = me.z, a = clamp((this.time - this.simT) / STEP, 0, 1);
+    this.alpha = a;
+    if (this.prevX !== undefined && Math.abs(x - this.prevX) + Math.abs(y - this.prevY) + Math.abs(z - this.prevZ) < 3) {
+      me.x = this.prevX + (x - this.prevX) * a;
+      me.y = this.prevY + (y - this.prevY) * a;
+      me.z = this.prevZ + (z - this.prevZ) * a;
+    }
     this.draw(dt);
+    me.x = x; me.y = y; me.z = z;
   }
 
   step(inp) {
     this.simT += STEP;
+    for (const J of this.jumpers) if (J.active) { J.ox = J.x; J.oy = J.y; J.oz = J.z; }
+    this.app.view.snapDyn();
     const t = this.simT, me = this.me, slot = this.slot;
     this.W.setTime(t);
     this.crumbles(STEP);
@@ -635,7 +653,9 @@ export class Game {
       used.add(r);
       const ground = J.y <= J.j.y + 0.02, flags = (ground ? F.GROUND : 0) | (J.st === 2 ? F.KICK : 0) | (J.st === 4 ? F.STUN : 0);
       if (Math.hypot(J.vx, J.vz) < 0.6 && J.st !== 4) { let d = J.yaw - r.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); r.yaw += d * Math.min(1, dt * 10); }
-      r.update(dt, J.x, J.y + PR, J.z, J.vx, J.vy || 0, J.vz, flags, 0, J.j.y, J.yaw, 9);
+      // Between physics steps, like the player.
+      const a = this.alpha ?? 1, blend = J.ox !== undefined && Math.abs(J.x - J.ox) + Math.abs(J.y - J.oy) + Math.abs(J.z - J.oz) < 3;
+      r.update(dt, blend ? J.ox + (J.x - J.ox) * a : J.x, (blend ? J.oy + (J.y - J.oy) * a : J.y) + PR, blend ? J.oz + (J.z - J.oz) * a : J.z, J.vx, J.vy || 0, J.vz, flags, 0, J.j.y, J.yaw, 9);
     }
     for (const [J, r] of this.jrigs) if (!used.has(r)) { r.hide(); this.jrigs.delete(J); }
   }
@@ -1036,7 +1056,8 @@ export class Game {
     app.sound.ambient(0.2 + (me.y / this.L.top) * 0.6 + (gust && gust.on ? 0.8 : gust && gust.warn ? gust.warn * 0.4 : 0), me.reel > 0.05 && app.input.btn.reel, me.charge,
       this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, this.L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
-    app.view.update(T, dt, this.storm);
+    // One step back in time, the same moment the climber is drawn at: standing on a moving platform stays exact.
+    app.view.update(T - STEP, dt, this.storm, this.alpha ?? 1);
     app.pool.coins.update(dt, T, this.L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, this.coinB);
     app.pool.relic.show(this.nearRelic, T);
     // The soundtrack follows the map and gets busier the higher the climb.

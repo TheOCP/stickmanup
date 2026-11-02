@@ -3,6 +3,16 @@
 // multiplies the material colour. pat: 1 metal panels, 2 stone blocks, 3 wood planks, 4 hex tiles,
 // 5 grass on rock, 6 sand on rock, 7 basalt, 8 tread plate, 9 bamboo, 10 marble, 11 coral, 12 concrete,
 // 13 moss on wet stone, 14 snow on rock, 15 cloud, 16 bark.
+// The same noise for the other shaders (water, legendary suits). On Android it is read from a texture the native
+// renderer bakes once at startup (NRender.makeNoise) instead of being worked out for every pixel every frame.
+let baked = false;
+export function useBakedNoise(on) { baked = on; }
+export const noiseGlsl = () => (baked ? `uniform sampler2D uNoise;
+      float h21(vec2 p){ return textureLod(uNoise, (floor(p) + 0.5) / 512.0, 0.0).g; }
+      float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return textureLod(uNoise, (i + f + 0.5) / 512.0, 0.0).r; }` : `float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }`);
+
 export const PATTERN_GLSL = `
 float smuHash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float smuNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);

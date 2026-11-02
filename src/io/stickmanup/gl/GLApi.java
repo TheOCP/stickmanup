@@ -4,6 +4,12 @@ import java.nio.Buffer;
 
 /** The OpenGL ES 3.0 calls the renderer uses. Android implements it with GLES30, desktop tests with JOGL. */
 public interface GLApi {
+    /** A marker in the command stream, to wait for the GPU to reach it (0 if it could not be made). */
+    long fenceSync();
+    void clientWaitSync(long sync, long nanos);
+    void deleteSync(long sync);
+    /** Tells the driver the current framebuffer's depth contents are no longer needed. */
+    void invalidateDepth();
     int createShader(int type);
     void shaderSource(int s, String src);
     void compileShader(int s);

@@ -62,7 +62,11 @@ public final class NRender {
         String vs, fs;
         String[] uNames;
         int[] uSizes;
+        int[] uLoc;
         Prog prog;
+        boolean fresh = true;
+        int spec = 1;
+        Tex tex;
     }
 
     private static final class Obj {
@@ -79,6 +83,15 @@ public final class NRender {
         int id;
         final Map<String, Integer> u = new HashMap<>();
         boolean custom;
+        // Looked up once at link time; the frame path never touches the map.
+        int lModel = -1, lView = -1, lProj = -1, lUv = -1, lInst = -1, lColor = -1, lEmis = -1, lOp = -1, lRough = -1, lMetal = -1, lPanel = -1,
+                lHasTex = -1, lCam = -1, lHemiS = -1, lHemiG = -1, lHemiI = -1, lMoonC = -1, lMoonI = -1, lMoonD = -1, lFogC = -1, lFogD = -1, lFog = -1,
+                lExp = -1, lSpec = -1, lKind = -1, lMV = -1, lMM = -1, lFC = -1, lFD = -1, lFogOut = -1;
+        /** The frame this program last got the camera and lights, and the material it holds. */
+        int frame = -1, inst = -1;
+        Mat lastMat;
+        /** Which ways of blending have been drawn with once, so the driver has finished preparing them. */
+        int warm;
     }
 
     private final GLApi gl;
@@ -103,7 +116,7 @@ public final class NRender {
     private final int[] bloomFbo = new int[4], bloomTex = new int[4];
     private boolean framed, failed;
     public String renderer = "";
-    public int draws;
+    public int draws, tris;
 
     // Performance counters, read once a second by GLView (auto resolution) and diagnostics.
     public int framesSec, lateSec;
@@ -115,7 +128,16 @@ public final class NRender {
     public volatile float renderScale = 1f;
     private int rw, rh;
     public long drawNsSec, drawNsMax;
-    private int cur;
+    /** How long the GPU really takes: start of the frame to the glow done, sampled every few frames. */
+    public final float[] gpuMs = new float[32];
+    public volatile int gpuSamples;
+    private int gpuEvery;
+    private long frameStart;
+    private int cur, frameId, warmAt;
+    private boolean liteOn;
+    private Prog lite;
+    // What is already set, so the same GL state is not sent again for every object.
+    private int sProg, sVao, sDepthTest, sDepthMask, sBlend, sBlendDst, sCull, sCullFace, sTex;
 
     public NRender(GLApi gl, Images images, Log log) {
         this.gl = gl;
@@ -268,6 +290,8 @@ public final class NRender {
             mt.panel = m.get("panel") == null ? 0 : i(m.get("panel"));
             mt.rough = m.get("rough") == null ? 1 : f(m.get("rough"));
             mt.metal = f(m.get("metal"));
+            // Rough, non metal surfaces have almost no highlight: skip the sums for it.
+            mt.spec = mt.rough < 0.85f || mt.metal > 0.05f ? 1 : 0;
             mt.map = i(m.get("map"));
             mt.em = i(m.get("em"));
             mt.vs = (String) m.get("vs");
@@ -311,6 +335,7 @@ public final class NRender {
         }
         if (objs.size() > opaque.length) opaque = new Obj[objs.size()];
         if (objs.size() > transparent.length) transparent = new Obj[objs.size()];
+        warmAt = 0;
     }
 
     // ---------------------------------------------------------------- frame parsing (no allocation)
@@ -395,6 +420,16 @@ public final class NRender {
         while (cur < en) {
             int id = (int) num(s, en), n = (int) num(s, en);
             Mat m = id < mats.length ? mats[id] : null;
+            if (m != null) m.fresh = true;
+            // A negative count: that many single values as index, value (mostly a shader's time).
+            if (n < 0) {
+                for (int j = 0; j < -n; j++) {
+                    int at = (int) num(s, en);
+                    float v = num(s, en);
+                    if (m != null && at < m.st.length) m.st[at] = v;
+                }
+                continue;
+            }
             if (m != null && m.st.length != n) m.st = new float[n];
             for (int j = 0; j < n; j++) {
                 float v = num(s, en);
@@ -456,7 +491,9 @@ public final class NRender {
         for (Tex t : texs.values()) t.gl = 0;
         for (Mat m : mats) if (m != null) m.prog = null;
         customCache.clear();
-        lit = basic = sprite = bright = blur = comp = null;
+        lit = basic = sprite = bright = blur = comp = lite = null;
+        for (Mat m : mats) if (m != null) { m.uLoc = null; m.fresh = true; }
+        warmAt = 0;
         quadVbo = quadVao = spriteVbo = 0;
         sceneFbo = 0;
         fboW = fboH = 0;
@@ -481,21 +518,28 @@ public final class NRender {
         }
         try {
             if (lit == null) buildPrograms();
+            frameId++;
+            resetState();
+            liteOn = env[26] > 0.5f;
             // The scene always goes through the offscreen buffer (dynamic resolution, glow, sharpening, edge AA).
             boolean bloom = env[19] > 0.5f && !failed, postOn = !failed;
-            float rs = Math.max(0.5f, Math.min(1f, renderScale));
+            float rs = Math.max(0.3f, Math.min(1f, renderScale * (env[25] > 0 ? env[25] : 1f)));
             rw = postOn ? Math.max(16, Math.round(w * rs)) : w;
             rh = postOn ? Math.max(16, Math.round(h * rs)) : h;
             if (postOn) ensureFbos();
             gl.bindFramebuffer(GLC.FRAMEBUFFER, postOn ? sceneFbo : 0);
+            prewarm();
+            frameStart = System.nanoTime();
             gl.viewport(0, 0, rw, rh);
             gl.clearColor(out(env[0]), out(env[1]), out(env[2]), 1);
-            gl.depthMask(true);
+            depthMask(true);
+            gl.depthFunc(GLC.LEQUAL);
             gl.clear(GLC.COLOR_BUFFER_BIT | GLC.DEPTH_BUFFER_BIT);
             mul(vp, proj, view);
             frustum();
             collect();
             draws = 0;
+            tris = 0;
             for (int k = 0; k < nOpaque; k++) drawObj(opaque[k]);
             for (int k = 0; k < nTransparent; k++) drawObj(transparent[k]);
             gl.bindVertexArray(0);
@@ -508,6 +552,77 @@ public final class NRender {
         framesSec++;
         drawNsSec += dt;
         if (dt > drawNsMax) drawNsMax = dt;
+    }
+
+    private void resetState() {
+        sProg = sVao = sDepthTest = sDepthMask = sBlend = sBlendDst = sCull = sCullFace = sTex = -1;
+    }
+
+    private void useProgram(int id) {
+        if (id != sProg) { sProg = id; gl.useProgram(id); }
+    }
+
+    private void bindVao(int vao) {
+        if (vao != sVao) { sVao = vao; gl.bindVertexArray(vao); }
+    }
+
+    private void depthMask(boolean on) {
+        int v = on ? 1 : 0;
+        if (v != sDepthMask) { sDepthMask = v; gl.depthMask(on); }
+    }
+
+    private void depthTest(boolean on) {
+        int v = on ? 1 : 0;
+        if (v != sDepthTest) { sDepthTest = v; if (on) gl.enable(GLC.DEPTH_TEST); else gl.disable(GLC.DEPTH_TEST); }
+    }
+
+    private void blend(boolean on, int dst) {
+        int v = on ? 1 : 0;
+        if (v != sBlend) { sBlend = v; if (on) gl.enable(GLC.BLEND); else gl.disable(GLC.BLEND); }
+        if (on && dst != sBlendDst) { sBlendDst = dst; gl.blendFunc(GLC.SRC_ALPHA, dst); }
+    }
+
+    private void cull(boolean on, int face) {
+        int v = on ? 1 : 0;
+        if (v != sCull) { sCull = v; if (on) gl.enable(GLC.CULL_FACE); else gl.disable(GLC.CULL_FACE); }
+        if (on && face != sCullFace) { sCullFace = face; gl.cullFace(face); }
+    }
+
+    /**
+     * Gets everything ready before it is first seen: shaders built, models on the GPU, textures decoded. Without
+     * this each of those happens the moment something first comes into view, in the middle of the climb, and the
+     * game hitches. A few milliseconds a frame, so even a new map's load behind the menus stays smooth.
+     * One object per shader is also drawn into a single pixel (wiped by the clear right after this), because many
+     * phone drivers only finish preparing a shader the first time it really draws.
+     */
+    private void prewarm() {
+        if (warmAt >= objs.size()) return;
+        long t0 = System.nanoTime();
+        gl.viewport(0, 0, 1, 1);
+        while (warmAt < objs.size()) {
+            Obj o = objs.get(warmAt++);
+            Mat m = o.m < mats.length ? mats[o.m] : null;
+            if (m == null) continue;
+            Geo g = o.kind == 2 ? null : o.g < geos.length ? geos[o.g] : null;
+            if (o.kind != 2 && g == null) continue;
+            Prog p = progFor(m, o);
+            if (p == null || p.id == 0) continue;
+            prepare(o, g, p);
+            warmTex(m.map);
+            warmTex(m.em);
+            int way = !m.tr ? 1 : m.blend == 1 ? 4 : 2;
+            if ((p.warm & way) == 0) {
+                p.warm |= way;
+                drawObj(o);
+            }
+            if (System.nanoTime() - t0 > 4_000_000L) break;
+        }
+        bindVao(0);
+    }
+
+    private void warmTex(int id) {
+        Tex t = id != 0 ? texs.get(id) : null;
+        if (t != null && t.gl == 0) uploadTex(t);
     }
 
     // ---------------------------------------------------------------- scene
@@ -590,6 +705,7 @@ public final class NRender {
         if (g.idx != null && g.ibo == 0) {
             g.ibo = gl.genBuffer();
             gl.bindVertexArray(0);
+            sVao = 0;
             gl.bindBuffer(GLC.ELEMENT_ARRAY_BUFFER, g.ibo);
             g.idx.position(0);
             gl.bufferData(GLC.ELEMENT_ARRAY_BUFFER, g.idx.capacity(), g.idx, GLC.STATIC_DRAW);
@@ -644,11 +760,8 @@ public final class NRender {
         o.vaoProg = p;
     }
 
-    private void drawObj(Obj o) {
-        Mat m = mats[o.m];
-        Geo g = o.kind == 2 ? null : geos[o.g];
-        Prog p = progFor(m, o);
-        if (p == null || p.id == 0) return;
+    /** Models and instance lists on the GPU, and the vertex setup for this program. */
+    private void prepare(Obj o, Geo g, Prog p) {
         if (g != null) upload(g);
         if (o.inst > 0) {
             if (o.imVbo == 0) { o.imVbo = gl.genBuffer(); o.imDirty = true; }
@@ -665,9 +778,19 @@ public final class NRender {
                 gl.bufferData(GLC.ARRAY_BUFFER, o.ic.capacity(), o.ic, GLC.STATIC_DRAW);
             }
         }
-        if (o.vao == 0 || o.vaoProg != p) buildVao(o, g, p);
-        gl.bindVertexArray(o.vao);
-        gl.useProgram(p.id);
+        // The built-in programs all use the same attribute slots, so they can share a setup.
+        boolean same = o.vaoProg == p || (!p.custom && o.vaoProg != null && !o.vaoProg.custom);
+        if (o.vao == 0 || !same) { buildVao(o, g, p); sVao = o.vao; }
+    }
+
+    private void drawObj(Obj o) {
+        Mat m = mats[o.m];
+        Geo g = o.kind == 2 ? null : geos[o.g];
+        Prog p = progFor(m, o);
+        if (p == null || p.id == 0) return;
+        prepare(o, g, p);
+        bindVao(o.vao);
+        useProgram(p.id);
         if (!p.custom) {
             if (g == null || !g.hasNormal) gl.vertexAttrib4f(1, 0, 1, 0, 0);
             if (g == null || !g.hasUv) gl.vertexAttrib4f(2, 0, 0, 0, 0);
@@ -675,24 +798,18 @@ public final class NRender {
             if (o.ic == null) gl.vertexAttrib4f(4, 1, 1, 1, 1);
         }
         setUniforms(p, m, o);
-        if (m.dt) gl.enable(GLC.DEPTH_TEST); else gl.disable(GLC.DEPTH_TEST);
-        gl.depthFunc(GLC.LEQUAL);
-        gl.depthMask(m.dw);
-        if (m.tr) {
-            gl.enable(GLC.BLEND);
-            gl.blendFunc(GLC.SRC_ALPHA, m.blend == 1 ? GLC.ONE : GLC.ONE_MINUS_SRC_ALPHA);
-        } else gl.disable(GLC.BLEND);
-        if (m.side == 2 || o.kind == 2) gl.disable(GLC.CULL_FACE);
-        else {
-            gl.enable(GLC.CULL_FACE);
-            gl.cullFace(m.side == 1 ? GLC.FRONT : GLC.BACK);
-        }
+        depthTest(m.dt);
+        depthMask(m.dw);
+        blend(m.tr, m.blend == 1 ? GLC.ONE : GLC.ONE_MINUS_SRC_ALPHA);
+        if (m.side == 2 || o.kind == 2) cull(false, 0);
+        else cull(true, m.side == 1 ? GLC.FRONT : GLC.BACK);
         draws++;
-        if (o.kind == 2) { gl.drawArrays(GLC.TRIANGLES, 0, 6); return; }
+        if (o.kind == 2) { tris += 2; gl.drawArrays(GLC.TRIANGLES, 0, 6); return; }
         int mode = o.kind == 1 ? GLC.LINES : GLC.TRIANGLES;
         int total = g.ibo != 0 ? g.idxCount : g.vertCount;
         int start = Math.max(0, g.drStart), count = g.drCount < 0 ? total - start : Math.min(g.drCount, total - start);
         if (count <= 0) return;
+        if (o.kind == 0) tris += count / 3 * Math.max(1, o.inst);
         if (g.ibo != 0) {
             int bytes = g.idxType == GLC.UNSIGNED_INT ? 4 : 2;
             if (o.inst > 0) gl.drawElementsInstanced(mode, count, g.idxType, start * bytes, o.inst);
@@ -708,82 +825,112 @@ public final class NRender {
         if (l != null) gl.uniform1f(l, v);
     }
 
-    private void u3(Prog p, String name, float x, float y, float z) {
-        Integer l = p.u.get(name);
-        if (l != null) gl.uniform3f(l, x, y, z);
-    }
-
     private void ui(Prog p, String name, int v) {
         Integer l = p.u.get(name);
         if (l != null) gl.uniform1i(l, v);
     }
 
-    private void um(Prog p, String name, float[] m) {
-        Integer l = p.u.get(name);
-        if (l != null) gl.uniformMatrix4fv(l, m);
+    /** Sky and water and everything else with its own shader. */
+    private void customUniforms(Prog p, Mat m, Obj o) {
+        if (p.frame != frameId) {
+            p.frame = frameId;
+            p.lastMat = null;
+            if (p.lView >= 0) gl.uniformMatrix4fv(p.lView, view);
+            if (p.lProj >= 0) gl.uniformMatrix4fv(p.lProj, proj);
+            if (p.lCam >= 0) gl.uniform3f(p.lCam, cam[0], cam[1], cam[2]);
+            if (p.lFC >= 0) gl.uniform3f(p.lFC, env[0], env[1], env[2]);
+            if (p.lFD >= 0) gl.uniform1f(p.lFD, env[3]);
+            if (p.lExp >= 0) gl.uniform1f(p.lExp, env[18]);
+        }
+        if (p.lMM >= 0) gl.uniformMatrix4fv(p.lMM, o.mw);
+        if (p.lMV >= 0) { mul(tmp, view, o.mw); gl.uniformMatrix4fv(p.lMV, tmp); }
+        // Many materials share a program; their values only go over when they change or another one was on.
+        if (p.lastMat == m && !m.fresh) return;
+        p.lastMat = m;
+        m.fresh = false;
+        int n = m.uNames.length;
+        if (m.uLoc == null) {
+            m.uLoc = new int[n];
+            for (int j = 0; j < n; j++) {
+                // Fog comes from the live scene (set above); the material's copies are never refreshed in JS.
+                Integer l = m.uNames[j].startsWith("fog") ? null : p.u.get(m.uNames[j]);
+                m.uLoc[j] = l == null ? -1 : l;
+            }
+        }
+        float[] st = m.st;
+        int k = 9;
+        for (int j = 0; j < n; j++) {
+            int c = m.uSizes[j], l = m.uLoc[j];
+            if (l >= 0 && k + c <= st.length) {
+                if (c == 1) gl.uniform1f(l, st[k]);
+                else if (c == 2) gl.uniform2f(l, st[k], st[k + 1]);
+                else if (c == 3) gl.uniform3f(l, st[k], st[k + 1], st[k + 2]);
+                else if (c == 4) gl.uniform4f(l, st[k], st[k + 1], st[k + 2], st[k + 3]);
+            }
+            k += c;
+        }
     }
 
     private void setUniforms(Prog p, Mat m, Obj o) {
-        um(p, "uModel", o.mw);
-        um(p, "uView", view);
-        um(p, "uProj", proj);
-        u3(p, "cameraPosition", cam[0], cam[1], cam[2]);
-        u3(p, "uFogColor", env[0], env[1], env[2]);
-        u(p, "uFogDensity", env[3]);
-        u(p, "smuExposure", env[18]);
-        if (p.custom) {
-            um(p, "modelMatrix", o.mw);
-            um(p, "viewMatrix", view);
-            um(p, "projectionMatrix", proj);
-            mul(tmp, view, o.mw);
-            um(p, "modelViewMatrix", tmp);
-            u3(p, "fogColor", env[0], env[1], env[2]);
-            u(p, "fogDensity", env[3]);
-            int k = 9;
-            for (int j = 0; j < m.uNames.length; j++) {
-                int n = m.uSizes[j];
-                // Fog comes from the live scene (set above); the material's copies are never refreshed in JS.
-                Integer l = m.uNames[j].startsWith("fog") ? null : p.u.get(m.uNames[j]);
-                if (l != null && k + n <= m.st.length) {
-                    if (n == 1) gl.uniform1f(l, m.st[k]);
-                    else if (n == 2) gl.uniform2f(l, m.st[k], m.st[k + 1]);
-                    else if (n == 3) gl.uniform3f(l, m.st[k], m.st[k + 1], m.st[k + 2]);
-                    else if (n == 4) gl.uniform4f(l, m.st[k], m.st[k + 1], m.st[k + 2], m.st[k + 3]);
-                }
-                k += n;
-            }
-            return;
+        if (p.custom) { customUniforms(p, m, o); return; }
+        if (p.frame != frameId) {
+            p.frame = frameId;
+            p.lastMat = null;
+            p.inst = -1;
+            gl.uniformMatrix4fv(p.lView, view);
+            gl.uniformMatrix4fv(p.lProj, proj);
+            if (p.lCam >= 0) gl.uniform3f(p.lCam, cam[0], cam[1], cam[2]);
+            if (p.lFogC >= 0) gl.uniform3f(p.lFogC, env[0], env[1], env[2]);
+            if (p.lFogD >= 0) gl.uniform1f(p.lFogD, env[3]);
+            if (p.lFogOut >= 0) gl.uniform3f(p.lFogOut, out(env[0]), out(env[1]), out(env[2]));
+            if (p.lExp >= 0) gl.uniform1f(p.lExp, env[18]);
+            if (p.lHemiS >= 0) gl.uniform3f(p.lHemiS, env[4], env[5], env[6]);
+            if (p.lHemiG >= 0) gl.uniform3f(p.lHemiG, env[7], env[8], env[9]);
+            if (p.lHemiI >= 0) gl.uniform1f(p.lHemiI, env[10]);
+            if (p.lMoonC >= 0) gl.uniform3f(p.lMoonC, env[11], env[12], env[13]);
+            if (p.lMoonI >= 0) gl.uniform1f(p.lMoonI, env[14]);
+            if (p.lMoonD >= 0) gl.uniform3f(p.lMoonD, env[15], env[16], env[17]);
         }
+        gl.uniformMatrix4fv(p.lModel, o.mw);
+        if (p.lInst >= 0) {
+            int i = o.inst > 0 ? 1 : 0;
+            if (i != p.inst) { p.inst = i; gl.uniform1i(p.lInst, i); }
+        }
+        if (p.lastMat != m || m.fresh) applyMat(p, m);
+        // Another program may have used the slot in between, so this one is checked on every draw.
+        Tex t = m.tex;
+        if (t != null) {
+            if (t.gl == 0) uploadTex(t);
+            if (t.gl != sTex) {
+                sTex = t.gl;
+                gl.activeTexture(GLC.TEXTURE0);
+                gl.bindTexture(GLC.TEXTURE_2D, t.gl);
+            }
+        }
+    }
+
+    private void applyMat(Prog p, Mat m) {
+        p.lastMat = m;
+        m.fresh = false;
         float[] s = m.st;
-        u3(p, "uColor", s[0], s[1], s[2]);
+        if (p.lColor >= 0) gl.uniform3f(p.lColor, s[0], s[1], s[2]);
         float ei = s.length > 6 ? s[6] : 1;
-        u3(p, "uEmissive", s[3] * ei, s[4] * ei, s[5] * ei);
-        u(p, "uOpacity", s.length > 7 ? s[7] : m.op);
-        ui(p, "uInst", o.inst > 0 ? 1 : 0);
-        ui(p, "uFog", m.fog ? 1 : 0);
-        u(p, "uRough", m.rough);
-        u(p, "uMetal", m.metal);
-        ui(p, "uPanel", m.panel);
-        u3(p, "uHemiSky", env[4], env[5], env[6]);
-        u3(p, "uHemiGround", env[7], env[8], env[9]);
-        u(p, "uHemiI", env[10]);
-        u3(p, "uMoonColor", env[11], env[12], env[13]);
-        u(p, "uMoonI", env[14]);
-        u3(p, "uMoonDir", env[15], env[16], env[17]);
+        if (p.lEmis >= 0) gl.uniform3f(p.lEmis, s[3] * ei, s[4] * ei, s[5] * ei);
+        if (p.lOp >= 0) gl.uniform1f(p.lOp, s.length > 7 ? s[7] : m.op);
+        if (p.lFog >= 0) gl.uniform1i(p.lFog, m.fog ? 1 : 0);
+        if (p.lRough >= 0) gl.uniform1f(p.lRough, m.rough);
+        if (p.lMetal >= 0) gl.uniform1f(p.lMetal, m.metal);
+        if (p.lPanel >= 0) gl.uniform1i(p.lPanel, m.panel);
+        if (p.lSpec >= 0) gl.uniform1i(p.lSpec, m.spec);
+        if (p.lKind >= 0) gl.uniform1i(p.lKind, m.lit ? 0 : 1);
         // Lit materials: an albedo map (2) or an emissive map (1). Basic and sprites: the colour map (1).
         boolean albedo = m.lit && m.map != 0;
         int texId = m.lit ? (albedo ? m.map : m.em) : m.map;
         Tex t = texId != 0 ? texs.get(texId) : null;
         // 3: the same map colours the surface and makes it glow (skins that stay readable in the dark).
-        ui(p, "uHasTex", t == null ? 0 : albedo ? (m.em == m.map ? 3 : 2) : 1);
-        Integer l = p.u.get("uUv");
-        if (t != null) {
-            if (t.gl == 0) uploadTex(t);
-            gl.activeTexture(GLC.TEXTURE0);
-            gl.bindTexture(GLC.TEXTURE_2D, t.gl);
-            ui(p, "uTex", 0);
-            if (l != null) gl.uniformMatrix3fv(l, t.uv);
-        } else if (l != null) gl.uniformMatrix3fv(l, IDENT3);
+        if (p.lHasTex >= 0) gl.uniform1i(p.lHasTex, t == null ? 0 : albedo ? (m.em == m.map ? 3 : 2) : 1);
+        m.tex = t;
+        if (p.lUv >= 0) gl.uniformMatrix3fv(p.lUv, t != null ? t.uv : IDENT3);
     }
 
     private void uploadTex(Tex t) {
@@ -800,7 +947,9 @@ public final class NRender {
         }
         b.position(0);
         t.gl = gl.genTexture();
+        gl.activeTexture(GLC.TEXTURE0);
         gl.bindTexture(GLC.TEXTURE_2D, t.gl);
+        sTex = t.gl;
         gl.texImage2D(GLC.TEXTURE_2D, 0, GLC.RGBA8, tw, th, GLC.RGBA, GLC.UNSIGNED_BYTE, b);
         gl.generateMipmap(GLC.TEXTURE_2D);
         gl.texParameteri(GLC.TEXTURE_2D, GLC.TEXTURE_MIN_FILTER, GLC.LINEAR_MIPMAP_LINEAR);
@@ -818,6 +967,7 @@ public final class NRender {
             return m.prog;
         }
         if (o.kind == 2 || m.sprite) return sprite;
+        if (liteOn) return lite;
         return m.lit ? lit : basic;
     }
 
@@ -830,8 +980,9 @@ public final class NRender {
             + "vec3 smuTone(vec3 c){ const mat3 I = mat3(vec3(0.59719,0.07600,0.02840), vec3(0.35458,0.90834,0.13383), vec3(0.04823,0.01566,0.83777));\n"
             + "  const mat3 O = mat3(vec3(1.60475,-0.10208,-0.00327), vec3(-0.53108,1.10813,-0.07276), vec3(-0.07367,-0.00605,1.07602));\n"
             + "  c *= smuExposure / 0.6; c = I * c; c = smuRRT(c); c = O * c; return clamp(c, 0.0, 1.0); }\n"
-            + "vec3 smuSRGB(vec3 c){ c = max(c, vec3(0.0)); return mix(c * 12.92, 1.055 * pow(c, vec3(0.41666)) - 0.055, step(vec3(0.0031308), c)); }\n"
-            + "vec3 smuLin(vec3 c){ return pow(c, vec3(2.2)); }\n";
+            // The sRGB curve and its inverse as fits (under 1% off) without pow(), which is slow on phone GPUs.
+            + "vec3 smuSRGB(vec3 c){ c = max(c, vec3(0.0)); vec3 a = sqrt(c), b = sqrt(a), d = sqrt(b); return max(0.585122381 * a + 0.783140355 * b - 0.368262736 * d, vec3(0.0)); }\n"
+            + "vec3 smuLin(vec3 c){ return c * (c * (c * 0.305306011 + 0.682171111) + 0.012522878); }\n";
 
     private static final String STD_VS = COMMON
             + "layout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(location=2) in vec2 uv;\n"
@@ -853,9 +1004,9 @@ public final class NRender {
 
     /** Procedural surface detail; generated from assets/js/pattern.js by dev/sync_pattern.py. */
     static final String PATTERN = ""
-            + "float smuHash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }\n"
-            + "float smuNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);\n"
-            + "  return mix(mix(smuHash(i), smuHash(i + vec2(1.0, 0.0)), f.x), mix(smuHash(i + vec2(0.0, 1.0)), smuHash(i + vec2(1.0, 1.0)), f.x), f.y); }\n"
+            + "uniform sampler2D uNoise;\n"
+            + "float smuHash(vec2 p){ return textureLod(uNoise, (floor(p) + 0.5) / 512.0, 0.0).g; }\n"
+            + "float smuNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return textureLod(uNoise, (i + f + 0.5) / 512.0, 0.0).r; }\n"
             + "float smuFbm(vec2 p){ return smuNoise(p) * 0.65 + smuNoise(p * 2.3 + 7.1) * 0.35; }\n"
             + "float smuHex(vec2 p){\n"
             + "  vec2 r = vec2(1.0, 1.732), h = r * 0.5, a = mod(p, r) - h, b = mod(p - h, r) - h, g = dot(a, a) < dot(b, b) ? a : b;\n"
@@ -958,9 +1109,10 @@ public final class NRender {
     private static final String LIT_FS = COMMON + TONE + FOG + PATTERN
             + "in vec3 vW; in vec3 vN; in vec3 vGlow; in vec3 vIC; in vec2 vUv; out vec4 outColor;\n"
             + "uniform vec3 uColor, uEmissive, cameraPosition, uHemiSky, uHemiGround, uMoonColor, uMoonDir;\n"
-            + "uniform float uOpacity, uRough, uMetal, uHemiI, uMoonI; uniform int uPanel, uHasTex; uniform sampler2D uTex;\n"
+            + "uniform float uOpacity, uRough, uMetal, uHemiI, uMoonI; uniform int uPanel, uHasTex, uSpec; uniform sampler2D uTex;\n"
             + "vec3 Fs(vec3 f0, float vh){ float fr = exp2((-5.55473 * vh - 6.98316) * vh); return f0 * (1.0 - fr) + fr; }\n"
-            + "float Vg(float a, float nl, float nv){ float a2 = a * a; float gv = nl * sqrt(a2 + (1.0 - a2) * nv * nv); float gl = nv * sqrt(a2 + (1.0 - a2) * nl * nl); return 0.5 / max(gv + gl, 1e-6); }\n"
+            // The usual visibility term without its two square roots (nearly the same, much cheaper).
+            + "float Vg(float a, float nl, float nv){ return 0.5 / max(mix(2.0 * nl * nv, nl + nv, a), 1e-4); }\n"
             + "float Dg(float a, float nh){ float a2 = a * a; float d = nh * nh * (a2 - 1.0) + 1.0; return 0.3183099 * a2 / (d * d); }\n"
             + "void main(){\n"
             + "  vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;\n"
@@ -973,8 +1125,9 @@ public final class NRender {
             + "  vec3 diff = base * (1.0 - uMetal), f0 = mix(vec3(0.04), base, uMetal);\n"
             + "  vec3 col = mix(uHemiGround, uHemiSky, 0.5 * n.y + 0.5) * uHemiI * diff * 0.3183099;\n"
             + "  float nl = dot(n, uMoonDir);\n"
-            + "  if (nl > 0.0) { vec3 h = normalize(uMoonDir + v); float nv = max(dot(n, v), 1e-4);\n"
-            + "    col += uMoonColor * uMoonI * nl * (diff * 0.3183099 + Fs(f0, max(dot(v, h), 0.0)) * Vg(a, nl, nv) * Dg(a, max(dot(n, h), 0.0))); }\n"
+            + "  if (nl > 0.0) { vec3 lit = diff * 0.3183099;\n"
+            + "    if (uSpec > 0) { vec3 h = normalize(uMoonDir + v); float nv = max(dot(n, v), 1e-4); lit += Fs(f0, max(dot(v, h), 0.0)) * Vg(a, nl, nv) * Dg(a, max(dot(n, h), 0.0)); }\n"
+            + "    col += uMoonColor * uMoonI * nl * lit; }\n"
             + "  vec3 em = uEmissive; if (uHasTex == 1 || uHasTex == 3) em *= texc;\n"
             + "  col += em + vGlow;\n"
             + "  col = smuFog(col);\n"
@@ -987,6 +1140,38 @@ public final class NRender {
             + "void main(){ vec4 c = vec4(uColor * vIC, uOpacity);\n"
             + "  if (uHasTex == 1) { vec4 t = texture(uTex, vUv); c *= vec4(smuLin(t.rgb), t.a); }\n"
             + "  outColor = vec4(smuSRGB(smuTone(min(smuFog(c.rgb), vec3(40.0)))), c.a); }\n";
+
+    // Simple lighting for weak phones: everything is worked out per corner instead of per pixel. The shapes are
+    // flat sided, so it looks nearly the same without highlights and surface detail, at a fraction of the cost.
+    private static final String LITE_VS = COMMON + TONE
+            + "layout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(location=2) in vec2 uv;\n"
+            + "layout(location=3) in vec3 aGlow; layout(location=4) in vec3 instanceColor;\n"
+            + "layout(location=5) in vec4 im0; layout(location=6) in vec4 im1; layout(location=7) in vec4 im2; layout(location=8) in vec4 im3;\n"
+            + "uniform mat4 uModel, uView, uProj; uniform mat3 uUv; uniform int uInst, uKind, uFog;\n"
+            + "uniform vec3 uColor, uEmissive, uHemiSky, uHemiGround, uMoonColor, uMoonDir, uFogColor; uniform float uHemiI, uMoonI, uMetal, uFogDensity;\n"
+            + "uniform int uHasTex; out vec3 vOut, vEm; out vec2 vUv; out float vF;\n"
+            + "void main(){ mat4 m = uInst == 1 ? uModel * mat4(im0, im1, im2, im3) : uModel;\n"
+            + "  vec4 w = m * vec4(position, 1.0), mv = uView * w; gl_Position = uProj * mv;\n"
+            + "  vUv = (uUv * vec3(uv, 1.0)).xy; vec3 col;\n"
+            + "  if (uKind == 0) { mat3 r = mat3(m); vec3 s2 = vec3(dot(r[0], r[0]), dot(r[1], r[1]), dot(r[2], r[2]));\n"
+            + "    vec3 n = normalize(r * (normal / max(s2, vec3(1e-8)))), diff = uColor * instanceColor * (1.0 - 0.5 * uMetal) * 0.3183099;\n"
+            // A glow map (window lights) can't be mixed in until its pixels are read: passed along on its own.
+            + "    bool em = uHasTex == 1;\n"
+            + "    col = mix(uHemiGround, uHemiSky, 0.5 * n.y + 0.5) * uHemiI * diff + uMoonColor * uMoonI * max(dot(n, uMoonDir), 0.0) * diff + (em ? vec3(0.0) : uEmissive) + aGlow;\n"
+            + "    vEm = em ? smuSRGB(smuTone(uEmissive)) : vec3(0.0);\n"
+            + "  } else { col = uColor * instanceColor; vEm = vec3(0.0); }\n"
+            // Fog goes on last, in the pixel shader: a texture must not darken what is already fog.
+            + "  float d = uFogDensity * mv.z; vF = uFog == 1 ? 1.0 - exp(-d * d) : 0.0;\n"
+            + "  vOut = smuSRGB(smuTone(min(col, vec3(40.0)))); }\n";
+
+    private static final String LITE_FS = "#version 300 es\nprecision mediump float;\nprecision highp int;\n"
+            + "in vec3 vOut, vEm; in float vF; in highp vec2 vUv; out vec4 outColor; uniform float uOpacity; uniform vec3 uFogOut; uniform int uHasTex, uKind; uniform sampler2D uTex;\n"
+            + "void main(){ vec4 c = vec4(vOut, uOpacity);\n"
+            + "  if (uHasTex > 0) { vec4 t = texture(uTex, vUv);\n"
+            + "    if (uKind == 0 && uHasTex == 1) c.rgb += vEm * t.rgb;\n"
+            + "    else { c.rgb *= t.rgb; if (uKind == 1) c.a *= t.a; } }\n"
+            + "  c.rgb = mix(c.rgb, uFogOut, vF);\n"
+            + "  outColor = c; }\n";
 
     private static final String SPRITE_VS = COMMON
             + "layout(location=0) in vec3 position; layout(location=2) in vec2 uv;\n"
@@ -1004,45 +1189,55 @@ public final class NRender {
     private static final String POST_VS = COMMON
             + "layout(location=0) in vec2 p; out vec2 vUv; void main(){ vUv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }\n";
 
-    private static final String BRIGHT_FS = COMMON
-            + "in vec2 vUv; out vec4 o; uniform sampler2D uSrc; uniform float uThr; uniform vec2 uUvScale;\n"
-            + "void main(){ vec3 c = texture(uSrc, vUv * uUvScale).rgb; float l = max(c.r, max(c.g, c.b));\n"
+    // Picture passes work on 8 bit colours: medium precision is plenty and much cheaper on phones. Positions in
+    // the picture stay high precision, or the image would break up at phone resolutions.
+    private static final String POST_FS = "#version 300 es\nprecision mediump float;\nprecision mediump sampler2D;\n";
+
+    // Picks out what glows, a quarter of the size. Four samples so thin neon lines don't flicker as they move.
+    private static final String BRIGHT_FS = POST_FS
+            + "in highp vec2 vUv; out vec4 o; uniform sampler2D uSrc; uniform float uThr; uniform highp vec2 uUvScale, uTexel;\n"
+            + "void main(){ highp vec2 uv = vUv * uUvScale;\n"
+            + "  vec3 c = (texture(uSrc, uv + uTexel * vec2(-1.0, -1.0)).rgb + texture(uSrc, uv + uTexel * vec2(1.0, -1.0)).rgb\n"
+            + "    + texture(uSrc, uv + uTexel * vec2(-1.0, 1.0)).rgb + texture(uSrc, uv + uTexel * vec2(1.0, 1.0)).rgb) * 0.25;\n"
+            + "  float l = max(c.r, max(c.g, c.b));\n"
             + "  o = vec4(c * smoothstep(uThr, uThr + 0.2, l), 1.0); }\n";
 
-    private static final String BLUR_FS = COMMON
-            + "in vec2 vUv; out vec4 o; uniform sampler2D uSrc; uniform vec2 uDir;\n"
+    private static final String BLUR_FS = POST_FS
+            + "in highp vec2 vUv; out vec4 o; uniform sampler2D uSrc; uniform highp vec2 uDir;\n"
             + "void main(){ vec3 c = texture(uSrc, vUv).rgb * 0.227027;\n"
             + "  c += (texture(uSrc, vUv + uDir * 1.3846).rgb + texture(uSrc, vUv - uDir * 1.3846).rgb) * 0.316216;\n"
             + "  c += (texture(uSrc, vUv + uDir * 3.2308).rgb + texture(uSrc, vUv - uDir * 3.2308).rgb) * 0.070270;\n"
             + "  o = vec4(c, 1.0); }\n";
 
     // Final pass: optional edge anti-aliasing (luma-guided blur along edges), optional sharpening
-    // (unsharp mask against the 4 neighbours), then the glow on top.
-    private static final String COMP_FS = COMMON
-            + "in vec2 vUv; out vec4 o; uniform sampler2D uScene, uB1, uB2; uniform float uStr, uSharp, uAA; uniform vec2 uTexel, uUvScale;\n"
+    // (unsharp mask), then the glow on top. Both use the same four corner samples, so together they cost
+    // little more than one of them alone.
+    private static final String COMP_FS = POST_FS
+            + "in highp vec2 vUv; out vec4 o; uniform sampler2D uScene, uB1, uB2; uniform float uStr, uSharp, uAA; uniform highp vec2 uTexel, uUvScale;\n"
             // The scene fills the lower-left uUvScale part of its texture; never read outside that part.
-            + "vec3 S(vec2 p){ return texture(uScene, min(p, uUvScale - uTexel * 0.5)).rgb; }\n"
+            + "vec3 S(highp vec2 p){ return texture(uScene, min(p, uUvScale - uTexel * 0.5)).rgb; }\n"
             + "float Lu(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
-            + "vec3 edgeAA(vec2 uv){\n"
-            + "  vec3 m = S(uv); float lm = Lu(m);\n"
-            + "  float a = Lu(S(uv + vec2(-1.0, -1.0) * uTexel)), b = Lu(S(uv + vec2(1.0, -1.0) * uTexel));\n"
-            + "  float c = Lu(S(uv + vec2(-1.0, 1.0) * uTexel)), d = Lu(S(uv + vec2(1.0, 1.0) * uTexel));\n"
-            + "  float lo = min(lm, min(min(a, b), min(c, d))), hi = max(lm, max(max(a, b), max(c, d)));\n"
-            + "  if (hi - lo < max(0.04, hi * 0.12)) return m;\n"
-            + "  vec2 dir = vec2(-((a + b) - (c + d)), (a + c) - (b + d));\n"
-            + "  float k = 1.0 / (min(abs(dir.x), abs(dir.y)) + max((a + b + c + d) * 0.03125, 0.0078));\n"
-            + "  dir = clamp(dir * k, vec2(-6.0), vec2(6.0)) * uTexel;\n"
-            + "  vec3 n1 = 0.5 * (S(uv - dir * 0.1667) + S(uv + dir * 0.1667));\n"
-            + "  vec3 n2 = 0.5 * n1 + 0.25 * (S(uv - dir * 0.5) + S(uv + dir * 0.5));\n"
-            + "  float l2 = Lu(n2);\n"
-            + "  return (l2 < lo || l2 > hi) ? n1 : n2; }\n"
             + "void main(){\n"
-            + "  vec2 uv = vUv * uUvScale;\n"
-            + "  vec3 c = uAA > 0.5 ? edgeAA(uv) : S(uv);\n"
-            + "  if (uSharp > 0.01) {\n"
-            + "    vec3 nb = (S(uv + vec2(uTexel.x, 0.0)) + S(uv - vec2(uTexel.x, 0.0)) + S(uv + vec2(0.0, uTexel.y)) + S(uv - vec2(0.0, uTexel.y))) * 0.25;\n"
-            + "    c = max(c + (c - nb) * uSharp * 1.6, vec3(0.0)); }\n"
-            + "  c += (texture(uB1, vUv).rgb * 0.45 + texture(uB2, vUv).rgb * 0.65) * uStr;\n"
+            + "  highp vec2 uv = vUv * uUvScale;\n"
+            + "  vec3 c = S(uv);\n"
+            + "  if (uAA > 0.5 || uSharp > 0.01) {\n"
+            + "    vec3 A = S(uv + vec2(-1.0, -1.0) * uTexel), B = S(uv + vec2(1.0, -1.0) * uTexel), C = S(uv + vec2(-1.0, 1.0) * uTexel), D = S(uv + vec2(1.0, 1.0) * uTexel);\n"
+            + "    if (uSharp > 0.01) c = max(c + (c - (A + B + C + D) * 0.25) * uSharp * 1.3, vec3(0.0));\n"
+            + "    if (uAA > 0.5) {\n"
+            + "      float lm = Lu(c), a = Lu(A), b = Lu(B), e = Lu(C), d = Lu(D);\n"
+            + "      float lo = min(lm, min(min(a, b), min(e, d))), hi = max(lm, max(max(a, b), max(e, d)));\n"
+            + "      if (hi - lo >= max(0.04, hi * 0.12)) {\n"
+            + "        vec2 dir = vec2(-((a + b) - (e + d)), (a + e) - (b + d));\n"
+            + "        float k = 1.0 / (min(abs(dir.x), abs(dir.y)) + max((a + b + e + d) * 0.03125, 0.0078));\n"
+            + "        highp vec2 st = clamp(dir * k, vec2(-6.0), vec2(6.0)) * uTexel;\n"
+            + "        vec3 n1 = 0.5 * (S(uv - st * 0.1667) + S(uv + st * 0.1667));\n"
+            + "        vec3 n2 = 0.5 * n1 + 0.25 * (S(uv - st * 0.5) + S(uv + st * 0.5));\n"
+            + "        float l2 = Lu(n2);\n"
+            + "        c = (l2 < lo || l2 > hi) ? n1 : n2;\n"
+            + "      }\n"
+            + "    }\n"
+            + "  }\n"
+            + "  if (uStr > 0.0) c += (texture(uB1, vUv).rgb * 0.45 + texture(uB2, vUv).rgb * 0.65) * uStr;\n"
             + "  o = vec4(min(c, vec3(1.0)), 1.0); }\n";
 
     private int shader(int type, String src, String what) {
@@ -1074,18 +1269,99 @@ public final class NRender {
             int l = gl.getUniformLocation(id, u);
             if (l >= 0) p.u.put(u, l);
         }
+        p.lModel = loc(p, "uModel"); p.lView = loc(p, "uView"); p.lProj = loc(p, "uProj"); p.lUv = loc(p, "uUv"); p.lInst = loc(p, "uInst");
+        p.lColor = loc(p, "uColor"); p.lEmis = loc(p, "uEmissive"); p.lOp = loc(p, "uOpacity"); p.lRough = loc(p, "uRough"); p.lMetal = loc(p, "uMetal");
+        p.lPanel = loc(p, "uPanel"); p.lHasTex = loc(p, "uHasTex"); p.lCam = loc(p, "cameraPosition"); p.lHemiS = loc(p, "uHemiSky"); p.lHemiG = loc(p, "uHemiGround");
+        p.lHemiI = loc(p, "uHemiI"); p.lMoonC = loc(p, "uMoonColor"); p.lMoonI = loc(p, "uMoonI"); p.lMoonD = loc(p, "uMoonDir"); p.lFogC = loc(p, "uFogColor");
+        p.lFogD = loc(p, "uFogDensity"); p.lFog = loc(p, "uFog"); p.lExp = loc(p, "smuExposure"); p.lSpec = loc(p, "uSpec"); p.lKind = loc(p, "uKind"); p.lFogOut = loc(p, "uFogOut");
+        if (custom) {
+            p.lMM = loc(p, "modelMatrix"); p.lMV = loc(p, "modelViewMatrix"); p.lView = loc(p, "viewMatrix"); p.lProj = loc(p, "projectionMatrix");
+            p.lFC = loc(p, "fogColor"); p.lFD = loc(p, "fogDensity");
+        }
+        // Samplers never change: the material's map on unit 0, the baked noise on its own unit.
+        gl.useProgram(id);
+        sProg = id;
+        Integer tx = p.u.get("uTex"), nz = p.u.get("uNoise");
+        if (tx != null) gl.uniform1i(tx, 0);
+        if (nz != null) gl.uniform1i(nz, NOISE_UNIT);
         return p;
+    }
+
+    private static int loc(Prog p, String name) {
+        Integer l = p.u.get(name);
+        return l == null ? -1 : l;
+    }
+
+    private static final int NOISE_UNIT = 5, NOISE_N = 512;
+
+    /**
+     * Noise baked once at startup, so shaders read it instead of working it out for every pixel every frame
+     * (that sum was by far the most expensive thing in the whole picture). Repeats seamlessly.
+     * Red and green: separate random values per texel. Blue and alpha: layered soft noise for clouds and water.
+     */
+    private void makeNoise() {
+        int n = NOISE_N;
+        byte[] px = new byte[n * n * 4];
+        long r = 0x2545F4914F6CDD1DL;
+        for (int k = 0; k < n * n; k++) {
+            r ^= r << 13; r ^= r >>> 7; r ^= r << 17;
+            px[k * 4] = (byte) r;
+            px[k * 4 + 1] = (byte) (r >>> 16);
+        }
+        // Five layers, each with twice the detail and half the strength. 16 cells of the first across the texture.
+        float[] sum = new float[n * n];
+        for (int ch = 2; ch < 4; ch++) {
+            java.util.Arrays.fill(sum, 0);
+            float amp = 0.5f;
+            for (int cells = 16; cells <= 256; cells *= 2, amp *= 0.5f) {
+                float[] lat = new float[cells * cells];
+                for (int k = 0; k < lat.length; k++) {
+                    r ^= r << 13; r ^= r >>> 7; r ^= r << 17;
+                    lat[k] = (r & 0xFFFF) / 65535f;
+                }
+                float per = (float) cells / n;
+                for (int y = 0; y < n; y++) {
+                    float fy = y * per;
+                    int y0 = (int) fy, y1 = (y0 + 1) % cells;
+                    float ty = fy - y0;
+                    ty = ty * ty * (3 - 2 * ty);
+                    for (int x = 0; x < n; x++) {
+                        float fx = x * per;
+                        int x0 = (int) fx, x1 = (x0 + 1) % cells;
+                        float tx = fx - x0;
+                        tx = tx * tx * (3 - 2 * tx);
+                        float a = lat[y0 * cells + x0] + (lat[y0 * cells + x1] - lat[y0 * cells + x0]) * tx;
+                        float b = lat[y1 * cells + x0] + (lat[y1 * cells + x1] - lat[y1 * cells + x0]) * tx;
+                        sum[y * n + x] += (a + (b - a) * ty) * amp;
+                    }
+                }
+            }
+            for (int k = 0; k < n * n; k++) px[k * 4 + ch] = (byte) Math.min(255, Math.round(sum[k] * 255));
+        }
+        ByteBuffer b = ByteBuffer.allocateDirect(px.length).order(ByteOrder.nativeOrder());
+        b.put(px).position(0);
+        int t = gl.genTexture();
+        gl.activeTexture(GLC.TEXTURE0 + NOISE_UNIT);
+        gl.bindTexture(GLC.TEXTURE_2D, t);
+        gl.texImage2D(GLC.TEXTURE_2D, 0, GLC.RGBA8, n, n, GLC.RGBA, GLC.UNSIGNED_BYTE, b);
+        gl.texParameteri(GLC.TEXTURE_2D, GLC.TEXTURE_MIN_FILTER, GLC.LINEAR);
+        gl.texParameteri(GLC.TEXTURE_2D, GLC.TEXTURE_MAG_FILTER, GLC.LINEAR);
+        gl.texParameteri(GLC.TEXTURE_2D, GLC.TEXTURE_WRAP_S, GLC.REPEAT);
+        gl.texParameteri(GLC.TEXTURE_2D, GLC.TEXTURE_WRAP_T, GLC.REPEAT);
+        gl.activeTexture(GLC.TEXTURE0);
     }
 
     private static final String[] STD_U = {"uModel", "uView", "uProj", "uUv", "uInst", "uColor", "uEmissive", "uOpacity", "uRough", "uMetal",
             "uPanel", "uHasTex", "uTex", "cameraPosition", "uHemiSky", "uHemiGround", "uHemiI", "uMoonColor", "uMoonI", "uMoonDir",
-            "uFogColor", "uFogDensity", "uFog", "smuExposure"};
+            "uFogColor", "uFogDensity", "uFog", "smuExposure", "uNoise", "uSpec", "uKind", "uFogOut"};
 
     private void buildPrograms() {
+        makeNoise();
         lit = program(STD_VS, LIT_FS, "lit", false, STD_U);
+        lite = program(LITE_VS, LITE_FS, "lite", false, STD_U);
         basic = program(STD_VS, BASIC_FS, "basic", false, STD_U);
         sprite = program(SPRITE_VS, SPRITE_FS, "sprite", false, STD_U);
-        bright = program(POST_VS, BRIGHT_FS, "bright", false, "uSrc", "uThr", "uUvScale");
+        bright = program(POST_VS, BRIGHT_FS, "bright", false, "uSrc", "uThr", "uUvScale", "uTexel");
         blur = program(POST_VS, BLUR_FS, "blur", false, "uSrc", "uDir");
         comp = program(POST_VS, COMP_FS, "comp", false, "uScene", "uB1", "uB2", "uStr", "uSharp", "uAA", "uTexel", "uUvScale");
         // Fullscreen triangle for post passes, and a unit quad for sprites (x, y, z, u, v).
@@ -1113,6 +1389,7 @@ public final class NRender {
     public List<String[]> allSources() {
         List<String[]> out = new ArrayList<>();
         out.add(new String[]{"lit", STD_VS, LIT_FS});
+        out.add(new String[]{"lite", LITE_VS, LITE_FS});
         out.add(new String[]{"basic", STD_VS, BASIC_FS});
         out.add(new String[]{"sprite", SPRITE_VS, SPRITE_FS});
         out.add(new String[]{"bright", POST_VS, BRIGHT_FS});
@@ -1145,7 +1422,7 @@ public final class NRender {
         Prog cached = customCache.get(vs + "\u0000" + fs);
         if (cached != null) return cached;
         List<String> names = new ArrayList<>();
-        Collections.addAll(names, "modelMatrix", "modelViewMatrix", "projectionMatrix", "viewMatrix", "cameraPosition", "fogColor", "fogDensity", "smuExposure");
+        Collections.addAll(names, "modelMatrix", "modelViewMatrix", "projectionMatrix", "viewMatrix", "cameraPosition", "fogColor", "fogDensity", "smuExposure", "uNoise");
         if (m.uNames != null) Collections.addAll(names, m.uNames);
         Prog p = program(vs, fs, "custom", true, names.toArray(new String[0]));
         customCache.put(vs + "\u0000" + fs, p);
@@ -1199,7 +1476,7 @@ public final class NRender {
         gl.bindRenderbuffer(GLC.RENDERBUFFER, sceneDepth);
         gl.renderbufferStorage(GLC.RENDERBUFFER, GLC.DEPTH_COMPONENT24, w, h);
         sceneFbo = fbo(sceneTex, sceneDepth);
-        int[][] sz = {{w / 2, h / 2}, {w / 2, h / 2}, {w / 4, h / 4}, {w / 4, h / 4}};
+        int[][] sz = {{w / 4, h / 4}, {w / 4, h / 4}, {w / 8, h / 8}, {w / 8, h / 8}};
         for (int k = 0; k < 4; k++) {
             bloomTex[k] = colorTex(Math.max(1, sz[k][0]), Math.max(1, sz[k][1]));
             bloomFbo[k] = fbo(bloomTex[k], 0);
@@ -1209,6 +1486,8 @@ public final class NRender {
     private void pass(Prog p, int dst, int dw, int dh, int src) {
         gl.bindFramebuffer(GLC.FRAMEBUFFER, dst);
         gl.viewport(0, 0, dw, dh);
+        // Every pixel gets redrawn: clearing tells a phone GPU not to load the old picture into memory first.
+        gl.clear(GLC.COLOR_BUFFER_BIT);
         gl.useProgram(p.id);
         gl.activeTexture(GLC.TEXTURE0);
         gl.bindTexture(GLC.TEXTURE_2D, src);
@@ -1216,14 +1495,20 @@ public final class NRender {
     }
 
     private void post(boolean bloom) {
+        // The scene's depth is finished with: no need for the GPU to write it back to memory.
+        gl.invalidateDepth();
         gl.disable(GLC.DEPTH_TEST);
         gl.disable(GLC.BLEND);
         gl.disable(GLC.CULL_FACE);
         gl.depthMask(false);
         gl.bindVertexArray(quadVao);
         if (bloom) bloomPasses();
+        measureGpu();
         gl.bindFramebuffer(GLC.FRAMEBUFFER, 0);
         gl.viewport(0, 0, w, h);
+        gl.depthMask(true);
+        gl.clear(GLC.COLOR_BUFFER_BIT | GLC.DEPTH_BUFFER_BIT);
+        gl.depthMask(false);
         gl.useProgram(comp.id);
         ui(comp, "uScene", 0);
         ui(comp, "uB1", 1);
@@ -1245,26 +1530,46 @@ public final class NRender {
         gl.depthMask(true);
     }
 
+    /**
+     * Every eighth frame, waits for the GPU to catch up and notes how long the frame has taken so far. That is the
+     * true load, on any phone, and it shows trouble coming before frames actually drop. The wait costs nothing:
+     * the screen's picture is only started afterwards, and the GPU would be busy until then anyway.
+     */
+    private void measureGpu() {
+        if (++gpuEvery < 8) return;
+        gpuEvery = 0;
+        long f = gl.fenceSync();
+        if (f == 0) return;
+        gl.clientWaitSync(f, 50_000_000L);
+        gl.deleteSync(f);
+        if (gpuSamples < gpuMs.length) gpuMs[gpuSamples++] = (System.nanoTime() - frameStart) / 1e6f;
+    }
+
     private void bloomPasses() {
-        int hw = Math.max(1, w / 2), hh = Math.max(1, h / 2), qw = Math.max(1, w / 4), qh = Math.max(1, h / 4);
+        int qw = Math.max(1, w / 4), qh = Math.max(1, h / 4), ew = Math.max(1, w / 8), eh = Math.max(1, h / 8);
         gl.useProgram(bright.id);
         ui(bright, "uSrc", 0);
         u(bright, "uThr", env[22]);
         Integer us = bright.u.get("uUvScale");
         if (us != null) gl.uniform2f(us, (float) rw / w, (float) rh / h);
-        pass(bright, bloomFbo[0], hw, hh, sceneTex);
+        Integer tx = bright.u.get("uTexel");
+        if (tx != null) gl.uniform2f(tx, 1f / w, 1f / h);
+        gl.clearColor(0, 0, 0, 1);
+        pass(bright, bloomFbo[0], qw, qh, sceneTex);
         gl.useProgram(blur.id);
         ui(blur, "uSrc", 0);
-        float rad = 1 + env[21] * 2;
+        // A quarter and an eighth of the size with half the step: the same width of glow as before for a
+        // quarter of the pixels.
+        float rad = Math.max(0.75f, (1 + env[21] * 2) * 0.5f);
         Integer dir = blur.u.get("uDir");
-        gl.uniform2f(dir, rad / hw, 0);
-        pass(blur, bloomFbo[1], hw, hh, bloomTex[0]);
-        gl.uniform2f(dir, 0, rad / hh);
-        pass(blur, bloomFbo[0], hw, hh, bloomTex[1]);
         gl.uniform2f(dir, rad / qw, 0);
-        pass(blur, bloomFbo[3], qw, qh, bloomTex[0]);
+        pass(blur, bloomFbo[1], qw, qh, bloomTex[0]);
         gl.uniform2f(dir, 0, rad / qh);
-        pass(blur, bloomFbo[2], qw, qh, bloomTex[3]);
+        pass(blur, bloomFbo[0], qw, qh, bloomTex[1]);
+        gl.uniform2f(dir, rad / ew, 0);
+        pass(blur, bloomFbo[3], ew, eh, bloomTex[0]);
+        gl.uniform2f(dir, 0, rad / eh);
+        pass(blur, bloomFbo[2], ew, eh, bloomTex[3]);
     }
 
     /** Background clear colour through the same tone curve and sRGB encoding as the shaders. */

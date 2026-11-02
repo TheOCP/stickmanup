@@ -27,7 +27,7 @@ with sync_playwright() as p:
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: m.type == "error" and errs.append(m.text[:300]))
-        pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify({quality:'high', map:%d, name:%r}))" % (MAP, NAME))
+        pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify(Object.assign({quality:'high', map:%d, name:%r}, %s)))" % (MAP, NAME, os.environ.get('REC_SET', '{}')))
         pg.goto(f"http://127.0.0.1:{srv.server_port}/index.html" + ("?native=rec" if mode == "rec" else ""))
         pg.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=90000)
         if scene.startswith("zone"):

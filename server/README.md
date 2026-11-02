@@ -21,7 +21,10 @@ curl -fsSL https://raw.githubusercontent.com/TheOCP/stickmanup/main/server/insta
 It installs what is missing, picks a free port (47810 or the next free one up to 47899), gets a free HTTPS certificate,
 creates its own user, opens the firewall on the server, asks for your sign in keys, starts the server and keeps it
 running after reboots. At the end it prints your **server address**, for example
-`https://203-0-113-7.sslip.io:47810`. That address goes into the game.
+`https://203-0-113-7.sslip.io:47810`.
+
+The game has one address built in: `SERVER` in `assets/js/cloud.js`, and players can't change it. To use another server,
+change it there and build the game again. To get a set address, run the installer with `--domain NAME --port N`.
 
 It asks for:
 

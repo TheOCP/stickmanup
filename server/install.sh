@@ -550,8 +550,8 @@ summary() {
  Server address:  $url
  Sign in with:   ${providers:- nothing yet (guests can play)}
 
- In the game: Settings, then Game server address, and paste it.
- Or send it to whoever builds the game, so it is built in.
+ The game has one address built in, SERVER in assets/js/cloud.js.
+ If this one is different, send it to whoever builds the game.
 
  Settings:        $ENV_FILE
  Players' data:   $DATA_DIR (a backup is made every day)

@@ -8,8 +8,8 @@ import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot,
 import { DIFFS } from './level.js';
 import { itemKey } from './skins.js';
 
-// The server this build of the game uses unless Settings says otherwise.
-export const DEFAULT_SERVER = '';
+// The one game server this game talks to. Using another means changing this and building the game again.
+export const SERVER = 'https://pointdesk.net:47810';
 const N = window.Native;
 const PUSH_AFTER = 30000;
 const REPORT_AFTER = 12000;
@@ -28,25 +28,11 @@ const hooks = {};
 export const on = (k, f) => { hooks[k] = f; };
 const emit = (k, ...a) => { if (hooks[k]) hooks[k](...a); };
 
-// What someone typed into a clean address. Empty for none, null if it can't be used. Only encrypted addresses,
-// because room passwords and sign ins pass through it, and Android refuses anything else anyway.
-export function cleanAddress(text) {
-  let t = String(text || '').trim();
-  if (!t) return '';
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) t = 'https://' + t;
-  let u;
-  try { u = new URL(t); } catch (e) { return null; }
-  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname);
-  if ((u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) || u.username || u.password) return null;
-  return u.origin;
-}
-export function setAddress(text) {
-  const a = cleanAddress(text);
-  if (a === null) return false;
-  address = a;
-  return true;
-}
-export const serverUrl = () => address || DEFAULT_SERVER;
+// The test scripts run the page from their own little web server, with a game server of their own or none at all.
+// The app always loads from appassets.androidplatform.net, so on a phone this never applies.
+const TESTING = !!globalThis.location && location.hostname === '127.0.0.1';
+export const setTestServer = (url) => { if (TESTING) address = url || ''; };
+export const serverUrl = () => (TESTING ? address : SERVER);
 export const wsUrl = () => serverUrl().replace(/^http/, 'ws') + '/ws';
 
 // The account only counts on the server it belongs to.

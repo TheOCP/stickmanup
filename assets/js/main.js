@@ -595,11 +595,10 @@ function joinScreen(tab) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
   let body = '';
   if (tab === 'server') {
-    body = cloud.serverUrl() ? `<p class="sub">Type the 5 letter code from the host's screen. Works on every network.</p>
+    body = `<p class="sub">Type the 5 letter code from the host's screen. Works on every network.</p>
       <div class="field"><input class="code" id="scode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"></div>
       <div class="field" style="margin-top:8px"><input id="spass" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Password, if the room has one"><button class="btn primary sm" data-a="server">Join</button></div>
-      <button class="btn sm" data-a="browser" style="margin-top:10px">Open the server browser</button>`
-      : `<p class="sub">No game server is set yet. Put its address in Settings.</p><button class="btn sm" data-a="toserver">Set the server address</button>`;
+      <button class="btn sm" data-a="browser" style="margin-top:10px">Open the server browser</button>`;
   } else if (tab === 'online') {
     body = `<p class="sub">Type the 5 letter code from the host's screen.</p>
       <div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
@@ -618,7 +617,6 @@ function joinScreen(tab) {
     back: () => { if (stopDisc) stopDisc(); stopDisc = null; title(); },
     tab: (b) => joinScreen(b.dataset.t),
     browser: () => browserScreen(() => joinScreen('server')),
-    toserver: () => serverAddress(() => joinScreen('server')),
     server: () => {
       const c = $('#scode').value.trim().toUpperCase();
       if (c.length !== 5) return ui.toast('Room codes have 5 letters', 'bad');
@@ -689,7 +687,6 @@ function openDonate() {
 // A room on the server: its name, who can find it, and whether it needs a password.
 function roomForm(back) {
   app.screen = 'roomform';
-  if (!cloud.serverUrl()) return serverAddress(() => roomForm(back), back);
   const pub = settings.roomPub !== false;
   show(`<div class="panel" style="width:min(560px,100%)">${header('Create a room')}
     <div class="kind" style="margin-bottom:6px">Room name</div>
@@ -725,7 +722,6 @@ function roomRow(r) {
 
 function browserScreen(back = title) {
   app.screen = 'browser';
-  if (!cloud.serverUrl()) return serverAddress(() => browserScreen(back), back);
   app.joinTab = 'server';
   app.joinBack = () => browserScreen(back);
   show(`<div class="panel">${header('Server browser')}
@@ -778,26 +774,9 @@ function roomPassword(code, back, maybe) {
   $('#jpass').focus();
 }
 
-function serverAddress(next, back = next) {
-  app.screen = 'serveraddr';
-  show(`<div class="panel" style="width:min(520px,100%)">${header('Game server')}
-    <p class="sub">Type the address of the game server. Whoever runs it gets it from the installer.</p>
-    <div class="field"><input id="saddr" spellcheck="false" autocomplete="off" autocapitalize="none" value="${esc(settings.server || '')}" placeholder="https://your.server:47810"><button class="btn primary sm" data-a="go">OK</button></div></div>`, {
-    back,
-    go: () => {
-      const v = $('#saddr').value;
-      if (!cloud.setAddress(v)) return ui.toast('That address can\'t be used. It has to start with https://', 'bad');
-      settings.server = v.trim();
-      saveSettings();
-      if (cloud.serverUrl()) next(); else back();
-    },
-  });
-}
-
 // Who made the game, the terms, and the sign in buttons. Guests can always just go on.
 async function accountScreen(back = title) {
   app.screen = 'account';
-  if (!cloud.serverUrl()) return serverAddress(() => accountScreen(back), back);
   const mine = (app.acctView = {});
   busy('Contacting the server...', back);
   const info = await cloud.getInfo();
@@ -805,8 +784,8 @@ async function accountScreen(back = title) {
   const a = cloud.account(), made = '<p class="madeby">StickManUp is made by <b>TheOCProductions</b> &amp; <b>ShortGG</b></p>';
   if (!info && !a) {
     show(`<div class="panel" style="width:min(460px,100%)">${header('Sign in')}${made}<p class="sub">Could not reach the game server, so signing in isn't possible right now. You can still play as a guest.</p>
-      <div class="row"><button class="btn primary sm" data-a="back">Play as guest</button><button class="btn sm" data-a="again">Try again</button></div><button class="btn sm" data-a="addr" style="margin-top:9px">Change the server address</button></div>`, {
-      back, again: () => accountScreen(back), addr: () => serverAddress(() => accountScreen(back), back),
+      <div class="row"><button class="btn primary sm" data-a="back">Play as guest</button><button class="btn sm" data-a="again">Try again</button></div></div>`, {
+      back, again: () => accountScreen(back),
     });
     return;
   }
@@ -910,13 +889,6 @@ const PRESETS = {
 
 function settingsScreen(back) {
   app.screen = 'settings';
-  const saveServer = () => {
-    const el = $('#srv');
-    if (!el) return true;
-    if (!cloud.setAddress(el.value)) { ui.toast('That server address can\'t be used. It has to start with https://', 'bad'); return false; }
-    settings.server = el.value.trim();
-    return true;
-  };
   const nat = app.renderer.native;
   const seg = (k, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-a="seg" data-k="${k}" data-v="${v}" class="${String(settings[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const range = (k, min, max, step, fmt) => `<input type="range" data-k="${k}" data-f="${fmt || ''}" min="${min}" max="${max}" step="${step}" value="${settings[k]}" style="--p:${((settings[k] - min) / (max - min)) * 100}%">`;
@@ -961,7 +933,6 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
     ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
-    <label>Game server address<input id="srv" spellcheck="false" autocomplete="off" autocapitalize="none" value="${esc(settings.server || '')}" placeholder="${esc(cloud.DEFAULT_SERVER || 'https://your.server:47810')}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none;color:inherit;font:inherit;width:100%;margin-top:4px"></label>
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
@@ -969,8 +940,8 @@ function settingsScreen(back) {
     ${getSafe() ? '<button class="btn sm full" data-a="unsafe">Try full graphics again</button>' : ''}
   </div></div>`, {
     unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
-    back: () => { if (!saveServer()) return; saveSettings(); back(); },
-    account: () => { if (!saveServer()) return; saveSettings(); accountScreen(() => settingsScreen(back)); },
+    back: () => { saveSettings(); back(); },
+    account: () => { saveSettings(); accountScreen(() => settingsScreen(back)); },
     donate: openDonate,
     layout: () => layoutEditor(() => settingsScreen(back)),
     movefps: () => fpsEditor(() => settingsScreen(back)),
@@ -1445,7 +1416,7 @@ function boot() {
   document.addEventListener('pointerdown', () => app.sound.init(), { capture: true });
   window.addEventListener('resize', () => app.renderer.resize());
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
-  cloud.setAddress(settings.server);
+  cloud.setTestServer(settings.server);
   cloud.start();
   title();
   requestAnimationFrame(frame);

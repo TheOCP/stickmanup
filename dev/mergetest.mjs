@@ -4,7 +4,7 @@ const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
 globalThis.window = globalThis;
 const { mergeRecords, setRecords, setWallet, snapshot, restore, coins, cleanRun, owned, buy } = await import('../assets/js/profile.js');
-const { mergeData, cleanAddress } = await import('../assets/js/cloud.js');
+const { mergeData } = await import('../assets/js/cloud.js');
 const { SUITS, HATS, FACES, itemKey } = await import('../assets/js/skins.js');
 
 let bad = 0, good = 0;
@@ -69,9 +69,6 @@ d = mergeData({ profile: {}, solo: null }, { profile: {}, solo: S(5) });
 check('a saved climb on one phone is kept', d.solo && d.solo.pos[1] === 5);
 d = mergeData({ profile: {}, solo: { pos: [evil, 1, 1], t: 1, falls: 0, diff: 0 } }, { profile: {}, solo: { pos: [1, 1, 1], t: evil, falls: evil, diff: 0 } });
 check('a poisoned saved climb is dropped', d.solo === null);
-
-for (const [t, want] of [['', ''], ['  ', ''], ['example.com:47810', 'https://example.com:47810'], ['https://example.com/', 'https://example.com'], ['https://a.b/c?d', 'https://a.b'], ['http://example.com', null], ['ftp://x', null], ['https://u:p@x.y', null], ['javascript:alert(1)', null], ['http://localhost:9', 'http://localhost:9'], ['http://127.0.0.1:9', 'http://127.0.0.1:9'], ['not a url', null]])
-  check(`the address "${t}"`, cleanAddress(t) === want, String(cleanAddress(t)));
 
 console.log(bad ? `${bad} FAILED, ${good} passed` : `all ${good} passed`);
 process.exit(bad ? 1 : 0);

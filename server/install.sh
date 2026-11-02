@@ -521,7 +521,7 @@ summary() {
  Server address:  $url
  Sign in with:   ${providers:- nothing yet (guests can play)}
 
- In the game: Settings, then Server address, and paste it.
+ In the game: Settings, then Game server address, and paste it.
  Or send it to whoever builds the game, so it is built in.
 
  Settings:        $ENV_FILE

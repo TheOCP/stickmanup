@@ -49,6 +49,14 @@ export class Fx {
     });
   }
 
+  // A player's chosen colour for their shots and their lightning warning ring.
+  setColor(slot, hex) {
+    const k = slot % 4;
+    this.tracers[k].m.material.color.copy(HDR(hex, 3));
+    this.markers[k].ring.material.color.copy(HDR(hex, 3.2));
+    this.markers[k].fill.material.color.copy(HDR(hex, 1.4));
+  }
+
   tracer(slot, a, b, hit) {
     const t = this.tracers[slot % 4];
     stretch(t.m, a[0], a[1], a[2], b[0], b[1], b[2], 0.035);

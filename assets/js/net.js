@@ -3,6 +3,7 @@
 // bridge; direct opens the router port with UPnP), Bluetooth, and a BroadcastChannel stand-in so two
 // browser tabs can test the netcode on a desktop.
 import { LEVEL_VERSION } from './level.js';
+import { validColor } from './colors.js';
 
 export const PROTO = LEVEL_VERSION * 100 + 1;
 const PREFIX = 'stickmanup-v1-';
@@ -204,9 +205,10 @@ export function makeLink(kind) {
 
 // ---------- session ----------
 export class Session {
-  constructor(mode, name, link) {
+  constructor(mode, name, link, color = null) {
     this.mode = mode; // 'solo' | 'host' | 'client'
     this.name = name;
+    this.color = validColor(color);
     this.link = link;
     this.slot = 0;
     this.players = new Map();
@@ -216,11 +218,11 @@ export class Session {
     this.ping = 0;
     this.lobby = { diff: 1, resume: false };
     this.game = null;
-    if (mode !== 'client') this.players.set(0, this.player(0, name, null));
+    if (mode !== 'client') this.players.set(0, this.player(0, name, null, this.color));
   }
 
-  player(slot, name, id) {
-    return { slot, name, id, samples: [], ping: 0 };
+  player(slot, name, id, color = null) {
+    return { slot, name, id, color, samples: [], ping: 0 };
   }
 
   on(k, fn) { this.h[k] = fn; return this; }
@@ -253,7 +255,7 @@ export class Session {
         let slot = -1;
         for (let i = 1; i < MAX_PLAYERS; i++) if (!this.players.has(i)) { slot = i; break; }
         if (slot < 0) return this.deny(id, 'This game is full (4 robots).');
-        this.players.set(slot, this.player(slot, String(m.name || 'Climber').slice(0, 14), id));
+        this.players.set(slot, this.player(slot, String(m.name || 'Climber').slice(0, 14), id, validColor(m.color)));
         this.send(id, { k: 'welcome', slot, players: this.list(), lobby: this.lobby, game: this.game ? this.emitGet('snapshot', slot) : null });
         this.sendLobby();
         this.emit('roster', slot, true);
@@ -282,7 +284,7 @@ export class Session {
   }
 
   list() {
-    return [...this.players.values()].map((p) => ({ slot: p.slot, name: p.name, ping: p.ping }));
+    return [...this.players.values()].map((p) => ({ slot: p.slot, name: p.name, color: p.color, ping: p.ping }));
   }
 
   sendLobby() {
@@ -345,7 +347,7 @@ export class Session {
     this.link.join(target, {
       open: (id) => {
         this.hostId = id;
-        this.send(id, { k: 'hello', v: PROTO, name: this.name });
+        this.send(id, { k: 'hello', v: PROTO, name: this.name, color: this.color });
         this.pingNow();
         this.pinger = setInterval(() => this.pingNow(), 2000);
       },
@@ -397,7 +399,7 @@ export class Session {
     for (const p of list) {
       if (!this.players.has(p.slot)) { this.players.set(p.slot, this.player(p.slot, p.name, null)); this.emit('roster', p.slot, true); }
       const q = this.players.get(p.slot);
-      q.name = p.name; q.ping = p.ping;
+      q.name = p.name; q.ping = p.ping; q.color = validColor(p.color);
       before.delete(p.slot);
     }
     for (const s of before) { this.players.delete(s); this.emit('roster', s, false); }

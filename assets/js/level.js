@@ -6,7 +6,7 @@
 import { makeBox, makeCyl } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 
-export const LEVEL_VERSION = 5;
+export const LEVEL_VERSION = 6;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 

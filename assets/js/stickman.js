@@ -5,6 +5,7 @@ import { F } from './player.js';
 import { COLORS } from './colors.js';
 
 const HDR = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
+const WHITE = new THREE.Color(0xffffff);
 
 // Joins geometries (each already moved into place) into one, so a whole limb is a single draw call.
 function join(...geos) {
@@ -61,11 +62,11 @@ export class Stickman {
     this.g = new THREE.Group(); // at the physics centre, turned to face movement
     this.body = new THREE.Group(); // squash, lean and spin
     this.g.add(this.body);
-    const limbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.1), roughness: 0.35, metalness: 0.1, emissive: color, emissiveIntensity: 0.6 });
+    const limbMat = (this.limbMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.1), roughness: 0.35, metalness: 0.1, emissive: color, emissiveIntensity: 0.6 }));
     // The head is the same colour as the body (a touch lighter), with a dark face drawn on it.
-    const headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.22), roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.45 });
+    const headMat = (this.headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.22), roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.45 }));
     const ink = new THREE.MeshBasicMaterial({ color: 0x0a0d14 });
-    const gunMat = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.35, metalness: 0.7, emissive: color, emissiveIntensity: 0.35 });
+    const gunMat = (this.gunMat = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.35, metalness: 0.7, emissive: color, emissiveIntensity: 0.35 }));
     const mesh = (geo, mat, parent, x = 0, y = 0, z = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
@@ -133,6 +134,17 @@ export class Stickman {
     this.flip = 0;
     this.yawVel = 0;
     this.climbPh = 0;
+  }
+
+  // The player's chosen colour (body, head and the blaster's glow).
+  setColor(hex) {
+    if (hex === this.color) return;
+    this.color = hex;
+    this.limbMat.color.setHex(hex).lerp(WHITE, 0.1);
+    this.limbMat.emissive.setHex(hex);
+    this.headMat.color.setHex(hex).lerp(WHITE, 0.22);
+    this.headMat.emissive.setHex(hex);
+    this.gunMat.emissive.setHex(hex);
   }
 
   // Arms up and a little happy bounce (checkpoint, summit).

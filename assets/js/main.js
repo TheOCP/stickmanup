@@ -9,7 +9,8 @@ import { Sound } from './audio.js';
 import { Storm } from './storm.js';
 import { Session, makeLink, lanDiscover, btPrepare, btDevices, lanAddresses, hasNative, MAX_PLAYERS, exposeHost, addrToCode, parseAddr } from './net.js';
 import { Game } from './game.js';
-import { COLOR_CSS, COLORS, makePool } from './robot.js';
+import { COLORS, makePool } from './robot.js';
+import { PALETTE, css } from './colors.js';
 import { Chain } from './chain.js';
 import { Fx } from './fx.js';
 import { PR } from './player.js';
@@ -24,7 +25,11 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, color: 0 }, store.get('settings', {}));
+if (!(settings.color >= 0 && settings.color < PALETTE.length)) settings.color = 0;
+const myColor = () => PALETTE[settings.color];
+// A player's colour in the session (their pick, or their slot's default).
+const pcol = (s, slot) => { const p = s.players.get(slot); return css((p && p.color) ?? COLORS[slot % 4]); };
 // Earlier versions had on/off switches for the two assists; carry them over to the sliders.
 if (settings.camAssist === false) settings.camFollow = 0;
 if (settings.aimAssist === false) settings.aimHelp = 0;
@@ -94,8 +99,8 @@ const ui = (app.ui = {
     const L = app.level, top = L.top;
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
-    $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].map((s) => `<i data-s="${s}" style="color:${COLOR_CSS[s % 4]}"></i>`).join('');
-    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${COLOR_CSS[p.slot % 4]}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span><small></small></div>`).join('');
+    $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
+    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span><small></small></div>`).join('');
     $('#tags').innerHTML = '';
   },
   hud(g, { T, zone, gust, thunder }) {
@@ -120,6 +125,9 @@ const ui = (app.ui = {
     gb.style.setProperty('--v', me.grip.toFixed(3));
     gb.classList.toggle('low', me.grip < 0.3);
     $('#bAct').classList.toggle('off', !g.action);
+    // Without the cord there's nothing to reel.
+    const rb0 = $('#bReel');
+    if (rb0.classList.contains('nocord') !== g.noCord) rb0.classList.toggle('nocord', g.noCord);
     const rl = $('#bReel span'), mode = g.reelMode || 'REEL';
     if (rl.textContent !== mode) rl.textContent = mode;
     $('#bReel').classList.toggle('help', mode !== 'REEL');
@@ -195,7 +203,7 @@ const ui = (app.ui = {
       if (!el) {
         el = document.createElement('div');
         el.dataset.s = slot;
-        el.style.color = COLOR_CSS[slot % 4];
+        el.style.color = pcol(g.s, slot);
         el.textContent = p.name;
         box.appendChild(el);
       }
@@ -321,7 +329,7 @@ function soloPick() {
 }
 
 function startSolo(map, diff, save) {
-  const s = new Session('solo', settings.name, null);
+  const s = new Session('solo', settings.name, null, myColor());
   beginGame(s, { map, diff, t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
@@ -355,7 +363,7 @@ async function bluetoothReady() {
 
 async function hostWith(kind) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
-  const s = new Session('host', settings.name, makeLink(kind));
+  const s = new Session('host', settings.name, makeLink(kind), myColor());
   let cancelled = false;
   busy(kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
@@ -405,7 +413,7 @@ function lobby(s) {
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
-    slots.push(p ? `<div class="slot" style="color:${COLOR_CSS[i]}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span><small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
+    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span><small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
   loadMap(resume ? mp.map || 0 : s.lobby.map || 0);
@@ -417,6 +425,7 @@ function lobby(s) {
         <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${(resume ? mp.map || 0 : s.lobby.map || 0) === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
+        <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord (nobody is tied together)</label>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
     : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start...</p>`}
@@ -427,11 +436,12 @@ function lobby(s) {
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
+    nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
     start: () => {
       const save = s.lobby.resume && mp;
       const pos = {};
       if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0,
+      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0,
         doors: save ? save.doors : null, pos: save ? pos : null });
     },
   });
@@ -504,7 +514,7 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
-  const s = new Session('client', settings.name, makeLink(kind));
+  const s = new Session('client', settings.name, makeLink(kind), myColor());
   busy('Connecting...', () => { s.close(); joinScreen(kind); });
   wireLobby(s);
   s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else lobby(s); });
@@ -550,6 +560,7 @@ function settingsScreen(back) {
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
+    <label>Your stickman colour<div class="swatches">${PALETTE.map((c, i) => `<button data-a="color" data-i="${i}" class="sw ${settings.color === i ? 'on' : ''}" style="background:${css(c)}" aria-label="Colour ${i + 1}"></button>`).join('')}</div></label>
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
@@ -559,6 +570,11 @@ function settingsScreen(back) {
     back: () => { saveSettings(); back(); },
     layout: () => layoutEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
+    color: (b) => {
+      settings.color = +b.dataset.i;
+      saveSettings();
+      for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
+    },
     seg: (b) => {
       const k = b.dataset.k, v = b.dataset.v;
       settings[k] = k === 'cap' ? +v : k === 'lefty' ? v === 'true' : v;
@@ -996,6 +1012,7 @@ function titleRunners(dt) {
     const jumpBack = Math.hypot(o.x - prev.x, o.z - prev.z) > 4; // looped back to the start
     RUN.prev[j] = o;
     r.flip = o.flip;
+    r.setColor(j === 0 ? myColor() : COLORS[j]);
     r.show();
     r.update(dt, o.x, o.y + PR, o.z, jumpBack ? 0 : vx, o.ground || jumpBack ? 0 : vy, jumpBack ? 0 : vz, o.ground ? 1 | 64 : 0, 0, o.y);
     if (jumpBack && j < 3) RUN.chains[j].ok = false;
@@ -1006,7 +1023,7 @@ function titleRunners(dt) {
   // Cords between neighbours in the line.
   for (let j = 0; j < 3; j++) {
     const ch = RUN.chains[j], rope = pool.ropes[j], A = pos[j], B = pos[j + 1];
-    rope.setColors(COLORS[j], COLORS[j + 1]);
+    rope.setColors(j === 0 ? myColor() : COLORS[j], COLORS[j + 1]);
     ch.step(A, B, 6.5, app.world, Math.min(dt, 0.05));
     rope.mesh.visible = true;
     rope.update(ch.p, Math.max(0, Math.min(1, (Math.hypot(A.x - B.x, A.y - B.y, A.z - B.z) / 6.5 - 0.85) / 0.15)), titleT);

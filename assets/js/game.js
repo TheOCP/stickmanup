@@ -38,6 +38,7 @@ export class Game {
     this.cp = g.cp || 0;
     this.falls = g.falls || 0;
     this.slot = session.slot;
+    this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
     this.me = new Body();
     const p = g.pos && g.pos[this.slot] ? g.pos[this.slot] : this.spawnPos(this.cp, this.slot);
     this.me.spawn(p[0], p[1], p[2]);
@@ -94,29 +95,39 @@ export class Game {
     return this.solo ? this.soloT : (this.s.now() - this.t0) / 1000 + this.base;
   }
 
+  // Right in the middle of the checkpoint circle (never out by the edge). With company, everyone gets a
+  // spot on a small ring round the middle, far enough apart not to bump each other off.
   spawnPos(i, slot) {
-    const cp = this.L.cps[i], th = Math.atan2(cp.z, cp.x), r = Math.hypot(cp.x, cp.z) + (cp.mid ? 1.15 : 1.8);
-    const off = (slot - 1.5) * 1.1, a = th + off / r;
-    return [Math.cos(a) * r, cp.y + PR + 0.4, Math.sin(a) * r];
+    const cp = this.L.cps[i];
+    if (this.s.players.size <= 1) return [cp.x, cp.y + PR + 0.4, cp.z];
+    const a = (slot / 4) * Math.PI * 2 + 0.4;
+    return [cp.x + Math.cos(a) * 0.64, cp.y + PR + 0.4, cp.z + Math.sin(a) * 0.64];
   }
 
   snapshot(slot) {
     const m = this.me, stuns = [];
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
-    return { map: this.map, diff: this.diff, t0: this.t0, base: this.base, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns,
+    return { map: this.map, diff: this.diff, noCord: this.noCord, t0: this.t0, base: this.base, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns,
       pos: { [slot]: [m.x + 0.6, m.y + 1.2, m.z] } };
+  }
+
+  // A player's chosen colour (their slot colour if they haven't picked one).
+  colorOf(slot) {
+    const p = this.s.players.get(slot);
+    return (p && p.color) ?? COLORS[slot % 4];
   }
 
   // Climbers and cords come from the app-wide pool (never created or disposed mid-game).
   syncRoster() {
     const pool = this.app.pool, slots = [...this.s.players.keys()].sort((a, b) => a - b);
     for (const s of slots) if (!this.robots.has(s)) { const r = pool.robots[s % 4]; r.show(); this.robots.set(s, r); }
+    for (const s of slots) { const c = this.colorOf(s); this.robots.get(s).setColor(c); this.app.fx.setColor(s, c); }
     for (const [s, r] of this.robots) if (!this.s.players.has(s)) { r.hide(); this.robots.delete(s); }
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.links = [];
-    for (let i = 0; i + 1 < slots.length; i++) {
+    for (let i = 0; i + 1 < slots.length && !this.noCord; i++) {
       const a = slots[i], b = slots[i + 1], mesh = pool.ropes[i];
-      mesh.setColors(COLORS[a % 4], COLORS[b % 4]);
+      mesh.setColors(this.colorOf(a), this.colorOf(b));
       this.links.push({ a, b, chain: new Chain(12), mesh, ten: 0, L: this.D.rope });
     }
     this.app.ui.players(this);
@@ -556,7 +567,7 @@ export class Game {
 
   save() {
     const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, noCord: this.noCord, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
   }
 
   finish(e) {

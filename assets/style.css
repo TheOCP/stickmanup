@@ -411,3 +411,23 @@ body.pad .set { grid-template-columns: 1fr; }
 .padtest .pc i { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--a); }
 .padtest .pc.in i { background: var(--tx3); }
 .padtest .sub { flex: 1 1 200px; margin: 0; }
+
+/* The game server: sign in, terms, server browser */
+.seg.vis { display: flex; background: rgba(255, 255, 255, 0.05); border-radius: 10px; padding: 3px; }
+.seg.vis button { flex: 1; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: 650; color: var(--tx2); }
+.seg.vis button.on { background: rgba(63, 240, 208, 0.18); color: var(--tx); }
+.brand .ver.made { margin-top: 4px; letter-spacing: 0.1em; }
+.acct { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; align-items: start; }
+.terms { max-height: min(62vh, 300px); overflow: auto; white-space: pre-wrap; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 12.5px; line-height: 1.5; color: var(--tx2); }
+.madeby { margin: 0 0 8px; font-size: 13.5px; color: var(--tx2); }
+.madeby b { color: var(--tx); }
+.provs { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.prov.discord:not([disabled]) { background: #5865f2; border-color: transparent; color: #fff; }
+.prov.steam:not([disabled]) { background: #1b2838; border-color: #66c0f4; color: #fff; }
+.prov.google:not([disabled]) { background: #fff; border-color: transparent; color: #1f1f1f; }
+.bbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.bbtns { display: flex; gap: 8px; }
+.bbtns .btn { width: auto; }
+.item[disabled] { opacity: 0.5; pointer-events: none; }
+.acctbtn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 620px) { .acct { grid-template-columns: 1fr; } }

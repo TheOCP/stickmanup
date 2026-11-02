@@ -10,7 +10,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist", "--disable-gpu-compositing"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
     for lvl in range(5):
-        pg = b.new_page(viewport={"width": 915, "height": 412})
+        pg = b.new_page(bypass_csp=True, viewport={"width": 915, "height": 412})
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: m.type == "error" and errs.append(m.text[:200]))

@@ -54,12 +54,16 @@ export const store = {
     try {
       localStorage.setItem('smu.' + k, JSON.stringify(v));
     } catch (e) {}
+    if (store.watch) store.watch(k);
   },
   del(k) {
     try {
       localStorage.removeItem('smu.' + k);
     } catch (e) {}
+    if (store.watch) store.watch(k);
   },
+  // Told about every change (the account keeps progress up to date this way).
+  watch: null,
 };
 
 export const r3 = (v) => Math.round(v * 1000) / 1000;

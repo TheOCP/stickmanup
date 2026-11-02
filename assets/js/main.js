@@ -11,7 +11,8 @@ import { PadNav } from './padnav.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Storm } from './storm.js';
-import { Session, makeLink, lanDiscover, btPrepare, btDevices, lanAddresses, hasNative, MAX_PLAYERS, exposeHost, addrToCode, parseAddr } from './net.js';
+import * as cloud from './cloud.js';
+import { Session, PROTO, makeLink, lanDiscover, btPrepare, btDevices, lanAddresses, hasNative, MAX_PLAYERS, exposeHost, addrToCode, parseAddr } from './net.js';
 import { Game } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
@@ -388,19 +389,27 @@ const shopCtx = { app, show, esc, ui, header, name: () => settings.name, lookCha
 
 function title() {
   app.screen = 'title';
-  const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map];
+  const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map], acct = cloud.account();
   loadMap(settings.map);
+  // The first time, and whenever the terms have changed, ask before anything else.
+  if ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !store.get('welcomed'))) {
+    store.set('welcomed', 1);
+    app.termsAsked = true;
+    return accountScreen(title);
+  }
   show(`<div class="title">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
       <p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
+      <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
     </div>
     <div class="mainbtns">
       ${save ? `<button class="btn primary" data-a="cont"><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
-      <button class="btn" data-a="host"><b>Host a game</b><small>Online, WiFi or Bluetooth</small></button>
+      <button class="btn" data-a="host"><b>Host a game</b><small>Server, online, WiFi or Bluetooth</small></button>
       <button class="btn" data-a="join"><b>Join a game</b><small>Room code or a game nearby</small></button>
+      <div class="row"><button class="btn sm" data-a="browser">Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.name) : 'Sign in'}</button></div>
       <div class="row"><button class="btn sm shopbtn" data-a="shop"><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records">Records</button></div>
       <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     </div></div>`, {
@@ -409,7 +418,9 @@ function title() {
     cont: () => startSolo(save.map || 0, save.diff, save),
     solo: soloPick,
     host: hostPick,
-    join: () => joinScreen('online'),
+    join: () => joinScreen(cloud.serverUrl() ? 'server' : 'online'),
+    browser: () => browserScreen(title),
+    account: () => accountScreen(title),
     settings: () => settingsScreen(title),
     how: () => howTo(title),
     back: () => { if (N && N.exit) N.exit(); },
@@ -453,12 +464,14 @@ function hostPick() {
   show(`<div class="panel">${header('Host a game')}
     <p class="sub">Up to 4 climbers. Everyone needs StickManUp, and the same version.</p>
     <div class="cards">
+      <button class="card" data-a="server"><span class="ic">🖥</span><b>Game server</b><small>Public or private, with a password if you like. Works on every network.</small></button>
       <button class="card" data-a="go" data-k="online"><span class="ic">🌐</span><b>Online</b><small>A 5 letter room code. Easiest, but some networks (often mobile data) block it.</small></button>
       <button class="card" data-a="go" data-k="direct"><span class="ic">⇄</span><b>Internet (direct)</b><small>No server at all: friends connect straight to your phone. Host from a home WiFi.</small></button>
       <button class="card" data-a="go" data-k="lan"><span class="ic">📶</span><b>WiFi / hotspot</b><small>Same WiFi, or friends join your phone's hotspot. No internet needed, lowest lag.</small></button>
       <button class="card" data-a="go" data-k="bt"><span class="ic">ᛒ</span><b>Bluetooth</b><small>No WiFi at all. Pair the phones in Android settings first. Slower link.</small></button>
     </div></div>`, {
     back: title,
+    server: () => roomForm(hostPick),
     go: (b) => hostWith(b.dataset.k),
   });
 }
@@ -475,11 +488,11 @@ async function bluetoothReady() {
   return true;
 }
 
-async function hostWith(kind) {
+async function hostWith(kind, roomOpts) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
-  const s = new Session('host', settings.name, makeLink(kind), myColor(), myLook(settings.name));
+  const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(settings.name));
   let cancelled = false;
-  busy(kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
+  busy(kind === 'server' ? 'Opening your room...' : kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
   const r = await s.host();
   if (cancelled) return;
@@ -487,7 +500,8 @@ async function hostWith(kind) {
   const mp = validSave('save.mp');
   s.lobby.map = settings.map;
   if (mp) s.lobby.diff = mp.diff;
-  app.room = { kind, code: r.code, ips: kind === 'lan' ? (r.ips || lanAddresses()) : [], name: r.name };
+  app.room = { kind, code: r.code, ips: kind === 'lan' ? (r.ips || lanAddresses()) : [], name: r.name, pub: r.pub, locked: r.locked };
+  if (kind === 'server') s.sendLobby();
   if (kind === 'direct') {
     const x = await exposeHost(r.port || 47800);
     if (cancelled) return;
@@ -503,7 +517,12 @@ function wireLobby(s) {
     if (app.screen === 'lobby') lobby(s);
     if (app.game) { const p = s.players.get(slot); ui.toast(joined ? `${p ? p.name : 'A climber'} joined` : 'A climber left the game', joined ? 'good' : ''); }
   });
-  s.on('error', (e) => { ui.toast(e, 'bad'); if (!s.isHost && !app.game) { s.close(); joinScreen(app.joinTab || 'online'); } });
+  s.on('error', (e) => {
+    ui.toast(e, 'bad');
+    if (!s.isHost && !app.game) { s.close(); if (app.joinBack) app.joinBack(); else joinScreen(app.joinTab || 'online'); }
+    // The server connection is gone: nobody can reach this room any more.
+    else if (s.isHost && app.room && app.room.kind === 'server') { if (app.game && app.game.s === s) { endGame(); message('Disconnected', e); } else if (app.screen === 'lobby') { s.close(); message('Disconnected', e); } }
+  });
   s.on('start', (g) => beginGame(s, g));
   s.on('closed', (why) => { if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } });
 }
@@ -513,6 +532,7 @@ function lobby(s) {
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
   if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '...'} ms</p>`;
+  else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p><p>${room.pub ? 'It shows in the server browser. Friends can also tap <b>Join a game</b> and type this code.' : 'Not in the server browser. Friends tap <b>Join a game</b> and type this code.'}${room.locked ? ' They also need your password.' : ''}</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   else if (room.kind === 'online') info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   else if (room.kind === 'direct') {
     const x = room.direct || {};
@@ -548,7 +568,7 @@ function lobby(s) {
       </div>
     </div></div>`, {
     back: () => { s.close(); title(); },
-    share: () => N.share(room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp, tap Join a game, then Direct, and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
+    share: () => N.share(room.kind === 'server' ? `Join my StickManUp climb! Open StickManUp, tap Join a game and type the code ${room.code}` : room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp, tap Join a game, then Direct, and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
@@ -569,9 +589,16 @@ let stopDisc = null;
 function joinScreen(tab) {
   app.screen = 'join';
   app.joinTab = tab;
+  app.joinBack = null;
   if (stopDisc) { stopDisc(); stopDisc = null; }
   let body = '';
-  if (tab === 'online') {
+  if (tab === 'server') {
+    body = cloud.serverUrl() ? `<p class="sub">Type the 5 letter code from the host's screen. Works on every network.</p>
+      <div class="field"><input class="code" id="scode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"></div>
+      <div class="field" style="margin-top:8px"><input id="spass" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Password, if the room has one"><button class="btn primary sm" data-a="server">Join</button></div>
+      <button class="btn sm" data-a="browser" style="margin-top:10px">Open the server browser</button>`
+      : `<p class="sub">No game server is set yet. Put its address in Settings.</p><button class="btn sm" data-a="toserver">Set the server address</button>`;
+  } else if (tab === 'online') {
     body = `<p class="sub">Type the 5 letter code from the host's screen.</p>
       <div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
   } else if (tab === 'direct') {
@@ -584,10 +611,17 @@ function joinScreen(tab) {
     body = `<p class="sub">Pick the host's phone. It must be paired with yours in Android Settings under Bluetooth.</p><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>`;
   }
   show(`<div class="panel">${header('Join a game')}
-    <div class="tabs"><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button><button data-a="tab" data-t="direct" class="${tab === 'direct' ? 'on' : ''}">Direct</button><button data-a="tab" data-t="lan" class="${tab === 'lan' ? 'on' : ''}">WiFi</button><button data-a="tab" data-t="bt" class="${tab === 'bt' ? 'on' : ''}">Bluetooth</button></div>
+    <div class="tabs"><button data-a="tab" data-t="server" class="${tab === 'server' ? 'on' : ''}">Server</button><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button><button data-a="tab" data-t="direct" class="${tab === 'direct' ? 'on' : ''}">Direct</button><button data-a="tab" data-t="lan" class="${tab === 'lan' ? 'on' : ''}">WiFi</button><button data-a="tab" data-t="bt" class="${tab === 'bt' ? 'on' : ''}">Bluetooth</button></div>
     ${body}</div>`, {
     back: () => { if (stopDisc) stopDisc(); stopDisc = null; title(); },
     tab: (b) => joinScreen(b.dataset.t),
+    browser: () => browserScreen(() => joinScreen('server')),
+    toserver: () => serverAddress(() => joinScreen('server')),
+    server: () => {
+      const c = $('#scode').value.trim().toUpperCase();
+      if (c.length !== 5) return ui.toast('Room codes have 5 letters', 'bad');
+      joinWith('server', { code: c, pass: $('#spass').value });
+    },
     online: () => {
       const c = $('#code').value.trim().toUpperCase();
       if (c.length !== 5) return ui.toast('Room codes have 5 letters', 'bad');
@@ -606,7 +640,10 @@ function joinScreen(tab) {
     },
     host: (b) => joinWith(tab, tab === 'bt' ? { addr: b.dataset.addr } : { ip: b.dataset.ip, port: +b.dataset.port }),
   });
-  if (tab === 'online') {
+  if (tab === 'server') {
+    const inp = $('#scode');
+    if (inp) inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  } else if (tab === 'online') {
     const inp = $('#code');
     inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
   } else if (tab === 'lan') {
@@ -631,12 +668,227 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
-  const s = new Session('client', settings.name, makeLink(kind), myColor(), myLook(settings.name));
-  busy('Connecting...', () => { s.close(); joinScreen(kind); });
+  const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl() } : undefined), myColor(), myLook(settings.name));
+  const back = app.joinBack;
+  busy('Connecting...', () => { s.close(); if (back) back(); else joinScreen(kind); });
   wireLobby(s);
   s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else lobby(s); });
   s.join(target);
 }
+
+// ---------- the game server ----------
+// A room on the server: its name, who can find it, and whether it needs a password.
+function roomForm(back) {
+  app.screen = 'roomform';
+  if (!cloud.serverUrl()) return serverAddress(() => roomForm(back), back);
+  const pub = settings.roomPub !== false;
+  show(`<div class="panel" style="width:min(560px,100%)">${header('Create a room')}
+    <div class="kind" style="margin-bottom:6px">Room name</div>
+    <div class="field"><input id="rname" maxlength="28" spellcheck="false" autocomplete="off" value="${esc(settings.roomName || '')}" placeholder="${esc((settings.name || 'Climber') + "'s climb")}"></div>
+    <div class="kind" style="margin:12px 0 6px">Who can find it</div>
+    <div class="seg vis"><button data-a="vis" data-v="1" class="${pub ? 'on' : ''}">Public</button><button data-a="vis" data-v="0" class="${pub ? '' : 'on'}">Private</button></div>
+    <p class="sub" id="rvis" style="margin:8px 0 0">${pub ? 'Shows in the server browser for everyone.' : 'Hidden from the server browser. Only people with the code can join.'}</p>
+    <label class="toggle" style="margin-top:12px"><input type="checkbox" id="rlock" data-a="lock"> Needs a password to join</label>
+    <div class="field" id="rpassf" style="display:none;margin-top:6px"><input id="rpass" maxlength="64" spellcheck="false" autocomplete="off" placeholder="Password"></div>
+    <button class="btn primary" data-a="make" style="margin-top:14px"><b>Create the room</b><small>You pick the map and difficulty next</small></button></div>`, {
+    back,
+    vis: (b) => {
+      settings.roomPub = b.dataset.v === '1';
+      for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
+      $('#rvis').textContent = settings.roomPub ? 'Shows in the server browser for everyone.' : 'Hidden from the server browser. Only people with the code can join.';
+    },
+    lock: (b) => { $('#rpassf').style.display = b.checked ? '' : 'none'; if (b.checked) $('#rpass').focus(); },
+    make: () => {
+      const pass = $('#rlock').checked ? $('#rpass').value : '';
+      if ($('#rlock').checked && !pass) return ui.toast('Type a password, or switch it off', 'bad');
+      settings.roomName = $('#rname').value.trim();
+      saveSettings();
+      hostWith('server', { name: settings.roomName, pub: settings.roomPub !== false, pass });
+    },
+  });
+}
+
+function roomRow(r) {
+  const full = +r.n >= +r.max, code = String(r.code);
+  const map = MAPS[r.map] ? MAPS[r.map].name : 'Unknown map', diff = DIFFS[r.diff] ? DIFFS[r.diff].name : '';
+  return `<button class="item" data-a="room" data-code="${esc(code)}" data-locked="${r.locked ? 1 : 0}" ${full ? 'disabled' : ''}><div><b>${r.locked ? '🔒 ' : ''}${esc(r.name)}</b><small>${esc(r.host)} · ${esc(map)} · ${esc(diff)} · ${esc(+r.n || 0)}/${esc(+r.max || 4)} climbers · ${r.started ? 'climbing' : 'in the lobby'}</small></div><span class="go">${full ? 'FULL' : 'JOIN ›'}</span></button>`;
+}
+
+function browserScreen(back = title) {
+  app.screen = 'browser';
+  if (!cloud.serverUrl()) return serverAddress(() => browserScreen(back), back);
+  app.joinTab = 'server';
+  app.joinBack = () => browserScreen(back);
+  show(`<div class="panel">${header('Server browser')}
+    <div class="bbar"><span class="sub" id="bstat" style="margin:0"><span class="spin"></span>&nbsp; Looking for rooms...</span><span class="bbtns"><button class="btn sm" data-a="refresh">Refresh</button><button class="btn primary sm" data-a="create">Create room</button></span></div>
+    <div class="list" id="rooms"></div>
+    <div class="field"><input id="bcode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Private room? Type its code"><button class="btn sm" data-a="bjoin">Join</button></div></div>`, {
+    back: () => { app.joinBack = null; back(); },
+    refresh: () => look(),
+    create: () => roomForm(() => browserScreen(back)),
+    room: (b) => {
+      if (+b.dataset.locked) roomPassword(b.dataset.code, () => browserScreen(back));
+      else joinWith('server', { code: b.dataset.code, pass: '' });
+    },
+    bjoin: () => {
+      const c = $('#bcode').value.trim().toUpperCase();
+      if (c.length !== 5) return ui.toast('Room codes have 5 letters', 'bad');
+      roomPassword(c, () => browserScreen(back), true);
+    },
+  });
+  const inp = $('#bcode');
+  inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  let shown = null;
+  const look = async () => {
+    const r = await cloud.getRooms(PROTO), el = $('#rooms'), st = $('#bstat');
+    if (app.screen !== 'browser' || !el) return;
+    if (!r) {
+      st.textContent = 'Could not reach the game server.';
+      el.innerHTML = '';
+      shown = null;
+      return;
+    }
+    const o = r.online, n = r.rooms.length;
+    st.textContent = `${n} open room${n === 1 ? '' : 's'} · ${+o.players || 0} online · ${r.ms} ms to the server`;
+    const html = n ? r.rooms.map(roomRow).join('') : '<div class="empty">No open rooms right now. Create the first one!</div>';
+    if (html !== shown) { el.innerHTML = html; shown = html; }
+  };
+  look();
+  const t = setInterval(() => { if (app.screen === 'browser') look(); else clearInterval(t); }, 5000);
+}
+
+function roomPassword(code, back, maybe) {
+  app.screen = 'roompass';
+  app.joinBack = back;
+  show(`<div class="panel" style="width:min(460px,100%)">${header('Room ' + esc(code))}
+    <p class="sub">${maybe ? 'If the room has a password, type it here. If not, leave this empty.' : 'This room needs a password.'}</p>
+    <div class="field"><input id="jpass" maxlength="64" spellcheck="false" autocomplete="off" placeholder="Password"><button class="btn primary sm" data-a="go">Join</button></div></div>`, {
+    back,
+    go: () => joinWith('server', { code, pass: $('#jpass').value }),
+  });
+  $('#jpass').focus();
+}
+
+function serverAddress(next, back = next) {
+  app.screen = 'serveraddr';
+  show(`<div class="panel" style="width:min(520px,100%)">${header('Game server')}
+    <p class="sub">Type the address of the game server. Whoever runs it gets it from the installer.</p>
+    <div class="field"><input id="saddr" spellcheck="false" autocomplete="off" autocapitalize="none" value="${esc(settings.server || '')}" placeholder="https://your.server:47810"><button class="btn primary sm" data-a="go">OK</button></div></div>`, {
+    back,
+    go: () => {
+      const v = $('#saddr').value;
+      if (!cloud.setAddress(v)) return ui.toast('That address can\'t be used. It has to start with https://', 'bad');
+      settings.server = v.trim();
+      saveSettings();
+      if (cloud.serverUrl()) next(); else back();
+    },
+  });
+}
+
+// Who made the game, the terms, and the sign in buttons. Guests can always just go on.
+async function accountScreen(back = title) {
+  app.screen = 'account';
+  if (!cloud.serverUrl()) return serverAddress(() => accountScreen(back), back);
+  const mine = (app.acctView = {});
+  busy('Contacting the server...', back);
+  const info = await cloud.getInfo();
+  if (app.acctView !== mine || app.screen !== 'account') return;
+  const a = cloud.account(), made = '<p class="madeby">StickManUp is made by <b>TheOCProductions</b> &amp; <b>ShortGG</b></p>';
+  if (!info && !a) {
+    show(`<div class="panel" style="width:min(460px,100%)">${header('Sign in')}${made}<p class="sub">Could not reach the game server, so signing in isn't possible right now. You can still play as a guest.</p>
+      <div class="row"><button class="btn primary sm" data-a="back">Play as guest</button><button class="btn sm" data-a="again">Try again</button></div><button class="btn sm" data-a="addr" style="margin-top:9px">Change the server address</button></div>`, {
+      back, again: () => accountScreen(back), addr: () => serverAddress(() => accountScreen(back), back),
+    });
+    return;
+  }
+  // Signed in, with terms that have changed: accept them or leave.
+  if (a && cloud.termsNeeded() && info) {
+    const decline = async () => {
+      await cloud.declineTerms();
+      ui.toast('Signed out. Your progress stays on this phone.', 'good');
+      afterAccount(back);
+    };
+    show(`<div class="panel">${header('New terms')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
+      <p class="sub">The terms have changed. Please accept them to keep using your account here.</p>
+      <button class="btn primary sm" data-a="ok">I accept</button><button class="btn sm" data-a="out" style="margin-top:9px">No, sign me out</button></div></div></div>`, {
+      back: decline,
+      out: decline,
+      ok: async () => { if (await cloud.acceptTerms(info.termsVersion)) back(); else ui.toast('Could not reach the server', 'bad'); },
+    });
+    return;
+  }
+  if (a) {
+    const when = cloud.lastSaved();
+    show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
+      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')}</small></div>
+      <p class="sub" id="asave" style="margin-top:10px">Your coins, items, records and saved climb go to the server by themselves${when ? `. Last saved ${Date.now() - when < 60000 ? 'just now' : Math.round((Date.now() - when) / 60000) + ' min ago'}` : ''}.</p>
+      <div class="row"><button class="btn primary sm" data-a="sync">Save now</button><button class="btn sm" data-a="out">Sign out</button></div>
+      <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my account</button></div>`, {
+      back,
+      sync: async () => {
+        if (await cloud.syncNow()) ui.toast('Saved', 'good');
+        else ui.toast('Could not reach the server', 'bad');
+      },
+      out: () => signOutFlow(back),
+      del: () => {
+        app.screen = 'acctdel';
+        show(`<div class="panel" style="width:min(460px,100%)">${header('Delete my account')}<p class="sub">This deletes your account and everything saved on the server, for good. What is on this phone stays, and you go on as a guest.</p>
+          <div class="row"><button class="btn sm danger" data-a="yes">Delete forever</button><button class="btn primary sm" data-a="back">Keep my account</button></div></div>`, {
+          back: () => accountScreen(back),
+          yes: async () => {
+            if (await cloud.deleteAccount()) { ui.toast('Your account is deleted', 'good'); back(); }
+            else ui.toast('Could not reach the server, so nothing was deleted', 'bad');
+          },
+        });
+      },
+    });
+    return;
+  }
+  const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info.providers.filter((p) => names[p]);
+  show(`<div class="panel">${header('Sign in')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
+    <p class="sub">Sign in to keep your coins, items and records on your account. As a guest they stay on this phone.</p>
+    ${prov.length ? `<label class="toggle"><input type="checkbox" id="tos" data-a="tos"> I accept these terms</label>
+    <div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}" disabled>Sign in with ${names[p]}</button>`).join('')}</div>` : '<p class="sub">Signing in is not set up on this server yet.</p>'}
+    <button class="btn sm" data-a="back" style="margin-top:9px">Play as guest</button></div></div></div>`, {
+    back,
+    tos: (b) => { for (const x of document.querySelectorAll('#menu .prov')) x.disabled = !b.checked; },
+    login: async (b) => {
+      if (!$('#tos').checked) return;
+      app.afterLogin = back;
+      await cloud.startLogin(b.dataset.p, info.termsVersion);
+      app.screen = 'signingin';
+      busy('Finish signing in in your browser, then come back here...', () => { cloud.cancelLogin(); accountScreen(back); });
+    },
+  });
+}
+
+async function signOutFlow(back) {
+  if (await cloud.signOut()) { ui.toast('Signed out. Your progress is safe on your account.', 'good'); return afterAccount(back); }
+  app.screen = 'acctout';
+  show(`<div class="panel" style="width:min(460px,100%)">${header('Sign out')}<p class="sub">Could not reach the server to save your latest progress. If you sign out now, whatever isn't saved yet is lost.</p>
+    <div class="row"><button class="btn primary sm" data-a="back">Stay signed in</button><button class="btn sm danger" data-a="force">Sign out anyway</button></div></div>`, {
+    back: () => accountScreen(back),
+    force: async () => { await cloud.signOut(true); afterAccount(back); },
+  });
+}
+function afterAccount(back) { app.afterLogin = null; back(); }
+
+cloud.on('signedIn', (u) => {
+  ui.toast(`Signed in as ${u.name}`, 'good');
+  if (app.game) return;
+  const next = app.afterLogin || title;
+  app.afterLogin = null;
+  if (app.screen === 'signingin' || app.screen === 'account' || app.screen === 'title') {
+    if (cloud.termsNeeded()) accountScreen(next); else next();
+  }
+});
+cloud.on('loginFailed', (why) => {
+  ui.toast(why, 'bad');
+  if (app.screen === 'signingin') accountScreen(app.afterLogin || title);
+});
+cloud.on('expired', () => ui.toast('Please sign in again to keep saving online', 'bad'));
+cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
+cloud.on('changed', () => { if (app.screen === 'title') title(); });
 
 // ---------- settings & help ----------
 const PRESETS = {
@@ -647,6 +899,13 @@ const PRESETS = {
 
 function settingsScreen(back) {
   app.screen = 'settings';
+  const saveServer = () => {
+    const el = $('#srv');
+    if (!el) return true;
+    if (!cloud.setAddress(el.value)) { ui.toast('That server address can\'t be used. It has to start with https://', 'bad'); return false; }
+    settings.server = el.value.trim();
+    return true;
+  };
   const nat = app.renderer.native;
   const seg = (k, opts) => `<div class="seg">${opts.map(([v, l]) => `<button data-a="seg" data-k="${k}" data-v="${v}" class="${String(settings[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const range = (k, min, max, step, fmt) => `<input type="range" data-k="${k}" data-f="${fmt || ''}" min="${min}" max="${max}" step="${step}" value="${settings[k]}" style="--p:${((settings[k] - min) / (max - min)) * 100}%">`;
@@ -689,6 +948,8 @@ function settingsScreen(back) {
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
+    ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
+    <label>Game server address<input id="srv" spellcheck="false" autocomplete="off" autocapitalize="none" value="${esc(settings.server || '')}" placeholder="${esc(cloud.DEFAULT_SERVER || 'https://your.server:47810')}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none;color:inherit;font:inherit;width:100%;margin-top:4px"></label>
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
@@ -696,7 +957,8 @@ function settingsScreen(back) {
     ${getSafe() ? '<button class="btn sm full" data-a="unsafe">Try full graphics again</button>' : ''}
   </div></div>`, {
     unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
-    back: () => { saveSettings(); back(); },
+    back: () => { if (!saveServer()) return; saveSettings(); back(); },
+    account: () => { if (!saveServer()) return; saveSettings(); accountScreen(() => settingsScreen(back)); },
     layout: () => layoutEditor(() => settingsScreen(back)),
     movefps: () => fpsEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
@@ -1009,6 +1271,7 @@ function beginGame(s, g) {
 }
 
 function endGame() {
+  cloud.flush();
   closeEmotes();
   if (app.game) { app.game.destroy(); app.game = null; }
   app.paused = false;
@@ -1088,6 +1351,7 @@ window.SMU_back = () => {
   return true;
 };
 window.SMU_vis = (v) => {
+  if (!v) cloud.flush();
   if (!app.sound) return;
   app.sound.suspend(!v);
   if (!v && app.game && app.game.solo && !app.paused) pause();
@@ -1167,6 +1431,8 @@ function boot() {
   document.addEventListener('pointerdown', () => app.sound.init(), { capture: true });
   window.addEventListener('resize', () => app.renderer.resize());
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
+  cloud.setAddress(settings.server);
+  cloud.start();
   title();
   requestAnimationFrame(frame);
   setTimeout(() => $('#loading').classList.add('gone'), 300);

@@ -23,7 +23,7 @@ def check(name, ok, info=""):
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist", "--enable-unsafe-webgpu"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-    pg = b.new_page(viewport={"width": W, "height": H})
+    pg = b.new_page(bypass_csp=True, viewport={"width": W, "height": H})
     errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.add_init_script(STUB)

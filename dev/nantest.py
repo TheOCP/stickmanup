@@ -25,7 +25,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist", "--disable-gpu-compositing"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
     for name, old in (("old-bloom", OLD_HP), ("fixed-bloom", None)):
-        pg = b.new_page(viewport={"width": 640, "height": 300})
+        pg = b.new_page(bypass_csp=True, viewport={"width": 640, "height": 300})
         pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify({quality:'high'}))")
         pg.goto(f"http://127.0.0.1:{srv.server_port}/index.html")
         pg.wait_for_function("window.SMU && SMU.renderer", timeout=60000)

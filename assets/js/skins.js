@@ -589,5 +589,6 @@ export function plainLook(c) {
   if (!PLAINS.has(c)) PLAINS.set(c, { suit: { id: 'plain' + c, c }, face: FACE.smile, hat: HAT.none, key: 'plain' + c });
   return PLAINS.get(c);
 }
-export const cleanLook = (l) => (l && typeof l === 'object' ? { s: SUIT[l.s] ? l.s : FREE_SUIT, f: FACE[l.f] ? l.f : 'smile', h: HAT[l.h] ? l.h : 'none' } : null);
+const known = (table, id) => typeof id === 'string' && Object.hasOwn(table, id);
+export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none' } : null);
 export const roleOf = (look, name) => { const k = ownerKey(name), s = look && SUIT[look.s]; return k && s && s.owner === k ? s.role : null; };

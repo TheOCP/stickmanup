@@ -33,7 +33,7 @@ with sync_playwright() as p:
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
     total = 0
     for m in MAPS:
-        pg = b.new_page(viewport={"width": 640, "height": 300})
+        pg = b.new_page(bypass_csp=True, viewport={"width": 640, "height": 300})
         errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify({quality:'high', map:%d, name:'Ana', cap:60, tips:false}))" % m)

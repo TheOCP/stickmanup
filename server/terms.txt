@@ -1,0 +1,26 @@
+StickManUp is made by TheOCProductions and ShortGG.
+
+These are the simple rules for signing in. You never have to sign in: you can always play as a guest.
+
+1. Your account
+An account saves your progress online so you can keep it on another phone. You sign in with Discord, Steam or Google. We never see your password for those services.
+
+2. What we store
+Your ID and display name from the service you signed in with, when you accepted these terms, and your game progress: coins, items, records and saved climbs. We don't ask for or store your email address.
+
+3. Playing online
+Games on this server pass through it, including player names and room names. A room password is only kept in scrambled form, and only while the room is open. Your IP address is used while you are connected to stop abuse and is not saved in the database. Other players in your game see your name and your look.
+
+4. Be decent
+No cheating, no harassing other players and no attacking or overloading the server. Rooms and accounts that break these rules can be removed.
+
+5. Deleting your account
+You can delete your account and everything saved with it at any time in the game, under Account.
+
+6. No guarantees
+StickManUp and this server are free and come as they are. The server can be down, change or shut down, and progress can be lost.
+
+7. Changes
+If these terms change, you will be asked to accept them again the next time you play signed in.
+
+Questions: github.com/TheOCP/stickmanup

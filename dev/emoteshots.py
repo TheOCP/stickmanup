@@ -13,7 +13,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-    pg = b.new_page(viewport={"width": 915, "height": 412})
+    pg = b.new_page(bypass_csp=True, viewport={"width": 915, "height": 412})
     pg.on("pageerror", lambda e: print("ERROR", e))
     pg.add_init_script("""localStorage.setItem('smu.settings', JSON.stringify({ quality: 'high', map: %d, name: 'Ana', tips: false, cap: 30 }));
       localStorage.setItem('smu.profile', JSON.stringify({ coins: 99999, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }));""" % MAP)
@@ -33,7 +33,7 @@ with sync_playwright() as p:
         shots.append(id)
         pg.screenshot(path=str(out / f"pose-{id}.png"), clip={"x": 0, "y": 20, "width": 360, "height": 300})
     cells = "".join(f'<div style="position:relative;width:216px;height:180px;overflow:hidden"><img src="data:image/png;base64,{base64.b64encode((out / f"pose-{i}.png").read_bytes()).decode()}" style="width:216px"><b style="position:absolute;left:4px;top:2px;color:#ff0;font:12px sans-serif;text-shadow:0 0 3px #000">{i[2:]}</b></div>' for i in shots)
-    q = b.new_page(viewport={"width": 1296, "height": 182 * ((len(shots) + 5) // 6)})
+    q = b.new_page(bypass_csp=True, viewport={"width": 1296, "height": 182 * ((len(shots) + 5) // 6)})
     q.set_content(f'<body style="margin:0;background:#000;display:grid;grid-template-columns:repeat(6,216px)">{cells}</body>'); q.wait_for_timeout(300)
     q.screenshot(path=str(out / "sheet.png")); q.close()
     pg.locator("[data-a=back]").first.click(); pg.wait_for_timeout(500)

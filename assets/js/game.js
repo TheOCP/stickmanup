@@ -47,7 +47,7 @@ export class Game {
     this.base = g.base || 0;
     this.soloT = this.base;
     this.cp = g.cp || 0;
-    this.falls = g.falls || 0;
+    this.falls = Math.max(0, Math.floor(+g.falls) || 0);
     this.slot = session.slot;
     this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
     // Checkpoints: tied together, the team shares one. Without the cord everyone has their own; the host
@@ -970,7 +970,7 @@ export class Game {
       case 'shot': if (e.s !== this.slot) this.app.fx.tracer(e.s, e.a, e.b, !!e.h); break;
       case 'emote':
         if (e.s !== this.slot) {
-          const r = this.robots.get(e.s), em = EMOTE[e.e];
+          const r = this.robots.get(e.s), em = typeof e.e === 'string' && Object.hasOwn(EMOTE, e.e) ? EMOTE[e.e] : null;
           if (r && em) { r.playEmote(e.e); if (em.icon) ui.bubble(e.s, em.icon); }
         }
         break;

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<!-- Only the game's own scripts ever run, whatever a stranger manages to get onto the page. The hash is the import map below: change it with that. -->
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'sha256-h3X2WaB2J+hFSH2sz6AdmmoW4he9GKva9VKrMRwkO4s='; object-src 'none'; base-uri 'none'">
 <title>StickManUp</title>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }</script>

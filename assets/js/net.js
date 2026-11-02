@@ -1,12 +1,34 @@
 // Multiplayer. A star network: clients talk only to the host, the host relays.
-// Transports: Online (PeerJS/WebRTC), Internet direct and WiFi (native TCP sockets via the Android
+// Transports: a StickManUp server (WebSocket relay), Online (PeerJS/WebRTC), Internet direct and WiFi (native TCP sockets via the Android
 // bridge; direct opens the router port with UPnP), Bluetooth, and a BroadcastChannel stand-in so two
 // browser tabs can test the netcode on a desktop.
-import { LEVEL_VERSION } from './level.js';
+import { LEVEL_VERSION, DIFFS, MAPS } from './level.js';
 import { validColor } from './colors.js';
 import { cleanLook } from './skins.js';
 
 export const PROTO = LEVEL_VERSION * 100 + 1;
+
+// Whoever hosts a public room can be a complete stranger, and so can whoever joins yours. Nothing they send is believed:
+// whatever can reach the screen or your records is checked here, the one place every way of playing passes through.
+const count = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+const num = (v) => (Number.isFinite(v) ? v : 0);
+const inList = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
+function cleanRoomRules(r) {
+  const o = {};
+  if (r && typeof r === 'object') for (const k of ['cps', 'haz', 'rope']) if (Number.isInteger(r[k]) && r[k] >= 0 && r[k] < DIFFS.length) o[k] = r[k];
+  return o;
+}
+function cleanLobby(l) {
+  const x = l && typeof l === 'object' ? l : {};
+  return { map: inList(x.map, MAPS), diff: inList(x.diff, DIFFS), rules: cleanRoomRules(x.rules), noCord: !!x.noCord, resume: !!x.resume };
+}
+function cleanGame(g) {
+  if (!g || typeof g !== 'object') return null;
+  return Object.assign(g, {
+    map: inList(g.map, MAPS), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls),
+    pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {},
+  });
+}
 const PREFIX = 'stickmanup-v1-';
 // Address finders for WebRTC. (The relay servers PeerJS used to list no longer exist.)
 const ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
@@ -198,7 +220,90 @@ class PeerLink {
   stop() { if (this.peer) this.peer.destroy(); }
 }
 
-export function makeLink(kind) {
+// Through a StickManUp server: it finds the room, checks the password and passes messages along. The host phone runs the
+// climb as always. This works on every network, because every phone only connects out to the server.
+class ServerLink {
+  constructor(o) { this.url = o.url; this.room = o.room || {}; this.stopped = false; this.sentInfo = ''; }
+  connect(onReady, onFail) {
+    let ws;
+    try { ws = this.ws = new WebSocket(this.url); } catch (e) { return onFail('Could not reach the game server.'); }
+    this.opener = setTimeout(() => { onFail('Could not reach the game server.'); ws.close(); }, 12000);
+    ws.onopen = () => onReady();
+    ws.onerror = () => {};
+  }
+  ctl(o) { if (this.ws && this.ws.readyState === 1) this.ws.send('!' + JSON.stringify(o)); }
+  host(name, cb) {
+    this.cb = cb;
+    this.isHost = true;
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (r) => { clearTimeout(this.opener); if (!settled) { settled = true; resolve(r); } };
+      this.connect(() => this.ctl({ t: 'host', proto: PROTO, host: name, name: this.room.name, pub: !!this.room.pub, pass: this.room.pass || '', map: this.room.map, diff: this.room.diff }), (err) => done({ ok: false, err }));
+      this.ws.onmessage = (e) => {
+        const d = String(e.data);
+        if (d[0] === '!') {
+          let m;
+          try { m = JSON.parse(d.slice(1)); } catch (x) { return; }
+          if (m.t === 'hosted') done({ ok: true, code: m.code, name: m.name, pub: m.pub, locked: m.locked });
+          else if (m.t === 'err') { if (settled) cb.error(m.why); else done({ ok: false, err: m.why }); }
+          else if (m.t === 'peer+') cb.open(m.id);
+          else if (m.t === 'peer-') cb.close(m.id, 'left');
+          return;
+        }
+        const i = d.indexOf('|');
+        if (i > 0) cb.msg(+d.slice(0, i), d.slice(i + 1));
+      };
+      this.ws.onclose = () => {
+        if (!settled) done({ ok: false, err: 'Could not reach the game server.' });
+        else if (!this.stopped) cb.error('Lost the connection to the game server.');
+      };
+    });
+  }
+  join(target, cb) {
+    this.cb = cb;
+    let inside = false, told = false;
+    const fail = (why) => { clearTimeout(this.opener); if (!told) { told = true; cb.error(why); } };
+    this.connect(() => this.ctl({ t: 'join', proto: PROTO, code: target.code, pass: target.pass || '' }), fail);
+    this.ws.onmessage = (e) => {
+      const d = String(e.data);
+      if (d[0] === '!') {
+        let m;
+        try { m = JSON.parse(d.slice(1)); } catch (x) { return; }
+        if (m.t === 'joined') { clearTimeout(this.opener); inside = true; cb.open('host'); }
+        else if (m.t === 'err') fail(m.why);
+        else if (m.t === 'closed') { told = true; cb.close('host', m.why); }
+        return;
+      }
+      cb.msg('host', d);
+    };
+    this.ws.onclose = () => {
+      if (this.stopped || told) return;
+      if (inside) { told = true; cb.close('host', 'Lost the connection to the game server.'); }
+      else fail('Could not reach the game server.');
+    };
+  }
+  send(id, s) {
+    if (!this.ws || this.ws.readyState !== 1) return;
+    this.ws.send(this.isHost ? id + '|' + s : s);
+  }
+  close(id) { this.ctl({ t: 'kick', id }); }
+  // What the server browser shows about this room.
+  setInfo(name, n, lobby, started) {
+    if (!this.isHost || !lobby) return;
+    const o = { t: 'info', map: lobby.map || 0, diff: lobby.diff || 0, started: !!started }, key = JSON.stringify(o);
+    if (key === this.sentInfo) return;
+    this.sentInfo = key;
+    this.ctl(o);
+  }
+  stop() {
+    this.stopped = true;
+    clearTimeout(this.opener);
+    if (this.ws) this.ws.close();
+  }
+}
+
+export function makeLink(kind, o) {
+  if (kind === 'server') return new ServerLink(o);
   if (kind === 'online') return new PeerLink();
   if (kind === 'direct') kind = 'lan'; // the same TCP transport, reached over the internet
   return hasNative() ? new NativeLink(kind) : new DevLink();
@@ -262,6 +367,7 @@ export class Session {
   hostMsg(id, s) {
     let m;
     try { m = JSON.parse(s); } catch (e) { return; }
+    if (!m || typeof m !== 'object') return;
     const p = this.slotOf(id);
     switch (m.k) {
       case 'hello': {
@@ -279,8 +385,8 @@ export class Session {
       case 'info':
         if (p) { p.name = String(m.name || p.name).slice(0, 14); p.color = validColor(m.color); p.look = cleanLook(m.look); this.sendLobby(); }
         break;
-      case 'st': if (p) { p.ping = m.r || p.ping; this.push(p, this.emitGet('gameTime'), m.s); } break;
-      case 'ev': if (p) this.emit('hostEvent', m.e, p.slot); break;
+      case 'st': if (p) { if (Number.isFinite(m.r) && m.r > 0) p.ping = Math.round(m.r); this.push(p, this.emitGet('gameTime'), m.s); } break;
+      case 'ev': if (p && m.e && typeof m.e === 'object') this.emit('hostEvent', m.e, p.slot); break;
       case 'bye': this.drop(id); break;
     }
   }
@@ -305,7 +411,7 @@ export class Session {
   }
 
   sendLobby() {
-    if (this.link && this.link.setInfo) this.link.setInfo(this.name, this.players.size);
+    if (this.link && this.link.setInfo) this.link.setInfo(this.name, this.players.size, this.lobby, !!this.game);
     this.broadcast({ k: 'lobby', players: this.list(), lobby: this.lobby });
     this.emit('lobby');
   }
@@ -340,6 +446,7 @@ export class Session {
 
   startGame(g) {
     this.game = g;
+    if (this.link && this.link.setInfo) this.link.setInfo(this.name, this.players.size, g, true);
     this.broadcast(Object.assign({ k: 'start' }, g));
     this.emit('start', g);
   }
@@ -379,24 +486,34 @@ export class Session {
   clientMsg(s) {
     let m;
     try { m = JSON.parse(s); } catch (e) { return; }
+    if (!m || typeof m !== 'object') return;
     switch (m.k) {
       case 'welcome':
+        if (!Number.isInteger(m.slot) || m.slot < 1 || m.slot >= MAX_PLAYERS) return this.emit('error', 'That game answered strangely, so you were not connected.');
         this.slot = m.slot;
         this.roster(m.players);
-        this.lobby = m.lobby;
+        this.lobby = cleanLobby(m.lobby);
+        m.game = cleanGame(m.game);
         this.emit('welcome', m);
         break;
       case 'deny': this.emit('error', m.why); break;
-      case 'lobby': this.lobby = m.lobby; this.roster(m.players); this.emit('lobby'); break;
-      case 'start': this.game = m; this.emit('start', m); break;
+      case 'lobby': this.lobby = cleanLobby(m.lobby); this.roster(m.players); this.emit('lobby'); break;
+      case 'start': this.game = cleanGame(m); this.emit('start', m); break;
       case 'S':
+        if (m.f !== undefined) m.f = count(m.f);
+        if (m.cp !== undefined) m.cp = count(m.cp);
         for (const k in m.p) {
           const slot = +k, p = this.players.get(slot);
           if (p && slot !== this.slot) this.push(p, m.t, m.p[k]);
         }
         this.emit('S', m);
         break;
-      case 'ev': this.emit('event', m.e); break;
+      case 'ev':
+        if (!m.e || typeof m.e !== 'object') break;
+        if (m.e.falls !== undefined) m.e.falls = count(m.e.falls);
+        if (m.e.t !== undefined) m.e.t = num(m.e.t);
+        this.emit('event', m.e);
+        break;
       case 'pong': {
         const now = performance.now(), rtt = now - m.c;
         this.ping = Math.round(rtt);
@@ -412,11 +529,14 @@ export class Session {
   }
 
   roster(list) {
+    if (!Array.isArray(list)) return;
     const before = new Set(this.players.keys());
     for (const p of list) {
-      if (!this.players.has(p.slot)) { this.players.set(p.slot, this.player(p.slot, p.name, null)); this.emit('roster', p.slot, true); }
+      if (!p || !Number.isInteger(p.slot) || p.slot < 0 || p.slot >= MAX_PLAYERS) continue;
+      const name = String(p.name || 'Climber').slice(0, 14);
+      if (!this.players.has(p.slot)) { this.players.set(p.slot, this.player(p.slot, name, null)); this.emit('roster', p.slot, true); }
       const q = this.players.get(p.slot);
-      q.name = p.name; q.ping = p.ping; q.color = validColor(p.color); q.look = cleanLook(p.look);
+      q.name = name; q.ping = count(p.ping); q.color = validColor(p.color); q.look = cleanLook(p.look);
       before.delete(p.slot);
     }
     for (const s of before) { this.players.delete(s); this.emit('roster', s, false); }

@@ -1,0 +1,11 @@
+{
+  "name": "stickmanup-server",
+  "version": "1.0.0",
+  "description": "Rooms, relay, accounts and saves for StickManUp",
+  "private": true,
+  "license": "MIT",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "start": "node server.js" }
+}

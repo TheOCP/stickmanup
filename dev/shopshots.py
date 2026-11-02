@@ -46,7 +46,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface",
                                 "--ignore-gpu-blocklist", "--disable-gpu-compositing", "--autoplay-policy=no-user-gesture-required"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-    ctx = b.new_context(viewport={"width": 915, "height": 412}, device_scale_factor=1, has_touch=True)
+    ctx = b.new_context(bypass_csp=True, viewport={"width": 915, "height": 412}, device_scale_factor=1, has_touch=True)
     pg = ctx.new_page()
     pg.on("console", lambda m: m.type in ("error", "warning") and errors.append(f"{m.type}: {m.text}"))
     pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))

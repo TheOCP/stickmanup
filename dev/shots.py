@@ -32,7 +32,7 @@ CTX = {}
 def page(browser, tag):
     # One shared context so tabs can find each other over BroadcastChannel (the desktop stand-in for Wi-Fi).
     if "c" not in CTX:
-        CTX["c"] = browser.new_context(viewport={"width": 915, "height": 412}, device_scale_factor=1, has_touch=True)
+        CTX["c"] = browser.new_context(bypass_csp=True, viewport={"width": 915, "height": 412}, device_scale_factor=1, has_touch=True)
     pg = CTX["c"].new_page()
     pg.on("console", lambda m: m.type in ("error", "warning") and errors.append(f"[{tag}] {m.type}: {m.text}"))
     pg.on("pageerror", lambda e: errors.append(f"[{tag}] pageerror: {e}"))

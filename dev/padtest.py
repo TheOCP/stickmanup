@@ -23,7 +23,7 @@ def check(name, ok, info=""):
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist", "--disable-gpu-compositing"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-    pg = b.new_page(viewport={"width": 915, "height": 412})
+    pg = b.new_page(bypass_csp=True, viewport={"width": 915, "height": 412})
     errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.add_init_script(STUB)
@@ -36,7 +36,7 @@ with sync_playwright() as p:
     def axes(*a): pg.evaluate("a => { __pad.axes = a; }", list(a)); frames()
     # What the highlight is on, as "data-a" or the element's id or text.
     ON = """() => { const e = document.querySelector('.pf'); if (!e) return null; const c = e.matches('label') ? e.querySelector('input') : e, d = c.dataset;
-      return { a: d.a || '', k: d.k || d.c || '', v: d.v || '', id: d.id || '', t: d.t || '', m: d.m || '', d: d.d || '', e: d.e || '', ch: d.ch || '', tag: c.tagName, type: c.type || '', text: e.textContent.trim().slice(0, 30), inview: (() => { const r = e.getBoundingClientRect(); return r.top >= -1 && r.bottom <= innerHeight + 1; })() }; }"""
+      return { el: c.id || '', a: d.a || '', k: d.k || d.c || '', v: d.v || '', id: d.id || '', t: d.t || '', m: d.m || '', d: d.d || '', e: d.e || '', ch: d.ch || '', tag: c.tagName, type: c.type || '', text: e.textContent.trim().slice(0, 30), inview: (() => { const r = e.getBoundingClientRect(); return r.top >= -1 && r.bottom <= innerHeight + 1; })() }; }"""
     def on(): return pg.evaluate(ON)
     def scr(): return pg.evaluate("SMU.screen")
     def seek(test, keys=(DOWN,), limit=60):
@@ -92,7 +92,7 @@ with sync_playwright() as p:
     check("A flips a checkbox", pg.evaluate("k => document.querySelector(`[data-c=${k}]`).checked", ck) != c0)
     press(A)
     # The name box opens the letter board
-    check("reach the name box", seek(lambda o: o["tag"] == "INPUT" and o["type"] == "text", keys=(DOWN,)) or seek(lambda o: o["tag"] == "INPUT" and o["type"] == "text", keys=(UP,)))
+    check("reach the name box", seek(lambda o: o["el"] == "nm", keys=(DOWN,)) or seek(lambda o: o["el"] == "nm", keys=(UP,)))
     press(A)
     check("A on a text box opens the letter board", pg.evaluate("!!document.querySelector('#padKeys')"))
     pg.screenshot(path=str(out / "keys.png"))
@@ -110,6 +110,22 @@ with sync_playwright() as p:
     check("B leaves Settings", scr() == "title", scr())
     o = on()
     check("the title remembers where you were", bool(o) and o["a"] == "settings", str(o))
+    # ---- the game server, with no server set yet: it asks for the address, and B gets you out again
+    check("reach the server browser", seek(lambda o: o["a"] == "browser", keys=(UP, LEFT), limit=6))
+    press(A); frames()
+    check("the server browser asks for an address first", scr() == "serveraddr", scr())
+    check("the address box can be reached", seek(lambda o: o["el"] == "saddr", keys=(LEFT,), limit=3) or seek(lambda o: o["el"] == "saddr", keys=(DOWN,), limit=3))
+    press(A); frames()
+    check("the letter board opens on it", pg.evaluate("!!document.querySelector('#padKeys')"))
+    press(B); frames()
+    press(B); frames()
+    check("B goes back to the title", scr() == "title", scr())
+    check("reach Sign in", seek(lambda o: o["a"] == "account", keys=(RIGHT,), limit=2))
+    press(A); frames()
+    check("Sign in also asks for the address", scr() == "serveraddr", scr())
+    press(B); frames()
+    check("and B comes back", scr() == "title", scr())
+    check("back to Settings", seek(lambda o: o["a"] == "settings", keys=(DOWN, LEFT), limit=6))
     # ---- how to play: nothing to press but lots to read
     check("reach How to play", seek(lambda o: o["a"] == "how", keys=(RIGHT,), limit=3))
     press(A); frames()

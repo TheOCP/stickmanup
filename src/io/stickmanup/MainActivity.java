@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements Net.Out {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.0";
+    static final String VERSION = "4.1";
     private Net net;
     private final Expose expose = new Expose();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -170,6 +170,27 @@ public class MainActivity extends Activity implements Net.Out {
         } catch (Exception ignored) {
         }
         web.loadUrl(ORIGIN + "index.html");
+        takeSignIn(getIntent());
+    }
+
+    /** The one time sign in code the browser sends back. Not trusted: the code is useless without the game's own secret. */
+    private volatile String signInCode;
+
+    private void takeSignIn(Intent i) {
+        Uri u = i == null ? null : i.getData();
+        if (u == null || !"stickmanup".equals(u.getScheme()) || !"auth".equals(u.getHost())) return;
+        String code = u.getQueryParameter("code");
+        // Only plain characters, because it goes into a line of script.
+        if (code == null || !code.matches("[A-Za-z0-9_-]{20,128}")) return;
+        signInCode = code;
+        if (pageAt > 0) js("window.SMU_authCode&&SMU_authCode('" + code + "')");
+    }
+
+    @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        setIntent(i);
+        takeSignIn(i);
     }
 
     /** Serves files from assets/ for the fake https origin. */
@@ -466,6 +487,25 @@ public class MainActivity extends Activity implements Net.Out {
                     else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 }
             });
+        }
+
+        /** Opens the phone's browser, for signing in. Encrypted addresses only. */
+        @JavascriptInterface
+        public void openUrl(String url) {
+            Uri u = Uri.parse(url);
+            if (!"https".equals(u.getScheme())) return;
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE));
+            } catch (Exception ignored) {
+            }
+        }
+
+        /** A sign in code that arrived before the page was ready. Handed over once. */
+        @JavascriptInterface
+        public String authPending() {
+            String c = signInCode;
+            signInCode = null;
+            return c == null ? "" : c;
         }
 
         @JavascriptInterface

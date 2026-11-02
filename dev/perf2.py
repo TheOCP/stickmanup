@@ -15,7 +15,7 @@ SECS = float(sys.argv[2]) if len(sys.argv) > 2 else 6
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--use-angle=vulkan", "--enable-features=Vulkan", "--use-vulkan=native", "--disable-vulkan-surface", "--ignore-gpu-blocklist", "--disable-gpu-compositing", "--enable-precise-memory-info"],
                           env={**os.environ, "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
-    ctx = b.new_context(viewport={"width": 915, "height": 412})
+    ctx = b.new_context(bypass_csp=True, viewport={"width": 915, "height": 412})
     pg = ctx.new_page()
     pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify({quality:'high', map:%d, name:'Ana', cap:60, fps:true}))" % M)
     pg.goto(f"http://127.0.0.1:{srv.server_port}/index.html?native=rec")

@@ -166,6 +166,10 @@ Up to 4 climbers. Everyone needs the same StickManUp version. The host picks the
 shares its checkpoints and falls back together. With the cord turned off in the lobby, nobody is tied together and
 everyone keeps their own checkpoint: a fall only sends you back to yours.
 
+* **Game server**: works on every network, because every phone only connects out to the server. Open the **server
+  browser** to see public rooms, or create a room: public or private, with or without a password. A private room only
+  shows to people who have its code. The host's phone still runs the climb, so the room ends if the host leaves.
+  Run your own: see [server/README.md](server/README.md).
 * **Online**: the host gets a 5 letter room code and friends type it in. The phones connect directly over
   WebRTC; the free [PeerJS](https://peerjs.com) server only introduces them. Some networks (often mobile data)
   don't allow that direct connection, so use Internet (direct) then.
@@ -176,6 +180,13 @@ everyone keeps their own checkpoint: a fall only sends you back to yours.
 * **Bluetooth**: for when there is no WiFi at all. Pair the phones once in Android settings, then join from the list.
 
 Friends can join a climb that is already running.
+
+## Accounts
+
+You never have to sign in: as a guest your progress stays on your phone. Sign in with Discord, Steam or Google on a game
+server and your coins, items, records and saved climb follow you to another phone. Earning on one phone and spending on
+the other adds up. If you earned coins on two phones at the same time without a connection, you keep the larger amount,
+never more. You can delete your account and everything on the server at any time.
 
 ## Smooth on any phone
 
@@ -219,12 +230,15 @@ browser can play WiFi multiplayer against each other.
     from shared game time so every phone agrees
   * `net.js`, `game.js`: host relayed multiplayer; each phone simulates its own climber and applies its share of
     the cord pull, so the game stays responsive over a laggy connection
+  * `cloud.js`: the game server, signing in and keeping progress on your account
   * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen with their emotes
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray
   * `mirror.js` streams the scene to the native renderer
 * `src/`: a small Java activity that runs the game in a full screen WebView, the native OpenGL ES renderer
   (`src/io/stickmanup/gl/`), and WiFi, internet direct (UPnP and STUN) and Bluetooth sockets for the game
+* `server/`: the game server, accounts and database, with an installer that does everything. See
+  [server/README.md](server/README.md)
 * `dev/`: node tests for the levels, physics and networked cord, Playwright scripts that drive the game in
   headless Chromium, a desktop harness that replays a recorded frame through the native renderer, the icon
   generator, and `sync_pattern.py`, which copies the surface patterns into the native renderer

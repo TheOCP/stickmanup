@@ -5,6 +5,7 @@ import { BOX } from './physics.js';
 import { CORE_R, cpEnabled } from './level.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL } from './pattern.js';
+import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist } from './scenery.js';
 
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -118,6 +119,10 @@ export class WorldView {
     this.dyn = [];
     this.cps = [];
     this.rods = [];
+    this.timeMats = []; // shader materials whose uT follows game time (scenery.js)
+    this.bands = new Map(); // height bands: see band()
+    this.islandFalls = [];
+    this.mistSpots = [];
     this.fans = [];
     this.pads = [];
     this.spin = [];
@@ -166,7 +171,12 @@ export class WorldView {
     this.buildCity();
     this.buildObstacles();
     this.buildFlows();
+    this.buildKickers();
     this.buildWaterPark();
+    buildScenery(this);
+    buildAnimals(this);
+    this.buildSmallFalls();
+    buildMist(this, this.mistSpots);
     this.freeze();
   }
 
@@ -188,6 +198,26 @@ export class WorldView {
     });
   }
 
+  // Height bands. Instanced meshes span the whole tower, so nothing would ever cull them: detailed platform
+  // shapes, plants and flocks are kept per band and only drawn near the camera's height; far bands of
+  // platforms show plain boxes instead (far enough away that the difference doesn't show).
+  band(y) {
+    const i = Math.floor(y / 50);
+    if (!this.bands.has(i)) this.bands.set(i, { y0: i * 50, y1: i * 50 + 50, near: [], far: [], on: null });
+    return this.bands.get(i);
+  }
+
+  updateBands() {
+    const cy = this.camPos ? this.camPos.y : 20;
+    for (const b of this.bands.values()) {
+      const on = Math.max(0, b.y0 - cy, cy - b.y1) < 60;
+      if (on === b.on) continue;
+      b.on = on;
+      for (const o of b.near) o.visible = on;
+      for (const o of b.far) o.visible = !on;
+    }
+  }
+
   add(o, shadow = true) {
     if (shadow) { o.castShadow = true; o.receiveShadow = true; }
     this.root.add(o);
@@ -199,12 +229,29 @@ export class WorldView {
     const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
-    const bm = new THREE.InstancedMesh(BOXG, mat, boxes.length);
     const col = new THREE.Color();
     const strips = [];
-    boxes.forEach((c, i) => {
-      bm.setMatrixAt(i, colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2));
-      const z = L.zones[c.zone];
+    // Platforms are dressed per map and zone (scenery.js): rocks, basalt columns, planks, clouds, mushrooms...
+    // Each shape and surface becomes one instanced mesh.
+    const groups = new Map(), SR = rng(1234), far = new Map();
+    const group = (shape, pat, y) => {
+      const b = y === undefined ? null : Math.floor(y / 50), k = shape + ':' + pat + ':' + b;
+      if (!groups.has(k)) groups.set(k, { geo: shape === 'box0' ? BOXG : shapeGeo(shape), mat: pat < 0 ? mat : patMat(pat), list: [], y });
+      return groups.get(k).list;
+    };
+    const farList = (y) => { const b = Math.floor(y / 50); if (!far.has(b)) far.set(b, { y, list: [] }); return far.get(b).list; };
+    boxes.forEach((c) => {
+      const z = L.zones[c.zone], st = styleFor(this.key, c, c.zone, SR);
+      if (st) {
+        const k = 0.88 + SR() * 0.24;
+        if (st.col === null) col.setHex(z.tint).multiplyScalar(k); else col.setHex(st.col).multiplyScalar(k);
+        const cm = colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2).clone();
+        group(st.shape, st.pat, c.y).push([cm, col.getHex()]);
+        farList(c.y).push([cm, col.getHex()]);
+        if (st.under) group(st.under.shape, st.under.pat, c.y).push([cm, st.under.col]);
+        if (!noTrim(this.key, st.shape) && (c.kind === 'plat' || c.kind === 'beam' || c.kind === 'pad' || c.kind === 'branch')) strips.push(c);
+        return;
+      }
       if (c.kind === 'crate') col.setHex(this.key === 'sunny' ? 0xc9a36b : 0x7a5a3c);
       else if (c.kind === 'branch') col.setHex(0x7a5634);
       else if (c.kind === 'wall') col.setHex(this.key === 'storm' ? 0x2a2f3a : this.key === 'sunny' ? 0xe8e2d4 : 0x4a3a2a);
@@ -214,11 +261,22 @@ export class WorldView {
       else if (c.surf === 'ice') col.setHex(0xb0dcf0);
       else col.setHex(z.tint);
       col.multiplyScalar(0.85 + R() * 0.3);
-      bm.setColorAt(i, col);
+      group('box0', -1).push([colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2).clone(), col.getHex()]);
       if (c.kind === 'plat' || c.kind === 'beam' || c.kind === 'pad' || c.kind === 'branch') strips.push(c);
       if (c.kind === 'pad') this.pads.push(c);
     });
-    this.add(bm);
+    for (const { geo, mat: gm, list, y } of groups.values()) {
+      const im = new THREE.InstancedMesh(geo, gm, list.length);
+      list.forEach(([m, hex], i) => { im.setMatrixAt(i, m); im.setColorAt(i, col.setHex(hex)); });
+      this.add(im);
+      if (y !== undefined) this.band(y).near.push(im);
+    }
+    for (const { list, y } of far.values()) {
+      const im = new THREE.InstancedMesh(BOXG, mat, list.length);
+      list.forEach(([m, hex], i) => { im.setMatrixAt(i, m); im.setColorAt(i, col.setHex(hex)); });
+      this.add(im);
+      this.band(y).far.push(im);
+    }
 
     const sm = new THREE.InstancedMesh(BOXG, new THREE.MeshBasicMaterial({ color: HDR(0xffffff, this.glowK) }), strips.length * 4);
     let k = 0;
@@ -264,8 +322,11 @@ export class WorldView {
       if (!c.dyn && !c.crumble && !c.blink && !c.trap) continue;
       const z = L.zones[c.zone];
       const glow = c.crumble ? HDR(0xff5a2a, 2.2) : c.look ? HDR(c.look.g, this.glowK) : HDR(z.color, this.glowK);
-      const parts = [{ geo: BOXG, m: mat4(0, 0, 0, c.hx * 2, c.hy * 2, c.hz * 2), glow: null }].concat(trimParts(c.hx, c.hy, c.hz, glow, true));
-      let mat = c.crumble ? this.crumbleMat : c.look ? this.lookMat(c.look) : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
+      const st = !c.crumble && !c.look && c.kind !== 'turn' ? styleFor(this.key, Object.assign({}, c, { kind: 'plat' }), c.zone, rng(c.x * 7 + c.z * 13)) : null;
+      // Moving platforms are one mesh each, so they keep a cheap shape (the surface and colour still match).
+      const cheap = st && /^(rock|isle|cloud|basalt|mushcap|lily|disc)/.test(st.shape) ? 'chamfer' : st && st.shape;
+      const parts = [{ geo: st ? shapeGeo(cheap) : BOXG, m: mat4(0, 0, 0, c.hx * 2, c.hy * 2, c.hz * 2), glow: null }].concat(trimParts(c.hx, c.hy, c.hz, glow, true));
+      let mat = c.crumble ? this.crumbleMat : c.look ? this.lookMat(c.look) : st ? patMat(st.pat, st.col === null ? z.tint : st.col) : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
       // Blinking platforms fade in and out, so each gets its own see-through material.
       if (c.blink) { mat = mat.clone(); mat.transparent = true; mat.userData.live = true; }
       const mesh = this.add(new THREE.Mesh(merge(parts), mat));
@@ -686,25 +747,8 @@ export class WorldView {
       this.cloudGroup.add(cm);
       this.root.add(this.cloudGroup);
       this.anim.push(this.cloudGroup);
-      // Gulls gliding in circles.
-      const wing = new THREE.BoxGeometry(0.9, 0.03, 0.22);
-      const gull = merge([
-        { geo: wing, m: mat4(-0.42, 0.12, 0, 1, 1, 1, 0, 0, 0.35), glow: null },
-        { geo: wing, m: mat4(0.42, 0.12, 0, 1, 1, 1, 0, 0, -0.35), glow: null },
-        { geo: new THREE.SphereGeometry(0.12, 8, 6).scale(1, 1, 2.2), m: mat4(0, 0, 0, 1, 1, 1), glow: null },
-      ]);
-      const gm = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.8 });
-      this.gulls = D('gull').map((d) => {
-        const pivot = new THREE.Group(), g = new THREE.Mesh(gull, gm);
-        pivot.position.y = d.y;
-        g.position.x = d.r;
-        g.rotation.y = d.sp > 0 ? Math.PI : 0;
-        g.scale.setScalar(1.6);
-        pivot.add(g);
-        this.root.add(pivot);
-        this.anim.push(pivot, g);
-        return { d, pivot, g };
-      });
+      // Birds: GPU flocks (scenery.js).
+      this.gulls = [];
     } else if (this.key === 'forest') {
       // Trees: trunk plus three stacked foliage cones, instanced, with per-tree colour.
       const trees = D('tree');
@@ -1087,6 +1131,8 @@ export class WorldView {
         let m;
         if (o.shape === 'ram') { m = new THREE.Mesh(new THREE.BoxGeometry(o.len, 1.1, 0.6), mat); m.rotation.y = o.ry; }
         else if (o.shape === 'ball') m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), mat);
+        else if (o.shape === 'tube') m = new THREE.Mesh(new THREE.TorusGeometry(o.r * 0.68, o.r * 0.36, 10, 22),
+          new THREE.MeshStandardMaterial({ color: [0xffd23d, 0xff5a8a, 0x3fe0a0, 0xff8a3d][o.i % 4], roughness: 0.3, metalness: 0.05 }));
         else if (o.shape === 'log') { m = new THREE.Mesh(cyl(o.r, o.w, 14), mat); }
         else m = new THREE.Mesh(merge([
           { geo: cyl(o.r, 0.08, 24).rotateX(Math.PI / 2), m: mat4(0, 0, 0, 1, 1, 1), glow: null },
@@ -1099,6 +1145,7 @@ export class WorldView {
           const p = st.slider(o, t, P);
           g.position.set(p.x, p.y, p.z);
           if (o.shape === 'ball') m.rotation.set(0, 0, -p.roll);
+          else if (o.shape === 'tube') { g.rotation.y = o.ry; m.rotation.set(0, 0, -p.roll); g.visible = !p.hide; }
           else if (o.shape === 'log') { g.rotation.y = o.ry; m.rotation.set(Math.PI / 2, 0, 0); m.rotateY(p.roll); }
           else if (o.shape === 'disc') { g.rotation.y = o.ry; m.rotation.set(0, 0, t * 12); }
           if (p.warn > 0) g.position.x += Math.sin(t * 50) * 0.04;
@@ -1299,7 +1346,7 @@ export class WorldView {
     core.position.y = y0;
     this.add(core);
     // The falls: curved sheets of water hugging the rock, streaming down, with spray where they land.
-    const fallM = this.waterMat({ speed: 0.42, alpha: 0.92, color: 0xa8e4f4, foam: 0xffffff, edge: true });
+    const fallM = fallMat(this, { speed: 0.42 }), fallM2 = fallMat(this, { speed: 0.6, alpha: 0.55, color: 0xffffff, deep: 0x8ad0e8 });
     const mistM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, depthWrite: false });
     for (let i = 0; i < 5; i++) {
       const th = (i / 5) * TAU + R() * 0.5, len = 0.32 + R() * 0.22, r = CORE_R + 0.3;
@@ -1309,6 +1356,14 @@ export class WorldView {
       const sheet = new THREE.Mesh(g, fallM);
       sheet.position.y = y0;
       this.add(sheet, false);
+      // A thinner, faster layer in front for depth.
+      const g2 = new THREE.CylinderGeometry(r + 0.25, r * 1.18 + 0.35, H, 12, 1, true, th + len * 0.1, len * 0.8);
+      g2.userData.len = len * 0.8;
+      this.flowUV(g2, 'sheet', th + len * 0.1);
+      const s2 = new THREE.Mesh(g2, fallM2);
+      s2.position.y = y0;
+      this.add(s2, false);
+      this.mistSpots.push({ x: Math.sin(th + len / 2) * (CORE_R * 1.18 + 1.2), y: 0.6, z: Math.cos(th + len / 2) * (CORE_R * 1.18 + 1.2), r: 2.6, n: 16, rise: 6 });
       const mid = th + len / 2, mr = CORE_R * 1.18 + 1.5;
       const mist = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), mistM);
       mist.scale.set(3.2, 1.4, 3.2);
@@ -1342,7 +1397,7 @@ export class WorldView {
     tex.repeat.set(2, 5);
     const rock = new THREE.MeshStandardMaterial({ map: tex, color: 0xb8d0a8, roughness: 0.95, metalness: 0, flatShading: true });
     const green = new THREE.MeshStandardMaterial({ color: 0x4f9a48, roughness: 1, flatShading: true });
-    const fallM = this.waterMat({ speed: 0.25, alpha: 0.9, color: 0xb0e8f4, foam: 0xffffff });
+    const fallM = fallMat(this, { speed: 0.12 });
     for (let i = 0; i < n; i++) {
       const a = (i / n) * TAU + R() * 0.4, d = 270 + R() * 150, rad = 24 + R() * 18, h = 90 + R() * 120, s1 = R() * 6, s2 = R() * 6;
       const cx = Math.cos(a) * d, cz = Math.sin(a) * d;
@@ -1363,8 +1418,9 @@ export class WorldView {
       this.root.add(top);
       const w = rad * (0.35 + R() * 0.25), g = new THREE.PlaneGeometry(w, h, 1, 1);
       const pos = g.attributes.position, uv = g.attributes.uv;
-      for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / 6, pos.getY(k) * 0.02);
+      for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / w + 0.5, pos.getY(k) * 0.02);
       const fall = new THREE.Mesh(g, fallM), fd = d - rad * 1.12;
+      this.mistSpots.push({ x: Math.cos(a) * (fd - 3), y: 0, z: Math.sin(a) * (fd - 3), r: w * 0.6, n: 18, rise: 10 });
       fall.position.set(Math.cos(a) * fd, h / 2 - 4, Math.sin(a) * fd);
       fall.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a));
       this.root.add(fall);
@@ -1453,10 +1509,51 @@ export class WorldView {
       w.position.y = c.hy + 0.025;
       g.add(w);
       if (slide) {
-        const rail = new THREE.BoxGeometry(c.hx * 2, 0.36, 0.12), rm = c.look ? this.lookMat(c.look) : panelMat(0x2a9ae8);
-        for (const sg of [-1, 1]) { const r = new THREE.Mesh(rail, rm); r.position.set(0, c.hy + 0.18, sg * (c.hz + 0.06)); g.add(r); }
+        // Half pipe: walls flaring out on both sides with a rounded lip.
+        const wall = new THREE.BoxGeometry(c.hx * 2, 0.62, 0.08), lip = new THREE.CylinderGeometry(0.07, 0.07, c.hx * 2, 8).rotateZ(Math.PI / 2);
+        const rm = new THREE.MeshStandardMaterial({ color: c.look ? c.look.c : 0x2a9ae8, roughness: 0.25, metalness: 0.1 });
+        for (const sg of [-1, 1]) {
+          const w2 = new THREE.Mesh(wall, rm);
+          w2.position.set(0, c.hy + 0.26, sg * (c.hz + 0.12));
+          w2.rotation.x = sg * 0.55;
+          const l2 = new THREE.Mesh(lip, rm);
+          l2.position.set(0, c.hy + 0.53, sg * (c.hz + 0.28));
+          g.add(w2, l2);
+        }
       }
       this.root.add(g);
+    }
+  }
+
+  // Waterfall: little falls spilling off the floating islands (scenery.js decides where).
+  buildSmallFalls() {
+    if (!this.islandFalls.length) return;
+    const m = fallMat(this, { speed: 0.9 });
+    for (const f of this.islandFalls) {
+      const g = new THREE.PlaneGeometry(f.w, f.h, 1, 1), pos = g.attributes.position, uv = g.attributes.uv;
+      for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / f.w + 0.5, pos.getY(k) * 0.08);
+      const p = new THREE.Mesh(g, m);
+      p.position.set(f.x, f.y - f.h / 2 + 0.1, f.z);
+      p.rotation.y = f.ry + Math.PI / 2;
+      this.add(p, false);
+      this.mistSpots.push({ x: f.x, y: f.y - f.h, z: f.z, r: f.w * 0.5, n: 6, rise: 2 });
+    }
+  }
+
+  // Launch slide kickers: glowing arrows pointing where you'll fly.
+  buildKickers() {
+    const ks = this.level.cols.filter((c) => c.launch);
+    if (!ks.length) return;
+    const sh = new THREE.Shape();
+    sh.moveTo(-0.5, -0.35); sh.lineTo(0.1, -0.35); sh.lineTo(0.1, -0.6); sh.lineTo(0.6, 0); sh.lineTo(0.1, 0.6); sh.lineTo(0.1, 0.35); sh.lineTo(-0.5, 0.35);
+    const ag = new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);
+    for (const c of ks) {
+      const m = new THREE.Mesh(ag, new THREE.MeshBasicMaterial({ color: HDR(c.look ? c.look.g : 0xffffff, 2.2) }));
+      const s = Math.min(c.hx, c.hz) * 1.4;
+      m.scale.setScalar(s);
+      m.position.set(c.x, c.y + c.hy + 0.03, c.z);
+      m.rotation.y = Math.atan2(-(c.launch.z - c.z), c.launch.x - c.x);
+      this.add(m, false);
     }
   }
 
@@ -1726,6 +1823,8 @@ export class WorldView {
     if (this.embers && cam) { this.embers.position.y = cam.y - 20 + ((t * 1.6) % 10); this.embers.rotation.y = t * 0.05; }
     if (this.convFx) this.convFx.uniforms.uTime.value = t;
     for (const m of this.waters) m.uniforms.uT.value = t;
+    for (const m of this.timeMats) m.uniforms.uT.value = t;
+    this.updateBands();
     for (const e of this.fishFx) e(t, cam);
     for (const e of this.swingFx) {
       const d = e.d, c = e.sw.col;
@@ -1757,3 +1856,5 @@ export class WorldView {
     }
   }
 }
+
+export { HDR, mat4, canvasTex };

@@ -7,7 +7,7 @@ import { makeBox, makeCyl } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle } from './obstacles.js';
 
-export const LEVEL_VERSION = 10;
+export const LEVEL_VERSION = 11;
 export const CORE_R = 6;
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
@@ -101,17 +101,27 @@ export const MAPS = [
     zones: [
       Z('Lagoon Beach', 'Splash your way up', 100, 0x3fe0ff, 0xe6dcc0, 0xa6e4f0, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { leapingFish: 2, fountainLift: 2, gap: 5, stairs: 2, pillars: 2, beam: 2, crates: 1, bob: 1 }),
       Z('Lily Lagoon', 'Floating pads and jumping fish', 208, 0x7cf0a0, 0xd8eedc, 0xa8e8e0, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { leapingFish: 3, lilyPads: 1, fountainLift: 2, gap: 4, bob: 3, pad: 2, mover: 2, grapple: 1, swing: 1 }),
-      Z('Bamboo Falls', 'Climb beside the spray', 316, 0x9be564, 0xc8b080, 0x9ed8d8, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { waterSlide: 3, leapingFish: 1, fountainLift: 2, stairs: 2, gap: 3, beam: 2, pillars: 2, door: 1, mover: 2, swing: 1 }),
-      Z('Rainbow Mist', 'Lost in the spray', 424, 0xff9ad8, 0xf0e0f0, 0xc8e0f4, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { leapingFish: 2, waterSlide: 2, sprinkler: 1, fountainLift: 1, bob: 2, pad: 2, gap: 2, grapple: 1, tilt: 2, spinner: 1, mover: 1 }),
-      Z('Slide Park', 'Run up the water slides', 532, 0x3fd0ff, 0xe8f0f4, 0xa8dcf0, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { waterSlide: 5, lazyRiver: 2, fountainLift: 1, beam: 2, mover: 2, gap: 2, lift: 2, door: 1, pad: 1 }),
+      Z('Bamboo Falls', 'Climb beside the spray', 316, 0x9be564, 0xc8b080, 0x9ed8d8, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { waterSlide: 3, launchSlide: 2, leapingFish: 1, fountainLift: 2, stairs: 2, gap: 3, beam: 2, pillars: 2, door: 1, mover: 2, swing: 1 }),
+      Z('Rainbow Mist', 'Lost in the spray', 424, 0xff9ad8, 0xf0e0f0, 0xc8e0f4, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { leapingFish: 2, waterSlide: 2, launchSlide: 2, sprinkler: 1, fountainLift: 1, bob: 2, pad: 2, gap: 2, grapple: 1, tilt: 2, spinner: 1, mover: 1 }),
+      Z('Slide Park', 'Run up the water slides', 532, 0x3fd0ff, 0xe8f0f4, 0xa8dcf0, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { waterSlide: 4, launchSlide: 4, lazyRiver: 2, fountainLift: 1, beam: 2, mover: 2, gap: 2, lift: 2, door: 1, pad: 1 }),
       Z('Coral Grotto', 'Behind the falling water', 640, 0xff7a6a, 0xf0c8b8, 0x90c8d8, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { leapingFish: 3, waterSlide: 1, fountainLift: 1, gap: 3, crumble: 2, tilt: 2, grapple: 1, swing: 2, bob: 1 }),
-      Z('Fountain Terraces', 'Ride the fountains', 760, 0x6ae0ff, 0xe0e8e8, 0xb0e4f4, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { fountainLift: 6, waterSlide: 2, leapingFish: 1, gap: 2, lift: 1, pad: 2, crumble: 2, mover: 2, spinner: 1, door: 1 }),
+      Z('Fountain Terraces', 'Ride the fountains', 760, 0x6ae0ff, 0xe0e8e8, 0xb0e4f4, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { fountainLift: 6, waterSlide: 2, launchSlide: 2, leapingFish: 1, gap: 2, lift: 1, pad: 2, crumble: 2, mover: 2, spinner: 1, door: 1 }),
       Z('Sky Springs', 'Where the water begins', 880, 0xb48cff, 0xe0dcf0, 0xc0d8f8, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { leapingFish: 2, waterSlide: 2, fountainLift: 2, gap: 2, bob: 2, tilt: 2, crumble: 2, grapple: 1, swing: 1, lift: 1 }),
-      Z('Source of the Falls', 'The top of the waterfall', 992, 0xffe066, 0xf0ecd8, 0xd0ecfa, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { waterSlide: 2, leapingFish: 2, fountainLift: 2, gap: 2, lift: 1, spinner: 1, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1 }),
+      Z('Source of the Falls', 'The top of the waterfall', 992, 0xffe066, 0xf0ecd8, 0xd0ecfa, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { waterSlide: 2, launchSlide: 2, leapingFish: 2, fountainLift: 2, gap: 2, lift: 1, spinner: 1, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1 }),
     ],
   },
 ];
 export const ZONES = MAPS[0].zones;
+
+// The angry dummies (jumpers) on each map: name and colours (c body, g band and eyes).
+export const JUMPER = {
+  storm: { name: 'Storm dummy', look: { c: 0x2a2f3a, g: 0x3ff0d0 } },
+  sunny: { name: 'Beach bully', look: { c: 0xd8683a, g: 0xffe066 } },
+  forest: { name: 'Wild jumper', look: { c: 0x5a3a24, g: 0x9be564 } },
+  volcano: { name: 'Ash brute', look: { c: 0x2a1a16, g: 0xff5a2a } },
+  city: { name: 'Street punk', look: { c: 0x2a2440, g: 0xff4fd8 } },
+  waterfall: { name: 'Splash bully', look: { c: 0x1a5a8a, g: 0x7fe8ff } },
+};
 
 const PR_TOP = 0.6;
 const SIGNS = [
@@ -143,7 +153,7 @@ export function generateLevel(mapId = 0) {
     map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
     anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
-    obs: [], blinks: [], traps: [], bumpers: [], flows: [],
+    obs: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [], usedObs = [], obsZone = [];
@@ -484,12 +494,39 @@ export function generateLevel(mapId = 0) {
     // ---------- waterfall ----------
     // A water slide up to the next platform, with water rushing down it (it pushes you back).
     slide(cur, o) {
-      const nxt = T.beam(cur, { len: rr(5.5, 6.5), w: rr(1.4, 1.6), rise: rr(1.5, 2.1), surf: null });
+      // Steep, the water shoves you back down hard, and inner tubes come riding the water at you: jump them.
+      const nxt = T.beam(cur, { len: rr(6, 7), w: rr(1.3, 1.5), rise: rr(2.0, 2.6), surf: null });
       const c = nxt.bridge;
       c.kind = 'slide'; c.flow = 1; c.look = o.look;
-      c.conv = { sp: -rr(1.8, 2.4) };
+      c.conv = { sp: -rr(3.3, 3.8) };
       out.flows.push(c);
+      const b = between(cur, nxt, 0.25), blen = Math.hypot(b.bx - b.ax, b.bz - b.az), half = blen / 2;
+      obPush(o, { prim: 'slider', shape: 'tube', one: 1, x: (b.ax + b.bx) / 2, y: (cur.y + nxt.y) / 2, z: (b.az + b.bz) / 2, ux: b.ux, uz: b.uz,
+        a: -(half - 0.3), b: half - 0.3, slope: (nxt.y - cur.y) / blen, r: 0.42, w: 1.0, per: rr(2.0, 2.6), ph: R(), ry: b.ry, name: 'Inner tube' });
       return nxt;
+    },
+    // A launch slide: whoosh down a steep chute and fly off the kicker at the bottom onto a higher ledge.
+    flume(cur, o) {
+      const nxt = T.beam(cur, { len: rr(7, 8), w: 1.5, rise: -rr(2.0, 2.6), surf: 'ice' });
+      const c = nxt.bridge;
+      c.kind = 'slide'; c.flow = 1; c.look = o.look;
+      c.conv = { sp: rr(6.5, 7.5) };
+      out.flows.push(c);
+      const kick = nxt.col, s2 = rr(3.5, 3.9), r2 = nextR(nxt, s2);
+      const land = plat(thetaFor(nxt, rr(5.5, 6.5), r2, s2, s2), r2, nxt.y + rr(3.0, 3.6), s2, s2);
+      const dx = land.x - nxt.x, dz = land.z - nxt.z, dist = Math.hypot(dx, dz);
+      // The throw is aimed from wherever you touch the kicker at the middle of the ledge (player.js).
+      kick.launch = { x: land.x, y: land.y, z: land.z, vy: 14 };
+      kick.kind = 'kicker'; kick.look = o.look;
+      // Keep the flight path clear of anything built later.
+      recBox((nxt.x + land.x) / 2, (nxt.z + land.z) / 2, dist / 2 + 0.5, 1.4, Math.atan2(-dz / dist, dx / dist), nxt.y, 7.5);
+      return land;
+    },
+    // A jumper: an angry dummy on a wide ledge who runs at you and jump kicks you off.
+    jumper(cur, o) {
+      const p = wide(cur, [5.0, 5.8], [4.2, 4.8]);
+      out.jumpers.push({ i: out.jumpers.length, x: p.x, y: p.y, z: p.z, hx: p.sx / 2 - 0.45, hz: p.sz / 2 - 0.45, ry: p.ry, zone, lvl: o.lvl, name: o.name, look: o.look });
+      return T.gap(p, { g: rr(1.3, 1.9) });
     },
     // Fish leaping in an arc across a bridge, two of them taking turns.
     leap(cur, o) {
@@ -911,7 +948,7 @@ export function generateLevel(mapId = 0) {
   // Every section is checked right after it is placed. If anything in it sits too close above or below
   // older route, the section is undone and the route climbs straight up with a lift instead, so the
   // finished level always keeps its clearances (dev/leveltest.js checks the same rule).
-  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers', 'flows'];
+  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers', 'flows', 'jumpers'];
   function snapshot() {
     const n = {};
     for (const k of LISTS) n[k] = out[k].length;
@@ -1033,7 +1070,7 @@ export function generateLevel(mapId = 0) {
   out.signs.push({ x: Math.cos(0.12) * 17.5, y: 4.6, z: Math.sin(0.12) * 17.5, text: SIGNS[0] });
   let cur = virt(0.12 + DIR * 0.38, 12.5, 2, 2.4, 6);
   if (ROUTE === 'switchback') { BAND = LANES.outer; newLeg(cur); }
-  let nextExc = 0, sinceRev = 0, sinceDet = 0;
+  let nextExc = 0, sinceRev = 0, sinceDet = 0, jumpZone = 0;
   if (ROUTE === 'towers') {
     // Off the dock and over to the nearest skyscraper.
     tower = 0;
@@ -1048,6 +1085,7 @@ export function generateLevel(mapId = 0) {
 
   for (zone = 0; zone < ZONE_LIST.length; zone++) {
     ZD = ZONE_LIST[zone];
+    jumpZone = 0;
     // A zone's own template list can also name obstacles to make them more common there (they add up).
     ZW = Object.assign({}, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
     for (const k in ZD.tpl) ZW[k] = (ZW[k] || 0) + ZD.tpl[k];
@@ -1068,7 +1106,8 @@ export function generateLevel(mapId = 0) {
         let worst = -1e9;
         for (let a = 0; a <= span; a += 0.1) worst = Math.max(worst, needAt(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9));
         if (worst <= 0) break;
-        cur = T.stairs(cur, Math.ceil(worst) + 1);
+        const at = cur, n = Math.ceil(worst) + 1;
+        cur = place(() => T.stairs(at, n), at);
       }
       const y = cur.y + 0.9;
       zi.y0 = y;
@@ -1114,6 +1153,11 @@ export function generateLevel(mapId = 0) {
       if (zone === 0 && zonePlats >= 6 && !intro.grapple) cur = place(() => T.grapple(at), at);
       else if (zone === 0 && zonePlats >= 12 && !intro.door) cur = place(() => T.door(at), at);
       else if (zone === 0 && MAP.key === 'forest' && zonePlats >= 3 && !intro.monster) cur = place(() => T.monster(at), at);
+      else if (zone >= 1 && jumpZone < (zone >= 5 ? 2 : 1) && zonePlats >= 6 + jumpZone * 9 && !finalStretch()) {
+        const J = JUMPER[MAP.key] || JUMPER.storm, o = { name: J.name, look: J.look, lvl: jumpZone };
+        cur = place(() => OB.jumper(at, o), at);
+        jumpZone++;
+      }
       else if (finalStretch()) { const k = ['gap', 'gap', 'stairs', 'pillars', 'beam', 'crumble'][(R() * 6) | 0]; cur = place(() => T[k](at), at); }
       else {
         // Big sweeping things stay away from the switchback turns, where the other lane is close by.

@@ -4,6 +4,7 @@ import { Renderer } from './render.js';
 import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
 import { World } from './physics.js';
 import { WorldView, setSimple } from './worldview.js';
+import { setDetail } from './scenery.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Storm } from './storm.js';
@@ -734,12 +735,13 @@ function howTo(back) {
     <div><b>Sling</b>While holding GRAB, hold REEL, then let go of REEL. A partner on a tight cord gets flung upward.</div>
     <div><b>A partner falls</b>Their weight drags you toward the edge. Hold GRAB to stop, or walk away from the edge to haul them up.</div>
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
+    <div><b>Jumpers</b>Angry dummies guard some ledges. Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
     <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
     <div><b>Sunny Isles</b>The route zigzags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
     <div><b>Magma Chimney</b>You climb up the inside of a volcano. Stand on a vent when it erupts and it launches you up to the ledge above, but standing next to it gets you shoved off. Shadows show where boulders are about to land.</div>
     <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
-    <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides push you back down, so run up them or jump. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
+    <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides shove you back down, so run up them and jump the inner tubes rolling at you. Launch slides whoosh you down a chute and throw you onto a higher ledge. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
@@ -767,6 +769,7 @@ function beginGame(s, g) {
   $('#hud').classList.add('on');
   loadMap(g.map || 0);
   for (const r of app.pool.robots) { r.hide(); r.flip = 0; }
+  for (const r of app.pool.jumpers || []) r.hide();
   for (const l of app.pool.ropes) l.mesh.visible = false;
   app.game = new Game(app, s, g);
   if (N && N.keepAwake) N.keepAwake(true);
@@ -849,6 +852,7 @@ function boot() {
   const safe = getSafe();
   report('stage', { s: 'boot', safe, quality: settings.quality });
   setSimple(safe >= 3);
+  setDetail(safe >= 3 || settings.quality === 'low' ? 0 : settings.quality === 'ultra' ? 2 : 1);
   // On Android the 3D world is drawn by the app's own OpenGL renderer (never WebGL in the WebView).
   // ?native=rec in a desktop browser records the same stream for the desktop test of that renderer.
   const rec = new URLSearchParams(location.search).get('native') === 'rec';

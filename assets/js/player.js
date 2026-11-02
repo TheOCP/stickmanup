@@ -7,7 +7,7 @@ export const PC = {
   COYOTE: 0.12, BUFFER: 0.14, MAXFALL: -34, WALL_DRAIN: 0.22, GROUND_DRAIN: 0.05, REGEN: 0.45,
   REEL: 4.6, UNREEL: 3.0, CLIMB: 4.6, DRAG: 6.5, SHIELD: 1.0, SHIELD_CD: 2.2, ZIP: 19,
 };
-export const F = { GROUND: 1, ANCHOR: 2, ICE: 4, STUN: 8, CHARGE: 16, REEL: 32, MOVE: 64, SHIELD: 128, GRAPPLE: 256, HANG: 512, AIM: 1024 };
+export const F = { GROUND: 1, ANCHOR: 2, ICE: 4, STUN: 8, CHARGE: 16, REEL: 32, MOVE: 64, SHIELD: 128, GRAPPLE: 256, HANG: 512, AIM: 1024, KICK: 2048 };
 
 // How hard a robot resists the cord: clamped robots are immovable, grounded ones have grip.
 export function invMass(flags) {
@@ -206,6 +206,8 @@ export class Body {
       this.collide(env);
       if (!this.grounded) this.y = sy;
     }
+    // Launched off a kicker this step: in the air, whatever else we brushed against.
+    if (this.launched) { this.launched = false; this.grounded = false; this.ground = null; }
     this.onIce = this.grounded && this.ground && this.ground.surf === 'ice';
     this.coyote = this.grounded ? PC.COYOTE : Math.max(0, this.coyote - dt);
     if (this.grounded && !was) this.events.push({ k: 'land', drop: this.peakY - this.y, v: -fallV });
@@ -243,6 +245,16 @@ export class Body {
       if (c && c.surf === 'pad') {
         this.vy = PC.PAD;
         this.events.push({ k: 'pad' });
+        return;
+      }
+      // Kicker at the bottom of a launch slide: thrown toward the ledge ahead (the stick only nudges the flight).
+      if (c && c.launch) {
+        const T = c.launch, g = -PC.G, dy = T.y + PR - this.y, vy = Math.max(T.vy, Math.sqrt(Math.max(0, 2 * g * dy)) + 2);
+        const ft = (vy + Math.sqrt(Math.max(0, vy * vy - 2 * g * dy))) / g;
+        this.vx = (T.x - this.x) / ft; this.vy = vy; this.vz = (T.z - this.z) / ft;
+        this.thrown = 1.4;
+        this.launched = true;
+        this.events.push({ k: 'launch' });
         return;
       }
       this.grounded = true;

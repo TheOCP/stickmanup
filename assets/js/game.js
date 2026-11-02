@@ -65,6 +65,10 @@ export class Game {
     this.bgBolt = 2;
     this.cpSent = new Set();
     this.maxZone = -1;
+    // Jumpers (angry dummies): the host runs them, everyone else follows the host's updates.
+    this.jumpers = this.L.jumpers.map((j) => ({ j, x: j.x, y: j.y, z: j.z, vx: 0, vy: 0, vz: 0, yaw: j.ry, st: 0, t: 0, cd: 0, seen: -9, active: false, hitMe: false }));
+    this.jrigs = new Map();
+    for (const r of app.pool.jumpers || []) { r.hide(); if (this.L.jumpers[0]) { r.setColor(this.L.jumpers[0].look.c); r.bandMat.color.setHex(this.L.jumpers[0].look.g); } }
     this.won = false;
     this.winSent = false;
     this.splashed = false;
@@ -97,6 +101,7 @@ export class Game {
     session.on('S', (m) => {
       if (m.f !== undefined) this.falls = m.f;
       if (m.cp !== undefined && m.cp !== this.cp) { this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
+      if (m.jp) this.jumpNet(m.jp);
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
     // Names and colours can change mid-game (Settings): redraw stickmen, cords and name tags.
@@ -220,7 +225,11 @@ export class Game {
     if (!this.solo && this.sendAcc >= SEND) {
       this.sendAcc = 0;
       const m = this.me, st = [r3(m.x), r3(m.y), r3(m.z), r3(m.vx), r3(m.vy), r3(m.vz), r3(this.robots.get(this.slot).yaw), m.flags, r3(m.reel), r3(m.charge)];
-      if (this.s.isHost) this.s.hostState(T, st, this.noCord ? { f: this.falls } : { f: this.falls, cp: this.cp });
+      if (this.s.isHost) {
+        const ex = this.noCord ? { f: this.falls } : { f: this.falls, cp: this.cp }, jp = this.jumpPack();
+        if (jp.length) ex.jp = jp;
+        this.s.hostState(T, st, ex);
+      }
       else this.s.sendState(st);
     }
     this.saveAcc += dt;
@@ -254,6 +263,8 @@ export class Game {
     }
 
     this.storm.strikes(t - STEP, t, (r) => this.strike(r));
+    if (this.solo || this.s.isHost) this.jumpAI(t, STEP);
+    this.jumpHits(t);
     this.hazards(t);
     for (const e of me.events) this.bodyEvent(e);
     me.events.length = 0;
@@ -363,6 +374,7 @@ export class Game {
         }
         case 'slider': {
           const p = S.slider(o, t, P), dx = me.x - p.x, dz = me.z - p.z;
+          if (p.hide) break;
           if (o.shape === 'ram') {
             const a = dx * o.ux + dz * o.uz, b = dx * o.vx + dz * o.vz;
             if (Math.abs(a) < o.len / 2 + PR && Math.abs(b) < 0.3 + PR && feet < o.y + 1.15 && p.dir >= 0) this.zapKnock(o.vx * 9, 3, o.vz * 9, 'obstacle', o.name);
@@ -410,6 +422,130 @@ export class Game {
         this.app.ui.haptic('tick');
       }
     }
+  }
+
+  // ----- jumpers (angry dummies) -----
+  // Host: each one strolls along its ledge; when a climber comes near (and roughly level) it runs at them
+  // and, close enough, jump kicks. It never leaves its ledge. Shot: stunned for a while.
+  jumpAI(t, dt) {
+    if (!this.jumpers.length) return;
+    const S = this.storm, me = this.me, targets = [[me.x, me.y, me.z]];
+    for (const pl of this.s.players.values()) if (pl.slot !== this.slot && pl.last) targets.push([pl.last[0], pl.last[1], pl.last[2]]);
+    for (const J of this.jumpers) {
+      const j = J.j;
+      let near = false;
+      for (const p of targets) if (Math.abs(p[1] - j.y) < 25 && Math.abs(p[0] - j.x) + Math.abs(p[2] - j.z) < 35) near = true;
+      J.active = near && S.on(j);
+      if (!J.active) continue;
+      J.seen = t;
+      const stun = S.stun.get(2000 + j.i);
+      if (stun && t < stun.until) { J.st = 4; J.vx = J.vz = 0; this.jumpFall(J, dt); continue; }
+      if (J.st === 4) J.st = 0;
+      J.cd = Math.max(0, J.cd - dt);
+      if (J.st === 2) {
+        J.x += J.vx * dt; J.z += J.vz * dt;
+        this.clampJ(J);
+        if (this.jumpFall(J, dt)) { J.st = 3; J.t = 0.6; J.vx = J.vz = 0; }
+        continue;
+      }
+      if (J.st === 3) { J.t -= dt; if (J.t <= 0) J.st = 0; this.jumpFall(J, dt); continue; }
+      let best = null, bd = 1e9;
+      for (const p of targets) {
+        const d = Math.hypot(p[0] - J.x, p[2] - J.z), dy = p[1] - PR - j.y;
+        if (dy > -1.5 && dy < 2.8 && d < 8.5 && d < bd) { bd = d; best = p; }
+      }
+      if (best) {
+        const dx = best[0] - J.x, dz = best[2] - J.z, d = Math.max(0.01, bd);
+        J.yaw = Math.atan2(dx, dz);
+        if (d < 2.7 && J.cd <= 0) {
+          // Jump kick: up and straight at them.
+          const k = Math.min(7.5, d / 0.42 + 1);
+          J.st = 2; J.cd = 1.5 / S.hs; J.vy = 6.2; J.vx = (dx / d) * k; J.vz = (dz / d) * k;
+        } else {
+          const sp = (d < 1.2 ? 0 : 4.6) * S.hs;
+          J.st = 1; J.vx = (dx / d) * sp; J.vz = (dz / d) * sp;
+          J.x += J.vx * dt; J.z += J.vz * dt;
+          this.clampJ(J);
+        }
+      } else {
+        // Patrol: stroll back and forth along the ledge.
+        J.st = 0;
+        const ax = Math.cos(j.ry), az = -Math.sin(j.ry), u = Math.sin(t * 0.45 + j.i * 1.7) * j.hx * 0.75;
+        const dx = j.x + ax * u - J.x, dz = j.z + az * u - J.z, d = Math.hypot(dx, dz);
+        if (d > 0.05) { const sp = Math.min(1.5, d / dt); J.vx = (dx / d) * sp; J.vz = (dz / d) * sp; J.x += J.vx * dt; J.z += J.vz * dt; J.yaw = Math.atan2(dx, dz); }
+        else J.vx = J.vz = 0;
+      }
+      this.jumpFall(J, dt);
+    }
+  }
+
+  jumpFall(J, dt) {
+    J.vy -= 24 * dt;
+    J.y += J.vy * dt;
+    if (J.y <= J.j.y) { J.y = J.j.y; J.vy = 0; return true; }
+    return false;
+  }
+
+  clampJ(J) {
+    const j = J.j, c = Math.cos(j.ry), s = Math.sin(j.ry), dx = J.x - j.x, dz = J.z - j.z;
+    const a = clamp(dx * c - dz * s, -j.hx, j.hx), b = clamp(dx * s + dz * c, -j.hz, j.hz);
+    J.x = j.x + a * c + b * s; J.z = j.z - a * s + b * c;
+  }
+
+  // Host: the jumpers near anyone, packed into the state message.
+  jumpPack() {
+    const out = [];
+    for (const J of this.jumpers) if (J.active) out.push(J.j.i, r3(J.x), r3(J.y), r3(J.z), r3(J.yaw), J.st, r3(J.vx), r3(J.vz));
+    return out;
+  }
+
+  // Everyone else: follow the host's jumpers.
+  jumpNet(a) {
+    const t = this.simT;
+    for (let k = 0; k + 7 < a.length; k += 8) {
+      const J = this.jumpers[a[k]];
+      if (!J) continue;
+      J.tx = a[k + 1]; J.ty = a[k + 2]; J.tz = a[k + 3]; J.yaw = a[k + 4]; J.st = a[k + 5]; J.vx = a[k + 6]; J.vz = a[k + 7];
+      if (J.seen < t - 1) { J.x = J.tx; J.y = J.ty; J.z = J.tz; }
+      J.seen = t;
+    }
+  }
+
+  // Every player checks the kicks against their own climber.
+  jumpHits(t) {
+    const me = this.me, host = this.solo || this.s.isHost;
+    for (const J of this.jumpers) {
+      if (!host) {
+        J.active = t - J.seen < 0.6;
+        if (J.active && J.tx !== undefined) { const k = Math.min(1, STEP * 14); J.x += (J.tx - J.x) * k; J.y += (J.ty - J.y) * k; J.z += (J.tz - J.z) * k; }
+      }
+      if (!J.active || J.st !== 2) { J.hitMe = false; continue; }
+      const fx = J.x + Math.sin(J.yaw) * 0.45, fz = J.z + Math.cos(J.yaw) * 0.45, fy = J.y + 0.75;
+      if (!J.hitMe && Math.hypot(me.x - fx, me.y - fy, me.z - fz) < 1.05) {
+        J.hitMe = true;
+        const k = this.storm.k;
+        this.zapKnock(Math.sin(J.yaw) * 10 * k, 6, Math.cos(J.yaw) * 10 * k, 'kick', J.j.name + ' kicked you');
+      }
+    }
+  }
+
+  // Up to four nearby jumpers get a stickman rig each.
+  drawJumpers(dt, T) {
+    const rigs = this.app.pool.jumpers;
+    if (!rigs || !this.jumpers.length) return;
+    const cam = this.R.camera.position, list = [];
+    for (const J of this.jumpers) if (J.active && Math.abs(J.y - cam.y) < 45 && Math.hypot(J.x - cam.x, J.z - cam.z) < 50) list.push(J);
+    list.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
+    const used = new Set();
+    for (const J of list.slice(0, rigs.length)) {
+      let r = this.jrigs.get(J);
+      if (!r) { r = rigs.find((q) => ![...this.jrigs.values()].includes(q)); if (!r) continue; this.jrigs.set(J, r); r.show(); }
+      used.add(r);
+      const ground = J.y <= J.j.y + 0.02, flags = (ground ? F.GROUND : 0) | (J.st === 2 ? F.KICK : 0) | (J.st === 4 ? F.STUN : 0);
+      if (Math.hypot(J.vx, J.vz) < 0.6 && J.st !== 4) { let d = J.yaw - r.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); r.yaw += d * Math.min(1, dt * 10); }
+      r.update(dt, J.x, J.y + PR, J.z, J.vx, J.vy || 0, J.vz, flags, 0, J.j.y, J.yaw, 9);
+    }
+    for (const [J, r] of this.jrigs) if (!used.has(r)) { r.hide(); this.jrigs.delete(J); }
   }
 
   zapKnock(vx, vy, vz, src, name) {
@@ -479,6 +615,7 @@ export class Game {
     for (const d of L.doors) if (!this.doors.has(d.i) && near(d.by)) tryHit('door', d.i, d.bx, d.by, d.bz, 0.68);
     for (const m of L.monsters) if (near(m.y)) { const p = this.storm.monsterPos(m, T, tmpP); tryHit('monster', m.i, p.x, p.y, p.z, 0.75); }
     for (const b of L.bats) if (near(b.cy)) { const p = this.storm.batPos(b, T, tmpP); tryHit('bat', b.i, p.x, p.y, p.z, 0.55); }
+    for (const J of this.jumpers) if (J.active && near(J.y)) tryHit('jumper', J.j.i, J.x, J.y + PR + 0.35, J.z, 0.7);
     return { t, x: o.x + dx * t, y: o.y + dy * t, z: o.z + dz * t, kind, i: idx };
   }
 
@@ -493,7 +630,7 @@ export class Game {
     this.lastShot = T;
     this.s.toHost({ k: 'shot', s: this.slot, a: from, b: to, h: h.kind ? 1 : 0 });
     if (h.kind === 'door') this.s.toHost({ k: 'door', i: h.i });
-    else if (h.kind) this.s.toHost({ k: 'stun', m: (h.kind === 'bat' ? 1000 : 0) + h.i, from: r3(T), until: r3(T + 5) });
+    else if (h.kind) this.s.toHost({ k: 'stun', m: (h.kind === 'bat' ? 1000 : h.kind === 'jumper' ? 2000 : 0) + h.i, from: r3(T), until: r3(T + 5) });
     if (h.kind) this.app.ui.haptic('tick');
   }
 
@@ -536,6 +673,7 @@ export class Game {
     const S = this.app.sound, ui = this.app.ui;
     switch (e.k) {
       case 'jump': S.jump(); break;
+      case 'launch': S.pad(); S.jump(); ui.haptic('heavy'); break;
       case 'land':
         S.land(e.v);
         if (e.v > 14) ui.haptic('heavy');
@@ -727,6 +865,7 @@ export class Game {
       const th = this.storm.thunder(T, slot);
       if (th) this.zap(slot, th, o, false);
     }
+    this.drawJumpers(dt, T);
     const pos = (slot) => (slot === this.slot ? me : this.vis && this.vis.get(slot));
     // Cords are draped visually (beads settle over ledges) but only the straight line pulls.
     for (const lk of this.links) {
@@ -845,6 +984,7 @@ export class Game {
     for (const dr of L.doors) if (!this.doors.has(dr.i) && Math.abs(dr.by - me.y) < 30) consider(dr.bx, dr.by, dr.bz);
     for (const m of L.monsters) if (Math.abs(m.y - me.y) < 20) { const p = this.storm.monsterPos(m, T, tmpP); if (!p.stunned) consider(p.x, p.y, p.z); }
     for (const b of L.bats) if (Math.abs(b.cy - me.y) < 20) { const p = this.storm.batPos(b, T, tmpP); if (!p.stunned) consider(p.x, p.y, p.z); }
+    for (const J of this.jumpers) if (J.active && J.st !== 4 && Math.abs(J.y - me.y) < 20) consider(J.x, J.y + PR + 0.35, J.z);
     if (!best) return;
     // Turn a share of the way toward it each frame (the camera looks along yaw + PI, pitch down = +).
     let ey = Math.atan2(best.vx, best.vz) - Math.atan2(fwd.x, fwd.z);

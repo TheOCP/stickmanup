@@ -16,6 +16,7 @@
 //   slide     a water slide up to the next platform, with water rushing down it (waterfall)
 //   leap      fish leaping in arcs across a bridge (waterfall)
 //   current   a lazy river that carries you sideways across a platform (waterfall)
+//   flume     a launch slide: down a fast chute and off a kicker onto a higher ledge (waterfall, sunny)
 // and themed takes on the older hazards: drop (falling things), shooter (traps that fire across a
 // bridge), flyer (things circling the gaps), vent (eruptions that launch you), gate (barriers that
 // switch on and off).
@@ -63,6 +64,7 @@ export const OBSTACLES = {
   ],
   sunny: [
     O('coconutDrop', 'Coconut drop', 'drop', 0, { c: 0x6a4a2a, g: 0xffe08a }),
+    O('waveChute', 'Wave chute', 'flume', 0, { c: 0x2ec4b6, g: 0xffffff }),
     O('beachBall', 'Rolling beach ball', 'slider', 0, { c: 0xff5a5a, g: 0xffffff, s: 'ball' }),
     O('anchorSwing', 'Anchor pendulum', 'pendulum', 1, { c: 0x3a4250, g: 0xffd76a, s: 'anchor' }),
     O('cannonShots', 'Cannon shots', 'shooter', 1, { c: 0x2a2e3a, g: 0xffb040 }),
@@ -179,6 +181,7 @@ export const OBSTACLES = {
   ],
   waterfall: [
     O('waterSlide', 'Water slide', 'slide', 0, { c: 0x2a9ae8, g: 0xbff4ff }),
+    O('launchSlide', 'Launch slide', 'flume', 0, { c: 0xffb43d, g: 0xfff2a8 }),
     O('leapingFish', 'Leaping fish', 'leap', 0, { c: 0xff8a3d, g: 0xffd08a }),
     O('fountainLift', 'Fountain lift', 'vent', 0, { c: 0xe8f4f8, g: 0x7fe8ff }),
     O('lazyRiver', 'Lazy river', 'current', 0, { c: 0x2a9ad8, g: 0xbff4ff }),

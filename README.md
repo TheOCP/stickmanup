@@ -16,6 +16,7 @@ giant maps. If one falls, everyone feels it.
 ![Magma Chimney](docs/volcano.png)
 ![Neon Skyline](docs/city.png)
 ![Waterfall](docs/waterfall.png)
+![A jumper kicking](docs/jumper.png)
 
 ## Six maps
 
@@ -34,7 +35,8 @@ smaller platforms, more obstacles, and everything moves faster.
   over a sky bridge or by zipline, and work your way round the ring to the top. Conveyor belts, drones and laser
   gates.
 * **Waterfall**: a water paradise. Climb a mossy rock with waterfalls pouring down it into a clear lagoon, past
-  palms, lily pads, fountains and far off cliffs with their own falls. Run up water slides against the flow, dodge
+  palms, lily pads, fountains and far off cliffs with their own falls. Fight up water slides while inner tubes roll
+  down at you, fly off launch slides onto higher ledges, dodge
   fish leaping across the bridges, ride fountains up and keep your footing on lazy rivers.
 
 Every map also has grapple hooks over wide gaps and doors that open when you shoot their target. The route
@@ -62,6 +64,21 @@ and turntables with bars spinning over them.
   swinging buoys, water cannons, sinking lily pads, a whirlpool deck, swim ring bumpers, flying fish and more
 
 Most of them shake, flicker or glow just before they strike.
+
+**Jumpers**
+
+Every map has angry dummies guarding ledges from zone 2 up, in the map's own style: storm dummies, beach bullies,
+wild jumpers, ash brutes, street punks and splash bullies. Come close and they run at you and jump kick you off the
+ledge. Jump past them, or SHOOT to stun them for a few seconds.
+
+**Every map looks different**
+
+Platforms change with the map and the zone: tread plate and hex tiles, wooden docks, floating sandstone islands,
+clouds, giant mushroom caps, grassy rocks, basalt columns, obsidian, concrete roofs, lily pads, bamboo rafts, coral
+and marble. Floating islands (ledges in the volcano, balcony gardens on the skyscrapers) carry trees and props that
+suit the zone: palms, pines, oaks, birches, blossom, bamboo, dead trees, glowing trees, cactus, coral, crystals,
+antennas and water tanks. Flocks of birds, butterflies, crabs, dolphins, deer, frogs, turtles and lizards live around
+the climb. The graphics preset scales all of this: Low drops the small stuff for cheaper phones.
 
 **Difficulties**
 
@@ -149,11 +166,13 @@ browser can play WiFi multiplayer against each other.
   * `net.js`, `game.js`: host relayed multiplayer; each phone simulates its own climber and applies its share of
     the cord pull, so the game stays responsive over a laggy connection
   * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen
+  * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
+    waterfalls and spray
   * `mirror.js` streams the scene to the native renderer
 * `src/`: a small Java activity that runs the game in a full screen WebView, the native OpenGL ES renderer
   (`src/io/stickmanup/gl/`), and WiFi, internet direct (UPnP and STUN) and Bluetooth sockets for the game
 * `dev/`: node tests for the levels, physics and networked cord, Playwright scripts that drive the game in
-  headless Chromium, a desktop harness that replays a recorded frame through the native renderer, and the icon
-  generator
+  headless Chromium, a desktop harness that replays a recorded frame through the native renderer, the icon
+  generator, and `sync_pattern.py`, which copies the surface patterns into the native renderer
 
 Uses three.js and PeerJS, both MIT licensed.

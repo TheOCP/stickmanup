@@ -83,20 +83,40 @@ export class RopeMesh {
 // need is built before play. Games show and hide them; nothing is ever disposed.
 export function makePool(scene) {
   const robots = [0, 1, 2, 3].map((s) => new Stickman(scene, s));
+  // Rigs for the angry dummies (jumpers): a headband and angry brows, no gun.
+  const jumpers = [0, 1, 2, 3].map(() => {
+    const r = new Stickman(scene, 0);
+    r.bandMat = new THREE.MeshBasicMaterial({ color: 0xff3030 });
+    r.bandMat.userData.live = true;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.035, 6, 24), r.bandMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = 0.07;
+    r.head.add(band);
+    for (const s of [-1, 1]) {
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.022, 0.02), new THREE.MeshBasicMaterial({ color: 0x0a0d14 }));
+      brow.position.set(s * 0.06, 0.1, 0.176);
+      brow.rotation.z = s * 0.45;
+      r.head.add(brow);
+    }
+    if (r.gun) r.gun.visible = false;
+    return r;
+  });
   const ropes = [0, 1, 2].map(() => new RopeMesh(scene, COLORS[0], COLORS[1]));
   const hidden = [];
-  robots.forEach((r, i) => {
+  [...robots, ...jumpers].forEach((r, i) => {
     r.g.position.set(i * 2, 1.2, 0);
     r.g.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; hidden.push(o); } });
   });
   return {
     robots,
+    jumpers,
     ropes,
     warm: 4,
     tick() {
       if (this.warm <= 0 || --this.warm > 0) return;
       for (const o of hidden) o.frustumCulled = true;
       for (const r of robots) r.hide();
+      for (const r of jumpers) r.hide();
       for (const l of ropes) l.mesh.visible = false;
     },
   };

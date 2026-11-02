@@ -184,7 +184,10 @@ export class Stickman {
     let headY = Math.max(-0.5, Math.min(0.5, -this.yawVel * 0.06)), headZ = 0, twist = 0, bounce = 0, breathe = 0;
     const idle = ground && sp <= 0.4 && !anchored && !(flags & (F.STUN | F.AIM | F.HANG | F.GRAPPLE));
     if (!idle) { this.idleT = 0; this.idleAct = null; }
-    if (flags & F.STUN) {
+    if (flags & F.KICK) {
+      // Flying jump kick: one leg out straight, arms flung back.
+      lean = -0.3; legX = [-1.75, 0.55]; knee = [0.05, 1.1]; armX = [0.8, 0.5]; armZ = [1.0, 1.0]; elbow = [-0.3, -0.3]; mouthO = 1.1;
+    } else if (flags & F.STUN) {
       this.spin += dt * 14;
       armZ = [1.4, 1.4]; legX = [0.5, -0.5]; knee = [0.6, 0.6]; mouthO = 1.2;
     } else if (flags & F.GRAPPLE) {

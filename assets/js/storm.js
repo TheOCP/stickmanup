@@ -83,11 +83,20 @@ export class Storm {
       const d = o.a + (o.b - o.a) * f;
       out.x = o.x + o.vx * d; out.z = o.z + o.vz * d; out.y = o.y + 0.55;
       out.warn = u > 0.85 ? (u - 0.85) / 0.15 : 0;
+    } else if (o.one) {
+      // One way, down a slope: rolls from the top end to the bottom, then pops back up at the top.
+      f = Math.min(1, u / 0.8);
+      dir = -1;
+      const d = o.b - (o.b - o.a) * f;
+      out.x = o.x + o.ux * d; out.z = o.z + o.uz * d; out.y = o.y + (o.slope || 0) * d + o.r;
+      out.roll = d / o.r;
+      out.hide = u >= 0.8;
+      out.warn = u > 0.92 ? 1 : 0;
     } else {
       f = 0.5 - 0.5 * Math.cos(TAU * u);
       dir = Math.sin(TAU * u) >= 0 ? 1 : -1;
       const d = o.a + (o.b - o.a) * f;
-      out.x = o.x + o.ux * d; out.z = o.z + o.uz * d; out.y = o.y + o.r;
+      out.x = o.x + o.ux * d; out.z = o.z + o.uz * d; out.y = o.y + (o.slope || 0) * d + o.r;
       out.roll = d / o.r;
       out.warn = 0;
     }

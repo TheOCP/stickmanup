@@ -2,7 +2,7 @@
 
 <img src="docs/icon.png" width="128" alt="StickManUp icon">
 
-A co op climbing game for Android. Up to four stickmen are tied together by a glowing cord and climb one of five
+A co op climbing game for Android. Up to four stickmen are tied together by a glowing cord and climb one of six
 giant maps. If one falls, everyone feels it.
 
 **[Download the latest APK](../../releases/latest)** · Android 8.0 or newer · no root needed · about 500 KB
@@ -15,8 +15,9 @@ giant maps. If one falls, everyone feels it.
 ![Wild Forest](docs/forest.png)
 ![Magma Chimney](docs/volcano.png)
 ![Neon Skyline](docs/city.png)
+![Waterfall](docs/waterfall.png)
 
-## Five maps
+## Six maps
 
 Each map is a 1000 m climb in nine zones, and each one climbs its own way. The higher you get, the harder it gets:
 smaller platforms, more obstacles, and everything moves faster.
@@ -32,6 +33,9 @@ smaller platforms, more obstacles, and everything moves faster.
 * **Neon Skyline**: a ring of skyscrapers round a central spire at sunset. Climb round one tower, cross to the next
   over a sky bridge or by zipline, and work your way round the ring to the top. Conveyor belts, drones and laser
   gates.
+* **Waterfall**: a water paradise. Climb a mossy rock with waterfalls pouring down it into a clear lagoon, past
+  palms, lily pads, fountains and far off cliffs with their own falls. Run up water slides against the flow, dodge
+  fish leaping across the bridges, ride fountains up and keep your footing on lazy rivers.
 
 Every map also has grapple hooks over wide gaps and doors that open when you shoot their target. The route
 does not just circle: it now and then rides a lift up and turns back the other way, or detours out to floating
@@ -54,6 +58,8 @@ and turntables with bars spinning over them.
   trapdoors, lava surges, a meteor shower, fire bats and more
 * **Neon Skyline**: security sweeps, a crane wrecking ball, runaway carts, trash compactors, steam pipes, hologram
   platforms, a spinning helipad, airbag bumpers, saw drones and more
+* **Waterfall**: water slides, leaping fish, fountain lifts, lazy rivers, tipping buckets, spinning sprinklers,
+  swinging buoys, water cannons, sinking lily pads, a whirlpool deck, swim ring bumpers, flying fish and more
 
 Most of them shake, flicker or glow just before they strike.
 

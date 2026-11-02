@@ -106,7 +106,7 @@ with sync_playwright() as p:
         pg.close()
     if "maps" in WANT:
         pg = page(b, "Maps")
-        for m in range(5):
+        for m in range(6):
             click(pg, "[data-a=solo]")
             click(pg, f"[data-a=map][data-m='{m}']")
             pg.wait_for_timeout(1500)

@@ -130,6 +130,8 @@ export class WorldView {
     this.arrowFx = [];
     this.swingFx = [];
     this.geyserFx = [];
+    this.waters = [];
+    this.fishFx = [];
     this.obsFx = [];
     this.looks = new Map();
     this.rockFx = [];
@@ -138,7 +140,7 @@ export class WorldView {
     this.key = level.mapKey;
     PATTERN = level.pattern;
     // Neon at night, painted trims by day, soft glow in the forest.
-    this.glowK = { storm: 2.4, sunny: 1.05, forest: 1.15, volcano: 1.8, city: 2.2 }[this.key];
+    this.glowK = { storm: 2.4, sunny: 1.05, forest: 1.15, volcano: 1.8, city: 2.2, waterfall: 1.05 }[this.key];
     this.zoneMats = level.zones.map((z) => panelMat(z.tint));
     this.iceMat = panelMat(0xa8d8ee, { roughness: 0.18, metalness: 0.1 });
     this.crumbleMat = panelMat(0x7a4a44);
@@ -163,6 +165,8 @@ export class WorldView {
     this.buildVentsRocks();
     this.buildCity();
     this.buildObstacles();
+    this.buildFlows();
+    this.buildWaterPark();
     this.freeze();
   }
 
@@ -273,7 +277,7 @@ export class WorldView {
     const L = this.level;
     for (const ring of L.rings) {
       const { y, rIn, rOut, a0, a1 } = ring, span = a1 - a0, seg = Math.max(12, Math.ceil((span / TAU) * 128));
-      const tint = ring.zone === 0 ? { storm: 0x333944, sunny: 0xd9c49c, forest: 0x4f6b3a, volcano: 0x2e2420, city: 0x2a3040 }[this.key] : L.zones[ring.zone].tint;
+      const tint = ring.zone === 0 ? { storm: 0x333944, sunny: 0xd9c49c, forest: 0x4f6b3a, volcano: 0x2e2420, city: 0x2a3040, waterfall: 0xd8ccb0 }[this.key] : L.zones[ring.zone].tint;
       const mat = panelMat(tint, { side: THREE.DoubleSide });
       const top = new THREE.Mesh(new THREE.RingGeometry(rIn, rOut, seg, 3, -a1, span).rotateX(-Math.PI / 2), mat);
       top.position.y = y;
@@ -304,6 +308,7 @@ export class WorldView {
 
   buildCore() {
     if (this.key === 'volcano') return;
+    if (this.key === 'waterfall') return this.buildFallsCore();
     if (this.key !== 'storm' && this.key !== 'city') return this.buildCoreAlt();
     const L = this.level, R = rng(5), city = this.key === 'city';
     const H = L.top - 1.2 + 40;
@@ -599,6 +604,17 @@ export class WorldView {
   // The ground the tower stands on: open sea (storm), a sandy beach island (sunny) or a forest island.
   buildIsland() {
     if (this.key === 'storm' || this.key === 'volcano' || this.key === 'city') return;
+    if (this.key === 'waterfall') {
+      // A green island ringed by a sandy beach, in a clear lagoon (the surf is drawn by the ocean shader).
+      const R = 36;
+      const sand = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 9, 3, 96, 1), new THREE.MeshStandardMaterial({ color: 0xead9a8, roughness: 1, metalness: 0 }));
+      sand.position.y = -1.1;
+      this.add(sand);
+      const grass = new THREE.Mesh(new THREE.CircleGeometry(R - 6, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5aa83a, roughness: 1, metalness: 0 }));
+      grass.position.y = 0.42;
+      this.add(grass, false);
+      return;
+    }
     const sunny = this.key === 'sunny', R = sunny ? 40 : 88;
     const top = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 9, 3, 96, 1), new THREE.MeshStandardMaterial({ color: sunny ? 0xe9d6a4 : 0x47732f, roughness: 1, metalness: 0 }));
     top.position.y = -1.1;
@@ -607,11 +623,7 @@ export class WorldView {
       const wet = new THREE.Mesh(new THREE.RingGeometry(R - 1, R + 6, 96).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xbfa57a, roughness: 0.35, metalness: 0 }));
       wet.position.y = 0.06;
       this.add(wet, false);
-      const foam = new THREE.Mesh(new THREE.RingGeometry(R + 5, R + 7.5, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }));
-      foam.position.y = 0.09;
-      foam.material.userData.live = true;
-      this.foam = foam;
-      this.add(foam, false);
+      // The surf on the beach is drawn by the ocean shader.
     } else {
       // Darker grass rings and dirt under the trees for depth.
       const dirt = new THREE.Mesh(new THREE.RingGeometry(19, 30, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5b4a30, roughness: 1, metalness: 0 }));
@@ -622,7 +634,7 @@ export class WorldView {
 
   buildMapDecor() {
     const L = this.level, D = (k) => L.decor.filter((d) => d.k === k), R = rng(77);
-    if (this.key === 'sunny') {
+    if (this.key === 'sunny' || this.key === 'waterfall') {
       // Palms: a leaning trunk and drooping fronds, instanced.
       const palms = D('palm');
       const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 7, 8, 4).translate(0, 3.5, 0);
@@ -856,7 +868,8 @@ export class WorldView {
     ]);
     const bmat = panelMat(0x2a2230, { roughness: 0.6, metalness: 0.1, pattern: 0, side: THREE.DoubleSide });
     for (const b of L.bats) {
-      const o = this.add(new THREE.Mesh(bg, b.look ? this.lookMat(b.look) : bmat));
+      // Waterfall: the flyers are flying fish.
+      const o = this.add(new THREE.Mesh(this.key === 'waterfall' ? this.fishGeo(true) : bg, b.look ? this.lookMat(b.look) : bmat));
       o.scale.setScalar(1.5);
       this.anim.push(o);
       this.bats.push({ b, o, p: {} });
@@ -896,7 +909,7 @@ export class WorldView {
 
   // Lasers (spinning bars and on/off curtains), arrow traps and the ropes of swinging platforms.
   buildHazards() {
-    const L = this.level, col = { storm: 0xff2448, sunny: 0xff7a1a, forest: 0xff4a3a, volcano: 0xff5a2a, city: 0xff2a8a }[this.key];
+    const L = this.level, col = { storm: 0xff2448, sunny: 0xff7a1a, forest: 0xff4a3a, volcano: 0xff5a2a, city: 0xff2a8a, waterfall: 0x3fe0ff }[this.key];
     const beamGeo = new THREE.CylinderGeometry(0.05, 0.05, 1, 8).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
     const emitter = new THREE.MeshStandardMaterial({ color: 0x2a2e38, roughness: 0.35, metalness: 0.8, emissive: col, emissiveIntensity: 0.5 });
     const capGeo = new THREE.CylinderGeometry(0.24, 0.28, 0.22, 16);
@@ -1107,6 +1120,42 @@ export class WorldView {
           g.position.set(o.x + (c.shake ? Math.sin(t * 60) * 0.05 * c.shake : 0), o.y + c.h + 0.5, o.z);
           warnM.color.setHex(look.g).multiplyScalar(1.2 + c.shake * 3);
         });
+      } else if (o.prim === 'spikes' && look.s === 'water') {
+        // Fountain grid: rows of water spouts that shoot up out of the deck.
+        const parts = [], spout = new THREE.CylinderGeometry(0.07, 0.1, 1, 8, 1, true).translate(0, 0.5, 0);
+        for (let a = -o.hx + 0.25; a <= o.hx - 0.25 + 1e-6; a += 0.5) for (let b = -o.hz + 0.25; b <= o.hz - 0.25 + 1e-6; b += 0.5) parts.push({ geo: spout, m: mat4(a, 0, b, 1, 1, 1), glow: null });
+        const g2 = merge(parts);
+        this.flowUV(g2, 'up');
+        const m = new THREE.Mesh(g2, this.waterMat({ speed: -1.4, alpha: 0.8 }));
+        const g = new THREE.Group();
+        g.add(m);
+        g.position.set(o.x, o.y, o.z);
+        g.rotation.y = o.ry;
+        add(o, g, (st, t) => {
+          const p = st.pulse(o, t);
+          m.scale.y = p.on ? 1.3 : 0.02 + p.warn * 0.18;
+          m.visible = p.on || p.warn > 0;
+        });
+      } else if (o.prim === 'leap') {
+        // A fish riding an arc of water from one nozzle to the other, across the bridge.
+        const g = new THREE.Group(), pts = [], P = {};
+        for (let k = 0; k <= 16; k++) {
+          const f = k / 16, d = (-1 + 2 * f) * o.span * o.dir, H = o.h + 0.8;
+          pts.push(new THREE.Vector3(o.x + o.nx * d, o.y - 0.8 + H * 4 * f * (1 - f), o.z + o.nz * d));
+        }
+        const arcG = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.08, 6, false);
+        this.flowUV(arcG, 'tube', 6);
+        const arc = new THREE.Mesh(arcG, this.waterMat({ speed: -1.2 * o.dir, alpha: 0.45 }));
+        const noz = new THREE.CylinderGeometry(0.14, 0.22, 0.45, 10);
+        for (const q of [pts[0], pts[16]]) { const n = new THREE.Mesh(noz, mat); n.position.set(q.x, q.y - 0.2, q.z); g.add(n); }
+        const fish = new THREE.Mesh(this.fishGeo(), mat);
+        fish.scale.setScalar(1.25);
+        g.add(arc, fish);
+        add(o, g, (st, t) => {
+          const p = st.leap(o, t, P);
+          fish.visible = p.on;
+          if (p.on) { fish.position.set(p.x, p.y, p.z); fish.rotation.set(0, Math.atan2(-o.nz * o.dir, o.nx * o.dir), Math.atan(p.vy), 'YXZ'); }
+        });
       } else if (o.prim === 'spikes') {
         const parts = [], cone = new THREE.ConeGeometry(0.11, 0.45, 6).translate(0, 0.22, 0);
         for (let a = -o.hx + 0.2; a <= o.hx - 0.2 + 1e-6; a += 0.42) for (let b = -o.hz + 0.2; b <= o.hz - 0.2 + 1e-6; b += 0.42) parts.push({ geo: cone, m: mat4(a, 0, b, 1, 1, 1), glow: null });
@@ -1152,6 +1201,265 @@ export class WorldView {
     }
   }
 
+  // ---------------------------------------------------------------- waterfall
+  // Flowing water: streaks of foam drifting along v (v must grow the way the water comes from), fogged like
+  // everything else. Shared time uniform, updated every frame.
+  waterMat(o = {}) {
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+        uT: { value: 0 }, uS: { value: o.speed ?? 1 }, uA: { value: o.alpha ?? 0.75 },
+        uC: { value: new THREE.Color(o.color ?? 0x5ad8f0) }, uF: { value: new THREE.Color(o.foam ?? 0xf4ffff) }, uE: { value: o.edge ? 1 : 0 },
+      }]),
+      vertexShader: `#include <fog_pars_vertex>
+        varying vec2 vUv;
+        void main(){ vUv = uv; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
+        }`,
+      fragmentShader: `#include <fog_pars_fragment>
+        uniform float uT, uS, uA, uE; uniform vec3 uC, uF; varying vec2 vUv;
+        float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float n21(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+        void main(){
+          vec2 p = vec2(vUv.x, vUv.y + uT * uS);
+          float n = n21(p * vec2(10.0, 1.4)) * 0.6 + n21(p * vec2(26.0, 4.0) + 7.3) * 0.4;
+          float streak = smoothstep(0.5, 0.88, n);
+          vec3 col = mix(uC, uF, streak * 0.9);
+          // Sheets (uE): u runs 0 to 1 across, so the sides fade out softly.
+          float edge = uE > 0.5 ? smoothstep(0.0, 0.14, vUv.x) * (1.0 - smoothstep(0.86, 1.0, vUv.x)) : 1.0;
+          gl_FragColor = vec4(col, uA * (0.5 + 0.5 * streak) * edge);
+          #include <colorspace_fragment>
+          #include <fog_fragment>
+        }`,
+    });
+    this.waters.push(m);
+    return m;
+  }
+
+  // Sets uvs so water flows the right way: 'down' (falls: v grows with height), 'up' (jets), 'tube' (along a
+  // TubeGeometry, u becomes the length), or a flat surface along local x ('x') or z ('z', sign = flow).
+  flowUV(g, how, k = 1) {
+    const pos = g.attributes.position;
+    let uv = g.attributes.uv;
+    if (!uv) { uv = new THREE.Float32BufferAttribute(new Float32Array(pos.count * 2), 2); g.setAttribute('uv', uv); }
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      if (how === 'down') uv.setXY(i, Math.atan2(x, z) * k, y * 0.06);
+      else if (how === 'sheet') uv.setXY(i, (((Math.atan2(x, z) - k) % TAU) + TAU) % TAU / g.userData.len, y * 0.06);
+      else if (how === 'up') uv.setXY(i, Math.atan2(x, z), -y * 0.6);
+      else if (how === 'tube') uv.setXY(i, uv.getY(i), uv.getX(i) * k);
+      else if (how === 'x') uv.setXY(i, z * 0.35, x * 0.18 * k);
+      else uv.setXY(i, x * 0.35, -z * 0.18 * k);
+    }
+    uv.needsUpdate = true;
+    return g;
+  }
+
+  // A cartoon fish, nose along +x (or +z for the flyers, which turn like bats).
+  fishGeo(faceZ) {
+    const key = faceZ ? '_fishZ' : '_fish';
+    if (this[key]) return this[key];
+    const g = merge([
+      { geo: new THREE.SphereGeometry(0.5, 16, 10), m: mat4(0, 0, 0, 1, 0.5, 0.36), glow: null },
+      { geo: new THREE.ConeGeometry(0.3, 0.42, 4), m: mat4(-0.68, 0, 0, 1, 1, 0.25, 0, 0, -Math.PI / 2), glow: null },
+      { geo: new THREE.ConeGeometry(0.12, 0.3, 4), m: mat4(-0.05, 0.24, 0, 1, 1, 0.3, 0, 0, 0.5), glow: null },
+      { geo: new THREE.SphereGeometry(0.05, 6, 4), m: mat4(0.32, 0.06, 0.13, 1, 1, 1), glow: HDR(0xffffff, 0.8) },
+      { geo: new THREE.SphereGeometry(0.05, 6, 4), m: mat4(0.32, 0.06, -0.13, 1, 1, 1), glow: HDR(0xffffff, 0.8) },
+    ]);
+    if (faceZ) g.rotateY(-Math.PI / 2);
+    return (this[key] = g);
+  }
+
+  rockTex(seed) {
+    const R = rng(seed);
+    return canvasTex(512, 1024, (g, w, h) => {
+      g.fillStyle = '#6e685c'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 1400; i++) { const sz = 4 + R() * 26; g.fillStyle = `rgba(${R() < 0.5 ? '40,36,30' : '160,150,130'},${0.08 + R() * 0.18})`; g.fillRect(R() * w, R() * h, sz, sz * (0.3 + R() * 0.6)); }
+      g.lineCap = 'round';
+      for (let i = 0; i < 110; i++) {
+        let x = R() * w, y = R() * h;
+        g.strokeStyle = `rgba(30,26,22,${0.3 + R() * 0.4})`; g.lineWidth = 1 + R() * 2.5;
+        g.beginPath(); g.moveTo(x, y);
+        for (let k = 0; k < 5; k++) { x += (R() - 0.5) * 30; y += 8 + R() * 26; g.lineTo(x, y); }
+        g.stroke();
+      }
+      for (let i = 0; i < 240; i++) { g.fillStyle = `rgba(${60 + R() * 40},${125 + R() * 60},${45 + R() * 30},${0.35 + R() * 0.4})`; g.beginPath(); g.ellipse(R() * w, R() * h, 6 + R() * 30, 4 + R() * 14, 0, 0, TAU); g.fill(); }
+    });
+  }
+
+  // The climb goes round a mossy rock spire with waterfalls pouring down it into a plunge pool.
+  buildFallsCore() {
+    const L = this.level, R = rng(6), H = L.top - 1.2 + 40, y0 = (L.top - 1.2 - 40) / 2;
+    const tex = this.rockTex(61);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, H / 40);
+    this.rockMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0 });
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * 1.18, H, 72, 1, true), this.rockMat);
+    core.position.y = y0;
+    this.add(core);
+    // The falls: curved sheets of water hugging the rock, streaming down, with spray where they land.
+    const fallM = this.waterMat({ speed: 0.42, alpha: 0.92, color: 0xa8e4f4, foam: 0xffffff, edge: true });
+    const mistM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, depthWrite: false });
+    for (let i = 0; i < 5; i++) {
+      const th = (i / 5) * TAU + R() * 0.5, len = 0.32 + R() * 0.22, r = CORE_R + 0.3;
+      const g = new THREE.CylinderGeometry(r, r * 1.18, H, 12, 1, true, th, len);
+      g.userData.len = len;
+      this.flowUV(g, 'sheet', th);
+      const sheet = new THREE.Mesh(g, fallM);
+      sheet.position.y = y0;
+      this.add(sheet, false);
+      const mid = th + len / 2, mr = CORE_R * 1.18 + 1.5;
+      const mist = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), mistM);
+      mist.scale.set(3.2, 1.4, 3.2);
+      mist.position.set(Math.sin(mid) * mr, 0.6, Math.cos(mid) * mr);
+      this.add(mist, false);
+    }
+    // The plunge pool round the foot of the rock.
+    const pool = new THREE.Mesh(this.flowUV(new THREE.RingGeometry(CORE_R * 1.1, CORE_R + 6, 64, 2), 'x'), this.waterMat({ speed: 0.15, alpha: 0.85, color: 0x3fc8e0 }));
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = 0.46;
+    this.add(pool, false);
+    // Flower garlands at each zone gate.
+    const leaf = new THREE.MeshStandardMaterial({ color: 0x4f9a40, roughness: 0.8 }), bloom = new THREE.MeshBasicMaterial({ color: HDR(0xff9ad8, 1.2) });
+    for (const z of L.zones) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(CORE_R + 0.1, 0.22, 8, 96).rotateX(Math.PI / 2), leaf);
+      t.position.y = z.y0 - 1.4;
+      this.add(t, false);
+      for (let k = 0; k < 14; k++) {
+        const a = (k / 14) * TAU, f = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), bloom);
+        f.position.set(Math.sin(a) * (CORE_R + 0.3), z.y0 - 1.25, Math.cos(a) * (CORE_R + 0.3));
+        this.add(f, false);
+      }
+    }
+  }
+
+  // Far round the lagoon: tall green cliffs with their own waterfalls, and a rainbow.
+  buildCliffs() {
+    const R = rng(5150), n = 8;
+    const tex = this.rockTex(77);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 5);
+    const rock = new THREE.MeshStandardMaterial({ map: tex, color: 0xb8d0a8, roughness: 0.95, metalness: 0, flatShading: true });
+    const green = new THREE.MeshStandardMaterial({ color: 0x4f9a48, roughness: 1, flatShading: true });
+    const fallM = this.waterMat({ speed: 0.25, alpha: 0.9, color: 0xb0e8f4, foam: 0xffffff });
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + R() * 0.4, d = 270 + R() * 150, rad = 24 + R() * 18, h = 90 + R() * 120, s1 = R() * 6, s2 = R() * 6;
+      const cx = Math.cos(a) * d, cz = Math.sin(a) * d;
+      // A craggy rock pillar: the radius wobbles with angle and height (same at the seam, so no cracks).
+      const geo = new THREE.CylinderGeometry(rad * 0.8, rad * 1.15, h, 12, 7);
+      const p = geo.attributes.position;
+      for (let k = 0; k < p.count; k++) {
+        const x = p.getX(k), y = p.getY(k), z = p.getZ(k), th = Math.atan2(z, x);
+        const j = 0.86 + 0.12 * Math.sin(th * 3 + y * 0.04 + s1) + 0.08 * Math.sin(th * 7 + y * 0.09 + s2);
+        p.setXYZ(k, x * j, y, z * j);
+      }
+      geo.computeVertexNormals();
+      const cliff = new THREE.Mesh(geo, rock);
+      cliff.position.set(cx, h / 2 - 4, cz);
+      this.root.add(cliff);
+      const top = new THREE.Mesh(new THREE.IcosahedronGeometry(rad * 0.95, 1).scale(1, 0.45, 1), green);
+      top.position.set(cx, h - 4, cz);
+      this.root.add(top);
+      const w = rad * (0.35 + R() * 0.25), g = new THREE.PlaneGeometry(w, h, 1, 1);
+      const pos = g.attributes.position, uv = g.attributes.uv;
+      for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / 6, pos.getY(k) * 0.02);
+      const fall = new THREE.Mesh(g, fallM), fd = d - rad * 1.12;
+      fall.position.set(Math.cos(a) * fd, h / 2 - 4, Math.sin(a) * fd);
+      fall.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a));
+      this.root.add(fall);
+    }
+    // A rainbow arching out of the lagoon.
+    const rm = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      uniforms: { uA: { value: 0.3 } },
+      vertexShader: 'varying float vR; void main(){ vR = length(position.xy); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform float uA; varying float vR;
+        void main(){ float k = clamp((vR - 150.0) / 18.0, 0.0, 1.0);
+          vec3 c = clamp(abs(mod(k * 4.6 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+          gl_FragColor = vec4(c * uA * sin(k * 3.1416), 1.0);
+          #include <colorspace_fragment>
+        }`,
+    });
+    const bow = new THREE.Mesh(new THREE.RingGeometry(150, 168, 96, 1, 0, Math.PI), rm);
+    const ba = 2.2;
+    bow.position.set(Math.cos(ba) * 330, -14, Math.sin(ba) * 330);
+    bow.rotation.y = Math.atan2(-Math.cos(ba), -Math.sin(ba));
+    this.root.add(bow);
+  }
+
+  // Waterfall: lily pads, fountains and fish jumping in the lagoon.
+  buildWaterPark() {
+    if (this.key !== 'waterfall') return;
+    const L = this.level, D = (k) => L.decor.filter((d) => d.k === k), R = rng(88);
+    const lilies = D('lily'), col = new THREE.Color();
+    const pad = new THREE.CircleGeometry(1, 18, 0.35, TAU - 0.7).rotateX(-Math.PI / 2);
+    const pm = new THREE.InstancedMesh(pad, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide }), lilies.length);
+    const flowers = lilies.filter((d) => d.flower);
+    const fl = new THREE.InstancedMesh(new THREE.ConeGeometry(0.22, 0.3, 7).translate(0, 0.15, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, emissive: 0xff5ab0, emissiveIntensity: 0.25 }), flowers.length);
+    lilies.forEach((d, i) => { pm.setMatrixAt(i, mat4(d.x, d.y, d.z, d.s, 1, d.s, 0, d.ry, 0)); pm.setColorAt(i, col.setHSL(0.27 + R() * 0.07, 0.6, 0.3 + R() * 0.12)); });
+    flowers.forEach((d, i) => { fl.setMatrixAt(i, mat4(d.x, d.y, d.z, 1, 1, 1)); fl.setColorAt(i, col.setHex([0xff9ad8, 0xffffff, 0xffd0f0][i % 3])); });
+    this.add(pm, false); this.add(fl, false);
+    // Fountains: a stone basin, a jet of water and a cascade spilling back down.
+    const stone = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.7 });
+    const pondM = this.waterMat({ speed: 0.12, alpha: 0.85, color: 0x4fd0e8 }), jetM = this.waterMat({ speed: -1.2, alpha: 0.8 }), fallM = this.waterMat({ speed: 0.6, alpha: 0.55 });
+    for (const d of D('fountain')) {
+      const s = d.s, g = new THREE.Group();
+      g.position.set(d.x, d.y, d.z);
+      const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.6 * s, 1.75 * s, 0.6, 28), stone);
+      basin.position.y = 0.3;
+      const water = new THREE.Mesh(this.flowUV(new THREE.CircleGeometry(1.45 * s, 28).rotateX(-Math.PI / 2), 'x'), pondM);
+      water.position.y = 0.62;
+      const jet = new THREE.Mesh(this.flowUV(new THREE.CylinderGeometry(0.1, 0.16, 2.8 * s, 10, 1, true), 'up'), jetM);
+      jet.position.y = 0.62 + 1.4 * s;
+      const cas = new THREE.Mesh(this.flowUV(new THREE.ConeGeometry(1.25 * s, 1.9 * s, 22, 1, true), 'down', 3), fallM);
+      cas.position.y = 0.62 + 2.8 * s - 0.95 * s;
+      g.add(basin, water, jet, cas);
+      this.root.add(g);
+    }
+    // Fish leaping out of the lagoon now and then (only drawn while the camera is low).
+    const fishM = [0xff8a3d, 0xffd23d, 0x5ab8ff, 0xff5a8a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.4, metalness: 0.2 }));
+    for (const [i, d] of D('fish').entries()) {
+      const f = new THREE.Mesh(this.fishGeo(), fishM[i % 4]);
+      f.scale.setScalar(d.s);
+      f.visible = false;
+      this.root.add(f);
+      this.anim.push(f);
+      const dx = Math.cos(d.ry), dz = -Math.sin(d.ry);
+      this.fishFx.push((t, cam) => {
+        const u = ((t / d.per + d.ph) % 1) * d.per, k = u / 1.2;
+        f.visible = k < 1 && (!cam || cam.y < 140);
+        if (!f.visible) return;
+        const along = (k - 0.5) * 4;
+        f.position.set(d.x + dx * along, -0.4 + 2.4 * 4 * k * (1 - k), d.z + dz * along);
+        f.rotation.set(0, d.ry, Math.atan(2.4 * 4 * (1 - 2 * k) / 4), 'YXZ');
+      });
+    }
+  }
+
+  // Water slides and lazy rivers: flowing water on top (and side rails on the slides).
+  buildFlows() {
+    const flows = this.level.flows;
+    if (!flows.length) return;
+    const slideM = this.waterMat({ speed: 0.9, alpha: 0.8, color: 0x5ad8f8 }), riverM = this.waterMat({ speed: 0.5, alpha: 0.8, color: 0x3fb8e8 });
+    for (const c of flows) {
+      const g = new THREE.Group();
+      g.position.set(c.x, c.y, c.z);
+      g.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+      const slide = c.kind === 'slide';
+      const plane = new THREE.PlaneGeometry(c.hx * 2 - 0.05, c.hz * 2 - 0.1).rotateX(-Math.PI / 2);
+      this.flowUV(plane, slide ? 'x' : 'z', slide ? 1 : Math.sign(c.conv.sp));
+      const w = new THREE.Mesh(plane, slide ? slideM : riverM);
+      w.position.y = c.hy + 0.025;
+      g.add(w);
+      if (slide) {
+        const rail = new THREE.BoxGeometry(c.hx * 2, 0.36, 0.12), rm = c.look ? this.lookMat(c.look) : panelMat(0x2a9ae8);
+        for (const sg of [-1, 1]) { const r = new THREE.Mesh(rail, rm); r.position.set(0, c.hy + 0.18, sg * (c.hz + 0.06)); g.add(r); }
+      }
+      this.root.add(g);
+    }
+  }
+
   // Vents and falling things: the volcano's own, and the themed ones every map now has.
   buildVentsRocks() {
     const L = this.level;
@@ -1179,8 +1487,11 @@ export class WorldView {
     // Boulders: one rock and one shadow per drop spot.
     const rockG = new THREE.DodecahedronGeometry(0.75, 0), rockM = panelMat(0x3a2a24, { roughness: 1, emissive: 0xff4a10, emissiveIntensity: 0.15, pattern: 0 });
     const shadowG = new THREE.CircleGeometry(1.2, 24).rotateX(-Math.PI / 2);
+    // Waterfall: tipping buckets drop a big blob of water instead of a rock.
+    const blobG = new THREE.SphereGeometry(0.75, 16, 12).scale(1.1, 1.3, 1.1);
+    const blobM = new THREE.MeshStandardMaterial({ color: 0x8fe8ff, roughness: 0.05, metalness: 0.1, emissive: 0x2a7a9a, emissiveIntensity: 0.6, transparent: true, opacity: 0.72 });
     for (const r of L.rocks) {
-      const m = this.add(new THREE.Mesh(rockG, r.look ? this.lookMat(r.look) : rockM));
+      const m = this.add(new THREE.Mesh(r.look && r.look.s === 'water' ? blobG : rockG, r.look ? (r.look.s === 'water' ? blobM : this.lookMat(r.look)) : rockM));
       m.visible = false;
       const shM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
       shM.userData.live = true;
@@ -1255,7 +1566,7 @@ export class WorldView {
       }
     }
     // Conveyor belts: chevrons scrolling the way the belt moves.
-    const belts = L.cols.filter((c) => c.conv);
+    const belts = L.cols.filter((c) => c.conv && !c.flow);
     if (!belts.length) return;
     const mat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x11141c) }, uB: { value: HDR(0xffc23d, 2.2) } },
@@ -1284,6 +1595,7 @@ export class WorldView {
   buildDistantAlt() {
     if (this.key === 'volcano') return;
     if (this.key === 'city') return this.buildSkyline();
+    if (this.key === 'waterfall') return this.buildCliffs();
     const R = rng(4243), sunny = this.key === 'sunny', n = sunny ? 9 : 26;
     const geo = sunny ? new THREE.SphereGeometry(1, 20, 10, 0, TAU, 0, Math.PI / 2) : new THREE.ConeGeometry(1, 1, 10);
     const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: sunny ? 0x4f8a48 : 0x2c4a2a, roughness: 1, flatShading: !sunny }), n);
@@ -1413,6 +1725,8 @@ export class WorldView {
     }
     if (this.embers && cam) { this.embers.position.y = cam.y - 20 + ((t * 1.6) % 10); this.embers.rotation.y = t * 0.05; }
     if (this.convFx) this.convFx.uniforms.uTime.value = t;
+    for (const m of this.waters) m.uniforms.uT.value = t;
+    for (const e of this.fishFx) e(t, cam);
     for (const e of this.swingFx) {
       const d = e.d, c = e.sw.col;
       for (const r of e.ropes) {
@@ -1438,7 +1752,7 @@ export class WorldView {
       const p = storm.batPos(b, t, e.p), o = e.o;
       o.position.set(p.x, p.y, p.z);
       o.rotation.set(p.stunned ? 0.9 : 0, -p.a + (b.per > 0 ? 0 : Math.PI), p.stunned ? t * 12 : 0, 'YXZ');
-      const fl = this.key === 'city' ? 1 : p.stunned ? 0.5 : 1 + 0.45 * Math.sin(t * 22 + b.i);
+      const fl = this.key === 'city' || this.key === 'waterfall' ? 1 : p.stunned ? 0.5 : 1 + 0.45 * Math.sin(t * 22 + b.i);
       o.scale.set(1.5 * fl, 1.5, 1.5);
     }
   }

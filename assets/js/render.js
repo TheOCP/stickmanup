@@ -17,18 +17,23 @@ const BOLT_PTS = 15;
 // Look of each map: sky, sun, sea, lights, rain and glow. Fog colours come from the level's zones.
 const THEMES = {
   storm: { key: 'storm', top: 0x0d1426, glow: 0xffd890, day: 0, sun: 0, sunCol: 0xffe2b0, cloud: 1, horK: 1.6, seaK: 1.8, hemiSky: 0x8a98c8, hemiGround: 0x141824,
-    hemi: 0.6, light: 0xb8c4ff, lightI: 1.15, dir: [0.45, 1, 0.3], deep: 0x03080c, shallow: 0x03080c, shallowR: 0, rain: 1, fog: 0.0085, exposure: 1.1, bloom: [0.9, 0.5, 0.62] },
+    hemi: 0.6, light: 0xb8c4ff, lightI: 1.15, dir: [0.45, 1, 0.3], deep: 0x03080c, shallow: 0x03080c, shallowR: 0, amp: 1.0, foam: 0.55, scatter: 0x0b2a30, clear: 0, shore: 0, rain: 1, fog: 0.0085, exposure: 1.1, bloom: [0.9, 0.5, 0.62] },
   sunny: { key: 'sunny', top: 0x2f7fd0, glow: 0xfff2c0, day: 1, sun: 1, sunCol: 0xfff0d2, cloud: 0.55, horK: 1.0, seaK: 0.75, hemiSky: 0xcfe8ff, hemiGround: 0xd8c39a,
-    hemi: 1.15, light: 0xfff2de, lightI: 2.7, dir: [0.55, 0.75, 0.38], deep: 0x0b4f78, shallow: 0x37d6c6, shallowR: 70, rain: 0, fog: 0.0036, exposure: 1.0, bloom: [0.32, 0.4, 0.95] },
+    hemi: 1.15, light: 0xfff2de, lightI: 2.7, dir: [0.55, 0.75, 0.38], deep: 0x0a4a72, shallow: 0x3fd8c8, shallowR: 70, amp: 0.5, foam: 0.22, scatter: 0x2ad0c0, clear: 1, shore: 41.2, rain: 0, fog: 0.0036, exposure: 1.0, bloom: [0.32, 0.4, 0.95] },
   forest: { key: 'forest', top: 0x4a7f9a, glow: 0xffe8b0, day: 0.8, sun: 0.75, sunCol: 0xffd49a, cloud: 0.7, horK: 1.05, seaK: 0.8, hemiSky: 0xb9d9c4, hemiGround: 0x3c4a2a,
-    hemi: 1.05, light: 0xffe2b4, lightI: 2.1, dir: [-0.5, 0.62, 0.45], deep: 0x082624, shallow: 0x1f5a48, shallowR: 110, rain: 0, fog: 0.0072, exposure: 1.05, bloom: [0.6, 0.45, 0.78] },
+    hemi: 1.05, light: 0xffe2b4, lightI: 2.1, dir: [-0.5, 0.62, 0.45], deep: 0x082624, shallow: 0x1f5a48, shallowR: 110, amp: 0.42, foam: 0.18, scatter: 0x1f7a5a, clear: 0.45, shore: 89.2, rain: 0, fog: 0.0072, exposure: 1.05, bloom: [0.6, 0.45, 0.78] },
   // Inside a volcano: light from the opening above, glow from the lava lake below (the "sea" is lava).
   volcano: { key: 'volcano', top: 0x1c0806, glow: 0xff8a3a, day: 0.25, sun: 0, sunCol: 0xff8040, cloud: 0.85, horK: 1.3, seaK: 0.35, hemiSky: 0xffb08a, hemiGround: 0xff5a20,
-    hemi: 1.0, light: 0xffb88a, lightI: 1.3, dir: [0.2, 1, 0.1], deep: 0xff4a10, deepK: 2.4, shallow: 0xff4a10, shallowR: 0, rain: 0, fog: 0.008, exposure: 1.05, bloom: [1.0, 0.55, 0.7] },
+    hemi: 1.0, light: 0xffb88a, lightI: 1.3, dir: [0.2, 1, 0.1], deep: 0xff4a10, deepK: 2.4, shallow: 0xff4a10, shallowR: 0, amp: 0.22, foam: 0, scatter: 0x000000, clear: 0, shore: 0, lava: 1, rain: 0, fog: 0.008, exposure: 1.05, bloom: [1.0, 0.55, 0.7] },
   // A city at sunset: low orange sun, purple sky, a dark bay.
   city: { key: 'city', top: 0x221a4a, glow: 0xff9a6a, day: 0.55, sun: 0.65, sunCol: 0xff8a5a, cloud: 0.5, horK: 1.15, seaK: 0.9, hemiSky: 0xb0a0e0, hemiGround: 0x302040,
-    hemi: 0.95, light: 0xffa070, lightI: 1.7, dir: [0.7, 0.2, 0.4], deep: 0x0a1630, shallow: 0x0a1630, shallowR: 0, rain: 0, fog: 0.0045, exposure: 1.05, bloom: [0.8, 0.5, 0.72] },
+    hemi: 0.95, light: 0xffa070, lightI: 1.7, dir: [0.7, 0.2, 0.4], deep: 0x0a1630, shallow: 0x0a1630, shallowR: 0, amp: 0.6, foam: 0.3, scatter: 0x1a3a6a, clear: 0, shore: 0, rain: 0, fog: 0.0045, exposure: 1.05, bloom: [0.8, 0.5, 0.72] },
 };
+
+// Waterfall: a bright tropical day over a crystal clear lagoon.
+THEMES.waterfall = { key: 'waterfall', top: 0x3a9ae0, glow: 0xfff6d0, day: 1, sun: 1, sunCol: 0xfff4dc, cloud: 0.45, horK: 1.0, seaK: 0.8, hemiSky: 0xd0f0ff, hemiGround: 0x8ac890,
+  hemi: 1.15, light: 0xfff4e4, lightI: 2.6, dir: [0.4, 0.8, -0.45], deep: 0x0a5a80, shallow: 0x30d8c8, shallowR: 48, amp: 0.28, foam: 0.15, scatter: 0x3ff0d8, clear: 0.6, shore: 37.2,
+  rain: 0, fog: 0.0034, exposure: 1.0, bloom: [0.35, 0.4, 0.95] };
 
 const NOISE = `
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -211,45 +216,118 @@ export class Renderer {
   }
 
   makeOcean(q) {
-    const n = QUALITY[q] ? QUALITY[q].ocean : 128;
-    const g = new THREE.PlaneGeometry(1600, 1600, n, n);
-    g.rotateX(-Math.PI / 2);
+    // A round grid whose rings bunch up in the middle (the ocean follows the camera), so the waves nearby
+    // get fine detail and the far water stays cheap.
+    const segs = QUALITY[q] ? QUALITY[q].ocean : 128, rings = segs >> 1, pos = [0, 0, 0], idx = [];
+    for (let i = 1; i <= rings; i++) {
+      const r = 1000 * Math.pow(i / rings, 2.2);
+      for (let j = 0; j < segs; j++) { const a = (j / segs) * Math.PI * 2; pos.push(Math.cos(a) * r, 0, Math.sin(a) * r); }
+    }
+    for (let j = 0; j < segs; j++) idx.push(0, 1 + ((j + 1) % segs), 1 + j);
+    for (let i = 1; i < rings; i++) for (let j = 0; j < segs; j++) {
+      const a = 1 + (i - 1) * segs + j, b = 1 + (i - 1) * segs + ((j + 1) % segs);
+      idx.push(a, b, a + segs, b, b + segs, a + segs);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
     this.oceanU = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uTime: { value: 0 }, uFlash: { value: 0 }, uDeep: { value: new THREE.Color(0x03080c) }, uSky: { value: new THREE.Color(0x1d3040) },
-      uShallow: { value: new THREE.Color(0x03080c) }, uShallowR: { value: 0 }, uSunDir: { value: new THREE.Vector3(0.45, 1, 0.3).normalize() },
-      uSunCol: { value: new THREE.Color(0xffe2b0) }, uSun: { value: 0 },
+      uTop: { value: new THREE.Color(0x0d1426) }, uShallow: { value: new THREE.Color(0x03080c) }, uShallowR: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.45, 1, 0.3).normalize() }, uSunCol: { value: new THREE.Color(0xffe2b0) }, uSun: { value: 0 },
+      uAmp: { value: 1 }, uFoam: { value: 0.5 }, uScatter: { value: new THREE.Color(0x0b2a30) }, uClear: { value: 0 }, uShore: { value: 0 }, uLava: { value: 0 },
     }]);
+    // Gerstner waves (peaked crests, flat troughs). The vertex shader moves the grid with the long ones; the
+    // fragment shader works out the exact slope of all of them per pixel. Shorter waves fade out with distance
+    // (sooner on the grid than per pixel) so nothing shimmers, and they calm down near a beach.
+    const WAVES = `uniform float uTime, uAmp, uShore;
+      void gw(vec2 p, vec2 d, float L, float A, float Q, float fade, inout vec3 disp, inout vec3 tn){
+        float k = 6.2832 / L, f = k * (dot(d, p) - sqrt(9.8 / k) * uTime), a = A * fade, s = sin(f), c = cos(f);
+        disp += vec3(Q * a * d.x * c, a * s, Q * a * d.y * c);
+        tn += vec3(d.x * k * a * c, Q * k * a * s, d.y * k * a * c);
+      }
+      float shoreDamp(vec2 p){ return uShore > 0.0 ? mix(0.12, 1.0, smoothstep(uShore, uShore + 35.0, length(p))) : 1.0; }
+      void waves(vec2 p, float dist, float lod, float amp, inout vec3 disp, inout vec3 tn){
+        gw(p, vec2(0.970, 0.243), 64.0, 0.85 * amp, 0.55, 1.0 - smoothstep(500.0 * lod, 900.0 * lod, dist), disp, tn);
+        gw(p, vec2(-0.330, 0.944), 33.0, 0.48 * amp, 0.6, 1.0 - smoothstep(260.0 * lod, 520.0 * lod, dist), disp, tn);
+        gw(p, vec2(0.824, -0.566), 19.0, 0.27 * amp, 0.7, 1.0 - smoothstep(150.0 * lod, 300.0 * lod, dist), disp, tn);
+        gw(p, vec2(0.150, 0.989), 11.0, 0.13 * amp, 0.7, 1.0 - smoothstep(90.0 * lod, 180.0 * lod, dist), disp, tn);
+        gw(p, vec2(-0.949, -0.316), 6.5, 0.06 * amp, 0.6, 1.0 - smoothstep(50.0 * lod, 110.0 * lod, dist), disp, tn);
+      }`;
     const m = new THREE.ShaderMaterial({
       uniforms: this.oceanU, fog: true,
       vertexShader: `#include <fog_pars_vertex>
-        uniform float uTime; varying vec3 vW; varying vec3 vN; varying float vH;
-        // Height plus its x/z slope, so the normal is exact and never degenerate (no screen derivatives).
-        vec3 wv(vec2 p, vec2 d, float f, float s, float a){
-          d = normalize(d); float ph = dot(p, d) * f + uTime * s;
-          return vec3(a * sin(ph), a * f * cos(ph) * d);
-        }
+        ${WAVES}
+        varying vec3 vW; varying float vH; varying float vAmp;
         void main(){
           vec4 w = modelMatrix * vec4(position, 1.0);
-          vec3 h = wv(w.xz, vec2(1.0, 0.3), 0.07, 1.0, 1.1) + wv(w.xz, vec2(-0.4, 1.0), 0.12, 1.5, 0.6)
-                 + wv(w.xz, vec2(0.7, -0.6), 0.26, 2.2, 0.25) + wv(w.xz, vec2(0.2, 0.98), 0.55, 3.1, 0.1);
-          w.y += h.x; vH = h.x; vW = w.xyz; vN = vec3(-h.y, 1.0, -h.z);
+          float amp = uAmp * shoreDamp(w.xz), dist = length(cameraPosition.xz - w.xz);
+          vec3 disp = vec3(0.0), tn = vec3(0.0);
+          waves(w.xz, dist, 0.3, amp, disp, tn);
+          w.xyz += disp;
+          vH = disp.y / max(amp * 1.2, 0.05); vW = w.xyz; vAmp = amp;
           vec4 mvPosition = viewMatrix * w;
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`,
       fragmentShader: `#include <fog_pars_fragment>
-        uniform float uFlash, uShallowR, uSun; uniform vec3 uDeep, uSky, uShallow, uSunDir, uSunCol; varying vec3 vW; varying vec3 vN; varying float vH;
+        ${WAVES}
+        uniform float uFlash, uShallowR, uSun, uFoam, uClear, uLava; uniform vec3 uDeep, uSky, uTop, uShallow, uSunDir, uSunCol, uScatter;
+        varying vec3 vW; varying float vH; varying float vAmp;
+        ${NOISE}
         void main(){
-          vec3 n = normalize(vN);
-          vec3 v = normalize(cameraPosition - vW + vec3(0.0, 1e-3, 0.0));
-          float fr = pow(1.0 - max(dot(n, v), 0.0), 4.0);
-          vec3 deep = uDeep;
-          if (uShallowR > 0.0) deep = mix(uShallow, uDeep, smoothstep(uShallowR * 0.55, uShallowR * 1.6, length(vW.xz)));
-          vec3 col = mix(deep, uSky, fr * 0.9 + 0.05);
-          vec3 hv = normalize(uSunDir + v);
-          col += uSunCol * (pow(max(dot(n, hv), 0.0), 260.0) * 7.0 + pow(max(dot(n, hv), 0.0), 24.0) * 0.12) * uSun;
-          col += vec3(0.5, 0.7, 0.75) * smoothstep(0.9, 1.6, vH) * 0.25;
-          col += uFlash * vec3(0.5, 0.6, 1.0) * (0.1 + fr * 0.6);
+          vec3 toCam = cameraPosition - vW; float dist = length(toCam); vec3 v = toCam / max(dist, 1e-3);
+          vec2 p = vW.xz;
+          vec3 col;
+          if (uLava > 0.5) {
+            // Lava: a slow dark crust drifting over glowing molten rock, brightest along the cracks.
+            float k1 = noise(p * 0.08 + vec2(uTime * 0.02, uTime * 0.015)), k2 = noise(p * 0.23 - vec2(uTime * 0.03, -uTime * 0.02));
+            float crust = smoothstep(0.45, 0.66, k1 * 0.65 + k2 * 0.35), pulse = 0.5 + 0.5 * sin(uTime * 0.8 + k2 * 6.0);
+            col = mix(uDeep * (0.85 + 0.35 * pulse), uDeep * 0.05 + vec3(0.035, 0.018, 0.012), crust);
+            col += uDeep * 0.35 * (1.0 - smoothstep(0.0, 0.08, abs(k1 * 0.65 + k2 * 0.35 - 0.47)));
+          } else {
+            vec3 disp = vec3(0.0), tn = vec3(0.0);
+            waves(p, dist, 1.0, vAmp, disp, tn);
+            vec3 n = vec3(-tn.x, 1.0 - tn.y, -tn.z);
+            // Fine ripples: two layers of drifting noise, as a slope, fading with distance.
+            float rk = (1.0 - smoothstep(25.0, 170.0, dist)) * (0.45 + 0.55 * min(uAmp, 1.0));
+            vec2 q1 = p * 0.55 + vec2(uTime * 0.31, uTime * 0.17), q2 = p * 1.35 + vec2(-uTime * 0.23, uTime * 0.37);
+            float a0 = noise(q1), b0 = noise(q2), e = 0.07;
+            vec2 g1 = vec2(noise(q1 + vec2(e, 0.0)) - a0, noise(q1 + vec2(0.0, e)) - a0) / e;
+            vec2 g2 = vec2(noise(q2 + vec2(e, 0.0)) - b0, noise(q2 + vec2(0.0, e)) - b0) / e;
+            vec2 rg = (g1 * 0.07 + g2 * 0.035) * rk;
+            n = normalize(n - vec3(rg.x, 0.0, rg.y));
+            // Reflection: the sky (horizon colour low down, sky colour higher up) weighted by Fresnel.
+            float ndv = max(dot(n, v), 0.0), F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+            vec3 r = reflect(-v, n); r.y = abs(r.y);
+            vec3 refl = mix(uSky, uTop, smoothstep(0.03, 0.6, r.y));
+            float sd = max(dot(r, uSunDir), 0.0);
+            vec3 spec = uSunCol * (pow(sd, 1600.0) * 70.0 + pow(sd, 140.0) * 1.6 + pow(sd, 14.0) * 0.07) * uSun;
+            // The water itself: deep colour, clear and bright over sand near the shore, lit through the crests.
+            float near = uShallowR > 0.0 ? 1.0 - smoothstep(uShallowR * 0.55, uShallowR * 1.6, length(p)) : 0.0;
+            vec3 body = mix(uDeep, uShallow, near);
+            vec2 sunH = normalize(uSunDir.xz + vec2(1e-4)), look = -v.xz / max(length(v.xz), 1e-3);
+            float crest = smoothstep(-0.15, 0.95, vH), toward = 0.35 + 0.65 * max(dot(look, sunH), 0.0);
+            body += uScatter * crest * toward * (0.45 + 0.55 * uSun);
+            float c1 = noise(p * 0.33 + vec2(uTime * 0.21, -uTime * 0.16)), c2 = noise(p * 0.47 - vec2(uTime * 0.17, uTime * 0.12));
+            float caus = pow(1.0 - abs(c1 + c2 - 1.0), 9.0);
+            body += uShallow * caus * near * uClear * 0.7 * (1.0 - smoothstep(20.0, 140.0, dist));
+            col = mix(body, refl, F) + spec * (0.2 + F);
+            // Foam: whitecaps on the crests and surf rolling onto the beach, broken up by noise.
+            float fn = noise(p * 1.7 + vec2(uTime * 0.5, 0.0)) * 0.6 + noise(p * 4.3 - vec2(uTime * 0.4)) * 0.4;
+            float foam = smoothstep(0.5, 0.95, vH) * smoothstep(0.55, 0.8, fn) * uFoam;
+            if (uShore > 0.0) {
+              // Thin broken lines of surf running up the beach, and a lacy edge where the water meets the sand.
+              float d = length(p) - uShore;
+              float band = (1.0 - smoothstep(0.0, 5.0, d)) * smoothstep(-0.6, 0.3, d);
+              float lines = smoothstep(0.65, 0.95, 0.5 + 0.5 * sin(d * 1.7 - uTime * 1.5 + fn * 2.5));
+              float edge = (1.0 - smoothstep(0.0, 1.1, d)) * smoothstep(-0.6, 0.0, d);
+              foam = max(foam, (band * lines * 0.8 + edge * 0.7) * smoothstep(0.3, 0.65, fn));
+            }
+            vec3 foamCol = mix(uSky * 1.5 + vec3(0.06), vec3(0.93, 0.97, 1.0), clamp(uSun, 0.0, 1.0));
+            col = mix(col, foamCol, foam * (1.0 - smoothstep(150.0, 450.0, dist)));
+            col += uFlash * vec3(0.5, 0.6, 1.0) * (0.1 + F * 0.6);
+          }
           gl_FragColor = vec4(clamp(col, 0.0, 20.0), 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -367,6 +445,13 @@ export class Renderer {
     O.uDeep.value.setHex(T.deep).multiplyScalar(T.deepK || 1);
     O.uShallow.value.setHex(T.shallow);
     O.uShallowR.value = T.shallowR;
+    O.uTop.value.setHex(T.top);
+    O.uAmp.value = T.amp ?? 1;
+    O.uFoam.value = T.foam ?? 0.4;
+    O.uScatter.value.setHex(T.scatter ?? 0x000000);
+    O.uClear.value = T.clear ?? 0;
+    O.uShore.value = T.shore ?? 0;
+    O.uLava.value = T.lava ? 1 : 0;
     this.hemi.color.setHex(T.hemiSky);
     this.hemi.groundColor.setHex(T.hemiGround);
     this.scene.fog.density = T.fog;
@@ -411,7 +496,7 @@ export class Renderer {
     if (E > 0) this.moon.color.lerp(this.eyeCol || (this.eyeCol = new THREE.Color(0xffe2b0)), E);
 
     this.sky.position.copy(cam);
-    this.ocean.position.set(Math.round(cam.x / 20) * 20, 0, Math.round(cam.z / 20) * 20);
+    this.ocean.position.set(Math.round(cam.x / 4) * 4, 0, Math.round(cam.z / 4) * 4);
     this.moon.target.position.copy(cam);
     this.moon.position.copy(cam).addScaledVector(this.moonDir, 70);
 

@@ -188,6 +188,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 .map.m2 { --bg: linear-gradient(160deg, #10241a 0%, #2c4a2a 55%, #6b5338); --mc: #9be564; }
 .map.m3 { --bg: linear-gradient(160deg, #1c0806 0%, #5a1608 55%, #ff6a2a); --mc: #ff8a3a; }
 .map.m4 { --bg: linear-gradient(160deg, #221a4a 0%, #5a2a6a 55%, #ff8a5a); --mc: #ff4fd8; }
+.map.m5 { --bg: linear-gradient(160deg, #1a8ad0 0%, #3fd8e8 50%, #6ad89a); --mc: #3fe0ff; }
+.map.m5 b, .map.m5 small { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 .map.m1 b, .map.m1 small { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 
 /* ---------- HUD ---------- */

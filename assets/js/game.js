@@ -384,6 +384,11 @@ export class Game {
           if (st.on && Math.abs(a) < o.hx + 0.1 && Math.abs(b) < o.hz + 0.1 && feet < o.y + 0.6) away(o.x, o.z, 3, 9, o.name);
           break;
         }
+        case 'leap': {
+          const p = S.leap(o, t, P);
+          if (p.on && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < 0.45 + PR) this.zapKnock(o.nx * o.dir * 7, 4, o.nz * o.dir * 7, 'obstacle', o.name);
+          break;
+        }
         case 'jet': {
           if (!S.pulse(o, t, 0.5).on) break;
           const px = me.x - o.x, pz = me.z - o.z, along = px * o.dx + pz * o.dz, lat = Math.abs(px * -o.dz + pz * o.dx);
@@ -661,7 +666,7 @@ export class Game {
         const th = Math.atan2(p[2], p[0]);
         Object.assign(this.cam, { yaw: Math.PI - th, x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.cpl, this.cp);
-        const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.' }[this.L.mapKey] || 'Into the sea.';
+        const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
         ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
       }
@@ -784,7 +789,7 @@ export class Game {
       app.sound.thunder(r);
     }
     app.sound.ambient(0.2 + (me.y / this.L.top) * 0.6 + (gust && gust.on ? 0.8 : gust && gust.warn ? gust.warn * 0.4 : 0), me.reel > 0.05 && app.input.btn.reel, me.charge,
-      this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0);
+      this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, this.L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     app.view.update(T, dt, this.storm);
     // The soundtrack follows the map and gets busier the higher the climb.

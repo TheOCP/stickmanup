@@ -306,7 +306,7 @@ function title() {
   show(`<div class="title">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
-      <p class="tag">Up to four stickmen, tied together by a glowing cord. Five giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano and a neon city. If one falls, everyone feels it.</p>
+      <p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
     </div>
     <div class="mainbtns">
@@ -739,6 +739,7 @@ function howTo(back) {
     <div><b>Sunny Isles</b>The route zigzags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
     <div><b>Magma Chimney</b>You climb up the inside of a volcano. Stand on a vent when it erupts and it launches you up to the ledge above, but standing next to it gets you shoved off. Shadows show where boulders are about to land.</div>
     <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
+    <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides push you back down, so run up them or jump. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
@@ -1082,6 +1083,8 @@ function titleScene(dt) {
   titleT += dt;
   app.sound.setStyle('menu');
   app.sound.setIntensity(0.6);
+  const mk = app.level && app.level.mapKey;
+  app.sound.ambient(0.2, false, 0, mk === 'storm' ? 0.7 : 0, mk === 'waterfall' ? 0.6 : 0);
   const R = app.renderer, cam = R.camera, g = titleRunners(dt);
   if (g) {
     // Shots, each about 8 s, blended smoothly. All of them look down from well above the route.

@@ -23,6 +23,10 @@ const STYLES = {
   city: { bpm: 110, chords: [[57, 60, 64], [53, 57, 60], [55, 59, 62], [52, 55, 59]],
     bass: [1, 0, 13, 0, 1, 0, 13, 0, 1, 0, 13, 0, 1, 0, 8, 13], hat: [0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.2, 0.3, 0.2, 1, 0.4],
     arp: [0, 2, 4, 2, 1, 2, 4, 5, 0, 2, 4, 2, 1, 4, 5, 4] },
+  // Waterfall: sunny tropical house, G major, with marimba-like toms.
+  waterfall: { bpm: 116, chords: [[67, 71, 74], [64, 67, 71], [60, 64, 67], [62, 66, 69]],
+    bass: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 13, 8, 0], hat: [0.3, 0.5, 0.9, 0.5, 0.3, 0.5, 0.9, 0.5, 0.3, 0.5, 0.9, 0.5, 0.3, 0.6, 0.9, 0.7],
+    arp: [0, 2, 4, 2, 1, 4, 5, -1, 0, 2, 4, 5, 4, 2, 1, -1], perc: [0, 0, 1.4, 0, 0, 1.2, 0, 0, 0, 0, 1.4, 0, 1.3, 0, 1.1, 0] },
   // Menu: mid-tempo and catchy, D minor.
   menu: { bpm: 124, chords: [[62, 65, 69], [58, 62, 65], [60, 64, 67], [57, 61, 64]],
     bass: [1, 0, 1, 0, 0, 13, 1, 0, 1, 0, 1, 0, 0, 8, 1, 0], hat: [0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.4, 0.4, 0.4, 1, 0.6],
@@ -51,6 +55,10 @@ export class Sound {
     // Rain: filtered noise bed. Wind: band-passed noise whose level follows altitude and gusts.
     this.rainG = this.gain(0.12, this.ambG);
     this.loop(this.chain(this.filter('highpass', 900), this.filter('lowpass', 7000), this.rainG));
+    // Waterfall: a deep rushing roar plus a brighter hiss of spray.
+    this.fallsG = this.gain(0, this.ambG);
+    this.loop(this.chain(this.filter('lowpass', 650), this.gain(0.8, this.fallsG)), 0.9);
+    this.loop(this.chain(this.filter('bandpass', 2400, 0.6), this.gain(0.25, this.fallsG)), 1.3);
     this.windF = this.filter('bandpass', 380, 0.7);
     this.windG = this.gain(0.06, this.ambG);
     this.loop(this.chain(this.windF, this.windG), 0.7);
@@ -165,7 +173,7 @@ export class Sound {
   }
 
   // Continuous state: wind level (0..1+), reel hum and rain amount.
-  ambient(wind, reeling, charge, rain) {
+  ambient(wind, reeling, charge, rain, falls = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.windG.gain.setTargetAtTime(0.04 + Math.min(1.2, wind) * 0.3, t, 0.25);
@@ -173,6 +181,7 @@ export class Sound {
     this.reelG.gain.setTargetAtTime(reeling ? 0.05 + charge * 0.05 : 0, t, 0.05);
     this.reelO.frequency.setTargetAtTime(70 + charge * 160 + (reeling ? 20 : 0), t, 0.08);
     this.rainG.gain.setTargetAtTime(0.13 * rain, t, 0.5);
+    this.fallsG.gain.setTargetAtTime(0.11 * falls, t, 0.6);
   }
 
   // ---------------------------------------------------------------- music

@@ -13,6 +13,9 @@
 //   wind      a bridge with a crosswind blowing now and then
 //   mud       platforms that slow you down
 //   slick     slippery platforms
+//   slide     a water slide up to the next platform, with water rushing down it (waterfall)
+//   leap      fish leaping in arcs across a bridge (waterfall)
+//   current   a lazy river that carries you sideways across a platform (waterfall)
 // and themed takes on the older hazards: drop (falling things), shooter (traps that fire across a
 // bridge), flyer (things circling the gaps), vent (eruptions that launch you), gate (barriers that
 // switch on and off).
@@ -173,6 +176,35 @@ export const OBSTACLES = {
     O('stampPresses', 'Stamping presses', 'crushrow', 1, { c: 0x3a3f4c, g: 0xffe066 }, { end: true }),
     O('steamCross', 'Steam crossfire', 'crossfire', 1, { c: 0x4a4f5c, g: 0xd8f0ff }, { end: true }),
     O('roofFan', 'Rooftop fan', 'spinsweep', 2, { c: 0x2a2e3a, g: 0x7cff6a, s: 'bar' }, { end: true }),
+  ],
+  waterfall: [
+    O('waterSlide', 'Water slide', 'slide', 0, { c: 0x2a9ae8, g: 0xbff4ff }),
+    O('leapingFish', 'Leaping fish', 'leap', 0, { c: 0xff8a3d, g: 0xffd08a }),
+    O('fountainLift', 'Fountain lift', 'vent', 0, { c: 0xe8f4f8, g: 0x7fe8ff }),
+    O('lazyRiver', 'Lazy river', 'current', 0, { c: 0x2a9ad8, g: 0xbff4ff }),
+    O('tippingBucket', 'Tipping bucket', 'drop', 0, { c: 0x5ad0ff, g: 0xbff4ff, s: 'water' }),
+    O('sprinkler', 'Spinning sprinkler', 'sweep', 0, { c: 0xe8eef0, g: 0x7fe8ff, s: 'bar' }, { n: 2 }),
+    O('buoySwing', 'Swinging buoy', 'pendulum', 1, { c: 0xff5a4a, g: 0xffffff, s: 'ball' }),
+    O('waterCannon', 'Water cannon', 'jet', 1, { c: 0x2a6a9a, g: 0x9ae8ff }),
+    O('splashPress', 'Splash press', 'crusher', 1, { c: 0x3a8ac8, g: 0xbff4ff }),
+    O('coralSpikes', 'Coral spikes', 'spikes', 1, { c: 0xff7a6a, g: 0xffd0c0 }),
+    O('lilyPads', 'Sinking lily pads', 'blink', 0, { c: 0x4ab84a, g: 0xff9ad8 }),
+    O('splashHatch', 'Splash hatches', 'trapdoor', 1, { c: 0x3a8ac8, g: 0xffe066 }),
+    O('whirlpool', 'Whirlpool deck', 'turntable', 0, { c: 0x2a8ac8, g: 0xbff4ff }),
+    O('swimRings', 'Swim ring bumpers', 'bumpers', 0, { c: 0xff5a8a, g: 0xffffff }),
+    O('spray', 'Waterfall spray', 'wind', 1, { c: 0xd8f0f8, g: 0xbff4ff }),
+    O('seaweed', 'Seaweed patch', 'mud', 0, { c: 0x2a7a4a, g: 0x9be564 }),
+    O('wetTiles', 'Wet tiles', 'slick', 0, { c: 0xbfe8f0, g: 0xffffff }),
+    O('squirtGuns', 'Squirt guns', 'shooter', 2, { c: 0xff8a3d, g: 0x7fe8ff }),
+    O('waterCurtain', 'Water curtain', 'gate', 1, { c: 0x9ad8ff, g: 0x7fe8ff }),
+    O('flyingFish', 'Flying fish', 'flyer', 2, { c: 0x5ab8ff, g: 0xffd08a }),
+    // Endgame: harder ones near the top.
+    O('twinBuoys', 'Twin buoy swings', 'gauntlet', 0, { c: 0xff5a4a, g: 0xffffff, s: 'ball' }, { end: true }),
+    O('fountainGrid', 'Fountain grid', 'checker', 0, { c: 0x3a8ac8, g: 0x7fe8ff, s: 'water' }, { end: true }),
+    O('tubeRun', 'Rolling tubes', 'beamroll', 0, { c: 0xffd23d, g: 0xff8a3d, s: 'log' }, { end: true }),
+    O('splashRow', 'Splash hammers', 'crushrow', 1, { c: 0x3a8ac8, g: 0xbff4ff }, { end: true }),
+    O('cannonCross', 'Water cannon crossfire', 'crossfire', 1, { c: 0x2a6a9a, g: 0x9ae8ff }, { end: true }),
+    O('whirlSprinkler', 'Whirlpool sprinkler', 'spinsweep', 2, { c: 0x2a8ac8, g: 0x7fe8ff, s: 'bar' }, { end: true }),
   ],
 };
 

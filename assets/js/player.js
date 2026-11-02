@@ -139,11 +139,12 @@ export class Body {
       pvx = (tmp.x - this.x) / dt; pvy = (tmp.y - this.y) / dt; pvz = (tmp.z - this.z) / dt;
       this.x = tmp.x; this.y = tmp.y; this.z = tmp.z;
     }
-    // Conveyor belts carry you along their length (and you keep that speed if you jump off).
+    // Conveyor belts carry you along their length (and you keep that speed if you jump off). Water does the
+    // same: down a water slide, or sideways across a lazy river (side: along the platform's width).
     if (g && g.conv) {
-      const m = g.m, sp = g.conv.sp;
-      this.x += m[0] * sp * dt; this.z += m[2] * sp * dt;
-      pvx += m[0] * sp; pvz += m[2] * sp;
+      const m = g.m, sp = g.conv.sp, a = g.conv.side ? 6 : 0;
+      this.x += m[a] * sp * dt; this.z += m[a + 2] * sp * dt;
+      pvx += m[a] * sp; pvz += m[a + 2] * sp;
     }
 
     // Steering. Strong wind loosens your footing.

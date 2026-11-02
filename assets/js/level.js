@@ -17,7 +17,7 @@ export const DIFFS = [
   { id: 2, name: 'Hardcore', rope: 5.2, storm: 1.15, grip: 1.3, desc: 'No checkpoints and a short cord. Every obstacle, and faster. A fall is a fall.' },
 ];
 
-// Five maps, nine zones each, up to 1000 m. tpl = template weights; pattern = surface look (1 metal panels, 2 stone, 3 wood).
+// Six maps, nine zones each, up to 1000 m. tpl = template weights; pattern = surface look (1 metal panels, 2 stone, 3 wood).
 const Z = (name, sub, y1, color, tint, fog, sx, sz, gap, tpl, extra) => Object.assign({ name, sub, y1, color, tint, fog, sx, sz, gap, tpl }, extra);
 export const MAPS = [
   {
@@ -95,6 +95,21 @@ export const MAPS = [
       Z('Spire Crown', 'The tallest roof in town', 977, 0xffe066, 0x3a3440, 0x2a1e3a, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, mover: 1, grapple: 1 }),
     ],
   },
+  {
+    id: 5, key: 'waterfall', name: 'Waterfall', desc: 'A water paradise round a giant waterfall. Run up water slides, dodge leaping fish and ride the fountains.',
+    seed: 41269, core: 'falls', pattern: 2, accent: '#3fe0ff', route: 'spiral',
+    zones: [
+      Z('Lagoon Beach', 'Splash your way up', 100, 0x3fe0ff, 0xe6dcc0, 0xa6e4f0, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { leapingFish: 2, fountainLift: 2, gap: 5, stairs: 2, pillars: 2, beam: 2, crates: 1, bob: 1 }),
+      Z('Lily Lagoon', 'Floating pads and jumping fish', 208, 0x7cf0a0, 0xd8eedc, 0xa8e8e0, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { leapingFish: 3, lilyPads: 1, fountainLift: 2, gap: 4, bob: 3, pad: 2, mover: 2, grapple: 1, swing: 1 }),
+      Z('Bamboo Falls', 'Climb beside the spray', 316, 0x9be564, 0xc8b080, 0x9ed8d8, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { waterSlide: 3, leapingFish: 1, fountainLift: 2, stairs: 2, gap: 3, beam: 2, pillars: 2, door: 1, mover: 2, swing: 1 }),
+      Z('Rainbow Mist', 'Lost in the spray', 424, 0xff9ad8, 0xf0e0f0, 0xc8e0f4, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { leapingFish: 2, waterSlide: 2, sprinkler: 1, fountainLift: 1, bob: 2, pad: 2, gap: 2, grapple: 1, tilt: 2, spinner: 1, mover: 1 }),
+      Z('Slide Park', 'Run up the water slides', 532, 0x3fd0ff, 0xe8f0f4, 0xa8dcf0, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { waterSlide: 5, lazyRiver: 2, fountainLift: 1, beam: 2, mover: 2, gap: 2, lift: 2, door: 1, pad: 1 }),
+      Z('Coral Grotto', 'Behind the falling water', 640, 0xff7a6a, 0xf0c8b8, 0x90c8d8, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { leapingFish: 3, waterSlide: 1, fountainLift: 1, gap: 3, crumble: 2, tilt: 2, grapple: 1, swing: 2, bob: 1 }),
+      Z('Fountain Terraces', 'Ride the fountains', 760, 0x6ae0ff, 0xe0e8e8, 0xb0e4f4, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { fountainLift: 6, waterSlide: 2, leapingFish: 1, gap: 2, lift: 1, pad: 2, crumble: 2, mover: 2, spinner: 1, door: 1 }),
+      Z('Sky Springs', 'Where the water begins', 880, 0xb48cff, 0xe0dcf0, 0xc0d8f8, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { leapingFish: 2, waterSlide: 2, fountainLift: 2, gap: 2, bob: 2, tilt: 2, crumble: 2, grapple: 1, swing: 1, lift: 1 }),
+      Z('Source of the Falls', 'The top of the waterfall', 992, 0xffe066, 0xf0ecd8, 0xd0ecfa, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { waterSlide: 2, leapingFish: 2, fountainLift: 2, gap: 2, lift: 1, spinner: 1, crumble: 2, mover: 1, pillars: 1, beam: 1, tilt: 1, grapple: 1, door: 1 }),
+    ],
+  },
 ];
 export const ZONES = MAPS[0].zones;
 
@@ -128,7 +143,7 @@ export function generateLevel(mapId = 0) {
     map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
     anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
-    obs: [], blinks: [], traps: [], bumpers: [],
+    obs: [], blinks: [], traps: [], bumpers: [], flows: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [], usedObs = [], obsZone = [];
@@ -466,6 +481,36 @@ export function generateLevel(mapId = 0) {
       obPush(o, { prim: 'sweep', x: p.x, y: p.y + 0.5, z: p.z, len: s2 * 0.62, n: 2, per: rr(2.4, 3.0) * -Math.sign(w), ph: R(), w: o.look.s === 'bar' ? 0.13 : 0.06 });
       return T.gap(Object.assign({}, p, { sx: s2 * 1.42, sz: s2 * 1.42 }), { g: rr(1.3, 1.8) });
     },
+    // ---------- waterfall ----------
+    // A water slide up to the next platform, with water rushing down it (it pushes you back).
+    slide(cur, o) {
+      const nxt = T.beam(cur, { len: rr(5.5, 6.5), w: rr(1.4, 1.6), rise: rr(1.5, 2.1), surf: null });
+      const c = nxt.bridge;
+      c.kind = 'slide'; c.flow = 1; c.look = o.look;
+      c.conv = { sp: -rr(1.8, 2.4) };
+      out.flows.push(c);
+      return nxt;
+    },
+    // Fish leaping in an arc across a bridge, two of them taking turns.
+    leap(cur, o) {
+      const nxt = T.beam(cur, { len: rr(6.5, 7.5), w: 1.0, rise: rr(0, 0.5) });
+      const b = between(cur, nxt, 0.25);
+      [0.35, 0.68].forEach((f, k) => {
+        const fy = cur.y + (nxt.y - cur.y) * f;
+        obPush(o, { x: b.ax + (b.bx - b.ax) * f, y: fy, z: b.az + (b.bz - b.az) * f, fy, nx: -b.uz, nz: b.ux, span: 2.6, h: rr(0.8, 1.0), dur: 1.1,
+          per: rr(2.4, 3.2), ph: k * 0.5 + R() * 0.1, dir: k % 2 ? -1 : 1 });
+      });
+      return nxt;
+    },
+    // A lazy river: a wide platform whose water carries you sideways, usually toward the drop.
+    current(cur, o) {
+      const p = wide(cur, [4.6, 5.4], [3.4, 4.0]), A = axes(p), c = p.col;
+      const outward = A.bx * (p.x - CX) + A.bz * (p.z - CZ) > 0 ? 1 : -1;
+      c.kind = 'current'; c.flow = 1; c.look = o.look;
+      c.conv = { sp: outward * (R() < 0.75 ? 1 : -1) * rr(1.6, 2.2), side: 1 };
+      out.flows.push(c);
+      return T.gap(p, { g: rr(1.3, 1.9) });
+    },
     drop: (cur, o) => T.rocks(cur, o),
     shooter: (cur, o) => T.arrows(cur, o),
     flyer: (cur, o) => T.bats(cur, o),
@@ -522,6 +567,7 @@ export function generateLevel(mapId = 0) {
         l3 / 2, 0.2, w / 2, 0, b.ry, slope);
       add(c, 'beam', { surf: o.surf !== undefined ? o.surf : ZD.ice ? 'ice' : null });
       recBox(mx, mz, blen / 2, w / 2 + 0.2, b.ry, Math.max(cur.y, nxt.y));
+      nxt.bridge = c;
       return nxt;
     },
     crates(cur) {
@@ -865,7 +911,7 @@ export function generateLevel(mapId = 0) {
   // Every section is checked right after it is placed. If anything in it sits too close above or below
   // older route, the section is undone and the route climbs straight up with a lift instead, so the
   // finished level always keeps its clearances (dev/leveltest.js checks the same rule).
-  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers'];
+  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers', 'flows'];
   function snapshot() {
     const n = {};
     for (const k of LISTS) n[k] = out[k].length;
@@ -1002,7 +1048,9 @@ export function generateLevel(mapId = 0) {
 
   for (zone = 0; zone < ZONE_LIST.length; zone++) {
     ZD = ZONE_LIST[zone];
-    ZW = Object.assign({}, ZD.tpl, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
+    // A zone's own template list can also name obstacles to make them more common there (they add up).
+    ZW = Object.assign({}, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
+    for (const k in ZD.tpl) ZW[k] = (ZW[k] || 0) + ZD.tpl[k];
     zonePlats = 0;
     const zi = { name: ZD.name, sub: ZD.sub, color: ZD.color, fog: ZD.fog, tint: ZD.tint, y0: cur.y, y1: ZD.y1 };
     if (zone > 0 && ROUTE === 'towers') {
@@ -1128,6 +1176,14 @@ export function generateLevel(mapId = 0) {
       }
     }
     dz('halo', 8, (i) => { const a = (i / 8) * TAU, r = rr(18, 26); return { x: Math.cos(a) * r, y: rr(zy(out.zones.length - 1).y0 + 10, top + 30), z: Math.sin(a) * r, s: rr(3, 6), rx: rr(-0.6, 0.6), ry: a }; });
+  } else if (MAP.key === 'waterfall') {
+    // A green island in a clear lagoon: palms, lily pads, fountains and fish jumping, clouds and birds above.
+    dz('palm', 24, () => { const [x, z] = around(19, 32); return { x, y: 0.4, z, s: rr(0.8, 1.3), ry: rr(0, TAU), lean: rr(-0.35, 0.35) }; });
+    dz('lily', 60, () => { const [x, z] = around(39, 52); return { x, y: 0.12, z, s: rr(0.6, 1.5), ry: rr(0, TAU), flower: R() < 0.3 }; });
+    dz('fountain', 5, (i) => { const a = (i / 5) * TAU + 0.3, r = rr(22, 28); return { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r, s: rr(0.9, 1.2) }; });
+    dz('fish', 14, () => { const [x, z, a] = around(42, 85); return { x, y: 0, z, ry: a + Math.PI / 2, per: rr(3.5, 7), ph: R(), s: rr(0.8, 1.4) }; });
+    dz('cloud', 46, () => { const [x, z] = around(22, 60); return { x, y: rr(zy(2).y0, top + 40), z, s: rr(4, 9), sp: rr(0.02, 0.06) }; });
+    dz('gull', 12, () => ({ x: 0, y: rr(20, top), z: 0, r: rr(18, 40), sp: rr(0.15, 0.3) * (R() < 0.5 ? 1 : -1), ph: R() * TAU }));
   } else if (MAP.key === 'sunny') {
     // A sandy island with palms, boats out at sea and puffy clouds drifting around the upper tower.
     dz('palm', 22, () => { const [x, z] = around(20, 34); return { x, y: 0.4, z, s: rr(0.8, 1.3), ry: rr(0, TAU), lean: rr(-0.35, 0.35) }; });

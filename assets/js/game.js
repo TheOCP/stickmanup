@@ -50,7 +50,6 @@ export class Game {
     this.saveAcc = 0;
     this.hudAcc = 0;
     this.bgBolt = 2;
-    this.respawnLock = 0;
     this.cpSent = new Set();
     this.maxZone = -1;
     this.won = false;
@@ -70,7 +69,8 @@ export class Game {
     for (const i of this.doors) this.openDoor(i, true);
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
-    this.env = { world: this.W, others: this.others, grip: this.D.grip, maxReel: this.D.rope - 1.2, wind: null };
+    // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
+    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, maxReel: this.D.rope - 1.2, wind: null };
     const th = Math.atan2(this.me.z, this.me.x);
     this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
@@ -511,18 +511,22 @@ export class Game {
   }
 
   // ----- host-only team rules -----
-  hostEvent(e) {
+  hostEvent(e, from) {
     const T = this.time;
     switch (e.k) {
       case 'splash':
       case 'restart': {
-        if (T < this.respawnLock) return;
-        this.respawnLock = T + 1.5;
+        // Tied together by the cord, the whole team goes back. Without the cord, only the one who fell
+        // (or asked to restart) does; everyone else keeps climbing.
+        const one = this.noCord && from !== undefined ? from : null, key = one === null ? 'team' : one;
+        this.locks = this.locks || {};
+        if (T < (this.locks[key] || 0)) return;
+        this.locks[key] = T + 1.5;
         if (e.k === 'splash') this.falls++;
-        if (this.diff === 2) this.cp = 0;
-        const pos = {};
-        for (const slot of this.s.players.keys()) pos[slot] = this.spawnPos(this.cp, slot);
-        this.s.toAll({ k: 'respawn', cp: this.cp, pos, falls: this.falls, why: e.k });
+        if (this.diff === 2 && one === null) this.cp = 0;
+        const pos = {}, at = this.diff === 2 ? 0 : this.cp;
+        for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
+        this.s.toAll({ k: 'respawn', cp: this.cp, at, pos, falls: this.falls, why: e.k, only: one });
         break;
       }
       case 'cp':
@@ -543,14 +547,21 @@ export class Game {
     const ui = this.app.ui;
     switch (e.k) {
       case 'respawn': {
-        const p = (e.pos && e.pos[this.slot]) || this.spawnPos(e.cp, this.slot);
+        this.falls = e.falls;
+        if (e.only !== null && e.only !== undefined && e.only !== this.slot) {
+          // Someone else went back (no cord). Forget their old track so they don't glide across the map.
+          const pl = this.s.players.get(e.only);
+          if (pl) { pl.samples.length = 0; if (e.why === 'splash') ui.toast(`${pl.name} fell and went back`, ''); }
+          break;
+        }
+        const p = (e.pos && e.pos[this.slot]) || this.spawnPos(e.at ?? e.cp, this.slot);
         this.me.spawn(p[0], p[1], p[2]);
         this.cp = e.cp;
         this.falls = e.falls;
         this.splashed = false;
         this.cpSent.clear();
         for (const l of this.links) l.chain.ok = false;
-        for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
+        if (e.only === null || e.only === undefined) for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
         const th = Math.atan2(p[2], p[0]);
         Object.assign(this.cam, { yaw: Math.PI - th, x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.diff, this.cp);

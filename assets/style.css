@@ -219,7 +219,9 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 #hPlayers div { font-size: 12px; padding: 4px 10px; border-radius: 9px; background: rgba(10, 18, 30, 0.5); display: flex; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
 #hPlayers i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
 #hPlayers small { color: var(--tx3); }
-#hFps { position: absolute; right: calc(14px + var(--ir)); bottom: 8px; font: 11px ui-monospace, monospace; color: var(--tx3); }
+/* The counter can sit anywhere inside the safe part of the screen (main.js, applyFpsPos). */
+#fpsArea { position: absolute; left: var(--il); right: var(--ir); top: var(--it); bottom: var(--ib); }
+#hFps { position: absolute; right: 10px; bottom: 6px; padding: 2px 6px; border-radius: 6px; background: rgba(5, 10, 18, 0.45); white-space: nowrap; font: 11px ui-monospace, monospace; color: var(--tx3); }
 
 #tags { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
 #tags div { position: absolute; transform: translate(-50%, -100%); font-size: 12px; font-weight: 750; padding: 3px 9px; border-radius: 8px; background: rgba(5, 10, 18, 0.6); white-space: nowrap; border: 1px solid currentColor; }
@@ -258,6 +260,16 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 #editBar button.pri { background: var(--a); color: #04110e; border-color: transparent; }
 #touch.edit #editBar { display: flex; }
 #touch.edit #btns { opacity: 1; }
+/* Moving the FPS counter: the rest of the screen shows what it should stay clear of, and only the counter moves. */
+#hud.fpsmove { display: block; }
+#hud.fpsmove:not(.on) > :not(#fpsArea) { visibility: hidden; }
+#hud.fpsmove .hb { pointer-events: none; }
+#hud.fpsmove #hFps { pointer-events: auto; touch-action: none; cursor: grab; color: #fff; outline: 2px dashed rgba(255, 255, 255, 0.6); outline-offset: 3px; }
+#hud.fpsmove #hFps::after { content: ''; position: absolute; inset: -16px; }
+#touch.fpsmove #editBar { display: flex; }
+#touch.fpsmove.barlow #editBar { top: auto; bottom: calc(14px + var(--ib)); }
+#touch.fpsmove #btns { opacity: 1; }
+#touch.fpsmove .tb { display: grid !important; opacity: 0.35 !important; pointer-events: none !important; }
 #touch.edit .tb { display: grid !important; opacity: 1 !important; pointer-events: auto !important; outline: 2px dashed rgba(255, 255, 255, 0.35); outline-offset: 4px; }
 
 /* ---------- aiming ---------- */

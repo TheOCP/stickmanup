@@ -45,7 +45,8 @@ const LETTERS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM.:'];
 
 export class PadNav {
   // o: input (for the dead zones), root() what is on screen or null, screen() its name, back(), start(select),
-  // turn(amount) for the right stick, sound(), closed() when the last menu went away, gameUp() direction pad in play
+  // turn(amount) for the right stick, sound(), closed() when the last menu went away, gameUp() direction pad in play,
+  // place(dx, dy) true on a screen that moves something around with the right stick
   constructor(o) {
     this.o = o;
     this.prev = 0;
@@ -134,6 +135,9 @@ export class PadNav {
       return;
     }
     this.had = true;
+    // Works from the first push, without pressing anything first. A drifting stick stays inside the margin.
+    const dp = Math.max(0.3, deadR + 0.05), rm = hyp(rx, ry), kp = rm > dp ? (rm - dp) / (1 - dp) / rm : 0;
+    if (this.o.place && this.o.place(rx * kp * dt, ry * kp * dt) && kp && !this.using) this.setUsing(true);
     if (!this.using) return;
     this.sync(root);
     if (woke) { this.dir = dir; this.next = now + FIRST; return; }
@@ -344,6 +348,7 @@ export class PadNav {
         if (scr !== 'title') parts.push(['B', scr === 'pause' ? 'Resume' : 'Back']);
         if (root.querySelector(TABS)) parts.push(['LB RB', 'Switch']);
         if (scr === 'shop') parts.push(['Right stick', 'Turn']);
+        if (scr === 'fpsmove') parts.push(['Right stick', 'Move']);
       }
     }
     const html = parts.map(([k, t]) => `<span><b>${k}</b> ${t}</span>`).join('');

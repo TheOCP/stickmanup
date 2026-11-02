@@ -30,7 +30,7 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
-  res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
+  res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 // The colour you picked before there were suits becomes your first suit.
@@ -642,12 +642,14 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
+    <button class="btn sm" data-a="movefps">Move FPS counter...</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
     ${getSafe() ? '<button class="btn sm full" data-a="unsafe">Try full graphics again</button>' : ''}
   </div></div>`, {
     unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
     back: () => { saveSettings(); back(); },
     layout: () => layoutEditor(() => settingsScreen(back)),
+    movefps: () => fpsEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
     wardrobe: () => { saveSettings(); app.screen = 'shop'; openShop(shopCtx, () => settingsScreen(back)); },
     seg: (b) => {
@@ -815,6 +817,77 @@ function layoutEditor(done) {
   app.back = finish;
 }
 
+// Where the FPS counter sits, as a share of the safe part of the screen. Its anchor moves with it (its left edge at the
+// far left, its right edge at the far right), so it stays whole on screen however long the text gets.
+function applyFpsPos() {
+  const s = $('#hFps').style, p = settings.fpsPos;
+  s.left = p ? p[0] * 100 + '%' : '';
+  s.top = p ? p[1] * 100 + '%' : '';
+  s.right = s.bottom = p ? 'auto' : '';
+  s.transform = p ? `translate(${-p[0] * 100}%, ${-p[1] * 100}%)` : '';
+  // The bar with Reset and Done gets out of the way when the counter comes near the top.
+  $('#touch').classList.toggle('barlow', !!p && p[1] < 0.35);
+}
+function fpsMoveTo(x, y) {
+  settings.fpsPos = [clamp(x, 0, 1), clamp(y, 0, 1)];
+  applyFpsPos();
+}
+// A box corner in pixels to that share, for dragging and for the first push from the default spot.
+function fpsShare(left, top) {
+  const A = $('#fpsArea').getBoundingClientRect(), r = $('#hFps').getBoundingClientRect();
+  return [(left - A.left) / Math.max(1, A.width - r.width), (top - A.top) / Math.max(1, A.height - r.height)];
+}
+function showFps() {
+  $('#hFps').style.display = settings.fps || app.screen === 'fpsmove' ? '' : 'none';
+}
+
+// Move the FPS counter with a finger, or with the right stick (PadNav place). Works with Show FPS off too.
+function fpsEditor(done) {
+  app.screen = 'fpsmove';
+  hideMenu();
+  const T = $('#touch'), H = $('#hud'), el = $('#hFps'), bar = $('#editBar'), label = bar.querySelector('b'), text = label.textContent;
+  T.classList.add('on', 'fpsmove');
+  H.classList.add('fpsmove');
+  label.textContent = 'Drag the FPS counter where you want it';
+  el.textContent = perf.show || 'FPS';
+  showFps();
+  app.input.reset();
+  app.input.enabled = false;
+  nav.aim('done');
+  let grab = null;
+  el.onpointerdown = (e) => {
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const r = el.getBoundingClientRect();
+    grab = { id: e.pointerId, x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  el.onpointermove = (e) => {
+    if (!grab || e.pointerId !== grab.id) return;
+    const p = fpsShare(e.clientX - grab.x, e.clientY - grab.y);
+    fpsMoveTo(p[0], p[1]);
+  };
+  el.onpointerup = el.onpointercancel = () => { grab = null; };
+  const finish = () => {
+    el.onpointerdown = el.onpointermove = el.onpointerup = el.onpointercancel = null;
+    T.classList.remove('fpsmove');
+    H.classList.remove('fpsmove');
+    if (!app.game) T.classList.remove('on');
+    label.textContent = text;
+    bar.onclick = null;
+    app.back = null;
+    saveSettings();
+    done();
+    showFps();
+  };
+  bar.onclick = (e) => {
+    const b = e.target.closest('[data-e]');
+    if (!b) return;
+    if (b.dataset.e === 'reset') { settings.fpsPos = null; applyFpsPos(); }
+    else finish();
+  };
+  app.back = finish;
+}
+
 function applySettings() {
   app.input.sens = settings.sens;
   app.input.aimSens = settings.aimSens;
@@ -824,7 +897,8 @@ function applySettings() {
   applyGraphics();
   applyLayout();
   app.sound.setVolumes(settings.music, settings.sfx);
-  $('#hFps').style.display = settings.fps ? '' : 'none';
+  applyFpsPos();
+  showFps();
   saveSettings();
 }
 
@@ -1001,7 +1075,7 @@ function boot() {
   $('#hPause').addEventListener('click', () => { app.sound.ui(); pause(); });
   nav = new PadNav({
     input: app.input,
-    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : app.screen === 'layout' ? $('#editBar') : null; },
+    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
     screen: () => app.screen,
     // On the title screen B does nothing: closing the whole app is for the phone's own back button.
     back: () => { if (app.screen !== 'title') goBack(); },
@@ -1011,6 +1085,14 @@ function boot() {
       else if (app.screen === 'pause') resume();
     },
     turn: (a) => { if (app.preview) app.preview.yaw = (app.preview.yaw || 0) + a * 3.5; },
+    place: (dx, dy) => {
+      if (app.screen !== 'fpsmove') return false;
+      if (dx || dy) {
+        const r = $('#hFps').getBoundingClientRect(), p = settings.fpsPos || fpsShare(r.left, r.top);
+        fpsMoveTo(p[0] + dx * 0.5, p[1] + dy * 0.5);
+      }
+      return true;
+    },
     sound: () => { app.sound.init(); app.sound.ui(); },
     closed: () => app.input.holdPad(),
     gameUp: () => { if (ui.nearTip) ui.tip(ui.nearTip); },
@@ -1075,7 +1157,7 @@ function frame(now) {
   fpsN++;
   if ((fpsT += dt) > 0.5) {
     perf.show = `${Math.round(fpsN / fpsT)} fps · worst ${perf.gap.toFixed(0)} ms · GPU ${perf.gpu.toFixed(1)} · JS ${(perf.ms / Math.max(1, perf.n)).toFixed(1)}/${perf.max.toFixed(0)} · level ${perf.level}`;
-    if (settings.fps) $('#hFps').textContent = perf.show;
+    if (settings.fps || app.screen === 'fpsmove') $('#hFps').textContent = perf.show;
     fpsN = 0; fpsT = 0; perf.ms = 0; perf.n = 0; perf.max = 0; perf.gap = 0;
   }
 }

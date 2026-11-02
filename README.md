@@ -130,7 +130,8 @@ switch tabs, and text boxes open a letter board. Select opens the pause menu on 
 zone for each stick against stick drift, with a live view of where the sticks really are.
 
 Settings let you resize the buttons, change their opacity, put them on the left, or drag each one wherever you
-like. Tips show up once as see through cards; after that, tap the small **!** markers to read them again.
+like. The FPS counter can go anywhere on the screen too. Tips show up once as see through cards; after that, tap the
+small **!** markers to read them again.
 
 ## Multiplayer
 

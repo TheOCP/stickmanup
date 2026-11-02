@@ -25,7 +25,8 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, color: 0 }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true }, store.get('settings', {}));
+if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 if (!(settings.color >= 0 && settings.color < PALETTE.length)) settings.color = 0;
 const myColor = () => PALETTE[settings.color];
 // A player's colour in the session (their pick, or their slot's default).
@@ -541,8 +542,9 @@ function settingsScreen(back) {
     ${nat ? `<label>Resolution ${val('res', '%')}${range('res', 0.5, 1, 0.05, '%')}</label>
     <label>Sharpness ${val('sharp', '%')}${range('sharp', 0, 1, 0.05, '%')}</label>
     <label>Glow ${val('glow', '%')}${range('glow', 0, 1.5, 0.05, '%')}</label>
-    <label>Frame rate${seg('cap', [[30, '30'], [60, '60'], [120, '120']])}</label>
-    ${chk('aa', 'Smooth edges (anti-aliasing)')}
+    <label>Frame rate (fps)${seg('cap', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}</label>
+    ${chk('aa', 'Smooth edges (anti aliasing)')}
+    ${chk('vsync', 'VSync (frames wait for the screen: smooth, no tearing; off can lower input lag)')}
     ${chk('autoRes', 'Auto resolution (drops a little if the phone struggles)')}
     <p class="sub full" style="margin:0">Pixelated? Turn up Resolution and Sharpness and switch on Smooth edges. If the game stutters, lower Resolution or use 30 fps.</p>` : ''}
     <h3>Controls</h3>
@@ -612,7 +614,10 @@ function applyGraphics() {
   if (!R || !R.native) return;
   if (N && N.glQuality) N.glQuality(settings.res);
   if (N && N.glAuto) N.glAuto(!!settings.autoRes);
-  if (N && N.setRefresh) N.setRefresh(settings.cap >= 120 ? 120 : 60);
+  // Ask the screen for a refresh rate that matches the cap (phones that can't, keep theirs; the
+  // frame limiter below still holds the cap exactly).
+  if (N && N.setRefresh) N.setRefresh(settings.cap >= 120 ? 120 : settings.cap >= 90 ? 90 : 60);
+  if (N && N.glVsync) N.glVsync(!!settings.vsync);
   R.look.sharp = settings.sharp;
   R.look.aa = !!settings.aa;
   R.look.glow = settings.glow;
@@ -835,16 +840,18 @@ function boot() {
   setTimeout(() => $('#loading').classList.add('gone'), 300);
 }
 
-let last = performance.now(), titleT = 0, bolt = 2, fpsN = 0, fpsT = 0, rafLast = 0, rafIv = 16.7, tick = 0;
+let last = performance.now(), titleT = 0, bolt = 2, fpsN = 0, fpsT = 0, then = 0;
 const perf = { ms: 0, max: 0, n: 0, show: '' };
 function frame(now) {
   requestAnimationFrame(frame);
-  // Even frame pacing at the chosen frame rate: draw every k-th display refresh (60 fps on a 120 Hz
-  // screen = every other refresh, 30 fps on 60 Hz = every other refresh), never at uneven intervals.
-  rafIv = rafIv * 0.9 + Math.min(50, now - rafLast) * 0.1;
-  rafLast = now;
-  const every = Math.max(1, Math.floor(1000 / (settings.cap || 60) / rafIv + 0.1));
-  if (++tick % every) return;
+  // Frame limiter: never more frames than the chosen frame rate, on any screen. A frame is drawn once its
+  // slot comes round (1 ms of slack for timer jitter) and the next slot is exactly one interval later, so
+  // the average lands on the cap even when the screen's refresh rate isn't a multiple of it. After a
+  // stall it starts counting again instead of rushing to catch up.
+  const iv = 1000 / (settings.cap || 60);
+  if (now - then < iv - 1) return;
+  then += iv;
+  if (now - then > iv) then = now;
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   const w0 = performance.now();

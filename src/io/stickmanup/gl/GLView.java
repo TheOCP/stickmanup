@@ -62,6 +62,29 @@ public final class GLView extends GLSurfaceView implements GLSurfaceView.Rendere
         applyScale();
     }
 
+    private volatile boolean vsync = true;
+
+    /**
+     * VSync on: each frame waits for the screen refresh before it is shown (smooth, never torn).
+     * Off: the renderer hands frames over without waiting, which can shave a little input lag.
+     */
+    public void setVsync(final boolean on) {
+        vsync = on;
+        queueEvent(new Runnable() {
+            @Override
+            public void run() {
+                applyVsync();
+            }
+        });
+    }
+
+    private void applyVsync() {
+        try {
+            android.opengl.EGL14.eglSwapInterval(android.opengl.EGL14.eglGetCurrentDisplay(), vsync ? 1 : 0);
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** Automatic resolution on (drops below the chosen resolution when the phone can't keep up) or off. */
     public void setAuto(boolean on) {
         auto = on;
@@ -88,11 +111,13 @@ public final class GLView extends GLSurfaceView implements GLSurfaceView.Rendere
     @Override
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         scene.contextCreated();
+        applyVsync();
     }
 
     @Override
     public void onSurfaceChanged(GL10 unused, int w, int h) {
         scene.resize(w, h);
+        applyVsync();
     }
 
     @Override

@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements Net.Out {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "2.6";
+    static final String VERSION = "2.7";
     private Net net;
     private final Expose expose = new Expose();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -349,6 +349,11 @@ public class MainActivity extends Activity implements Net.Out {
         @JavascriptInterface
         public String glInfo() {
             return glView.scene.renderer.isEmpty() ? "native OpenGL" : glView.scene.renderer;
+        }
+
+        @JavascriptInterface
+        public void glVsync(final boolean on) {
+            glView.setVsync(on);
         }
 
         @JavascriptInterface

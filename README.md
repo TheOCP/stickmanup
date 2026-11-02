@@ -184,9 +184,12 @@ Friends can join a climb that is already running.
 ## Accounts
 
 You never have to sign in: as a guest your progress stays on your phone. Sign in with Discord, Steam or Google on a game
-server and your coins, items, records and saved climb follow you to another phone. Earning on one phone and spending on
-the other adds up. If you earned coins on two phones at the same time without a connection, you keep the larger amount,
-never more. You can delete your account and everything on the server at any time.
+server and your coins, items, records and saved climb follow you to another phone.
+
+On an account, your coins and what you own are kept on the server, so editing the phone changes nothing and buying
+needs a connection. What you collect while offline waits on the phone and is sent later. The first time you sign in, what
+you had as a guest comes along, worth up to 5000 coins. Signing out gives you back the guest you were. You can delete
+your account and everything on the server at any time.
 
 ## Smooth on any phone
 

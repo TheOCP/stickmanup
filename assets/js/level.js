@@ -18,10 +18,10 @@ export const coreRadius = (key, y) => CORE_R * (1 + (coreFlare(key) - 1) * clamp
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
 export const DIFFS = [
-  { id: 0, name: 'Easy', rope: 7.5, storm: 0.7, grip: 0.7, first: 2000, desc: 'Checkpoints in every zone, a long cord, a calmer storm and fewer, slower obstacles.' },
-  { id: 1, name: 'Normal', rope: 6.2, storm: 1.0, grip: 1.0, first: 4000, desc: 'Four checkpoints on the whole climb. The full storm and most obstacles.' },
-  { id: 2, name: 'Hardcore', rope: 5.2, storm: 1.15, grip: 1.3, first: 10000, desc: 'No checkpoints and a short cord. Every obstacle, and faster. A fall is a fall.' },
-  { id: 3, name: 'Insane', rope: 4.6, storm: 1.3, grip: 2.2, coyote: 0.04, first: 20000, desc: 'Everything Hardcore has, faster still. A very short cord, barely any grip and no late jumps.' },
+  { id: 0, name: 'Easy', rope: 7.5, storm: 0.7, grip: 0.7, first: 2000, coin: 1, summit: 100, desc: 'Checkpoints in every zone, a long cord, a calmer storm and fewer, slower obstacles.' },
+  { id: 1, name: 'Normal', rope: 6.2, storm: 1.0, grip: 1.0, first: 4000, coin: 2, summit: 250, desc: 'Four checkpoints on the whole climb. The full storm and most obstacles.' },
+  { id: 2, name: 'Hardcore', rope: 5.2, storm: 1.15, grip: 1.3, first: 10000, coin: 3, summit: 500, desc: 'No checkpoints and a short cord. Every obstacle, and faster. A fall is a fall.' },
+  { id: 3, name: 'Insane', rope: 4.6, storm: 1.3, grip: 2.2, coyote: 0.04, first: 20000, coin: 4, summit: 800, desc: 'Everything Hardcore has, faster still. A very short cord, barely any grip and no late jumps.' },
 ];
 
 // Six maps, nine zones each, up to 1000 m. tpl = template weights; pattern = surface look (1 metal panels, 2 stone, 3 wood).

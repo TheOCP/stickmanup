@@ -2,7 +2,8 @@
 // tap, while the cards are on the right.
 import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark, ownerKey } from './skins.js';
 import { gearTris } from './gear.js';
-import { coins, owned, buy, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
+import { coins, owned, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
+import { buyItem } from './cloud.js';
 import { DIFFS, MAPS } from './level.js';
 import { EMOTES } from './emotes.js';
 import { fmtTime } from './util.js';
@@ -161,12 +162,17 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       back: () => { app.preview = null; goBack(); },
       tab: (b) => { tab = b.dataset.t; sel = null; gridScroll = 0; preview(); render(); },
       pick: (b) => { sel = listFor(tab, name()).find((x) => x.id === b.dataset.id); preview(); if (app.preview) app.preview.yaw = sel.flag || sel.cape ? 2.6 : -0.4; render(); },
-      buy: () => {
-        if (!sel || !buy(sel)) return;
+      buy: async () => {
+        if (!sel || buying) return;
+        const item = sel;
+        buying = true;
+        const err = await buyItem(item);
+        buying = false;
+        if (err) { ui.toast(err, 'bad'); render(); return; }
         app.sound.checkpoint();
-        if (sel.kind !== 'emote') equip(sel);
+        if (item.kind !== 'emote') equip(item);
         lookChanged();
-        ui.toast(`${sel.name} is yours`, 'good');
+        ui.toast(`${item.name} is yours`, 'good');
         preview(); render();
       },
       equip: () => { if (sel) { equip(sel); lookChanged(); preview(); render(); } },
@@ -179,6 +185,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   preview();
   render();
 }
+let buying = false;
 
 // ---------------------------------------------------------------- records
 export function openRecords(ctx, goBack, startMap = 0) {

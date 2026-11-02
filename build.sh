@@ -6,6 +6,9 @@ SDK_JAR=/usr/lib/android-sdk/platforms/android-23/android.jar
 KS=stickmanup.jks
 OUT=build
 
+# The server's prices and coin counts have to match this game.
+if command -v node >/dev/null 2>&1; then node dev/makecatalog.mjs --check; fi
+
 rm -rf "$OUT" && mkdir -p "$OUT/gen" "$OUT/classes"
 
 if [ ! -f "$KS" ]; then

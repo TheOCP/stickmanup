@@ -4,6 +4,7 @@ One program that does three jobs for the game:
 
 * **Game server**: rooms, the server browser, passwords, and passing game messages between phones
 * **Accounts**: sign in with Discord, Steam or Google, plus accepting the terms
+* **Coins**: everyone's balance and what they own are held here and can't be changed from a phone (see below)
 * **Database**: everyone's coins, items, records and saved climb, in one SQLite file
 
 It needs almost nothing: any Linux server with systemd, about 100 MB of memory, and Node 22, which the installer brings
@@ -82,6 +83,28 @@ Where things are:
 * `/var/lib/stickmanup/backups`: a copy of the database from each day, the last 7 days. These are on the same server,
   so also copy them somewhere else now and then
 
+## Coins
+
+When someone is signed in, their coins and what they own live only in the database. The app shows a copy. Buying asks
+the server, so it needs a connection. A save sent by a phone is stripped of any coins or items in it.
+
+What a climb earns is checked before it counts:
+
+* Each coin counts once per climb, and only if the map really has it, at the value of the difficulty
+* No faster than 6 coins a second across the whole account, however many climbs are going
+* A win only after 2 minutes of climbing, and once per climb
+* The first win bonus once per difficulty per account, never with custom rules
+* Relics only on real Hardcore or Insane, and only ones on that map
+* At most 20000 coins a day, not counting first win bonuses
+
+The first time on an account, what the person had as a guest comes along, once, worth at most 5000 coins. Everything
+that changes a balance is written to a log table called `ledger`, kept for 180 days.
+
+You can change these in `/etc/stickmanup/server.env`, then restart the server: `WALLET_DAILY_CAP`, `WALLET_IMPORT_CAP`,
+`WALLET_MIN_WIN_SECONDS`, `WALLET_COINS_PER_SECOND` and `WALLET_COIN_BURST`.
+
+Prices and coin counts come from `lib/catalog.json`. If the game's prices change, update the server too with `--update`.
+
 ## The terms
 
 `terms.txt` here is a simple draft, not legal advice. To use your own, put them in `/etc/stickmanup/terms.txt` and run
@@ -116,8 +139,13 @@ map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 * **The host's phone still runs the climb.** The server passes messages along. If the host leaves, the room ends.
 * **Messages go over TCP**, so a bad connection stutters a little more than a direct one. The Online, WiFi and Bluetooth
   ways of playing are all still in the game.
-* **Coins and saves come from the phone.** The server stores them but can't know if they were earned fairly, so
-  someone determined can cheat their own account. It doesn't affect anyone else's.
+* **The server can't watch the climb.** It holds the balance and everything bought, so nobody can set their coins or
+  buy what they can't afford. But the phone runs the climb, so what happened in it is the phone's word, checked against
+  what a climb can really give (see Coins). Someone who writes their own program can earn up to those limits without
+  playing, including Legendaries found by reporting relics. They can't go past them. It doesn't affect anyone else's account.
+* **Guests are not on the server.** A guest's coins are on their own phone and can be edited there. Only a part of that
+  comes along when they sign in (see Coins). Someone with a modified game could still show a suit they don't own to
+  others in a room, since looks are sent between phones.
 * **No word filter** on room names and player names. Names are shown as plain text and nothing more.
 * **Limits**: 4 climbers in a room, 4 rooms per IP address, 1000 rooms and 5000 connections on the server, and 512 KB
   for one save. Password guesses, new rooms, joins and saves are all rate limited.

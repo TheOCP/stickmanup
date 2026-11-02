@@ -590,5 +590,8 @@ export function plainLook(c) {
   return PLAINS.get(c);
 }
 const known = (table, id) => typeof id === 'string' && Object.hasOwn(table, id);
+// What marks a thing as yours. Some faces and hats are named like a suit ('santa' is both), and owning one is not owning
+// the other.
+export const itemKey = (it) => ((it.kind === 'face' || it.kind === 'hat') && Object.hasOwn(SUIT, it.id) ? it.kind + ':' + it.id : it.id);
 export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none' } : null);
 export const roleOf = (look, name) => { const k = ownerKey(name), s = look && SUIT[look.s]; return k && s && s.owner === k ? s.role : null; };

@@ -8,6 +8,7 @@ import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3 } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
+import * as cloud from './cloud.js';
 import { resolveLook, plainLook } from './skins.js';
 
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
@@ -15,7 +16,6 @@ const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel:
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
 // A coin is worth more the harder the difficulty, and so is reaching the top.
-const COIN_VALUE = [1, 2, 3, 4], SUMMIT_BONUS = [100, 250, 500, 800];
 
 // Distance along a unit ray to a sphere, or -1.
 function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
@@ -96,6 +96,7 @@ export class Game {
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
     // Real Hardcore or harder only: the hidden places don't exist with easier custom rules.
     this.hardcore = this.diff >= 2 && !this.custom;
+    cloud.runStart({ map: this.map, diff: this.diff, custom: this.custom, run: sv && sv.climbId });
     app.view.setSecrets(this.hardcore);
     this.coinTaken = new Set((sv && sv.coins) || []);
     this.coinB = this.L.coinB || (this.L.coinB = {});
@@ -350,8 +351,9 @@ export class Game {
   }
 
   takeCoin(c) {
-    const v = COIN_VALUE[this.diff];
+    const v = this.D.coin;
     this.coinTaken.add(c.i);
+    cloud.runCoin(c.i);
     this.run.coins += v;
     addCoins(v);
     // Quick ones in a row climb in pitch.
@@ -363,6 +365,7 @@ export class Game {
 
   takeRelic(r) {
     const got = foundRelic(r.id), S = this.app.sound;
+    cloud.runRelic(r.id);
     S.relic();
     this.app.ui.haptic('heavy');
     if (got[0]) this.app.ui.banner('Legendary found', got[0].name, got[1] ? `That was the last one. ${got[1].name} is yours too.` : 'Wear it from the shop', '#ff9a2e');
@@ -980,7 +983,7 @@ export class Game {
 
   save() {
     const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
   }
 
   finish(e) {
@@ -990,7 +993,8 @@ export class Game {
     store.del(this.solo ? 'save.solo' : 'save.mp');
     // Best times only count when playing the difficulty's own rules (no custom rules).
     const custom = this.custom;
-    const bonus = SUMMIT_BONUS[this.diff], unlocked = [];
+    const bonus = this.D.summit, unlocked = [];
+    cloud.runWin(e.falls);
     addCoins(bonus);
     this.run.coins += bonus;
     // Easier custom rules don't count: otherwise Hardcore's bonus could be had with every checkpoint switched on.

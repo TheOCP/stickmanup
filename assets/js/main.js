@@ -403,6 +403,7 @@ function title() {
       <p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
+      <button class="btn sm donate" data-a="donate">♥ Donate</button>
     </div>
     <div class="mainbtns">
       ${save ? `<button class="btn primary" data-a="cont"><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
@@ -421,6 +422,7 @@ function title() {
     join: () => joinScreen(cloud.serverUrl() ? 'server' : 'online'),
     browser: () => browserScreen(title),
     account: () => accountScreen(title),
+    donate: openDonate,
     settings: () => settingsScreen(title),
     how: () => howTo(title),
     back: () => { if (N && N.exit) N.exit(); },
@@ -676,6 +678,13 @@ function joinWith(kind, target) {
   s.join(target);
 }
 
+// Goes to the makers on PayPal, in the phone's browser.
+const DONATE = 'https://paypal.me/theocproductions';
+function openDonate() {
+  if (N && N.openUrl) N.openUrl(DONATE);
+  else window.open(DONATE, '_blank', 'noopener');
+}
+
 // ---------- the game server ----------
 // A room on the server: its name, who can find it, and whether it needs a password.
 function roomForm(back) {
@@ -805,7 +814,7 @@ async function accountScreen(back = title) {
   if (a && cloud.termsNeeded() && info) {
     const decline = async () => {
       await cloud.declineTerms();
-      ui.toast('Signed out. Your progress stays on this phone.', 'good');
+      ui.toast('Signed out. Your account stays as it was.', 'good');
       afterAccount(back);
     };
     show(`<div class="panel">${header('New terms')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
@@ -821,7 +830,7 @@ async function accountScreen(back = title) {
     const when = cloud.lastSaved();
     show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
       <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')}</small></div>
-      <p class="sub" id="asave" style="margin-top:10px">Your coins, items, records and saved climb go to the server by themselves${when ? `. Last saved ${Date.now() - when < 60000 ? 'just now' : Math.round((Date.now() - when) / 60000) + ' min ago'}` : ''}.</p>
+      <p class="sub" id="asave" style="margin-top:10px">Your coins and items are kept on the server. Your records and saved climb go there by themselves${when ? `. Last saved ${Date.now() - when < 60000 ? 'just now' : Math.round((Date.now() - when) / 60000) + ' min ago'}` : ''}.</p>
       <div class="row"><button class="btn primary sm" data-a="sync">Save now</button><button class="btn sm" data-a="out">Sign out</button></div>
       <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my account</button></div>`, {
       back,
@@ -832,7 +841,7 @@ async function accountScreen(back = title) {
       out: () => signOutFlow(back),
       del: () => {
         app.screen = 'acctdel';
-        show(`<div class="panel" style="width:min(460px,100%)">${header('Delete my account')}<p class="sub">This deletes your account and everything saved on the server, for good. What is on this phone stays, and you go on as a guest.</p>
+        show(`<div class="panel" style="width:min(460px,100%)">${header('Delete my account')}<p class="sub">This deletes your account, its coins and everything saved on the server, for good. You go back to being the guest you were before you signed in.</p>
           <div class="row"><button class="btn sm danger" data-a="yes">Delete forever</button><button class="btn primary sm" data-a="back">Keep my account</button></div></div>`, {
           back: () => accountScreen(back),
           yes: async () => {
@@ -846,7 +855,7 @@ async function accountScreen(back = title) {
   }
   const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info.providers.filter((p) => names[p]);
   show(`<div class="panel">${header('Sign in')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
-    <p class="sub">Sign in to keep your coins, items and records on your account. As a guest they stay on this phone.</p>
+    <p class="sub">Sign in to keep your coins, items and records on your account, safe on the server. As a guest they stay on this phone.</p>
     ${prov.length ? `<label class="toggle"><input type="checkbox" id="tos" data-a="tos"> I accept these terms</label>
     <div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}" disabled>Sign in with ${names[p]}</button>`).join('')}</div>` : '<p class="sub">Signing in is not set up on this server yet.</p>'}
     <button class="btn sm" data-a="back" style="margin-top:9px">Play as guest</button></div></div></div>`, {
@@ -865,7 +874,7 @@ async function accountScreen(back = title) {
 async function signOutFlow(back) {
   if (await cloud.signOut()) { ui.toast('Signed out. Your progress is safe on your account.', 'good'); return afterAccount(back); }
   app.screen = 'acctout';
-  show(`<div class="panel" style="width:min(460px,100%)">${header('Sign out')}<p class="sub">Could not reach the server to save your latest progress. If you sign out now, whatever isn't saved yet is lost.</p>
+  show(`<div class="panel" style="width:min(460px,100%)">${header('Sign out')}<p class="sub">Could not reach the server to save your latest progress. If you sign out now, coins and records it hasn't got yet are lost.</p>
     <div class="row"><button class="btn primary sm" data-a="back">Stay signed in</button><button class="btn sm danger" data-a="force">Sign out anyway</button></div></div>`, {
     back: () => accountScreen(back),
     force: async () => { await cloud.signOut(true); afterAccount(back); },
@@ -886,7 +895,9 @@ cloud.on('loginFailed', (why) => {
   ui.toast(why, 'bad');
   if (app.screen === 'signingin') accountScreen(app.afterLogin || title);
 });
-cloud.on('expired', () => ui.toast('Please sign in again to keep saving online', 'bad'));
+cloud.on('expired', () => ui.toast('Please sign in again to use your account', 'bad'));
+cloud.on('winRefused', () => ui.toast('That climb was too short to earn the top bonus on your account', 'bad'));
+cloud.on('dayLimit', () => ui.toast('Daily coin limit reached. More tomorrow!', 'bad'));
 cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
 cloud.on('changed', () => { if (app.screen === 'title') title(); });
 
@@ -949,6 +960,7 @@ function settingsScreen(back) {
     <label>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
+    ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
     <label>Game server address<input id="srv" spellcheck="false" autocomplete="off" autocapitalize="none" value="${esc(settings.server || '')}" placeholder="${esc(cloud.DEFAULT_SERVER || 'https://your.server:47810')}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none;color:inherit;font:inherit;width:100%;margin-top:4px"></label>
     <div>${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
@@ -959,6 +971,7 @@ function settingsScreen(back) {
     unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
     back: () => { if (!saveServer()) return; saveSettings(); back(); },
     account: () => { if (!saveServer()) return; saveSettings(); accountScreen(() => settingsScreen(back)); },
+    donate: openDonate,
     layout: () => layoutEditor(() => settingsScreen(back)),
     movefps: () => fpsEditor(() => settingsScreen(back)),
     tips: () => { store.set('tipsSeen', []); ui.seen = null; ui.toast('Tips will show again', 'good'); },
@@ -1271,6 +1284,7 @@ function beginGame(s, g) {
 }
 
 function endGame() {
+  cloud.runEnd();
   cloud.flush();
   closeEmotes();
   if (app.game) { app.game.destroy(); app.game = null; }

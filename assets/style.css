@@ -431,3 +431,6 @@ body.pad .set { grid-template-columns: 1fr; }
 .item[disabled] { opacity: 0.5; pointer-events: none; }
 .acctbtn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 620px) { .acct { grid-template-columns: 1fr; } }
+.donate { color: #ffb3c8; border-color: rgba(255, 120, 160, 0.45); }
+.brand .donate { width: auto; align-self: flex-start; margin-top: 8px; padding: 7px 14px; font-size: 13px; pointer-events: auto; }
+

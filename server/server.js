@@ -11,6 +11,7 @@ const { DB } = require('./lib/db');
 const { Rooms } = require('./lib/rooms');
 const { Auth } = require('./lib/auth');
 const { Limiter } = require('./lib/limits');
+const { Wallet } = require('./lib/wallet');
 
 const VERSION = require('./package.json').version;
 const env = process.env;
@@ -44,6 +45,7 @@ if (!cfg.publicUrl) cfg.publicUrl = `${tls ? 'https' : 'http'}://127.0.0.1:${cfg
 const terms = fs.readFileSync(cfg.termsFile, 'utf8').trim();
 const termsVersion = crypto.createHash('sha256').update(terms).digest('hex').slice(0, 12);
 const db = new DB(cfg.dataDir);
+const wallet = new Wallet(db, env);
 const rooms = new Rooms();
 const auth = new Auth(cfg, db, termsVersion);
 
@@ -51,6 +53,7 @@ const limits = {
   auth: new Limiter(20, 20 / 60),
   api: new Limiter(120, 2),
   save: new Limiter(30, 30 / 60),
+  wallet: new Limiter(120, 2),
 };
 const sweep = setInterval(() => { for (const l of Object.values(limits)) l.sweep(); }, 60000);
 sweep.unref();
@@ -168,7 +171,7 @@ async function route(req, res) {
 
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
+  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
@@ -190,12 +193,37 @@ async function route(req, res) {
     db.acceptTerms(me.id, termsVersion);
     return json(res, 200, { user: publicUser(db.user(me.id)) });
   }
+  // The money. Nothing below this ever takes a phone's word for a balance.
+  if (p.startsWith('/api/wallet') || p === '/api/buy' || p.startsWith('/api/run/')) {
+    if (!limits.wallet.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    if (p === '/api/wallet') return json(res, 200, wallet.get(me.id));
+    const b = await readJson(req);
+    if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
+    if (p === '/api/wallet/import') {
+      const r = wallet.importGuest(me.id, b);
+      return json(res, r.status, { wallet: r.wallet });
+    }
+    if (p === '/api/buy') {
+      const r = wallet.buy(me.id, b.id);
+      return json(res, r.status, { err: r.err, wallet: r.wallet });
+    }
+    if (p === '/api/run/start') {
+      const run = wallet.startRun(me.id, b);
+      return run ? json(res, 200, { run }) : json(res, 400, { err: 'Bad climb' });
+    }
+    const r = wallet.report(me.id, b);
+    const { status, ...out } = r;
+    return json(res, status, out);
+  }
   if (method === 'GET') return json(res, 200, db.getSave(me.id));
 
   // Saving. Only over the version it was based on, so two phones can't silently overwrite each other.
   if (!limits.save.take(me.id)) return json(res, 429, { err: 'Too many saves' });
   const b = await readJson(req);
   if (!b || !Number.isInteger(b.rev) || b.rev < 0 || !b.data || typeof b.data !== 'object' || Array.isArray(b.data)) return json(res, 400, { err: 'Bad save' });
+  // Only records and the saved climb are kept this way. Whatever else a phone says about itself is not listened to.
+  const pr = b.data.profile && typeof b.data.profile === 'object' ? b.data.profile : {};
+  b.data.profile = { eq: pr.eq, runs: pr.runs, totals: pr.totals };
   const text = JSON.stringify(b.data);
   if (Buffer.byteLength(text) > MAX_SAVE) return json(res, 413, { err: 'Save too big' });
   const rev = db.putSave(me.id, b.rev, text);
@@ -240,6 +268,7 @@ function backupNow() {
   try {
     db.backup();
     db.cleanup();
+    wallet.cleanup();
   } catch (e) {
     console.error('backup failed:', e.message);
   }

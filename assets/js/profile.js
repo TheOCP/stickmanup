@@ -1,9 +1,14 @@
 // What this phone remembers about you: coins, what you own and wear, relics found and the record of your climbs.
 import { store } from './util.js';
-import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, ownerKey, cleanLook } from './skins.js';
+import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, ownerKey, cleanLook, itemKey } from './skins.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
+// Buying the Santa hat used to give the Santa suit as well, because they share a name. Whoever has one of those keeps both.
+if (!P.ownV) {
+  for (const it of [...Object.values(FACE), ...Object.values(HAT)]) if (itemKey(it) !== it.id && P.own.includes(it.id)) P.own.push(itemKey(it));
+  P.ownV = 2;
+}
 let timer = 0;
 const saveNow = () => { clearTimeout(timer); timer = 0; store.set('profile', P); };
 const saveSoon = () => { if (!timer) timer = setTimeout(saveNow, 900); };
@@ -16,9 +21,9 @@ export function initProfile(oldColor) {
   if (!P.eq) { P.eq = { s: oldColor > 0 ? 'c' + oldColor : FREE_SUIT, f: 'smile', h: 'none' }; saveNow(); }
 }
 
-// ---------------------------------------------------------------- the same person on two phones
-// Coins can't just be added up, or signing out and in again would print money. Earned and spent both only ever grow, so
-// the larger of each is the truth, and what you have is the difference. Things you own or found are simply both lists.
+// ---------------------------------------------------------------- signed in
+// On an account the coins and what you own live on the server (server/lib/wallet.js), and this is only a copy to show.
+// Records stay the phone's own to report: they are not worth anything, so two phones simply put theirs together.
 const list = (x) => (Array.isArray(x) ? x.filter((v) => typeof v === 'string') : []);
 const count = (x) => (Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
 // One climb in the records, keeping only what a climb can be.
@@ -26,9 +31,7 @@ export function cleanRun(r) {
   if (!r || typeof r !== 'object' || !Number.isInteger(r.diff) || !DIFFS[r.diff]) return null;
   return { id: String(r.id).slice(0, 32), map: count(r.map), diff: r.diff, custom: !!r.custom, h: count(r.h), falls: count(r.falls), t: Number.isFinite(r.t) && r.t > 0 ? r.t : 0, coins: count(r.coins), won: !!r.won, when: count(r.when), players: count(r.players) || 1 };
 }
-export function mergeProfiles(a, b) {
-  const ea = count(a.earned), eb = count(b.earned), earned = Math.max(ea, eb, count(a.coins), count(b.coins));
-  const spent = Math.max(Math.max(0, ea - count(a.coins)), Math.max(0, eb - count(b.coins)));
+export function mergeRecords(a, b) {
   const runs = {};
   for (const src of [a.runs, b.runs]) {
     for (const [map, rows] of Object.entries(src && typeof src === 'object' ? src : {})) {
@@ -46,27 +49,40 @@ export function mergeProfiles(a, b) {
   for (const m of Object.keys(runs)) { runs[m].sort(better); runs[m].length = Math.min(runs[m].length, KEEP); }
   const totals = {};
   for (const k of ['falls', 'climbs']) totals[k] = Math.max(count(a.totals && a.totals[k]), count(b.totals && b.totals[k]));
-  return {
-    coins: Math.max(0, earned - spent), earned,
-    own: [...new Set([...list(a.own), ...list(b.own)])],
-    relics: [...new Set([...list(a.relics), ...list(b.relics)])],
-    ach: [...new Set([...list(a.ach), ...list(b.ach)])],
-    // Whatever you wear on the phone you have played on most.
-    eq: (eb > ea ? b.eq || a.eq : a.eq || b.eq) || null,
-    runs, totals,
-  };
+  return { eq: cleanLook(a.eq) || cleanLook(b.eq), runs, totals };
 }
-export function setProfile(o) {
+export const recordsOf = (o) => ({ eq: o.eq || null, runs: o.runs || {}, totals: o.totals || {} });
+export function setRecords(o) {
   if (!o || typeof o !== 'object') return;
-  const m = mergeProfiles(o, o);
-  P.coins = m.coins; P.earned = m.earned; P.own = m.own; P.relics = m.relics; P.ach = m.ach; P.runs = m.runs; P.totals = m.totals;
-  if (m.eq && typeof m.eq === 'object') P.eq = cleanLook(m.eq);
+  const m = mergeRecords(o, o);
+  P.runs = m.runs;
+  P.totals = m.totals;
+  if (m.eq) P.eq = m.eq;
   saveNow();
 }
-// A clean guest.
-export function resetProfile() {
-  P.coins = 0; P.earned = 0; P.own = []; P.relics = []; P.ach = []; P.runs = {}; P.totals = {};
-  P.eq = { s: FREE_SUIT, f: 'smile', h: 'none' };
+// The server's word on the money. `extra` is what was earned here and hasn't reached it yet. The flags for having used a
+// personal name stay this phone's own: they only decide when to put that suit on.
+export function setWallet(w, extra = 0) {
+  P.coins = count(w.coins) + extra;
+  P.earned = count(w.earned) + extra;
+  P.own = list(w.own);
+  P.relics = list(w.relics);
+  P.ach = [...new Set([...list(w.ach), ...P.ach.filter((x) => x.startsWith('name:'))])];
+  saveNow();
+}
+// Everything, for going back to being the guest you were.
+export const snapshot = () => JSON.parse(JSON.stringify(P));
+export function restore(o) {
+  const src = o && typeof o === 'object' ? o : {};
+  P.coins = count(src.coins);
+  P.earned = count(src.earned);
+  P.own = list(src.own);
+  P.relics = list(src.relics);
+  P.ach = list(src.ach);
+  const m = mergeRecords(src, src);
+  P.runs = m.runs;
+  P.totals = m.totals;
+  P.eq = m.eq || { s: FREE_SUIT, f: 'smile', h: 'none' };
   saveNow();
 }
 
@@ -80,13 +96,13 @@ export function owned(item, name) {
   if (item.price === 0) return true;
   if (item.relic) return P.relics.includes(item.relic);
   if (item.ach) return P.ach.includes(item.ach);
-  return P.own.includes(item.id);
+  return P.own.includes(itemKey(item));
 }
 
 export function buy(item) {
-  if (item.price <= 0 || P.coins < item.price || P.own.includes(item.id)) return false;
+  if (item.price <= 0 || P.coins < item.price || P.own.includes(itemKey(item))) return false;
   P.coins -= item.price;
-  P.own.push(item.id);
+  P.own.push(itemKey(item));
   saveNow();
   return true;
 }

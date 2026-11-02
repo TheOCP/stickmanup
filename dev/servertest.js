@@ -369,12 +369,12 @@ async function signIn(provider, o = {}) {
   check('a made up token is refused', (await api('/api/me', { token: b64(crypto.randomBytes(32)) })).status === 401);
   const e = (await api('/api/save', { token: t })).json;
   check('a new account has no save', e.rev === 0 && e.data === null, e);
-  const first = await api('/api/save', { token: t, method: 'PUT', body: { rev: 0, data: { profile: { coins: 50 } } } });
+  const first = await api('/api/save', { token: t, method: 'PUT', body: { rev: 0, data: { best: { a: 50 }, profile: { totals: { falls: 50 } } } } });
   check('saving works', first.status === 200 && first.json.rev === 1, first.json);
   const read = (await api('/api/save', { token: t })).json;
-  check('the save comes back', read.rev === 1 && read.data.profile.coins === 50, read);
-  const stale = await api('/api/save', { token: t, method: 'PUT', body: { rev: 0, data: { profile: { coins: 1 } } } });
-  check('saving over a newer save is refused and hands it back', stale.status === 409 && stale.json.rev === 1 && stale.json.data.profile.coins === 50, stale.json);
+  check('the save comes back', read.rev === 1 && read.data.best.a === 50 && read.data.profile.totals.falls === 50, read);
+  const stale = await api('/api/save', { token: t, method: 'PUT', body: { rev: 0, data: { best: { a: 1 } } } });
+  check('saving over a newer save is refused and hands it back', stale.status === 409 && stale.json.rev === 1 && stale.json.data.best.a === 50, stale.json);
   check('nobody else sees my save', (await api('/api/save', { token: t2 })).json.data === null);
   check('a save must be an object', (await api('/api/save', { token: t, method: 'PUT', body: { rev: 1, data: [1] } })).status === 400 && (await api('/api/save', { token: t, method: 'PUT', body: { rev: 1, data: 'x' } })).status === 400);
   check('the rev must be a number', (await api('/api/save', { token: t, method: 'PUT', body: { rev: '1', data: {} } })).status === 400);
@@ -395,7 +395,7 @@ async function signIn(provider, o = {}) {
   srv.p.kill('SIGTERM');
   await new Promise((r) => srv.p.on('exit', r));
   srv = await startServer(baseEnv);
-  check('accounts and saves survive a restart', (await api('/api/save', { token: t })).json.data.profile.coins === 50);
+  check('accounts and saves survive a restart', (await api('/api/save', { token: t })).json.data.best.a === 50);
   check('signing out ends that session', (await api('/api/logout', { token: st.token, method: 'POST', body: {} })).status === 200 && (await api('/api/me', { token: st.token })).status === 401);
   const del = await api('/api/me', { token: t, method: 'DELETE' });
   check('deleting an account works', del.status === 200 && del.json.ok === true);
@@ -440,6 +440,168 @@ async function signIn(provider, o = {}) {
   const again = await get('/api/health');
   check('a renewed certificate is picked up without a restart', again.status === 200 && again.cert !== h.cert && /certificate reloaded/.test(s.out()), s.out().slice(-120));
   s.p.kill('SIGTERM');
+}
+
+// ---- the coins: a server of its own, so its time limits can be short enough to wait for
+{
+  const CAT = JSON.parse(fs.readFileSync(new URL('../server/lib/catalog.json', import.meta.url)));
+  const W = path.join(TMP, 'walletdata');
+  const wEnv = Object.assign({}, baseEnv, { DATA_DIR: W, WALLET_MIN_WIN_SECONDS: '1', WALLET_DAILY_CAP: '6000', WALLET_IMPORT_CAP: '500' });
+  srv.p.kill('SIGTERM');
+  await wait(300);
+  srv = await startServer(wEnv);
+  let n = 500;
+  const person = async () => signIn('steam', { id: '7656119900000' + String(n++).padStart(4, '0') });
+  const a = (await person()).token, b = (await person()).token;
+  const me = async (t = a) => (await api('/api/wallet', { token: t })).json;
+  const post = (p, body, token = a) => api(p, { token, body });
+
+  check('coins need an account', (await api('/api/wallet')).status === 401 && (await api('/api/buy', { body: { id: 'x' } })).status === 401);
+  let w = await me();
+  check('a new account has nothing', w.coins === 0 && w.earned === 0 && w.own.length === 0 && w.imported === false, w);
+
+  // No way of just saying you are rich
+  const save = await api('/api/save', { token: a, method: 'PUT', body: { rev: 0, data: { v: 1, coins: 999999, profile: { coins: 999999, earned: 999999, own: Object.keys(CAT.items), relics: ['storm:0'], ach: ['win0'], runs: {}, totals: {} } } } });
+  check('a save can still be written', save.status === 200, save.text);
+  w = await me();
+  check('a save claiming coins and things changes nothing', w.coins === 0 && w.own.length === 0 && w.relics.length === 0 && w.ach.length === 0, w);
+  const back = (await api('/api/save', { token: a })).json;
+  check('and the claim is not even kept', back.data.profile.coins === undefined && back.data.profile.own === undefined, back);
+  for (const body of [{ coins: 999999 }, { balance: 999999 }]) check('nothing else takes a balance', (await post('/api/wallet', body)).status === 404);
+
+  const cheap = Object.entries(CAT.items).sort((x, y) => x[1] - y[1]), pricey = cheap[cheap.length - 1];
+  const [c1, p1] = cheap[0], [c2, p2] = cheap[1];
+  check('nothing can be bought without coins', (await post('/api/buy', { id: c1 })).status === 402 && (await me()).own.length === 0);
+
+  // What a guest had comes along once, up to the limit
+  let r = await post('/api/wallet/import', { coins: 999999, own: [c1, 'made_up', 7, null, '__proto__', pricey[0]] });
+  w = r.json.wallet;
+  check('guest things come along, made up ones do not', w.own.includes(c1) && !w.own.includes('made_up') && !w.own.includes('__proto__'), w);
+  check('things and coins together stay within the limit', w.coins + p1 === 500 && !w.own.includes(pricey[0]), w);
+  check('the guest import works once', (await post('/api/wallet/import', { coins: 999999 })).status === 409 && (await me()).coins === w.coins);
+  r = await post('/api/wallet/import', { coins: -5, own: 'nope' }, b);
+  check('a nonsense import gives nothing, and uses it up', r.json.wallet.coins === 0 && r.json.wallet.imported === true, r.text);
+  check('a negative import is not a debt', (await me(b)).coins === 0);
+
+  // Buying
+  for (const id of ['made_up', '', 5, null, '__proto__', 'constructor']) check(`can't buy ${id}`, (await post('/api/buy', { id })).status === 400);
+  const before = await me();
+  r = await post('/api/buy', { id: c2 });
+  check('buying takes the real price', r.status === 200 && r.json.wallet.coins === before.coins - p2 && r.json.wallet.own.includes(c2), r.text);
+  const after = r.json.wallet.coins;
+  r = await post('/api/buy', { id: c2 });
+  check('buying twice pays once', r.status === 200 && r.json.wallet.coins === after, r.text);
+  r = await post('/api/buy', { id: pricey[0] });
+  check('too expensive is refused', r.status === 402 && r.json.wallet.coins === after, r.text);
+  const third = cheap.find(([k, v]) => v <= after && k !== c1 && k !== c2);
+  const both = await Promise.all([1, 2, 3, 4, 5].map(() => post('/api/buy', { id: third[0] })));
+  check('five buys at once pay once', both.every((x) => x.status === 200) && (await me()).coins === after - third[1], (await me()).coins);
+
+  // A climb
+  for (const body of [{ map: 99, diff: 0 }, { map: 0, diff: 99 }, { map: '0', diff: 0 }, { map: -1, diff: 0 }, {}]) check(`a bad climb is refused ${JSON.stringify(body)}`, (await post('/api/run/start', body)).status === 400);
+  const base = (await me(b)).coins, V = CAT.diffs[3].coin;
+  const run = (await post('/api/run/start', { map: 0, diff: 3 }, b)).json.run;
+  check('a climb starts', typeof run === 'string');
+  r = await post('/api/run/report', { run, coins: [0, 1, 2, 2, 2, -1, 99999, 'x', null, 1.5] }, b);
+  check('each real coin pays once, at the value of the difficulty', r.json.accepted.length === 3 && r.json.paid === 3 * V && r.json.wallet.coins === base + 3 * V, r.text);
+  r = await post('/api/run/report', { run, coins: [0, 1, 2] }, b);
+  check('the same coins never pay again', r.json.paid === 0 && r.json.accepted.length === 0, r.text);
+  r = await post('/api/run/report', { run, coins: Array.from({ length: CAT.maps[0].coins }, (_, i) => i) }, b);
+  check('all the coins at once is too fast: most have to wait', r.json.accepted.length <= 40 && r.json.later.length > 100, r.json.accepted.length + ' ' + r.json.later.length);
+  check('someone else cannot use your climb', (await post('/api/run/report', { run, coins: [200] }, a)).status === 404);
+  check('a made up climb gives nothing', (await post('/api/run/report', { run: 'madeup', coins: [1] }, b)).status === 404 && (await post('/api/run/report', { coins: [1] }, b)).status === 404);
+
+  // Winning
+  const c0 = (await me(b)).coins;
+  const quick = (await post('/api/run/start', { map: 1, diff: 0 }, b)).json.run;
+  r = await post('/api/run/report', { run: quick, win: { falls: 0 } }, b);
+  check('a win right after starting pays nothing', r.json.win === 'too fast' && r.json.paid === 0 && !r.json.wallet.ach.includes('win0'), r.text);
+  await wait(1100);
+  r = await post('/api/run/report', { run: quick, win: { falls: 0 } }, b);
+  check('after a climb of real length it pays the top and the first win', r.json.win === 'ok' && r.json.first === CAT.diffs[0].first && r.json.paid === CAT.diffs[0].summit + CAT.diffs[0].first && r.json.wallet.ach.includes('win0'), r.text);
+  const c1b = (await me(b)).coins;
+  r = await post('/api/run/report', { run: quick, win: { falls: 0 } }, b);
+  check('one climb wins once', r.json.paid === 0 && (await me(b)).coins === c1b, r.text);
+  await wait(1100);
+  const again = (await post('/api/run/start', { map: 1, diff: 0 }, b)).json.run;
+  await wait(1100);
+  r = await post('/api/run/report', { run: again, win: { falls: 0 } }, b);
+  check('a second win pays the top but not the first win bonus again', r.json.win === 'ok' && r.json.first === 0 && r.json.paid === CAT.diffs[0].summit, r.text);
+  const custom = (await post('/api/run/start', { map: 1, diff: 1, custom: true }, b)).json.run;
+  await wait(1100);
+  r = await post('/api/run/report', { run: custom, win: { falls: 0 } }, b);
+  check('custom rules get no first win bonus', r.json.first === 0 && !r.json.wallet.ach.includes('win1'), r.text);
+
+  // A saved climb picked up again
+  await wait(1100);
+  const saved = (await post('/api/run/start', { map: 2, diff: 0 }, b)).json.run;
+  await post('/api/run/report', { run: saved, coins: [5, 6] }, b);
+  await wait(1100);
+  r = await post('/api/run/report', { run: saved, coins: [5, 6, 7], win: { falls: 2 } }, b);
+  check('a climb picked up again keeps its clock and its coins', r.json.win === 'ok' && r.json.accepted.length === 1 && r.json.accepted[0] === 7, r.text);
+
+  // Relics and legendaries
+  const easy = (await post('/api/run/start', { map: 0, diff: 1 }, b)).json.run;
+  r = await post('/api/run/report', { run: easy, relics: ['storm:0'] }, b);
+  check('no relics below Hardcore', !r.json.wallet.relics.includes('storm:0'), r.text);
+  const hard = (await post('/api/run/start', { map: 0, diff: 2 }, b)).json.run;
+  r = await post('/api/run/report', { run: hard, relics: ['storm:0', 'sunny:0', 'made_up'] }, b);
+  check('a relic counts only on its own map', r.json.wallet.relics.includes('storm:0') && !r.json.wallet.relics.includes('sunny:0') && !r.json.wallet.relics.includes('made_up'), r.text);
+
+  // The daily limit, and the speed limit across several climbs at once
+  const big = (await person()).token;
+  await post('/api/wallet/import', {}, big);
+  let got = 0;
+  const allRuns = [];
+  for (let i = 0; i < 6; i++) allRuns.push((await post('/api/run/start', { map: 1, diff: 3 }, big)).json.run);
+  for (const ru of allRuns) got += (await post('/api/run/report', { run: ru, coins: Array.from({ length: 30 }, (_, i) => i) }, big)).json.accepted.length;
+  check('six climbs at once are no faster than one', got <= 70, got);
+  const capPerson = (await person()).token;
+  await post('/api/wallet/import', {}, capPerson);
+  const capEnv = Object.assign({}, wEnv, { WALLET_DAILY_CAP: '20', WALLET_COINS_PER_SECOND: '1000', WALLET_COIN_BURST: '1000' });
+  srv.p.kill('SIGTERM');
+  await wait(300);
+  srv = await startServer(capEnv);
+  const cr = (await post('/api/run/start', { map: 1, diff: 3 }, capPerson)).json.run;
+  r = await post('/api/run/report', { run: cr, coins: Array.from({ length: 100 }, (_, i) => i) }, capPerson);
+  check('the daily limit stops the coins and says so', r.json.paid === 20 && r.json.capped === true && r.json.wallet.dayLeft === 0, r.text);
+  await wait(1100);
+  const hadW = await me(capPerson);
+  const fw = (await post('/api/run/start', { map: 1, diff: 2 }, capPerson)).json.run;
+  await wait(1100);
+  r = await post('/api/run/report', { run: fw, win: { falls: 3 } }, capPerson);
+  check('a first win still pays past the daily limit', r.json.first === CAT.diffs[2].first && r.json.wallet.coins === hadW.coins + CAT.diffs[2].first, r.text);
+
+  // Nobody fills the disk with climbs
+  const many = (await person()).token;
+  const oldest = (await post('/api/run/start', { map: 0, diff: 0 }, many)).json.run;
+  let newest = oldest;
+  for (let i = 0; i < 45; i++) newest = (await post('/api/run/start', { map: 0, diff: 0 }, many)).json.run;
+  check('only so many climbs are kept per person', (await post('/api/run/report', { run: oldest, coins: [] }, many)).status === 404 && (await post('/api/run/report', { run: newest, coins: [] }, many)).status === 200);
+
+  // It survives
+  srv.p.kill('SIGTERM');
+  await wait(300);
+  srv = await startServer(wEnv);
+  const kept = await me(b);
+  srv.p.kill('SIGTERM');
+  await wait(300);
+  srv = await startServer(wEnv);
+  const kept2 = await me(b);
+  check('the wallet survives a restart', JSON.stringify(kept2) === JSON.stringify(kept), kept2);
+  const stillRun = await post('/api/run/report', { run, coins: [] }, b);
+  check('and so does a climb in progress', stillRun.status === 200, stillRun.text);
+
+  // Deleting
+  check('deleting an account deletes the wallet', (await api('/api/me', { token: b, method: 'DELETE' })).status === 200 && (await api('/api/wallet', { token: b })).status === 401);
+  const { DatabaseSync } = await import('node:sqlite');
+  const dbx = new DatabaseSync(path.join(W, 'stickmanup.db'), { readOnly: true });
+  const left = dbx.prepare("SELECT COUNT(*) AS n FROM wallets w WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = w.user_id)").get().n + dbx.prepare("SELECT COUNT(*) AS n FROM runs r WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = r.user_id)").get().n + dbx.prepare("SELECT COUNT(*) AS n FROM ledger l WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = l.user_id)").get().n;
+  check('nothing of it is left behind', left === 0, left);
+  const led = dbx.prepare('SELECT COUNT(*) AS n FROM ledger').get().n;
+  check('money movements are written down', led > 0, led);
+  dbx.close();
+  srv.p.kill('SIGTERM');
 }
 
 mockServer.close();

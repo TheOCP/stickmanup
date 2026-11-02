@@ -1,5 +1,5 @@
 """Record the native-renderer stream (?native=rec) for a scene, so dev/desk can replay it through NRender.
-Usage: python dev/record.py OUTDIR [title|zoneN|jump|coins|shop:SUIT:FACE:HAT[:yaw]] [map id] [player name]  (also saves a three.js reference screenshot)"""
+Usage: python dev/record.py OUTDIR [title|zoneN|jump|coins|tree|shop:SUIT:FACE:HAT[:yaw]] [map id] [player name]  (also saves a three.js reference screenshot)"""
 import functools, http.server, os, sys, threading
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -16,6 +16,12 @@ SETUP = """(z) => { const g = SMU.game, c = SMU.level.cols.filter(c => c.zone ==
 # Next to the lowest dummy on Hardcore, looking at it.
 JUMP = """() => { const g = SMU.game, L = SMU.level, j = L.jumpers.filter(j => g.storm.on(j)).sort((a, b) => a.y - b.y)[0], x = j.x + 1.6, z = j.z;
   g.me.spawn(x, j.y + 0.6, z); g.me.vx = g.me.vz = 0; g.cam.yaw = Math.atan2(x - j.x, z - j.z); g.cam.pitch = 0.25; g.cam.x = x; g.cam.y = j.y + 1.2; g.cam.z = z; }"""
+# On the sunny side of the first side tree that floats, low on its climb, looking in at the trunk and down at the roots.
+TREE = """() => { const g = SMU.game, L = SMU.level, t = L.trees.find(t => t.base > 0);
+  const dot = (c) => ((c.x - t.x) * 0.83 + (c.z - t.z) * 0.55) / Math.hypot(c.x - t.x, c.z - t.z);
+  const c = L.cols.filter(c => c.kind === 'plat' && Math.hypot(c.x - t.x, c.z - t.z) < 10 && c.y > t.base && c.y < t.y0 + 14).sort((a, b) => dot(b) - dot(a))[0];
+  const y = c.y + c.hy + 0.6;
+  g.me.spawn(c.x, y, c.z); g.me.vx = g.me.vz = g.me.vy = 0; g.cam.yaw = Math.atan2(c.x - t.x, c.z - t.z); g.cam.pitch = 0.5; g.cam.x = c.x; g.cam.y = y + 0.8; g.cam.z = c.z; }"""
 # Near the first line of coins.
 COINS = """() => { const g = SMU.game, c = SMU.level.coins[2], a = Math.atan2(c.z, c.x) + 0.3, x = Math.cos(a) * 12.4, z = Math.sin(a) * 12.4;
   g.me.spawn(x, c.y, z); g.cam.yaw = Math.atan2(x - c.x, z - c.z) - 0.25; g.cam.pitch = 0.15; g.cam.x = x; g.cam.y = c.y + 0.6; g.cam.z = z; }"""
@@ -33,15 +39,15 @@ with sync_playwright() as p:
         if scene.startswith("zone"):
             pg.click("[data-a=solo]"); pg.wait_for_timeout(300); pg.click("[data-a=pick][data-d='1']")
             pg.evaluate(SETUP, int(scene[4:]) - 1)
-        elif scene in ("jump", "coins"):
+        elif scene in ("jump", "coins", "tree"):
             pg.click("[data-a=solo]"); pg.wait_for_timeout(300); pg.click("[data-a=pick][data-d='%d']" % (2 if scene == "jump" else 1))
             pg.wait_for_timeout(600)
-            pg.evaluate(JUMP if scene == "jump" else COINS)
+            pg.evaluate({"jump": JUMP, "coins": COINS, "tree": TREE}[scene])
         elif scene.startswith("shop:"):
             q = scene.split(":")
             pg.click("[data-a=shop]"); pg.wait_for_timeout(300)
             pg.evaluate("(a) => { SMU.preview = { look: { s: a[0], f: a[1], h: a[2] }, yaw: a[3] }; }", [q[1], q[2], q[3], float(q[4]) if len(q) > 4 else 0])
-        pg.wait_for_timeout(700 if scene == "jump" else 2500)
+        pg.wait_for_timeout(700 if scene in ("jump", "tree") else 2500)
         if mode == "rec":
             pg.evaluate("document.getElementById('menu').style.display = 'none'")
             # Reset and render in one go so the saved frame holds the complete state, not a delta.

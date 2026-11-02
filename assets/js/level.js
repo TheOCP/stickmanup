@@ -7,11 +7,14 @@ import { makeBox, makeCyl, BOX } from './physics.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle } from './obstacles.js';
 
-export const LEVEL_VERSION = 12;
+export const LEVEL_VERSION = 13;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
 export const CORE_R = 6;
+// The central column is drawn wider at its foot than at its top, by this much on each map (1 = straight).
+export const coreFlare = (key) => ({ sunny: 1.08, forest: 1.25, waterfall: 1.18 })[key] || 1;
+export const coreRadius = (key, y) => CORE_R * (1 + (coreFlare(key) - 1) * clamp((1002 - y) / 1042, 0, 1));
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
 
 export const DIFFS = [
@@ -646,7 +649,10 @@ export function generateLevel(mapId = 0) {
       return nxt;
     },
     spinner(cur) {
-      const armL = rr(3.4, 4.0), [sx, sz] = size(), r = Math.max(nextR(cur, sz), CORE_R + armL + 1.6);
+      // The hub sits on the straight line between two platforms, further in than they are: leave room for the arms there.
+      const armL = rr(3.4, 4.0), [sx, sz] = size();
+      let r = Math.max(nextR(cur, sz), CORE_R + armL + 1.6);
+      r /= Math.cos(Math.min(1, (armL + 0.85 + (cur.sx + sx) / 4) / r));
       const nxt = plat(thetaFor(cur, 2 * (armL + 0.85), r, sx, sz), r, cur.y + rr(-0.3, 0.5), sx, sz);
       const b = between(cur, nxt, 0);
       const hx = (b.ax + b.bx) / 2, hz = (b.az + b.bz) / 2, hy = (cur.y + nxt.y) / 2;
@@ -845,14 +851,28 @@ export function generateLevel(mapId = 0) {
     },
     // Forest: walk out along branches to a side tree, climb round it, then come back to the main trunk.
     excursion(cur) {
-      let phi = null;
+      // A side tree grows from the ground only if nothing older stands in its way. Otherwise it floats on its roots,
+      // just below where you climb it, so its trunk never runs through the route underneath.
+      const baseAt = (x, z) => {
+        const a = { x, z, hx: SAT_TR + 1, hz: SAT_TR + 1, c: 1, s: 0, rad: (SAT_TR + 1) * Math.SQRT2 };
+        let high = -1e9;
+        for (const q of recs) if (Math.hypot(q.x - x, q.z - z) < a.rad + q.rad && overlap(a, q, 0)) high = Math.max(high, q.y + q.h);
+        for (const t of out.trees) if (Math.hypot(t.x - x, t.z - z) < SAT_TR + 9) high = Math.max(high, t.top + 9);
+        if (high === -1e9) return -2;
+        return cur.y - 7 >= high ? cur.y - 7 : null;
+      };
+      let phi = null, base = -2;
       for (let k = 0; k < 10 && phi === null; k++) {
         const a = cur.th + DIR * (0.25 + k * 0.4), x = Math.cos(a) * SAT_D, z = Math.sin(a) * SAT_D;
-        if (out.trees.every((t) => Math.hypot(t.x - x, t.z - z) > 21 || cur.y > t.top + 10)) phi = a;
+        if (!out.trees.every((t) => Math.hypot(t.x - x, t.z - z) > 21 || cur.y > t.top + 10)) continue;
+        const b = baseAt(x, z);
+        if (b !== null) { phi = a; base = b; }
       }
       if (phi === null) return T.gap(cur);
       const ux = Math.cos(phi), uz = Math.sin(phi), Sx = ux * SAT_D, Sz = uz * SAT_D;
-      const tree = { x: Sx, z: Sz, r: SAT_TR, y0: cur.y, top: 0, zone };
+      // Listed from the start so the climb round it stays out of its own trunk; its height is known at the end.
+      const tree = { x: Sx, z: Sz, r: SAT_TR, y0: cur.y, base, top: Infinity, zone };
+      out.trees.push(tree);
       // Out along the branch to a landing on the near side of the side tree.
       cur = walkTo(cur, Sx - ux * 6.2, Sz - uz * 6.2, cur.y + rr(1.0, 2.0));
       const saved = { CX, CZ, DIR, BAND };
@@ -877,8 +897,9 @@ export function generateLevel(mapId = 0) {
         cur = place(() => (ob ? (SMALL_OK.has(ob.prim) ? T.obs(at, k) : T.gap(at)) : T[ok.includes(k) ? k : 'gap'](at)), at);
       }
       tree.top = cur.y + 3;
-      out.trees.push(tree);
-      add(makeCyl(Sx, tree.top / 2 - 1, Sz, SAT_TR, tree.top / 2 + 1), 'trunk');
+      // The tip of the roots has nothing to bump into.
+      const low = base > 0 ? base + 2 : base;
+      add(makeCyl(Sx, (low + tree.top) / 2, Sz, SAT_TR, (tree.top - low) / 2), 'trunk');
       CX = saved.CX; CZ = saved.CZ; DIR = saved.DIR; BAND = saved.BAND;
       // Back along a branch to the main trunk, high enough above the route below.
       const back = Math.atan2(cur.z, cur.x), hx = Math.cos(back) * 12.5, hz = Math.sin(back) * 12.5;
@@ -1005,12 +1026,53 @@ export function generateLevel(mapId = 0) {
     }
     return raise;
   }
+  // Where a collider can ever be, as [x, z, radius]: its whole top if it stays put, its sweep if it moves.
+  function reachOf(c) {
+    const d = c.dyn, box = c.t === BOX, rad = box ? Math.hypot(c.hx, c.hz) : c.r, pts = [];
+    if (d && d.k === 'turn') return [[c.x, c.z, rad]];
+    if (d && d.k === 'orbit') return [[d.hx, d.hz, d.off + c.hx]];
+    if (d && d.k === 'pp') { for (let i = 0; i <= 8; i++) pts.push([d.ax + (d.bx - d.ax) * i / 8, d.az + (d.bz - d.az) * i / 8, rad]); return pts; }
+    if (d && d.k === 'swing') { const w = d.L * Math.sin(d.amp); for (let i = -4; i <= 4; i++) pts.push([d.px + d.ux * w * i / 4, d.pz + d.uz * w * i / 4, rad]); return pts; }
+    if (!box) return [[c.x, c.z, c.r]];
+    const m = c.m, nx = Math.max(2, Math.ceil(c.hx / 0.5)), nz = Math.max(2, Math.ceil(c.hz / 0.5));
+    for (let i = -nx; i <= nx; i++) for (let j = -nz; j <= nz; j++) {
+      const lx = c.hx * i / nx, lz = c.hz * j / nz;
+      pts.push([c.x + m[0] * lx + m[6] * lz, c.z + m[2] * lx + m[8] * lz, 0]);
+    }
+    return pts;
+  }
+  // Does this piece reach into a tall solid: the central column as wide as it is drawn, a side tree or its crown, or a
+  // skyscraper? A platform in there can't be reached or even seen.
+  function inSolid(c) {
+    const d = c.dyn, v = c.t === BOX ? (c.rx || c.rz ? Math.hypot(c.hx, c.hy, c.hz) : c.hy) : c.hh;
+    const y0 = (d && d.k === 'pp' ? Math.min(d.ay, d.by) : d && d.k === 'bob' ? c.y - d.amp : c.y) - v;
+    const y1 = (d && d.k === 'pp' ? Math.max(d.ay, d.by) : d && d.k === 'bob' ? c.y + d.amp : c.y) + v;
+    const core = ROUTE === 'crater' ? 0 : coreRadius(MAP.key, y0);
+    for (const [x, z, rad] of reachOf(c)) {
+      if (core && Math.hypot(x, z) < core + rad) return true;
+      for (const t of out.trees) {
+        const dist = Math.hypot(x - t.x, z - t.z);
+        if (y1 >= t.base - 1 && y0 <= t.top + 0.5 && dist < t.r + rad) return true;
+        if (y1 > t.top + 0.5 && y0 < t.top + 9 && dist < 6 + rad) return true;
+      }
+      for (const t of TOWERS) {
+        const dx = x - t.x, dz = z - t.z, ca = Math.cos(t.a), sa = Math.sin(t.a);
+        if (Math.abs(dx * ca + dz * sa) < TW + rad && Math.abs(dz * ca - dx * sa) < TW + rad) return true;
+      }
+    }
+    return false;
+  }
+  function buried(from) {
+    for (let i = from; i < out.cols.length; i++) if (out.cols[i].kind !== 'trunk' && inSolid(out.cols[i])) return true;
+    return false;
+  }
   function place(fn, at) {
     for (let k = 0; k < 4; k++) {
-      const snap = snapshot(), res = fn(), raise = badness(snap.recs);
-      if (raise <= 0) return res;
+      const snap = snapshot(), res = fn(), raise = badness(snap.recs), hit = buried(snap.n.cols);
+      if (raise <= 0 && !hit) return res;
       restore(snap);
-      fn = () => T.lift(at, Math.min(12, raise + 1.2));
+      // Cut into a tall solid: try a plain hop along the way first. Too close to older route, or the hop failed: a lift.
+      fn = raise <= 0 && k === 0 ? () => T.gap(at) : () => T.lift(at, Math.min(12, Math.max(raise, 1) + 1.2));
     }
     return fn();
   }
@@ -1310,8 +1372,14 @@ export function generateLevel(mapId = 0) {
   if (ROUTE === 'switchback' && BAND === LANES.inner) cur = T.turn(cur);
   if (ROUTE === 'towers') {
     // From the last tower over to the central spire, whose roof is the summit.
-    const b = Math.atan2(cur.z, cur.x);
-    cur = walkTo(cur, Math.cos(b) * 12.5, Math.sin(b) * 12.5, cur.y + 1);
+    const b = Math.atan2(cur.z, cur.x), from = cur;
+    // Starts higher if the way over would pass too close above older route.
+    for (let k = 0; k < 8; k++) {
+      const snap = snapshot();
+      cur = walkTo(from, Math.cos(b) * 12.5, Math.sin(b) * 12.5, from.y + 1 + k * 1.5);
+      if (k === 7 || (badness(snap.recs) <= 0 && !buried(snap.n.cols))) break;
+      restore(snap);
+    }
     CX = 0; CZ = 0; BAND = MAIN; DIR = 1;
     cur = reframe(cur);
   }

@@ -2,7 +2,7 @@
 // (body + glowing edge trim) so the phone draws the whole tower in few draw calls.
 import * as THREE from 'three';
 import { BOX } from './physics.js';
-import { CORE_R, cpEnabled } from './level.js';
+import { CORE_R, coreFlare, cpEnabled } from './level.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
 import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist } from './scenery.js';
@@ -453,7 +453,7 @@ export class WorldView {
       t2.needsUpdate = true;
       this.barkMat = new THREE.MeshStandardMaterial({ map: t2, roughness: 0.9, metalness: 0 });
     }
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * (sunny ? 1.08 : 1.25), H, 72, 1, true), m);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * coreFlare(sunny ? 'sunny' : 'forest'), H, 72, 1, true), m);
     core.position.y = (L.top - 1.2 - 40) / 2;
     this.add(core);
     const accent = new THREE.MeshBasicMaterial({ color: HDR(sunny ? 0xffffff : 0x9be564, sunny ? 1.0 : 1.3) });
@@ -1061,11 +1061,20 @@ export class WorldView {
     const R = rng(91);
     const bark = this.barkMat || new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 });
     const leaf = new THREE.MeshStandardMaterial({ color: 0x3f7a30, roughness: 0.85, flatShading: true });
-    const blob = new THREE.IcosahedronGeometry(1, 1);
+    const blob = new THREE.IcosahedronGeometry(1, 1), knots = [], roots = [];
     for (const t of T) {
-      const h = t.top + 2, trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r * 1.35, h, 28, 1, true), bark);
-      trunk.position.set(t.x, h / 2 - 2, t.z);
+      // From the ground, or floating on a knot of roots above older route (level.js decides).
+      const floating = t.base > 0, low = floating ? t.base + 3 : t.base, h = t.top - low;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r * (floating ? 1.08 : 1.35), h, 28, 1, !floating), bark);
+      trunk.position.set(t.x, low + h / 2, t.z);
       this.add(trunk);
+      if (floating) {
+        knots.push(mat4(t.x, t.base + 1.5, t.z, t.r * 1.08, 3, t.r * 1.08));
+        for (let i = 0; i < 7; i++) {
+          const b = (i / 7) * TAU + R(), k = 0.7 + R() * 0.6;
+          roots.push(mat4(t.x + Math.cos(b) * t.r * 0.72, t.base + 2 - 1.2 * k, t.z + Math.sin(b) * t.r * 0.72, k, k, k, Math.sin(b) * 0.45, 0, Math.PI - Math.cos(b) * 0.45));
+        }
+      }
       for (let i = 0; i < 6; i++) {
         const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 2.5 + R() * 2.5 : 0;
         c.position.set(t.x + Math.cos(a) * rr2, t.top + 2.5 + R() * 2.5, t.z + Math.sin(a) * rr2);
@@ -1073,6 +1082,16 @@ export class WorldView {
         this.add(c);
       }
     }
+    // All the root knots of the map in two draws, however many trees float.
+    const batch = (geo, list) => {
+      if (!list.length) return;
+      const m = new THREE.InstancedMesh(geo, bark, list.length);
+      list.forEach((q, i) => m.setMatrixAt(i, q));
+      m.frustumCulled = false;
+      this.add(m, false);
+    };
+    batch(new THREE.CylinderGeometry(1, 0.17, 1, 16, 2), knots);
+    batch(new THREE.ConeGeometry(0.55, 3.4, 7), roots);
   }
 
   // City drones: a body, four rotor rings and a red eye, one merged mesh each.
@@ -1360,7 +1379,7 @@ export class WorldView {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(3, H / 40);
     this.rockMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0 });
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * 1.18, H, 72, 1, true), this.rockMat);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * coreFlare('waterfall'), H, 72, 1, true), this.rockMat);
     core.position.y = y0;
     this.add(core);
     // The falls: curved sheets of water hugging the rock, streaming down, with spray where they land.

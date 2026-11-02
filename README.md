@@ -91,7 +91,9 @@ like. Tips show up once as see through cards; after that, tap the small **!** ma
 
 ## Multiplayer
 
-Up to 4 climbers. Everyone needs the same StickManUp version. The host picks the map.
+Up to 4 climbers. Everyone needs the same StickManUp version. The host picks the map. Tied together, the team
+shares its checkpoints and falls back together. With the cord turned off in the lobby, nobody is tied together and
+everyone keeps their own checkpoint: a fall only sends you back to yours.
 
 * **Online**: the host gets a 5 letter room code and friends type it in. The phones connect directly over
   WebRTC; the free [PeerJS](https://peerjs.com) server only introduces them. Some networks (often mobile data)

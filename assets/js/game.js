@@ -45,6 +45,13 @@ export class Game {
     this.falls = g.falls || 0;
     this.slot = session.slot;
     this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
+    // Checkpoints: tied together, the team shares one. Without the cord everyone has their own; the host
+    // keeps track of them all by slot (pcp).
+    if (this.noCord) {
+      this.pcp = Object.assign({}, g.pcp);
+      if (this.pcp[this.slot] !== undefined) this.cp = this.pcp[this.slot];
+      this.pcp[this.slot] = this.cp;
+    }
     this.me = new Body();
     const p = g.pos && g.pos[this.slot] ? g.pos[this.slot] : this.spawnPos(this.cp, this.slot);
     this.me.spawn(p[0], p[1], p[2]);
@@ -116,7 +123,9 @@ export class Game {
   snapshot(slot) {
     const m = this.me, stuns = [];
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t0: this.t0, base: this.base, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns,
+    // A player joining a game without the cord starts with the host's checkpoint (they appear next to the host).
+    if (this.noCord && this.pcp[slot] === undefined) this.pcp[slot] = this.cp;
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t0: this.t0, base: this.base, cp: this.noCord ? this.pcp[slot] : this.cp, falls: this.falls, doors: [...this.doors], stuns,
       pos: { [slot]: [m.x + 0.6, m.y + 1.2, m.z] } };
   }
 
@@ -211,7 +220,7 @@ export class Game {
     if (!this.solo && this.sendAcc >= SEND) {
       this.sendAcc = 0;
       const m = this.me, st = [r3(m.x), r3(m.y), r3(m.z), r3(m.vx), r3(m.vy), r3(m.vz), r3(this.robots.get(this.slot).yaw), m.flags, r3(m.reel), r3(m.charge)];
-      if (this.s.isHost) this.s.hostState(T, st, { f: this.falls, cp: this.cp });
+      if (this.s.isHost) this.s.hostState(T, st, this.noCord ? { f: this.falls } : { f: this.falls, cp: this.cp });
       else this.s.sendState(st);
     }
     this.saveAcc += dt;
@@ -606,13 +615,18 @@ export class Game {
         this.locks[key] = T + 1.5;
         if (e.k === 'splash') this.falls++;
         if (this.cpl === 2 && one === null) this.cp = 0;
-        const pos = {}, at = this.cpl === 2 ? 0 : this.cp;
+        // Without the cord, the one who fell goes back to their own checkpoint.
+        const cp = one === null ? this.cp : this.pcp[one] || 0, pos = {}, at = this.cpl === 2 ? 0 : cp;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
-        this.s.toAll({ k: 'respawn', cp: this.cp, at, pos, falls: this.falls, why: e.k, only: one });
+        this.s.toAll({ k: 'respawn', cp, at, pos, falls: this.falls, why: e.k, only: one });
         break;
       }
       case 'cp':
-        if (e.i > this.cp && cpEnabled(this.L.cps[e.i], this.cpl)) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
+        if (!cpEnabled(this.L.cps[e.i], this.cpl)) break;
+        if (this.noCord && from !== undefined) {
+          // Only the player who got there moves on; everyone hears about it.
+          if (e.i > (this.pcp[from] || 0)) { this.pcp[from] = e.i; this.s.toAll({ k: 'cp', i: e.i, slot: from }); this.save(); }
+        } else if (e.i > this.cp) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
         break;
       case 'sling': this.s.toSlot(e.to, e); break;
       case 'crumble': this.s.toAll(e); break;
@@ -652,6 +666,13 @@ export class Game {
         break;
       }
       case 'cp':
+        if (e.slot !== undefined && e.slot !== this.slot) {
+          // No cord: someone else's checkpoint, not mine.
+          const pl = this.s.players.get(e.slot), r = this.robots.get(e.slot);
+          if (r) r.cheer();
+          if (pl) ui.toast(`${pl.name} reached a checkpoint`, '');
+          break;
+        }
         if (e.i > this.cp) { this.cp = e.i; this.app.view.setCheckpoints(this.cpl, this.cp); }
         for (const r of this.robots.values()) r.cheer();
         this.app.sound.checkpoint();
@@ -669,7 +690,7 @@ export class Game {
 
   save() {
     const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
   }
 
   finish(e) {

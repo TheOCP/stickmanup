@@ -67,6 +67,9 @@ export class Stickman {
     const headMat = (this.headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.22), roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.45 }));
     const ink = new THREE.MeshBasicMaterial({ color: 0x0a0d14 });
     const gunMat = (this.gunMat = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.35, metalness: 0.7, emissive: color, emissiveIntensity: 0.35 }));
+    // These change colour while the game runs (the player's pick), so the native renderer must keep
+    // checking them for changes; without this the phone never saw a new colour.
+    for (const m of [limbMat, headMat, this.gunMat]) m.userData.live = true;
     const mesh = (geo, mat, parent, x = 0, y = 0, z = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);

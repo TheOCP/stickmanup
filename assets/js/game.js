@@ -86,6 +86,9 @@ export class Game {
       if (m.cp !== undefined && m.cp !== this.cp) { this.cp = m.cp; app.view.setCheckpoints(this.diff, this.cp); }
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
+    // Names and colours can change mid-game (Settings): redraw stickmen, cords and name tags.
+    const lobbyH = session.h.lobby;
+    session.on('lobby', () => { this.refreshPlayers(); if (lobbyH) lobbyH(); });
     session.on('gameTime', () => this.time);
     this.syncRoster();
     app.view.setCheckpoints(this.diff, this.cp);
@@ -115,6 +118,12 @@ export class Game {
   colorOf(slot) {
     const p = this.s.players.get(slot);
     return (p && p.color) ?? COLORS[slot % 4];
+  }
+
+  refreshPlayers() {
+    for (const [s, r] of this.robots) { const c = this.colorOf(s); r.setColor(c); this.app.fx.setColor(s, c); }
+    for (const lk of this.links) lk.mesh.setColors(this.colorOf(lk.a), this.colorOf(lk.b));
+    this.app.ui.players(this);
   }
 
   // Climbers and cords come from the app-wide pool (never created or disposed mid-game).

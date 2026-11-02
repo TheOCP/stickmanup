@@ -225,6 +225,17 @@ export class Session {
     return { slot, name, id, color, samples: [], ping: 0 };
   }
 
+  // Changing your name or colour mid-game: update it here and tell everyone. A client tells the host,
+  // the host passes the new player list on, and every screen redraws the stickmen and name tags.
+  setMe(name, color) {
+    this.name = String(name || 'Climber').slice(0, 14);
+    this.color = validColor(color);
+    const me = this.players.get(this.slot);
+    if (me) { me.name = this.name; me.color = this.color; }
+    if (this.mode === 'client') this.send(this.hostId, { k: 'info', name: this.name, color: this.color });
+    else this.sendLobby();
+  }
+
   on(k, fn) { this.h[k] = fn; return this; }
   emit(k, ...a) { if (this.h[k]) this.h[k](...a); }
   now() { return performance.now() + this.offset; }
@@ -262,6 +273,9 @@ export class Session {
         break;
       }
       case 'ping': this.send(id, { k: 'pong', c: m.c, h: performance.now() }); break;
+      case 'info':
+        if (p) { p.name = String(m.name || p.name).slice(0, 14); p.color = validColor(m.color); this.sendLobby(); }
+        break;
       case 'st': if (p) { p.ping = m.r || p.ping; this.push(p, this.emitGet('gameTime'), m.s); } break;
       case 'ev': if (p) this.emit('hostEvent', m.e, p.slot); break;
       case 'bye': this.drop(id); break;

@@ -195,8 +195,12 @@ const ui = (app.ui = {
     c.classList.toggle('on', !!on);
     c.classList.toggle('hot', !!on && !!hot);
   },
+  // Name tags just above each other player's head. The camera has moved this frame, so its matrices are
+  // brought up to date before projecting (otherwise the tags trail a frame behind and swim around).
+  // A player behind you has no tag; one just off screen gets a tag pinned to the edge.
   tags(g) {
     const box = $('#tags'), cam = app.renderer.camera, W = window.innerWidth, H = window.innerHeight, v = this.v || (this.v = new THREE.Vector3());
+    cam.updateMatrixWorld();
     for (const [slot, o] of g.vis || []) {
       let el = box.querySelector(`[data-s="${slot}"]`);
       const p = g.s.players.get(slot);
@@ -208,12 +212,12 @@ const ui = (app.ui = {
         el.textContent = p.name;
         box.appendChild(el);
       }
-      v.set(o.x, o.y + 0.85, o.z).project(cam);
-      let x = ((v.x + 1) / 2) * W, y = ((1 - v.y) / 2) * H;
-      const behind = v.z > 1;
-      if (behind) { x = W - x; y = H - 40; }
-      const cx = clamp(x, 50, W - 50), cy = clamp(y, 80, H - 30);
-      el.classList.toggle('edge', behind || cx !== x || cy !== y);
+      v.set(o.x, o.y + 1.45, o.z).project(cam);
+      if (v.z > 1) { el.style.display = 'none'; continue; }
+      el.style.display = '';
+      const x = ((v.x + 1) / 2) * W, y = ((1 - v.y) / 2) * H;
+      const cx = clamp(x, 50, W - 50), cy = clamp(y, 70, H - 20);
+      el.classList.toggle('edge', cx !== x || cy !== y);
       el.style.left = cx + 'px';
       el.style.top = cy + 'px';
     }
@@ -576,6 +580,7 @@ function settingsScreen(back) {
       settings.color = +b.dataset.i;
       saveSettings();
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
+      if (app.game) app.game.s.setMe(settings.name, myColor());
     },
     seg: (b) => {
       const k = b.dataset.k, v = b.dataset.v;
@@ -603,7 +608,18 @@ function settingsScreen(back) {
     });
   }
   for (const c of document.querySelectorAll('#menu input[data-c]')) c.addEventListener('change', () => { settings[c.dataset.c] = c.checked; applySettings(); });
-  $('#nm').addEventListener('change', (e) => { settings.name = e.target.value.trim().slice(0, 14) || settings.name; saveSettings(); });
+  // Name changes apply while you type (a moment after you stop), in solo and online.
+  let nmT = 0;
+  $('#nm').addEventListener('input', (e) => {
+    clearTimeout(nmT);
+    nmT = setTimeout(() => {
+      const n = e.target.value.trim().slice(0, 14);
+      if (!n) return;
+      settings.name = n;
+      saveSettings();
+      if (app.game) app.game.s.setMe(settings.name, myColor());
+    }, 450);
+  });
 }
 
 const fmtVal = (k, fmt) => (fmt === '%' ? Math.round(settings[k] * 100) + '%' : String(settings[k]));

@@ -18,7 +18,7 @@
 #   --yes               ask nothing, use the defaults
 set -euo pipefail
 
-REPO_TARBALL="https://codeload.github.com/TheOCP/stickmanup/tar.gz/refs/heads/main"
+REPO_TARBALL="${STICKMANUP_TARBALL:-https://codeload.github.com/TheOCP/stickmanup/tar.gz/refs/heads/main}"
 NODE_BASE="https://nodejs.org/dist/latest-v22.x"
 SERVICE=stickmanup
 APP_USER=stickmanup
@@ -26,7 +26,9 @@ PREFIX="${STICKMANUP_PREFIX:-/opt/stickmanup}"
 DATA_DIR="${STICKMANUP_DATA:-/var/lib/stickmanup}"
 ETC_DIR="${STICKMANUP_ETC:-/etc/stickmanup}"
 ENV_FILE="$ETC_DIR/server.env"
-HOOK="/etc/letsencrypt/renewal-hooks/deploy/stickmanup.sh"
+LE_DIR="${STICKMANUP_LE:-/etc/letsencrypt}"
+UNIT_DIR="${STICKMANUP_UNITS:-/etc/systemd/system}"
+HOOK="$LE_DIR/renewal-hooks/deploy/stickmanup.sh"
 PORT_FIRST=47810
 PORT_LAST=47899
 
@@ -62,25 +64,30 @@ done
 HAS_TTY=0
 if ( : < /dev/tty ) 2>/dev/null; then HAS_TTY=1; fi
 
+# The answer goes into the caller's variable by name. These local names must never match one of the caller's, or the
+# answer lands in our own copy and is lost, which is why they look the way they do.
+trim() { local t=$1; t=${t#"${t%%[![:space:]]*}"}; t=${t%"${t##*[![:space:]]}"}; printf '%s' "$t"; }
 ask() { # ask VAR "question" "default"
-  local __var=$1 q=$2 d=${3:-} a=""
-  if [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ]; then printf -v "$__var" '%s' "$d"; return 0; fi
-  if [ -n "$d" ]; then printf '%s [%s]: ' "$q" "$d" >&2; else printf '%s: ' "$q" >&2; fi
-  IFS= read -r a < /dev/tty || a=""
-  printf -v "$__var" '%s' "${a:-$d}"
+  local __ask_var=$1 __ask_q=$2 __ask_def=${3:-} __ask_in=""
+  if [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ]; then printf -v "$__ask_var" '%s' "$__ask_def"; return 0; fi
+  if [ -n "$__ask_def" ]; then printf '%s [%s]: ' "$__ask_q" "$__ask_def" >&2; else printf '%s: ' "$__ask_q" >&2; fi
+  IFS= read -r __ask_in < /dev/tty || __ask_in=""
+  __ask_in=$(trim "$__ask_in")
+  printf -v "$__ask_var" '%s' "${__ask_in:-$__ask_def}"
 }
 ask_secret() { # ask_secret VAR "question" "current value, kept on Enter"
-  local __var=$1 q=$2 d=${3:-} a=""
-  if [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ]; then printf -v "$__var" '%s' "$d"; return 0; fi
-  if [ -n "$d" ]; then printf '%s [Enter keeps the current one]: ' "$q" >&2; else printf '%s (hidden while you type): ' "$q" >&2; fi
-  IFS= read -rs a < /dev/tty || a=""
+  local __ask_var=$1 __ask_q=$2 __ask_def=${3:-} __ask_in=""
+  if [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ]; then printf -v "$__ask_var" '%s' "$__ask_def"; return 0; fi
+  if [ -n "$__ask_def" ]; then printf '%s [Enter keeps the current one]: ' "$__ask_q" >&2; else printf '%s (hidden while you type): ' "$__ask_q" >&2; fi
+  IFS= read -rs __ask_in < /dev/tty || __ask_in=""
   printf '\n' >&2
-  printf -v "$__var" '%s' "${a:-$d}"
+  __ask_in=$(trim "$__ask_in")
+  printf -v "$__ask_var" '%s' "${__ask_in:-$__ask_def}"
 }
 yes_no() { # yes_no "question" y|n
-  local a=""
-  ask a "$1 (y/n)" "$2"
-  case "$a" in y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
+  local __yn=""
+  ask __yn "$1 (y/n)" "$2"
+  case "$__yn" in y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
 }
 
 # ---------------------------------------------------------------- settings file
@@ -267,8 +274,8 @@ make_user() {
 # ---------------------------------------------------------------- the address and certificate
 copy_cert() {
   local d=$1
-  install -o "$APP_USER" -g "$APP_USER" -m 600 "/etc/letsencrypt/live/$d/fullchain.pem" "$DATA_DIR/tls/fullchain.pem"
-  install -o "$APP_USER" -g "$APP_USER" -m 600 "/etc/letsencrypt/live/$d/privkey.pem" "$DATA_DIR/tls/privkey.pem"
+  install -o "$APP_USER" -g "$APP_USER" -m 600 "$LE_DIR/live/$d/fullchain.pem" "$DATA_DIR/tls/fullchain.pem"
+  install -o "$APP_USER" -g "$APP_USER" -m 600 "$LE_DIR/live/$d/privkey.pem" "$DATA_DIR/tls/privkey.pem"
 }
 install_hook() {
   local d=$1
@@ -276,7 +283,7 @@ install_hook() {
   cat > "$HOOK" <<EOF
 #!/bin/sh
 # Hands a renewed certificate to the StickManUp server, which picks it up without dropping any games.
-[ "\$RENEWED_LINEAGE" = "/etc/letsencrypt/live/$d" ] || exit 0
+[ "\$RENEWED_LINEAGE" = "$LE_DIR/live/$d" ] || exit 0
 install -o $APP_USER -g $APP_USER -m 600 "\$RENEWED_LINEAGE/fullchain.pem" "$DATA_DIR/tls/fullchain.pem"
 install -o $APP_USER -g $APP_USER -m 600 "\$RENEWED_LINEAGE/privkey.pem" "$DATA_DIR/tls/privkey.pem"
 systemctl reload $SERVICE
@@ -315,13 +322,32 @@ explain_cert_failure() {
 
 The HTTPS certificate failed, so the server was not started. The game can only talk to it over HTTPS.
 Most likely fixes:
+  * Make sure your domain points at this server, then run this again.
   * Open TCP port 80 in your hosting company's firewall (their control panel), then run this again.
   * If the free address hit Let's Encrypt's weekly limit, use your own domain. A free one comes from duckdns.org:
     run this again with --domain yourname.duckdns.org
   * If another program must keep port 80, run your own HTTPS proxy and use --proxy. See README.md.
-Nothing you entered is lost. Just run this again.
 EOF
   exit 1
+}
+# Let's Encrypt and the game both have to reach this server under that name. Better to say so now, in plain words, than
+# to fail later in certbot's.
+check_dns() {
+  local d=$1 me got
+  me=$(public_ip) || return 0
+  got=$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ') || got=""
+  case " $got" in *" $me "*) return 0 ;; esac
+  warn "$d does not point at this server yet."
+  note "  This server is:  $me"
+  note "  $d points at:  ${got:-nothing}"
+  cat >&2 <<EOF
+  At the company you got the domain from, add an A record for this name with the address $me.
+  If this name is for a website somewhere else, use a new name instead, like game.$d.
+  If you use Cloudflare, set this name to DNS only (grey cloud): Cloudflare doesn't carry the game's port.
+  A new record can take a few minutes to work.
+EOF
+  [ "$YES" = 1 ] && return 0
+  yes_no "Try anyway?" n || die "Stopped. Nothing was started. Fix that and run this again."
 }
 setup_address() {
   local cur ip free1="" free2="" d=""
@@ -340,7 +366,9 @@ setup_address() {
     if [ -n "$free1" ]; then ask d "Domain" "$free1"
     else ask d "Domain" ""; fi
   fi
-  d=$(printf '%s' "$d" | tr '[:upper:]' '[:lower:]')
+  # However it got typed or pasted: HTTPS://Example.com/ is example.com.
+  d=$(trim "$d" | tr '[:upper:]' '[:lower:]')
+  d=${d#http://}; d=${d#https://}; d=${d%/}
   valid_domain "$d" || die "\"$d\" doesn't look like a domain name."
 
   if [ "$PROXY" = 1 ] || [ "$(get_env TRUST_PROXY)" = 1 ]; then
@@ -352,7 +380,8 @@ setup_address() {
   fi
 
   ENVV[HOST]=0.0.0.0
-  if [ ! -f "/etc/letsencrypt/live/$d/fullchain.pem" ]; then
+  if [ ! -f "$LE_DIR/live/$d/fullchain.pem" ]; then
+    check_dns "$d"
     say "Getting a free HTTPS certificate from Let's Encrypt"
     note "By going on you accept their terms: https://letsencrypt.org/repository/"
     if [ -z "$OPT_EMAIL" ]; then ask OPT_EMAIL "Email for expiry warnings (optional, Enter to skip)" ""; fi
@@ -443,7 +472,7 @@ EOF
 install_service() {
   [ "$NO_SERVICE" = 1 ] && return 0
   command -v systemctl >/dev/null 2>&1 || die "This needs a server with systemd."
-  cat > "/etc/systemd/system/$SERVICE.service" <<EOF
+  cat > "$UNIT_DIR/$SERVICE.service" <<EOF
 [Unit]
 Description=StickManUp game server
 After=network-online.target
@@ -541,68 +570,75 @@ EOF
 }
 
 # ---------------------------------------------------------------- what to do
-case "$MODE" in
-  status)
-    systemctl --no-pager status "$SERVICE" || true
-    load_env
-    u=$(get_env PUBLIC_URL)
-    [ -n "$u" ] && { note ""; note "Address: $u"; curl -fsS --max-time 6 "$u/api/health" || warn "No answer from there."; note ""; }
-    exit 0 ;;
-  uninstall)
-    need_root
-    yes_no "Remove the StickManUp server?" n || exit 0
-    systemctl disable --now "$SERVICE" 2>/dev/null || true
-    rm -f "/etc/systemd/system/$SERVICE.service" "$HOOK"
-    systemctl daemon-reload 2>/dev/null || true
-    rm -rf "$PREFIX"
-    if [ "$PURGE" = 1 ]; then
-      yes_no "Really delete all accounts and saved progress in $DATA_DIR, and your settings?" n && {
-        rm -rf "$DATA_DIR" "$ETC_DIR"
-        userdel "$APP_USER" 2>/dev/null || true
-        note "Deleted."
-      }
-    else
-      note "Players' data stays in $DATA_DIR and settings in $ETC_DIR. Add --purge to delete those too."
-    fi
-    note "Removed. The certificate stays with certbot (certbot delete removes it)."
-    exit 0 ;;
-  update)
-    need_root
-    load_env
-    [ -n "$(get_env PUBLIC_URL)" ] || die "Nothing to update here yet. Run this without --update first."
-    install_basics
-    install_node
-    install_app
-    install_service
-    check_running
-    note "Updated."
-    exit 0 ;;
-  logins)
-    need_root
-    load_env
-    [ -n "$(get_env PUBLIC_URL)" ] || die "Install the server first: run this without --logins."
-    setup_logins
-    write_env
-    if [ "$NO_SERVICE" = 0 ]; then systemctl restart "$SERVICE"; fi
-    summary
-    exit 0 ;;
-esac
+# Run as curl | bash, this script IS the standard input, read a line at a time. Any program started below that reads its
+# input (package managers do) would swallow the rest of the script, and the install would just stop halfway. So bash reads
+# all of this first, and what it starts gets no input at all. A download cut short also runs nothing this way.
+main() {
+  case "$MODE" in
+    status)
+      systemctl --no-pager status "$SERVICE" || true
+      load_env
+      u=$(get_env PUBLIC_URL)
+      [ -n "$u" ] && { note ""; note "Address: $u"; curl -fsS --max-time 6 "$u/api/health" || warn "No answer from there."; note ""; }
+      exit 0 ;;
+    uninstall)
+      need_root
+      yes_no "Remove the StickManUp server?" n || exit 0
+      systemctl disable --now "$SERVICE" 2>/dev/null || true
+      rm -f "$UNIT_DIR/$SERVICE.service" "$HOOK"
+      systemctl daemon-reload 2>/dev/null || true
+      rm -rf "$PREFIX"
+      if [ "$PURGE" = 1 ]; then
+        yes_no "Really delete all accounts and saved progress in $DATA_DIR, and your settings?" n && {
+          rm -rf "$DATA_DIR" "$ETC_DIR"
+          userdel "$APP_USER" 2>/dev/null || true
+          note "Deleted."
+        }
+      else
+        note "Players' data stays in $DATA_DIR and settings in $ETC_DIR. Add --purge to delete those too."
+      fi
+      note "Removed. The certificate stays with certbot (certbot delete removes it)."
+      exit 0 ;;
+    update)
+      need_root
+      load_env
+      [ -n "$(get_env PUBLIC_URL)" ] || die "Nothing to update here yet. Run this without --update first."
+      install_basics
+      install_node
+      install_app
+      install_service
+      check_running
+      note "Updated."
+      exit 0 ;;
+    logins)
+      need_root
+      load_env
+      [ -n "$(get_env PUBLIC_URL)" ] || die "Install the server first: run this without --logins."
+      setup_logins
+      write_env
+      if [ "$NO_SERVICE" = 0 ]; then systemctl restart "$SERVICE"; fi
+      summary
+      exit 0 ;;
+  esac
 
-need_root
-say "StickManUp server"
-note "by TheOCProductions and ShortGG"
-load_env
-install_basics
-make_user
-choose_port
-ENVV[DATA_DIR]=$DATA_DIR
-ENVV[TERMS_FILE]=$ETC_DIR/terms.txt
-setup_address
-install_node
-install_app
-setup_logins
-write_env
-if [ "$(get_env TRUST_PROXY)" != 1 ]; then open_firewall "$(get_env PORT)"; fi
-install_service
-check_running
-summary
+  need_root
+  say "StickManUp server"
+  note "by TheOCProductions and ShortGG"
+  load_env
+  install_basics
+  make_user
+  choose_port
+  ENVV[DATA_DIR]=$DATA_DIR
+  ENVV[TERMS_FILE]=$ETC_DIR/terms.txt
+  setup_address
+  install_node
+  install_app
+  setup_logins
+  write_env
+  if [ "$(get_env TRUST_PROXY)" != 1 ]; then open_firewall "$(get_env PORT)"; fi
+  install_service
+  check_running
+  summary
+}
+
+main </dev/null

@@ -45,12 +45,21 @@ Every map also has grapple hooks over wide gaps and doors that open when you sho
 does not just circle: it now and then rides a lift up and turns back the other way, or detours out to floating
 platforms away from the tower before heading back in.
 
+Two kinds of section need the new moves. Gaps too wide to jump have glowing arrows in the air: jump, then DASH across.
+Shafts between two high walls have orange rungs up the walls: bounce up with wall jumps and out over the lower wall.
+
 **Obstacles**
 
-Each map has 26 obstacles of its own, built to fit it. The higher zones bring in the harder ones, and from about
+Each map has 36 obstacles of its own, built to fit it. The higher zones bring in the harder ones, and from about
 650 m up come six endgame obstacles: twin pendulums over a long bridge, spike grids that pop up two squares at a
 time, things rolling along narrow bridges, rows of presses slamming in turn, crossfire jets with one safe spot,
 and turntables with bars spinning over them.
+
+From about halfway up come ten more, the hardest of all: twin rollers to run between, three swings in a row, spikes
+rising in a wave, rows of presses over gaps, ladders of jets, stones that flicker away under you, chains of
+trapdoors, twin sweeps, a dash gap with something swinging through it and a wall jump shaft with jets firing across.
+They have their own look on each map, like Twin saw rails and Arc shaft on Storm Tower, or Thorn wave and Spore shaft
+in Wild Forest.
 
 * **Storm Tower**: turbine sweeps, Tesla pendulums, piston rams, hydraulic presses, arc spikes, plasma jets, phase
   platforms, a saw track, a wrecking ball, grease pits and more
@@ -69,20 +78,27 @@ Most of them shake, flicker or glow just before they strike.
 
 **Jumpers**
 
-Every map has angry dummies guarding ledges from about 500 m up, and on Hardcore already from 50 m, in the map's own
+Every map has angry dummies guarding ledges from about 500 m up, and on Hardcore and Insane already from 50 m, in the map's own
 style: storm dummies, beach bullies, wild jumpers, ash brutes, street punks and splash bullies. Come close and they run
 at you and jump kick you off the ledge. Jump past them, or SHOOT to stun them for a few seconds.
 
 **Coins, shop and records**
 
-Coins hang all along every route. Each is worth 1 on Easy, 2 on Normal and 3 on Hardcore, and the top pays a bonus of
-100, 250 or 500. A coin you took stays gone after a fall. Spend them in the shop:
+Coins hang all along every route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays
+a bonus of 100, 250, 500 or 800. A coin you took stays gone after a fall.
+
+The first time you win a difficulty you also get a big one time bonus: 2000 on Easy, 4000 on Normal, 10000 on Hardcore
+and 20000 on Insane. Climbs with custom rules don't count for it.
+
+Spend them in the shop:
 
 * **Common (green):** colours, simple faces and caps
 * **Rare (blue):** 41 country flags with a matching cape, patterns, funny faces and hats
 * **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat
-* **Legendary (orange):** living suits that move and leave a trail. Coins can't buy them. They only come from Hardcore:
-  a few are earned by what you do up there, the rest are hidden. Those who know, know.
+* **Legendary (orange):** living suits that move and leave a trail. Coins can't buy them. They only come from Hardcore
+  and Insane: a few are earned by what you do up there, the rest are hidden. Those who know, know.
+* **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
+  the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
 
 Your other climbers see what you wear. The records keep your best climbs on every map: how high you got, on which
 difficulty, how many falls, how long and how many coins.
@@ -102,6 +118,8 @@ the climb. The graphics preset scales all of this: Low drops the small stuff for
 * **Normal**: four checkpoints on the whole climb and most obstacles
 * **Hardcore**: no checkpoints and a shorter cord. Every obstacle is on and faster. Fall all the way down and the
   team starts over.
+* **Insane**: everything Hardcore has, faster still. A very short cord, barely any grip, and almost no time left to
+  jump once you have run off a ledge.
 
 **Rules**: when starting a climb (solo, or the host in the lobby) you can also set the checkpoints (every zone, a
 few, none), the obstacles (calm, normal, wild) and the cord length yourself. Auto follows the difficulty. Climbs
@@ -115,6 +133,10 @@ saved climb from the lobby.
 * **Left side of the screen**: a floating stick to move
 * **Right side of the screen**: drag to look around
 * **JUMP**: tap for a hop, hold for full height
+* **Wall jump**: in the air, jump at a wall and press JUMP as you touch it to kick off, up and away. You can't kick off
+  the same wall twice in a row, so bounce between two walls.
+* **DASH**: a quick burst where the stick points, or where you are looking if you aren't touching it. It works in the
+  air too, once until you land.
 * **GRAB** (hold): clamp onto anything you touch, even walls. Grip drains faster on walls.
 * **REEL** (hold): pull the cord in. It turns into **PULL** when your partner hangs below you (it hauls them up and
   over the edge) and **CLIMB** when you're the one hanging.
@@ -122,8 +144,13 @@ saved climb from the lobby.
 * **GRAPPLE**: shows up near a hook. You zip up and get thrown across.
 * **SHOOT**: hold to aim over your shoulder, drag the crosshair, let go to fire. No auto aim.
 * **SHIELD** (Storm Tower): blocks lightning and hits for a second
+* **Emotes**: the smiley at the top right opens the menu during a climb. Everyone climbing with you sees them. Flips
+  start with a small jump, and moving ends a pose.
 
-Keyboard and game controllers work too: WASD, Space, Shift, E, F grapple, R hold to aim, Q shield.
+Keyboard: WASD, Space, Shift, E, F grapple, R hold to aim, Q shield, C or left Ctrl dash, T emotes.
+
+Controller: left stick moves, right stick looks, A jump, B grab, X grapple, Y or pressing in the left stick dash, LT hold
+to aim, RT fire (aimed or from the hip), RB reel, LB shield, direction pad down emotes.
 
 A controller works in every menu as well: move with the direction pad or left stick, A selects, B goes back, LB and RB
 switch tabs, and text boxes open a letter board. Select opens the pause menu on Back to checkpoint. Settings has a dead
@@ -192,7 +219,7 @@ browser can play WiFi multiplayer against each other.
     from shared game time so every phone agrees
   * `net.js`, `game.js`: host relayed multiplayer; each phone simulates its own climber and applies its share of
     the cord pull, so the game stays responsive over a laggy connection
-  * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen
+  * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen with their emotes
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray
   * `mirror.js` streams the scene to the native renderer

@@ -3,12 +3,14 @@
 import { noiseGlsl } from './pattern.js';
 import * as THREE from 'three';
 import { F } from './player.js';
+import { EMOTE } from './emotes.js';
 import { COLORS } from './colors.js';
 import { COL_W, COL_BACK, COL_ARMS, ARM_W, TEX, FIG_TOP, FIG_H, BODY_W, ARM_SPAN, FACE_W, FACE_H, drawFace, paintSuit, paintCape, suitIsDark } from './skins.js';
 import { gearGeo, gearMat, GEAR_AT } from './gear.js';
 
 const HDR = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 const WHITE = new THREE.Color(0xffffff);
+const EP = {}, EV = new THREE.Vector3(), EMOTE_PIVOT = 0.35;
 
 // Joins geometries (each already moved into place) into one, so a whole limb is a single draw call.
 function join(...geos) {
@@ -279,6 +281,8 @@ export class Stickman {
     this.actT = 0;
     this.cheerT = 0;
     this.flip = 0;
+    this.body.rotation.order = 'YXZ';
+    this.emote = null; this.emoteT = 0; this.emRot = { x: 0, y: 0, z: 0 }; this.emLift = 0;
     this.yawVel = 0;
     this.climbPh = 0;
     // Skin state: extras made when first worn, and the trail of a legendary suit.
@@ -399,6 +403,21 @@ export class Stickman {
     this.cheerT = 1.6;
   }
 
+  // Start an emote or stunt from emotes.js. Starting one again restarts it.
+  playEmote(id) {
+    const e = EMOTE[id];
+    if (!e) return;
+    // A flip cut short: on to the next from the short way round.
+    const R = this.emRot;
+    R.x = Math.atan2(Math.sin(R.x), Math.cos(R.x)); R.y = Math.atan2(Math.sin(R.y), Math.cos(R.y)); R.z = Math.atan2(Math.sin(R.z), Math.cos(R.z));
+    this.emote = e;
+    this.emoteT = 0;
+  }
+
+  stopEmote() {
+    this.emote = null;
+  }
+
   // flags from the physics body (or network); gy = floor height below for the contact shadow;
   // faceYaw = where the player is aiming (used while F.AIM is set); shot = seconds since the last shot.
   update(dt, x, y, z, vx, vy, vz, flags, charge, gy, faceYaw, shot = 9) {
@@ -428,7 +447,13 @@ export class Stickman {
     let headY = Math.max(-0.5, Math.min(0.5, -this.yawVel * 0.06)), headZ = 0, twist = 0, bounce = 0, breathe = 0;
     const idle = ground && sp <= 0.4 && !anchored && !(flags & (F.STUN | F.AIM | F.HANG | F.GRAPPLE));
     if (!idle) { this.idleT = 0; this.idleAct = null; }
-    if (flags & F.KICK) {
+    if (flags & F.DASH) {
+      // Dash: flat out forward, arms and legs trailing.
+      lean = 0.95; armX = [0.95, 0.95]; armZ = [0.45, 0.45]; elbow = [-0.1, -0.1]; legX = [0.75, 0.25]; knee = [0.5, 1.0]; headX = -0.55; mouthO = 1.1;
+    } else if (flags & F.WALL) {
+      // Sliding down a wall: hands out in front against it, feet braced.
+      armX = [-1.75, -1.95]; armZ = [0.45, 0.45]; elbow = [-0.45, -0.45]; legX = [-0.75, -0.25]; knee = [1.0, 0.5]; lean = -0.12; headX = 0.15; mouthO = 0.8;
+    } else if (flags & F.KICK) {
       // Flying jump kick: one leg out straight, arms flung back.
       lean = -0.3; legX = [-1.75, 0.55]; knee = [0.05, 1.1]; armX = [0.8, 0.5]; armZ = [1.0, 1.0]; elbow = [-0.3, -0.3]; mouthO = 1.1;
     } else if (flags & F.STUN) {
@@ -495,6 +520,27 @@ export class Stickman {
       armX = [-2.8 + w * 0.3, -2.8 - w * 0.3]; armZ = [0.6, 0.6]; elbow = [-0.2, -0.2]; mouthO = 1.5;
       if (ground) bounce = Math.abs(Math.sin(t * 9)) * 0.14;
     }
+    // An emote takes over the pose. Poses stop when you run or leave the ground; flips keep going. Getting hit,
+    // grabbing, aiming, zipping or dashing stops anything.
+    let legZ = [0, 0], rx = 0, ry = 0, rz = 0, lift = 0;
+    const E = this.emote;
+    if (E) {
+      this.emoteT += dt;
+      const u = this.emoteT, k = E.loop ? 0 : u / E.dur;
+      if (anchored || flags & (F.STUN | F.AIM | F.GRAPPLE | F.DASH) || (!E.flip && (sp > 1 || !ground)) || k >= 1) this.emote = null;
+      else {
+        const p = EP;
+        p.lean = lean; p.crouch = crouch; p.armX = armX; p.armZ = armZ; p.elbow = elbow; p.legX = legX; p.legZ = legZ; p.knee = knee;
+        p.headX = headX; p.headY = headY; p.headZ = headZ; p.twist = twist; p.bounce = bounce; p.mouthO = mouthO;
+        p.rx = p.ry = p.rz = p.lift = 0;
+        E.pose(p, u, k);
+        lean = p.lean; crouch = p.crouch; armX = p.armX; armZ = p.armZ; elbow = p.elbow; legX = p.legX; legZ = p.legZ; knee = p.knee;
+        headX = p.headX; headY = p.headY; headZ = p.headZ; twist = p.twist; bounce = p.bounce; mouthO = p.mouthO;
+        rx = p.rx; ry = p.ry; rz = p.rz; lift = p.lift;
+        // A flip with no real jump under it (the shop, or the moment before the jump shows up from another phone).
+        if (E.hop && ground) lift += Math.sin(Math.min(1, k) * Math.PI) * 0.7;
+      }
+    }
     // Aiming overrides the arms: right arm straight ahead with the blaster, left hand steadying it.
     if (aim && !(flags & (F.STUN | F.GRAPPLE))) {
       armX[0] = -1.57 - (shot < 0.12 ? 0.35 * (1 - shot / 0.12) : 0); armZ[0] = 0.05; elbow[0] = 0;
@@ -509,6 +555,7 @@ export class Stickman {
       lerp(A[i].sh.rotation, 'z', A[i].s * armZ[i]);
       lerp(A[i].el.rotation, 'x', elbow[i]);
       lerp(L[i].hp.rotation, 'x', legX[i]);
+      lerp(L[i].hp.rotation, 'z', L[i].s * legZ[i]);
       lerp(L[i].kn.rotation, 'x', knee[i]);
     }
     lerp(this.spine.rotation, 'x', lean);
@@ -520,7 +567,22 @@ export class Stickman {
     this.spine.scale.y = 1 + breathe * 0.02;
     const sq = this.squash;
     this.body.scale.set(1 + sq * 0.25, 1 - sq * 0.3, 1 + sq * 0.25);
-    this.body.rotation.set(this.flip, this.spin, 0);
+    const R = this.emRot;
+    if (this.emote && this.emote.flip) { R.x = rx; R.y = ry; R.z = rz; }
+    else {
+      // Coming out of a turn the short way round.
+      if (!this.emote && (R.x || R.y || R.z)) { R.x = Math.atan2(Math.sin(R.x), Math.cos(R.x)); R.y = Math.atan2(Math.sin(R.y), Math.cos(R.y)); R.z = Math.atan2(Math.sin(R.z), Math.cos(R.z)); }
+      R.x += (rx - R.x) * ease; R.y += (ry - R.y) * ease; R.z += (rz - R.z) * ease;
+      if (!this.emote) { if (Math.abs(R.x) < 1e-3) R.x = 0; if (Math.abs(R.y) < 1e-3) R.y = 0; if (Math.abs(R.z) < 1e-3) R.z = 0; }
+    }
+    this.emLift += (lift - this.emLift) * ease;
+    if (Math.abs(this.emLift) < 1e-3) this.emLift = 0;
+    this.body.rotation.set(this.flip + R.x, this.spin + R.y, R.z);
+    // The whole body turns round its middle, not round the point between its feet and its chest.
+    if (R.x || R.y || R.z || this.emLift) {
+      EV.set(0, EMOTE_PIVOT, 0).applyEuler(this.body.rotation);
+      this.body.position.set(-EV.x, EMOTE_PIVOT - EV.y + this.emLift, -EV.z);
+    } else this.body.position.set(0, 0, 0);
     this.mouth.scale.y += (mouthO - this.mouth.scale.y) * ease;
     this.blinkT -= dt;
     const blink = this.blinkT < 0.1 ? 0.15 : 1;
@@ -552,6 +614,7 @@ export class Stickman {
   }
 
   hide() {
+    this.emote = null;
     this.g.visible = false;
     this.blob.visible = false;
     if (this.trail) this.trail.im.visible = false;

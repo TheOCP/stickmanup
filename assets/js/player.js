@@ -1,4 +1,4 @@
-// Climber movement: a sphere with platformer controls, GRAB, a reelable cord, SHIELD and GRAPPLE.
+// Climber movement: a sphere with platformer controls, wall jump, dash, GRAB, a reelable cord, SHIELD and GRAPPLE.
 import { collideSphere, toLocal, toWorld } from './physics.js';
 
 export const PR = 0.42;
@@ -6,8 +6,10 @@ export const PC = {
   G: -24, SPEED: 6.2, GACC: 55, AACC: 20, ICE_ACC: 9, ICE_DEC: 3, JUMP: 9.4, PAD: 16.5,
   COYOTE: 0.12, BUFFER: 0.14, MAXFALL: -34, WALL_DRAIN: 0.22, GROUND_DRAIN: 0.05, REGEN: 0.45,
   REEL: 4.6, UNREEL: 3.0, CLIMB: 4.6, DRAG: 6.5, SHIELD: 1.0, SHIELD_CD: 2.2, ZIP: 19,
+  WALL_JUMP: 9.0, WALL_PUSH: 7.2, WALL_SLIDE: -3.6, WALL_TOUCH: 0.12, WALL_NOGRAB: 0.25,
+  DASH: 15, DASH_T: 0.16, DASH_END: 8, DASH_CD: 0.7, DASH_BUFFER: 0.1,
 };
-export const F = { GROUND: 1, ANCHOR: 2, ICE: 4, STUN: 8, CHARGE: 16, REEL: 32, MOVE: 64, SHIELD: 128, GRAPPLE: 256, HANG: 512, AIM: 1024, KICK: 2048 };
+export const F = { GROUND: 1, ANCHOR: 2, ICE: 4, STUN: 8, CHARGE: 16, REEL: 32, MOVE: 64, SHIELD: 128, GRAPPLE: 256, HANG: 512, AIM: 1024, KICK: 2048, DASH: 4096, WALL: 8192 };
 
 // How hard a robot resists the cord: clamped robots are immovable, grounded ones have grip.
 export function invMass(flags) {
@@ -79,6 +81,8 @@ export class Body {
     this.peakY = this.y; this.impact = 0;
     this.drag = { x: 0, z: 0, on: false };
     this.shield = 0; this.shieldCd = 0; this.thrown = 0; this.hook = null; this.hookT = 0; this.hanging = false; this.airT = 0;
+    this.wallT = -1; this.wallNx = 0; this.wallNz = 0; this.kickNx = 0; this.kickNz = 0; this.kicked = false; this.sliding = false; this.noGrab = 0;
+    this.dashT = 0; this.dashCd = 0; this.dashBuf = 0; this.dashReady = true; this.dashX = 0; this.dashZ = 0;
   }
 
   spawn(x, y, z) {
@@ -89,15 +93,15 @@ export class Body {
   get flags() {
     return (this.grounded ? F.GROUND : 0) | (this.anchored ? F.ANCHOR : 0) | (this.onIce ? F.ICE : 0) |
       (this.stun > 0 ? F.STUN : 0) | (this.charge > 0 ? F.CHARGE : 0) | (this.reel > 0.05 ? F.REEL : 0) | (this.moving ? F.MOVE : 0) |
-      (this.shield > 0 ? F.SHIELD : 0) | (this.hook ? F.GRAPPLE : 0) | (this.hanging ? F.HANG : 0) | (this.aim ? F.AIM : 0);
+      (this.shield > 0 ? F.SHIELD : 0) | (this.hook ? F.GRAPPLE : 0) | (this.hanging ? F.HANG : 0) | (this.aim ? F.AIM : 0) | (this.dashT > 0 ? F.DASH : 0) | (this.sliding ? F.WALL : 0);
   }
 
   invMass() {
     return invMass(this.flags);
   }
 
-  // inp: { mx, mz (world move dir, length <= 1), jump, jumpPressed, grab, reel }
-  // env: { world, others: [{x,y,z}], wind(body, out), grip (drain multiplier), maxReel }
+  // inp: { mx, mz (world move dir, length <= 1), fx, fz (where the camera looks), jump, jumpPressed, dash, grab, reel }
+  // env: { world, others: [{x,y,z}], wind(body, out), grip (drain multiplier), maxReel, coyote (seconds, optional) }
   step(dt, inp, env) {
     this.time += dt;
     this.buffer = inp.jumpPressed ? PC.BUFFER : Math.max(0, this.buffer - dt);
@@ -105,6 +109,10 @@ export class Body {
     this.shield = Math.max(0, this.shield - dt);
     this.shieldCd = Math.max(0, this.shieldCd - dt);
     this.moving = Math.abs(inp.mx) + Math.abs(inp.mz) > 0.1;
+    this.dashBuf = inp.dash ? PC.DASH_BUFFER : Math.max(0, this.dashBuf - dt);
+    this.dashCd = Math.max(0, this.dashCd - dt);
+    this.noGrab = Math.max(0, this.noGrab - dt);
+    this.sliding = false;
 
     this.reelHeld = !!inp.reel;
     this.reel = inp.reel ? Math.min(this.reel + PC.REEL * dt, env.maxReel) : Math.max(0, this.reel - PC.UNREEL * dt);
@@ -117,7 +125,13 @@ export class Body {
 
     if (this.anchored) {
       const c = this.anchorCol;
-      if (!c.on || !inp.grab || this.grip <= 0 || this.stun > 0) this.release();
+      // Jump while clamped to a wall: push off it. Only here does a wall jump not care which wall came last,
+      // and the push always carries you too far out to get back to the same wall any higher.
+      if (c.on && this.buffer > 0 && this.anchorWall && this.anchorNx !== undefined && this.stun <= 0) {
+        this.wallNx = this.anchorNx; this.wallNz = this.anchorNz;
+        this.release();
+        this.wallJump();
+      } else if (!c.on || !inp.grab || this.grip <= 0 || this.stun > 0) this.release();
       else {
         toWorld(c, this.anchorL, tmp);
         this.x = tmp.x; this.y = tmp.y; this.z = tmp.z;
@@ -145,6 +159,17 @@ export class Body {
       const m = g.m, sp = g.conv.sp, a = g.conv.side ? 6 : 0;
       this.x += m[a] * sp * dt; this.z += m[a + 2] * sp * dt;
       pvx += m[a] * sp; pvz += m[a + 2] * sp;
+    }
+
+    // Jump and dash at the same moment: the jump goes first, then the dash.
+    if (this.dashBuf > 0 && !(this.buffer > 0 && (this.grounded || this.coyote > 0))) this.startDash(inp);
+    if (this.dashT > 0) {
+      const was = this.grounded;
+      this.dashStep(dt, env);
+      this.drag.on = false;
+      this.landed(was, 0, dt, env);
+      this.tryGrab(inp);
+      return;
     }
 
     // Steering. Strong wind loosens your footing.
@@ -179,12 +204,21 @@ export class Body {
 
     this.vy = Math.max(PC.MAXFALL, this.vy + PC.G * dt);
 
+    // Pressing into a wall on the way down: slide down it slowly.
+    if (!this.grounded && this.vy < PC.WALL_SLIDE && this.stun <= 0 && this.time - this.wallT < PC.WALL_TOUCH && inp.mx * this.wallNx + inp.mz * this.wallNz < -0.25) {
+      this.vy = PC.WALL_SLIDE;
+      this.sliding = true;
+    }
+
     let jumped = false;
     if (this.buffer > 0 && (this.grounded || this.coyote > 0) && this.stun <= 0) {
       this.vy = (mud ? PC.JUMP * 0.8 : PC.JUMP) + Math.max(0, pvy) * 0.5;
       this.vx += pvx; this.vz += pvz;
       this.buffer = 0; this.coyote = 0; this.jumpHeld = true; jumped = true;
       this.events.push({ k: 'jump' });
+    } else if (this.buffer > 0 && this.canWallJump()) {
+      this.wallJump();
+      jumped = true;
     }
     if (this.jumpHeld && !inp.jump) {
       if (this.vy > 3) this.vy *= 0.55;
@@ -201,21 +235,105 @@ export class Body {
     }
     // Stick to the floor when walking down slopes or off descending platforms.
     if (was && !this.grounded && !jumped && this.vy <= 0.5) {
-      const sy = this.y;
-      this.y -= 0.24;
-      this.collide(env);
-      if (!this.grounded) this.y = sy;
+      this.probeFloor(env);
     }
     // Launched off a kicker this step: in the air, whatever else we brushed against.
     if (this.launched) { this.launched = false; this.grounded = false; this.ground = null; }
+    this.landed(was, fallV, dt, env);
+    this.tryGrab(inp);
+  }
+
+  // Feeling for a floor just below. If there's none, nothing was touched: the side of the ledge you just walked off
+  // doesn't count as a wall.
+  probeFloor(env) {
+    const sy = this.y, t = this.wallT, nx = this.wallNx, nz = this.wallNz;
+    this.y -= 0.24;
+    this.collide(env);
+    if (!this.grounded) { this.y = sy; this.wallT = t; this.wallNx = nx; this.wallNz = nz; }
+  }
+
+  landed(was, fallV, dt, env) {
     this.onIce = this.grounded && this.ground && this.ground.surf === 'ice';
-    this.coyote = this.grounded ? PC.COYOTE : Math.max(0, this.coyote - dt);
+    this.coyote = this.grounded ? env.coyote ?? PC.COYOTE : Math.max(0, this.coyote - dt);
+    if (this.grounded) { this.dashReady = true; this.kicked = false; }
     if (this.grounded && !was) this.events.push({ k: 'land', drop: this.peakY - this.y, v: -fallV });
     if (this.grounded) this.peakY = this.y;
     else this.peakY = Math.max(this.peakY, this.y);
     this.airT = this.grounded ? 0 : this.airT + dt;
+  }
 
-    if (inp.grab && !this.anchored && !this.gripLock && this.stun <= 0 && this.contact && this.time - this.contactT < 0.12) this.anchor();
+  tryGrab(inp) {
+    if (inp.grab && !this.anchored && !this.gripLock && !this.noGrab && this.stun <= 0 && this.contact && this.time - this.contactT < 0.12) this.anchor();
+  }
+
+  // A wall was touched a moment ago, and it isn't the one the last wall jump left from (facing the same way):
+  // two walls facing each other can be climbed, one wall alone can't.
+  canWallJump() {
+    if (this.grounded || this.stun > 0 || this.time - this.wallT >= PC.WALL_TOUCH) return false;
+    return !(this.kicked && this.wallNx * this.kickNx + this.wallNz * this.kickNz > 0.7);
+  }
+
+  wallJump() {
+    this.kickT = this.time;
+    const nx = this.wallNx, nz = this.wallNz, vn = this.vx * nx + this.vz * nz;
+    // Up and away from the wall, keeping some of the speed along it. For a moment the stick only nudges the
+    // flight, so holding toward the wall still carries you off it.
+    this.vx = (this.vx - nx * vn) * 0.6 + nx * PC.WALL_PUSH;
+    this.vz = (this.vz - nz * vn) * 0.6 + nz * PC.WALL_PUSH;
+    this.vy = PC.WALL_JUMP;
+    this.thrown = 0.16;
+    this.buffer = 0; this.coyote = 0; this.jumpHeld = true;
+    this.kicked = true; this.kickNx = nx; this.kickNz = nz;
+    this.wallT = -1;
+    this.noGrab = PC.WALL_NOGRAB;
+    this.dashReady = true;
+    this.dashT = 0;
+    this.events.push({ k: 'walljump' });
+  }
+
+  // An emote's flip: a plain jump, only from the ground.
+  hop() {
+    if (!this.grounded || this.anchored || this.stun > 0 || this.hook) return false;
+    this.vy = PC.JUMP;
+    this.grounded = false; this.ground = null;
+    this.coyote = 0; this.buffer = 0;
+    this.events.push({ k: 'jump' });
+    return true;
+  }
+
+  // DASH: a short, fast burst along the stick (or where the camera looks), straight across with gravity off.
+  // One in the air, then it needs the ground, a wall jump or a grab to come back.
+  startDash(inp) {
+    if (this.dashT > 0 || this.dashCd > 0 || !this.dashReady || this.stun > 0 || this.anchored || this.hook) return;
+    let dx = inp.mx, dz = inp.mz;
+    if (!this.moving) { dx = inp.fx || 0; dz = inp.fz || 0; }
+    const l = Math.hypot(dx, dz);
+    if (l < 1e-3) return;
+    this.dashX = dx / l; this.dashZ = dz / l;
+    this.dashT = PC.DASH_T;
+    this.dashCd = PC.DASH_CD;
+    this.dashBuf = 0;
+    if (!this.grounded) this.dashReady = false;
+    this.thrown = 0;
+    this.jumpHeld = false;
+    this.events.push({ k: 'dash', x: this.dashX, z: this.dashZ });
+  }
+
+  dashStep(dt, env) {
+    this.dashT = Math.max(0, this.dashT - dt);
+    this.vx = this.dashX * PC.DASH; this.vz = this.dashZ * PC.DASH; this.vy = 0;
+    const was = this.grounded;
+    this.grounded = false; this.ground = null;
+    for (let s = 0; s < 3; s++) {
+      this.x += (this.vx * dt) / 3; this.z += (this.vz * dt) / 3;
+      this.collide(env);
+    }
+    // Keep to the floor over small steps on the ground, so a ground dash doesn't lift off before the edge.
+    if (was && !this.grounded) this.probeFloor(env);
+    // Ran into something: the dash is over.
+    const blocked = Math.hypot(this.vx, this.vz) < PC.DASH * 0.5;
+    if (blocked) this.dashT = 0;
+    else if (this.dashT <= 0) { this.vx = this.dashX * PC.DASH_END; this.vz = this.dashZ * PC.DASH_END; }
   }
 
   collide(env) {
@@ -261,6 +379,11 @@ export class Body {
       this.ground = c;
     }
     if (c) { this.contact = c; this.contactT = this.time; this.contactWall = ny < 0.6; }
+    // Nearly upright surface: good to slide down or jump off. Other climbers don't count.
+    if (c && Math.abs(ny) < 0.35) {
+      const h = Math.hypot(nx, nz);
+      if (h > 1e-3) { this.wallT = this.time; this.wallNx = nx / h; this.wallNz = nz / h; }
+    }
   }
 
   anchor() {
@@ -270,6 +393,10 @@ export class Body {
     this.anchorWall = this.contactWall;
     toLocal(c, this.x, this.y, this.z, false, this.anchorL);
     this.vx = this.vy = this.vz = 0;
+    const onWall = this.anchorWall && this.time - this.wallT < PC.WALL_TOUCH;
+    this.anchorNx = onWall ? this.wallNx : undefined; this.anchorNz = onWall ? this.wallNz : undefined;
+    this.dashT = 0;
+    this.dashReady = true;
     this.events.push({ k: 'grab' });
   }
 
@@ -309,6 +436,8 @@ export class Body {
     if (this.hook || this.anchored) return false;
     this.hook = a;
     this.hookT = 0;
+    this.dashT = 0;
+    this.dashReady = true;
     this.grounded = false; this.ground = null;
     this.events.push({ k: 'grapple' });
     return true;
@@ -340,6 +469,7 @@ export class Body {
     if (this.shield > 0) { this.events.push({ k: 'blocked' }); return false; }
     if (this.anchored) return false;
     this.vx = vx; this.vy = vy; this.vz = vz;
+    this.dashT = 0;
     this.stun = stun;
     this.grounded = false; this.ground = null;
     return true;
@@ -348,6 +478,7 @@ export class Body {
   fling(vx, vy, vz) {
     if (this.anchored || this.hook) return;
     this.vx = vx; this.vy = vy; this.vz = vz;
+    this.dashT = 0;
     this.thrown = 0.5;
     this.grounded = false; this.ground = null;
     this.events.push({ k: 'flung' });

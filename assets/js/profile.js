@@ -79,6 +79,15 @@ export function award(ach) {
   return LEGENDS.find((l) => l.ach === ach) || null;
 }
 
+// The first win on each difficulty pays a big bonus, one time only.
+export const wonOnce = (diff) => P.ach.includes('win' + diff);
+export function firstWin(diff, amount) {
+  if (wonOnce(diff)) return 0;
+  P.ach.push('win' + diff);
+  addCoins(amount);
+  return amount;
+}
+
 // ---------------------------------------------------------------- records
 // One row per climb, per map. A climb updates its own row as it goes, so a saved climb you pick up again stays
 // one row. Best first: higher, then a harder difficulty, then fewer falls, then faster.

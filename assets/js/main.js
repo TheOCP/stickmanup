@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Renderer } from './render.js';
 import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
+import { EMOTES } from './emotes.js';
 import { World } from './physics.js';
 import { WorldView, setSimple } from './worldview.js';
 import { setDetail } from './scenery.js';
@@ -15,11 +16,11 @@ import { Game } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
 import { SUIT, resolveLook, plainLook, roleOf, tagColor } from './skins.js';
-import { initProfile, myLook, nameChanged, coins as myCoins } from './profile.js';
+import { initProfile, myLook, nameChanged, owned, wonOnce, coins as myCoins } from './profile.js';
 import { openShop, openRecords } from './shop.js';
 import { Chain } from './chain.js';
 import { Fx } from './fx.js';
-import { PR } from './player.js';
+import { PR, PC } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -175,6 +176,9 @@ const ui = (app.ui = {
     const rl = $('#bReel span'), mode = g.reelMode || 'REEL';
     if (rl.textContent !== mode) rl.textContent = mode;
     $('#bReel').classList.toggle('help', mode !== 'REEL');
+    const db = $('#bDash');
+    db.style.setProperty('--v', (me.dashReady ? 1 - me.dashCd / PC.DASH_CD : 0).toFixed(3));
+    db.classList.toggle('used', !me.dashReady);
     const sb = $('#bShield'), stormy = L.mapKey === 'storm';
     sb.classList.toggle('on', stormy);
     if (stormy) {
@@ -268,8 +272,53 @@ const ui = (app.ui = {
       el.style.left = cx + 'px';
       el.style.top = cy + 'px';
     }
+    // Emoji floating over whoever just did an emote.
+    const B = this.bubbles;
+    if (B && B.size) {
+      const now = performance.now();
+      for (const [slot, b] of B) {
+        const o = slot === g.slot ? g.me : g.vis && g.vis.get(slot);
+        if (now > b.until || !o || !b.el.isConnected) { b.el.remove(); B.delete(slot); continue; }
+        v.set(o.x, o.y + 1.6, o.z).project(cam);
+        b.el.style.display = v.z > 1 ? 'none' : '';
+        b.el.style.left = ((v.x + 1) / 2) * W + 'px';
+        b.el.style.top = ((1 - v.y) / 2) * H + 'px';
+      }
+    }
+  },
+  bubble(slot, icon) {
+    const B = this.bubbles || (this.bubbles = new Map()), old = B.get(slot);
+    if (old) old.el.remove();
+    const el = document.createElement('span');
+    el.className = 'emoB';
+    el.textContent = icon;
+    $('#tags').appendChild(el);
+    B.set(slot, { el, until: performance.now() + 2000 });
   },
 });
+
+// ---------- emote menu ----------
+// Sits over the climb without pausing it. Only what you own shows; the shop sells the rest.
+const emoteOpen = () => $('#emoteMenu').classList.contains('on');
+function closeEmotes() {
+  if (!emoteOpen()) return;
+  $('#emoteMenu').className = '';
+  $('#emoteMenu').innerHTML = '';
+  app.input.lockPad(false);
+}
+function openEmotes(viaPad) {
+  if (app.screen !== 'game' || !app.game) return;
+  const name = settings.name, list = EMOTES.filter((e) => !e.hidden && owned(e, name)), more = EMOTES.filter((e) => !e.hidden).length - list.length;
+  $('#emoteMenu').innerHTML = `<div class="emHead"><b>Emotes</b><small>${more ? `${more} more in the shop` : 'You have them all'}</small></div>
+    <div class="emGrid">${list.map((e) => `<button class="emo r${e.r}" data-em="${e.id}"><i>${e.icon}</i><span>${esc(e.name)}</span></button>`).join('')}</div>`;
+  $('#emoteMenu').className = 'on';
+  app.sound.ui();
+  if (viaPad) { app.input.lockPad(true); nav.setUsing(true); }
+}
+function toggleEmotes(viaPad) {
+  if (emoteOpen()) closeEmotes();
+  else openEmotes(viaPad);
+}
 
 // ---------- menu system ----------
 let handlers = {};
@@ -368,9 +417,9 @@ function title() {
 }
 
 function diffCards(sel) {
-  const best = bestOf(settings.map), icons = ['◆', '◆◆', '◆◆◆'];
+  const best = bestOf(settings.map), icons = ['◆', '◆◆', '◆◆◆', '◆◆◆◆'];
   return `<div class="cards">${DIFFS.map((d) => `<button class="card d${d.id} ${sel === d.id ? 'sel' : ''}" data-a="pick" data-d="${d.id}">
-    <span class="ic">${icons[d.id]}</span><b>${d.name}</b><small>${d.desc}</small><span class="best">${best[d.id] ? 'Best ' + fmtTime(best[d.id]) : 'Not climbed yet'}</span></button>`).join('')}</div>`;
+    <span class="ic">${icons[d.id]}</span><b>${d.name}</b><small>${d.desc}</small><span class="best">${best[d.id] ? 'Best ' + fmtTime(best[d.id]) : 'Not climbed yet'}</span>${wonOnce(d.id) ? '' : `<span class="best first">First win pays ${d.first} coins</span>`}</button>`).join('')}</div>`;
 }
 
 function soloPick() {
@@ -767,7 +816,7 @@ function autoTick(now) {
 }
 
 // Touch buttons: centres measured from the bottom-right corner (bottom-left for left-handed), scaled by size.
-const BTN = { bJump: [66, 64, 96], bGrab: [163, 59, 74], bReel: [77, 165, 74], bAct: [167, 149, 74], bShoot: [252, 160, 74], bShield: [252, 72, 74] };
+const BTN = { bJump: [66, 64, 96], bGrab: [163, 59, 74], bReel: [77, 165, 74], bAct: [167, 149, 74], bShoot: [252, 160, 74], bDash: [252, 72, 74], bShield: [340, 112, 74] };
 function applyLayout() {
   const k = settings.btnSize, pos = settings.btnPos || {}, side = settings.lefty ? 'left' : 'right', other = settings.lefty ? 'right' : 'left';
   for (const id in BTN) {
@@ -911,10 +960,13 @@ function howTo(back) {
     <div><b>REEL (hold)</b>Pulls the cord in to haul a dangling partner up. Let go and it slowly lets out again.</div>
     <div><b>Sling</b>While holding GRAB, hold REEL, then let go of REEL. A partner on a tight cord gets flung upward.</div>
     <div><b>A partner falls</b>Their weight drags you toward the edge. Hold GRAB to stop, or walk away from the edge to haul them up.</div>
+    <div><b>Wall jump</b>In the air against a wall, press JUMP to kick off it, up and away. Hold the stick into a wall to slide down it slowly. The same wall won't kick you twice in a row, so bounce between two walls to climb them. Works while clamped with GRAB too.</div>
+    <div><b>DASH</b>A fast burst the way the stick points, or the way the camera looks. One in the air, and landing, a wall jump or a grab gives it back. Glowing arrows mean the gap is too wide without it: jump, then dash near the top of the jump.</div>
+    <div><b>Emotes and stunts</b>The smiley at the top of the screen opens your emotes: waves, flips, breakdance and more. Flips work in the air as well. The rest are in the shop.</div>
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
-    <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
-    <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal and 3 on Hardcore, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
-    <div><b>Legendary suits</b>Coins can't buy these. They only come from Hardcore. Some are earned by what you do up there, the others are hidden. Those who know, know.</div>
+    <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
+    <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
+    <div><b>Legendary suits</b>Coins can't buy these. They only come from Hardcore or Insane. Some are earned by what you do up there, the others are hidden. Those who know, know.</div>
     <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
     <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
@@ -925,9 +977,9 @@ function howTo(back) {
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
-    <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
-    <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
-    <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> or <kbd>LT</kbd> grab, <kbd>Y</kbd> or <kbd>RT</kbd> reel, <kbd>X</kbd> grapple, <kbd>RB</kbd> hold to aim and let go to shoot, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
+    <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
+    <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>C</kbd> dash, <kbd>T</kbd> emotes, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
+    <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> grab, <kbd>RB</kbd> reel, <kbd>Y</kbd> or <kbd>L3</kbd> dash, <kbd>LT</kbd> hold to aim, <kbd>RT</kbd> fire, <kbd>Down</kbd> on the direction pad emotes, <kbd>X</kbd> grapple, <kbd>RB</kbd> hold to aim and let go to shoot, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
     <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
   </div></div>`, { back });
 }
@@ -957,6 +1009,7 @@ function beginGame(s, g) {
 }
 
 function endGame() {
+  closeEmotes();
   if (app.game) { app.game.destroy(); app.game = null; }
   app.paused = false;
   app.input.enabled = false;
@@ -970,6 +1023,7 @@ function endGame() {
 }
 
 function pause() {
+  closeEmotes();
   const g = app.game;
   if (!g || g.won) return;
   app.paused = true;
@@ -980,7 +1034,7 @@ function pause() {
   show(`<div class="pause"><h2>Paused</h2>
     <button class="btn primary" data-a="back"><b>Resume</b></button>
     ${g.diff < 2 ? `<button class="btn" data-a="respawn"><b>Back to checkpoint</b><small>${mp ? 'Moves the whole team' : 'If you are stuck'}</small></button>`
-    : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>Hardcore: everyone back to the start</small></button>`}
+    : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
     <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}</div>`, {
@@ -1006,6 +1060,7 @@ app.finish = (r) => {
     show(`<div class="results">${r.record ? '<div class="rec">New best time</div>' : ''}<h1>SUMMIT REACHED</h1>
       <p class="sub">${r.players > 1 ? `${r.players} climbers` : 'You'} reached the top of ${MAPS[r.map || 0].name} on ${DIFFS[r.diff].name}.</p>
       <div class="stats"><div><b>${fmtTime(r.time)}</b><small>Time</small></div><div><b>${r.falls}</b><small>Falls</small></div><div><b>${fmtTime(r.best)}</b><small>Best on ${DIFFS[r.diff].name}</small></div><div><b><i class="coin"></i>${r.coins}</b><small>Coins, ${r.bonus} of them for the top</small></div></div>
+      ${r.firstWin ? `<div class="rec gold">First win on ${DIFFS[r.diff].name}: ${r.firstWin} coins</div>` : ''}
       ${(r.unlocked || []).map((n) => `<div class="rec gold">Legendary unlocked: ${esc(n)}</div>`).join('')}
       <button class="btn primary" data-a="back" style="max-width:320px;margin:auto;align-items:center"><b>Back to title</b></button></div>`, {
       back: () => { endGame(); title(); },
@@ -1020,6 +1075,7 @@ function goBack() {
   const t = performance.now();
   if (t - backAt < 220) return false;
   backAt = t;
+  if (emoteOpen()) { closeEmotes(); return true; }
   if (app.back) app.back();
   return true;
 }
@@ -1073,9 +1129,19 @@ function boot() {
   app.sound = new Sound();
   applySettings();
   $('#hPause').addEventListener('click', () => { app.sound.ui(); pause(); });
+  app.input.onEmote = () => toggleEmotes(false);
+  $('#hEmote').addEventListener('click', () => toggleEmotes(false));
+  $('#emoteMenu').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-em]');
+    if (!b) return;
+    if (app.game) app.game.emote(b.dataset.em);
+    closeEmotes();
+  });
+  // Touching anywhere else closes it, and still counts as what it touched.
+  document.addEventListener('pointerdown', (e) => { if (emoteOpen() && !e.target.closest('#emoteMenu, #hEmote')) closeEmotes(); }, { capture: true });
   nav = new PadNav({
     input: app.input,
-    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
+    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : emoteOpen() ? $('#emoteMenu') : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
     screen: () => app.screen,
     // On the title screen B does nothing: closing the whole app is for the phone's own back button.
     back: () => { if (app.screen !== 'title') goBack(); },
@@ -1096,6 +1162,7 @@ function boot() {
     sound: () => { app.sound.init(); app.sound.ui(); },
     closed: () => app.input.holdPad(),
     gameUp: () => { if (ui.nearTip) ui.tip(ui.nearTip); },
+    gameDown: () => openEmotes(true),
   });
   document.addEventListener('pointerdown', () => app.sound.init(), { capture: true });
   window.addEventListener('resize', () => app.renderer.resize());
@@ -1339,6 +1406,11 @@ function shopScene(dt) {
   r0.setLook(resolveLook(P.look, settings.name));
   r0.show();
   r0.flip = 0;
+  // An emote picked in the shop plays, and plays again after a short rest.
+  if (P.emote) {
+    if (P.emote !== P.playing) { r0.playEmote(P.emote); P.playing = P.emote; P.wait = 0; }
+    else if (!r0.emote && (P.wait += dt) > 0.7) { r0.playEmote(P.emote); P.wait = 0; }
+  } else if (r0.emote) r0.stopEmote();
   r0.yaw = Math.atan2(ox, oz) + P.yaw;
   r0.update(dt, x, y, z, 0, 0, 0, 1, 0, gy, undefined, 9);
   const fov = 38, D = 4.5, off = 0.62 * D * Math.tan((fov / 2) * (Math.PI / 180)) * (window.innerWidth / window.innerHeight);

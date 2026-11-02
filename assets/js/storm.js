@@ -12,7 +12,7 @@ function inBox(c, x, y, z) {
 }
 
 // Storm-map lightning aimed at climbers: every few seconds each one gets a short warning ring, then a strike there.
-const THUNDER = [{ every: 8, warn: 1.0 }, { every: 6.5, warn: 0.8 }, { every: 5.2, warn: 0.65 }];
+const THUNDER = [{ every: 8, warn: 1.0 }, { every: 6.5, warn: 0.8 }, { every: 5.2, warn: 0.65 }, { every: 4.4, warn: 0.55 }];
 
 export class Storm {
   constructor(level, diff) {
@@ -56,7 +56,7 @@ export class Storm {
   setHaz(h) {
     this.haz = h;
     this.k = [0.7, 1.0, 1.15][h];
-    this.hs = [0.8, 1.0, 1.22][h];
+    this.hs = [0.8, 1.0, 1.22, 1.38][h];
     this.th = THUNDER[h] || THUNDER[1];
   }
   on(o) { return o.lvl === undefined || o.lvl <= this.haz; }

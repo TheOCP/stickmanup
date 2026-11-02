@@ -5,8 +5,9 @@ import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt } from './level.js';
+import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3 } from './util.js';
-import { addCoins, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
+import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
 import { resolveLook, plainLook } from './skins.js';
 
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
@@ -14,7 +15,7 @@ const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel:
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
 // A coin is worth more the harder the difficulty, and so is reaching the top.
-const COIN_VALUE = [1, 2, 3], SUMMIT_BONUS = [100, 250, 500];
+const COIN_VALUE = [1, 2, 3, 4], SUMMIT_BONUS = [100, 250, 500, 800];
 
 // Distance along a unit ray to a sphere, or -1.
 function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
@@ -93,8 +94,8 @@ export class Game {
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
     const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === LEVEL_VERSION ? sf : null;
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
-    // Real Hardcore only: the hidden places don't exist with easier custom rules.
-    this.hardcore = this.diff === 2 && !this.custom;
+    // Real Hardcore or harder only: the hidden places don't exist with easier custom rules.
+    this.hardcore = this.diff >= 2 && !this.custom;
     app.view.setSecrets(this.hardcore);
     this.coinTaken = new Set((sv && sv.coins) || []);
     this.coinB = this.L.coinB || (this.L.coinB = {});
@@ -108,7 +109,7 @@ export class Game {
     if (!sv) addTotals(0, 1);
     app.ui.coins(this.run.coins);
     // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
-    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, maxReel: this.rope - 1.2, wind: null };
+    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, coyote: this.D.coyote, maxReel: this.rope - 1.2, wind: null };
     const th = Math.atan2(this.me.z, this.me.x);
     this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
@@ -239,13 +240,14 @@ export class Game {
     // A jump tap is kept until a physics step uses it: at 120 fps half the frames run no physics step,
     // and a tap read on one of those frames used to be lost.
     if (inp.jumpPressed) this.jumpQueued = true;
+    if (inp.dash) this.dashQueued = true;
     if (T - this.simT > 0.25 || T < this.simT - 0.25) this.simT = T - STEP;
     let n = 0;
     while (this.simT + STEP <= T && n < 6) {
-      const jp = this.jumpQueued;
-      this.jumpQueued = false;
+      const jp = this.jumpQueued, dq = this.dashQueued;
+      this.jumpQueued = this.dashQueued = false;
       this.prevX = this.me.x; this.prevY = this.me.y; this.prevZ = this.me.z;
-      this.step(jp === inp.jumpPressed ? inp : Object.assign({}, inp, { jumpPressed: jp }));
+      this.step(jp === inp.jumpPressed && dq === !!inp.dash ? inp : Object.assign({}, inp, { jumpPressed: jp, dash: dq }));
       n++;
     }
 
@@ -781,10 +783,36 @@ export class Game {
     if (c && c.crumble.st === 0) { c.crumble.st = 1; c.crumble.t = 0; }
   }
 
+  // Play an emote or stunt from the menu (or a wall jump's flip), here and on everyone else's phone.
+  emote(id) {
+    const em = EMOTE[id], me = this.me;
+    if (!em) return;
+    // A flip starts with a real jump when you're standing, no higher than a normal one.
+    if (em.hop) me.hop();
+    this.robots.get(this.slot).playEmote(id);
+    if (em.icon) { this.app.ui.bubble(this.slot, em.icon); this.app.sound.emote(); }
+    this.s.toHost({ k: 'emote', s: this.slot, e: id });
+  }
+
   bodyEvent(e) {
     const S = this.app.sound, ui = this.app.ui;
     switch (e.k) {
       case 'jump': S.jump(); break;
+      case 'walljump':
+        S.walljump();
+        ui.haptic('tick');
+        this.emote('e_wallflip');
+        break;
+      case 'dash': {
+        const m = this.me;
+        S.dash();
+        ui.haptic('tick');
+        // A streak of light along the way. It looks the same on everyone's phone as a shot would.
+        const a = [r3(m.x), r3(m.y), r3(m.z)], b = [r3(m.x + e.x * 2.4), r3(m.y), r3(m.z + e.z * 2.4)];
+        this.app.fx.tracer(this.slot, a, b, false);
+        this.s.toHost({ k: 'shot', s: this.slot, a, b, h: 0 });
+        break;
+      }
       case 'launch': S.pad(); S.jump(); ui.haptic('heavy'); break;
       case 'land':
         S.land(e.v);
@@ -887,7 +915,7 @@ export class Game {
       case 'crumble': this.s.toAll(e); break;
       case 'fall': this.falls++; break;
       case 'door': if (!this.doors.has(e.i)) this.s.toAll(e); break;
-      case 'stun': case 'shot': this.s.toAll(e); break;
+      case 'stun': case 'shot': case 'emote': this.s.toAll(e); break;
       case 'win':
         if (!this.won) this.s.toAll({ k: 'win', t: T, falls: this.falls });
         break;
@@ -940,6 +968,12 @@ export class Game {
       case 'door': if (!this.doors.has(e.i)) this.openDoor(e.i); break;
       case 'stun': this.storm.stun.set(e.m, { from: e.from, until: e.until }); this.app.sound.stun(); break;
       case 'shot': if (e.s !== this.slot) this.app.fx.tracer(e.s, e.a, e.b, !!e.h); break;
+      case 'emote':
+        if (e.s !== this.slot) {
+          const r = this.robots.get(e.s), em = EMOTE[e.e];
+          if (r && em) { r.playEmote(e.e); if (em.icon) ui.bubble(e.s, em.icon); }
+        }
+        break;
       case 'win': this.finish(e); break;
     }
   }
@@ -959,6 +993,9 @@ export class Game {
     const bonus = SUMMIT_BONUS[this.diff], unlocked = [];
     addCoins(bonus);
     this.run.coins += bonus;
+    // Easier custom rules don't count: otherwise Hardcore's bonus could be had with every checkpoint switched on.
+    const first = this.custom ? 0 : firstWin(this.diff, this.D.first);
+    this.run.coins += first;
     this.run.won = true;
     this.run.h = Math.max(this.run.h, Math.min(1000, Math.round(this.L.top - 2)));
     this.falls = e.falls;
@@ -972,7 +1009,7 @@ export class Game {
     const key = this.map + ':' + this.diff + (custom ? ':custom' : ''), best = store.get('best2', {}), prev = best[key];
     if (!prev || e.t < prev) { best[key] = e.t; store.set('best2', best); }
     this.app.sound.win();
-    this.app.finish({ time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size, coins: this.run.coins, bonus, unlocked });
+    this.app.finish({ firstWin: first, time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size, coins: this.run.coins, bonus, unlocked });
   }
 
   // ----- per-frame visuals -----
@@ -1089,7 +1126,9 @@ export class Game {
     const S = this.app.settings, c = this.cam, me = this.me;
     // Follow strength (Settings, 0 off to 2): how fast it turns, and how far behind you it goes.
     const F = S.camFollow ?? 1;
-    if (F > 0.01 && !this.aiming && !me.hook && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
+    // Bouncing between walls the speed flips side to side every moment: the camera stays still until you are out.
+    const bouncing = me.kickT !== undefined && me.time - me.kickT < 0.9;
+    if (F > 0.01 && !this.aiming && !me.hook && !bouncing && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
       const sp = Math.hypot(me.vx, me.vz);
       if (sp > 1.5) {
         let e = Math.atan2(-me.vx, -me.vz) - c.yaw;

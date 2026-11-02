@@ -4,6 +4,7 @@ import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TE
 import { gearTris } from './gear.js';
 import { coins, owned, buy, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
 import { DIFFS, MAPS } from './level.js';
+import { EMOTES } from './emotes.js';
 import { fmtTime } from './util.js';
 
 const COIN = '<i class="coin"></i>';
@@ -50,7 +51,12 @@ function thumbFor(item) {
   const W = 120, H = 150, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  if (item.kind === 'suit') {
+  if (item.kind === 'emote') {
+    g.font = '76px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(item.icon, W / 2, H / 2);
+  } else if (item.kind === 'suit') {
     const s = H / 2.05, X = W / 2, Y = (fy) => H - 6 - (fy + 0.44) * s, k = 128 / TEX, tex = paintSuit(item, 128);
     g.save(); armPath(g, X, Y, s); g.clip();
     g.drawImage(tex, COL_ARMS * k, 0, ARM_W * k, TEX * k, X - 0.24 * s, Y(1.24), 0.48 * s, 1.68 * s);
@@ -77,10 +83,11 @@ function thumbFor(item) {
 }
 
 // ---------------------------------------------------------------- the shop
-const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['legend', 'Legendary']];
+const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['legend', 'Legendary']];
 const listFor = (tab, name) => {
   if (tab === 'faces') return FACES.filter((f) => !f.hidden);
   if (tab === 'hats') return HATS.filter((f) => !f.hidden);
+  if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
   if (tab === 'legend') return [...OWNERS.filter((o) => o.owner === ownerKey(name)), ...LEGENDS];
   return SUITS.filter((s) => s.tab === tab);
 };
@@ -89,12 +96,14 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   const { app, show, esc, ui, name, lookChanged } = ctx;
   let tab = startTab, sel = null, gridScroll = 0, drawTok = 0;
 
-  const sameSlot = (item, look) => (item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : { ...look, h: item.id });
-  const preview = () => { app.preview = { look: sel ? sameSlot(sel, myLook(name())) : myLook(name()), yaw: app.preview ? app.preview.yaw : 0 }; };
+  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : { ...look, h: item.id });
+  const preview = () => {
+    app.preview = { look: sel ? sameSlot(sel, myLook(name())) : myLook(name()), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null };
+  };
 
   function card(it) {
     const have = owned(it, name()), on = have && worn(it);
-    const tag = on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : it.price > 0 ? `<em class="price">${COIN}${it.price}</em>` : '<em class="lock">Locked</em>';
+    const tag = it.kind === 'emote' && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : it.price > 0 ? `<em class="price">${COIN}${it.price}</em>` : '<em class="lock">Locked</em>';
     return `<button class="skin r${it.r} ${sel === it ? 'sel' : ''} ${have ? '' : 'no'}" data-a="pick" data-id="${it.id}"><img data-th="${it.id}" alt=""><b>${esc(it.name)}</b>${tag}</button>`;
   }
 
@@ -108,10 +117,12 @@ export function openShop(ctx, goBack, startTab = 'suits') {
 
   function sideHtml() {
     const it = sel;
-    if (!it) return `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth.</p>`;
+    if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
+      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth.</p>`;
     const r = RARITY[it.r], have = owned(it, name()), on = have && worn(it);
     let act;
-    if (on) act = '<button class="btn sm" disabled>Wearing it</button>';
+    if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
+    else if (on) act = '<button class="btn sm" disabled>Wearing it</button>';
     else if (have) act = '<button class="btn sm primary" data-a="equip">Wear it</button>';
     else if (it.price > 0) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
     else act = '';
@@ -144,7 +155,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       </div>
       <div class="shopmain">
         <div class="tabs">${TABS.map(([k, n]) => `<button data-a="tab" data-t="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        ${tab === 'legend' ? `<p class="sub lg">Coins can't buy these. They only come from Hardcore: find the hidden places (${relicsFound()} of ${RELIC_COUNT} relics found) or do something nobody else would.</p>` : ''}
+        ${tab === 'legend' ? `<p class="sub lg">Coins can't buy these. They only come from Hardcore or Insane: find the hidden places (${relicsFound()} of ${RELIC_COUNT} relics found) or do something nobody else would.</p>` : ''}
         <div class="shopgrid">${sections(list)}</div>
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },
@@ -153,12 +164,13 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       buy: () => {
         if (!sel || !buy(sel)) return;
         app.sound.checkpoint();
-        equip(sel);
+        if (sel.kind !== 'emote') equip(sel);
         lookChanged();
         ui.toast(`${sel.name} is yours`, 'good');
         preview(); render();
       },
       equip: () => { if (sel) { equip(sel); lookChanged(); preview(); render(); } },
+      watch: () => { if (app.preview && sel) app.preview.playing = null; },
     }, false);
     const el = document.querySelector('#menu .shopgrid');
     if (el) el.scrollTop = gridScroll;

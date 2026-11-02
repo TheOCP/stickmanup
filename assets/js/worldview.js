@@ -679,6 +679,18 @@ export class WorldView {
     const cm = new THREE.InstancedMesh(BOXG, new THREE.MeshStandardMaterial({ color: 0x8a6a20, emissive: 0x6a4a00, emissiveIntensity: 0.6, metalness: 0.6, roughness: 0.4 }), bars.length);
     bars.forEach((m, i) => cm.setMatrixAt(i, m));
     this.add(cm, false);
+    // Arrows in the air over a dash gap, rungs up the walls of a wall jump shaft.
+    const glow = [];
+    for (const d of D('chev')) {
+      const ry = Math.atan2(-d.uz, d.ux);
+      for (const v of [1, -1]) glow.push(mat4(d.x - d.ux * 0.22, d.y + v * 0.22, d.z - d.uz * 0.22, 0.68, 0.13, 0.13, 0, ry, -v * Math.PI / 4));
+    }
+    for (const d of D('rung')) glow.push(mat4(d.x, d.y, d.z, d.s, 0.09, 0.05, 0, d.ry, 0));
+    if (glow.length) {
+      const gm = new THREE.InstancedMesh(BOXG, new THREE.MeshBasicMaterial({ color: HDR(0xff7a18, this.glowK) }), glow.length);
+      glow.forEach((m, i) => gm.setMatrixAt(i, m));
+      this.add(gm, false);
+    }
   }
 
   // The ground the tower stands on: open sea (storm), a sandy beach island (sunny) or a forest island.

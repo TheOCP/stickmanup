@@ -45,7 +45,7 @@ const LETTERS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM.:'];
 
 export class PadNav {
   // o: input (for the dead zones), root() what is on screen or null, screen() its name, back(), start(select),
-  // turn(amount) for the right stick, sound(), closed() when the last menu went away, gameUp() direction pad in play,
+  // turn(amount) for the right stick, sound(), closed() when the last menu went away, gameUp() and gameDown() direction pad in play,
   // place(dx, dy) true on a screen that moves something around with the right stick
   constructor(o) {
     this.o = o;
@@ -132,6 +132,7 @@ export class PadNav {
       if (this.lastHint) this.hint();
       this.dir = dir;
       if (rise & B_UP) this.o.gameUp();
+      if (rise & B_DOWN) this.o.gameDown();
       return;
     }
     this.had = true;
@@ -342,7 +343,7 @@ export class PadNav {
       else {
         const e = this.el, scr = this.o.screen();
         if (e && e.type === 'range') parts.push(['Left Right', 'Change']);
-        else if (e && e.matches('.skin.sel')) { const a = root.querySelector('.shopinfo [data-a]:not([disabled])'); parts.push(['A', a ? (a.dataset.a === 'equip' ? 'Wear it' : 'To the buy button') : 'Select']); }
+        else if (e && e.matches('.skin.sel')) { const a = root.querySelector('.shopinfo [data-a]:not([disabled])'); parts.push(['A', a ? (a.dataset.a === 'equip' ? 'Wear it' : a.dataset.a === 'watch' ? 'Watch again' : 'To the buy button') : 'Select']); }
         else if (e && e.matches('.skin')) parts.push(['A', 'Try on']);
         else parts.push(['A', 'Select']);
         if (scr !== 'title') parts.push(['B', scr === 'pause' ? 'Resume' : 'Back']);

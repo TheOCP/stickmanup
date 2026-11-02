@@ -2,9 +2,10 @@
 export class Input {
   constructor(layer) {
     this.sx = 0; this.sy = 0;
-    this.btn = { jump: false, grab: false, reel: false, act: false, shield: false, aim: false };
+    this.btn = { jump: false, grab: false, reel: false, act: false, shield: false, aim: false, dash: false };
     this.jumpEdge = false;
-    this.edge = { act: false, shield: false, fire: false };
+    this.edge = { act: false, shield: false, fire: false, dash: false };
+    this.padLock = false; // a menu that doesn't pause the game is using the controller
     this.aimP = null;
     this.lefty = false;
     this.editing = null; // layout editor: (id, cx, cy) => void while dragging buttons around
@@ -100,7 +101,7 @@ export class Input {
     sb.addEventListener('pointerup', fire(true));
     sb.addEventListener('pointercancel', fire(false));
     sb.addEventListener('lostpointercapture', fire(true));
-    for (const [id, key] of [['bJump', 'jump'], ['bGrab', 'grab'], ['bReel', 'reel'], ['bAct', 'act'], ['bShield', 'shield']]) {
+    for (const [id, key] of [['bJump', 'jump'], ['bGrab', 'grab'], ['bReel', 'reel'], ['bAct', 'act'], ['bShield', 'shield'], ['bDash', 'dash']]) {
       const b = L.querySelector('#' + id);
       b.addEventListener('pointerdown', (e) => {
         if (this.editing) return;
@@ -146,6 +147,8 @@ export class Input {
       if (e.code === 'Space' && !this.keys.has('Space')) this.jumpEdge = true;
       if (e.code === 'KeyF' && !this.keys.has('KeyF')) this.edge.act = true;
       if (e.code === 'KeyQ' && !this.keys.has('KeyQ')) this.edge.shield = true;
+      if ((e.code === 'KeyC' || e.code === 'ControlLeft') && !this.keys.has(e.code)) this.edge.dash = true;
+      if (e.code === 'KeyT' && !this.keys.has('KeyT') && this.onEmote) this.onEmote();
       if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.btn.aim = true;
       if (e.code === 'Escape' && this.onPause) this.onPause();
       this.keys.add(e.code);
@@ -160,6 +163,13 @@ export class Input {
     });
   }
 
+  // A menu that doesn't pause the game takes the controller for a moment.
+  lockPad(on) {
+    this.padLock = on;
+    if (on && this.padAim) { this.padAim = false; this.btn.aim = false; }
+    if (!on) this.holdPad();
+  }
+
   // A menu just closed with a button still down: it doesn't count in the game until it is let go.
   holdPad() {
     for (let i = 0; i < 20; i++) this.padMask[i] = true;
@@ -167,9 +177,9 @@ export class Input {
 
   reset() {
     this.sx = this.sy = 0;
-    this.btn.jump = this.btn.grab = this.btn.reel = this.btn.act = this.btn.shield = this.btn.aim = false;
+    this.btn.jump = this.btn.grab = this.btn.reel = this.btn.act = this.btn.shield = this.btn.aim = this.btn.dash = false;
     this.jumpEdge = false;
-    this.edge.act = this.edge.shield = this.edge.fire = false;
+    this.edge.act = this.edge.shield = this.edge.fire = this.edge.dash = false;
     this.aimP = null;
     this.camDX = this.camDY = 0;
     this.stick = this.cam = null;
@@ -196,7 +206,7 @@ export class Input {
     // no jump and the full range stays usable however large the dead zone is.
     const live = (x, y, d) => { const m = Math.sqrt(x * x + y * y); return m <= d || m === 0 ? 0 : Math.min(1, (m - d) / (1 - d)) / m; };
     for (const p of pads) {
-      if (!p) continue;
+      if (!p || this.padLock) continue;
       const a0 = p.axes[0] || 0, a1 = p.axes[1] || 0, a2 = p.axes[2] || 0, a3 = p.axes[3] || 0;
       const kl = live(a0, a1, this.deadL), kr = live(a2, a3, this.deadR);
       sx += a0 * kl; sy -= a1 * kl;
@@ -209,23 +219,30 @@ export class Input {
       if (b(0) && !this.padJump) jumpPressed = true;
       this.padJump = b(0);
       jump = jump || b(0);
-      grab = grab || b(1) || b(6);
-      reel = reel || b(3) || b(7);
+      grab = grab || b(1);
+      reel = reel || b(5);
+      // Y (or pressing in the left stick): dash.
+      const pd = b(3) || b(10);
+      if (pd && !this.padDash) this.edge.dash = true;
+      this.padDash = pd;
       if (b(2) && !this.padAct) this.edge.act = true;
       this.padAct = b(2);
-      // Right bumper: hold to aim, release to fire.
-      if (b(5)) this.btn.aim = this.padAim = true;
-      else if (this.padAim) { this.padAim = false; this.btn.aim = false; this.edge.fire = true; }
+      // Left trigger: hold to aim. Right trigger: fire, aimed or from the hip.
+      if (b(6)) this.btn.aim = this.padAim = true;
+      else if (this.padAim) { this.padAim = false; this.btn.aim = false; }
+      const pf = b(7);
+      if (pf && !this.padFire) this.edge.fire = true;
+      this.padFire = pf;
       if (b(4) && !this.padShield) this.edge.shield = true;
       this.padShield = b(4);
     }
     const l = Math.hypot(sx, sy);
     if (l > 1) { sx /= l; sy /= l; }
     this.jumpEdge = false;
-    const act = this.edge.act, shield = this.edge.shield, fire = this.edge.fire, aim = this.btn.aim;
-    this.edge.act = this.edge.shield = this.edge.fire = false;
+    const act = this.edge.act, shield = this.edge.shield, fire = this.edge.fire, dash = this.edge.dash, aim = this.btn.aim;
+    this.edge.act = this.edge.shield = this.edge.fire = this.edge.dash = false;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    return { mx: fx * sy + rx * sx, mz: fz * sy + rz * sx, jump, jumpPressed, grab, reel, act, shield, aim, fire };
+    return { mx: fx * sy + rx * sx, mz: fz * sy + rz * sx, fx, fz, jump, jumpPressed, dash, grab, reel, act, shield, aim, fire };
   }
 
   // Camera turn since last frame; while aiming the aim sensitivity applies instead of the camera speed.

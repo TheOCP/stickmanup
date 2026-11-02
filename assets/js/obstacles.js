@@ -1,4 +1,4 @@
-// Themed obstacles, twenty per map plus six endgame ones. Each one is a generic mechanic ("prim") with its own look and tuning:
+// Themed obstacles, twenty per map plus six endgame ones and ten of the hardest. Each one is a generic mechanic ("prim") with its own look and tuning:
 //   sweep     bars spinning low over a wide platform (jump them)
 //   pendulum  a weight swinging across a bridge (time your crossing)
 //   slider    something moving back and forth along a platform: shape 'ball' and 'log' roll along it
@@ -27,6 +27,17 @@
 //   crushrow  three presses slamming one after another down a narrow platform
 //   crossfire two jets across a bridge taking turns, with one safe spot between them
 //   spinsweep a turntable with bars spinning the other way over it
+// Ten more per map are the hardest of all (hard: true), from the middle of the climb up:
+//   sawrun      two things running opposite ways along a narrow bridge
+//   triplegaunt a very long bridge with three weights swinging fast
+//   spikewave   a long platform whose spikes pop up in a wave: run with the gap
+//   pressgaps   four presses slamming fast in a row
+//   jetladder   three jets across a bridge, taking turns
+//   blinkrace   six tiny platforms fading out fast, one after another
+//   trapchain   four small trapdoors in a row
+//   twinsweep   two sets of bars spinning opposite ways on one platform
+//   dashswing   a dash gap with a weight swinging through it
+//   kickjets    a wall jump shaft with jets firing across it
 // lvl: the hazard setting that switches it on (0 calm and up, 1 normal and up, 2 wild only).
 // look: c main colour, g glow colour, s shape.
 
@@ -61,6 +72,17 @@ export const OBSTACLES = {
     O('pistonRow', 'Piston row', 'crushrow', 1, { c: 0x3a3f4c, g: 0xff4040 }, { end: true }),
     O('plasmaCross', 'Plasma crossfire', 'crossfire', 1, { c: 0x2a2e3a, g: 0xff4fb4 }, { end: true }),
     O('stormRotor', 'Storm rotor', 'spinsweep', 2, { c: 0x5a6070, g: 0x8fe9ff, s: 'laser' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('stormSawRails', 'Twin saw rails', 'sawrun', 1, { c: 0xb0b8c8, g: 0xff4040, s: 'disc' }, { hard: true }),
+    O('teslaTriple', 'Triple Tesla swing', 'triplegaunt', 1, { c: 0x2a2e3a, g: 0xb48cff, s: 'ball' }, { hard: true }),
+    O('surgeWave', 'Surge wave', 'spikewave', 1, { c: 0x8a9ab0, g: 0x7fd8ff }, { hard: true }),
+    O('pistonRow', 'Piston row', 'pressgaps', 1, { c: 0x3a3f4c, g: 0xff4040 }, { hard: true }),
+    O('plasmaLadder', 'Plasma ladder', 'jetladder', 1, { c: 0x2a2e3a, g: 0x6ab8ff }, { hard: true }),
+    O('flickerRun', 'Flicker run', 'blinkrace', 1, { c: 0x2a3a4a, g: 0x3ff0d0 }, { hard: true }),
+    O('hatchChain', 'Hatch chain', 'trapchain', 1, { c: 0x3a3f4c, g: 0xffc23d }, { hard: true }),
+    O('twinTurbines', 'Twin turbines', 'twinsweep', 2, { c: 0x5a6070, g: 0x3ff0d0, s: 'bar' }, { hard: true }),
+    O('wreckGap', 'Wrecking gap', 'dashswing', 2, { c: 0x2a2e3a, g: 0xff4040, s: 'ball' }, { hard: true }),
+    O('arcShaft', 'Arc shaft', 'kickjets', 2, { c: 0x2a2e3a, g: 0x7fd8ff }, { hard: true }),
   ],
   sunny: [
     O('coconutDrop', 'Coconut drop', 'drop', 0, { c: 0x6a4a2a, g: 0xffe08a }),
@@ -91,6 +113,17 @@ export const OBSTACLES = {
     O('crateStampers', 'Crate stampers', 'crushrow', 1, { c: 0xb08850, g: 0xff8a3d }, { end: true }),
     O('waterCannons', 'Water cannons', 'crossfire', 1, { c: 0x2a4a6a, g: 0x5ad1ff }, { end: true }),
     O('beamCarousel', 'Lighthouse carousel', 'spinsweep', 2, { c: 0xe8e2d4, g: 0xffe45c, s: 'bar' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('barrelPair', 'Twin barrels', 'sawrun', 1, { c: 0x8a5a2a, g: 0xffd08a, s: 'log' }, { hard: true }),
+    O('tripleAnchors', 'Triple anchors', 'triplegaunt', 1, { c: 0x3a4250, g: 0xffd76a, s: 'anchor' }, { hard: true }),
+    O('urchinWave', 'Urchin wave', 'spikewave', 1, { c: 0x4a2a5a, g: 0xff7ab8 }, { hard: true }),
+    O('stamperRow', 'Crate stamper row', 'pressgaps', 1, { c: 0xb08850, g: 0xff8a3d }, { hard: true }),
+    O('blowholeLadder', 'Blowhole ladder', 'jetladder', 1, { c: 0x2a4a6a, g: 0x5ad1ff }, { hard: true }),
+    O('foamRun', 'Foam stepping stones', 'blinkrace', 1, { c: 0xdff4f4, g: 0x7fe8ff }, { hard: true }),
+    O('rottenPlanks', 'Rotten plank chain', 'trapchain', 1, { c: 0xb08850, g: 0xffc23d }, { hard: true }),
+    O('twinCarousels', 'Twin carousels', 'twinsweep', 2, { c: 0xe8e2d4, g: 0xffe45c, s: 'bar' }, { hard: true }),
+    O('anchorGap', 'Anchor gap', 'dashswing', 2, { c: 0x3a4250, g: 0xffd76a, s: 'anchor' }, { hard: true }),
+    O('geyserShaft', 'Geyser shaft', 'kickjets', 2, { c: 0x2a4a6a, g: 0xcfefff }, { hard: true }),
   ],
   forest: [
     O('logRoll', 'Rolling log', 'slider', 0, { c: 0x6a4a2c, g: 0x9be564, s: 'log' }),
@@ -120,6 +153,17 @@ export const OBSTACLES = {
     O('stompRoots', 'Stomping roots', 'crushrow', 1, { c: 0x4a3a2a, g: 0x9be564 }, { end: true }),
     O('sporeCross', 'Spore crossfire', 'crossfire', 1, { c: 0x5a3a5a, g: 0xff7eb6 }, { end: true }),
     O('whirlStump', 'Whirling stump', 'spinsweep', 2, { c: 0x6a4a2a, g: 0xc6ff8f, s: 'bar' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('logPair', 'Twin rolling logs', 'sawrun', 1, { c: 0x6a4a2a, g: 0xc6ff8f, s: 'log' }, { hard: true }),
+    O('tripleHives', 'Triple beehive swing', 'triplegaunt', 1, { c: 0x8a5a2a, g: 0xffc857, s: 'ball' }, { hard: true }),
+    O('thornWave', 'Thorn wave', 'spikewave', 1, { c: 0x3a5a2a, g: 0xff5d5d }, { hard: true }),
+    O('stumpRow', 'Stump stampers', 'pressgaps', 1, { c: 0x4a3a2a, g: 0x9be564 }, { hard: true }),
+    O('sporeLadder', 'Spore ladder', 'jetladder', 1, { c: 0x5a3a5a, g: 0xff7eb6 }, { hard: true }),
+    O('fireflyRun', 'Firefly stones', 'blinkrace', 1, { c: 0x3a4a2a, g: 0xe6ff8f }, { hard: true }),
+    O('rootChain', 'Root trapdoor chain', 'trapchain', 1, { c: 0x4a3a2a, g: 0xc6ff8f }, { hard: true }),
+    O('twinBranches', 'Twin branch sweeps', 'twinsweep', 2, { c: 0x6a4a2a, g: 0xc6ff8f, s: 'bar' }, { hard: true }),
+    O('spikedGap', 'Spiked log gap', 'dashswing', 2, { c: 0x6a4a2a, g: 0xff5d5d, s: 'ball' }, { hard: true }),
+    O('sporeShaft', 'Spore shaft', 'kickjets', 2, { c: 0x5a3a5a, g: 0xff7eb6 }, { hard: true }),
   ],
   volcano: [
     O('lavaBall', 'Rolling lava ball', 'slider', 0, { c: 0x3a1a10, g: 0xff6a1a, s: 'ball' }),
@@ -149,6 +193,17 @@ export const OBSTACLES = {
     O('obsidianStamp', 'Obsidian stampers', 'crushrow', 1, { c: 0x1e1a24, g: 0xb06bff }, { end: true }),
     O('flameCross', 'Flame crossfire', 'crossfire', 1, { c: 0x2a1e1a, g: 0xff9a3d }, { end: true }),
     O('magmaWhirl', 'Magma whirl', 'spinsweep', 2, { c: 0x3a2420, g: 0xff4a2a, s: 'laser' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('lavaWheels', 'Twin lava wheels', 'sawrun', 1, { c: 0x3a2a24, g: 0xff8a2a, s: 'disc' }, { hard: true }),
+    O('tripleBells', 'Triple magma bells', 'triplegaunt', 1, { c: 0x3a2420, g: 0xff6a2a, s: 'ball' }, { hard: true }),
+    O('obsidianWave', 'Obsidian wave', 'spikewave', 1, { c: 0x2a2024, g: 0xff3a1a }, { hard: true }),
+    O('basaltRow', 'Basalt hammer row', 'pressgaps', 1, { c: 0x1e1a24, g: 0xb06bff }, { hard: true }),
+    O('flameLadder', 'Flame ladder', 'jetladder', 1, { c: 0x2a1e1a, g: 0xff9a3d }, { hard: true }),
+    O('ashRun', 'Ash stepping stones', 'blinkrace', 1, { c: 0x3a3030, g: 0xff6a2a }, { hard: true }),
+    O('ventChain', 'Vent trapdoor chain', 'trapchain', 1, { c: 0x2a2024, g: 0xffc23d }, { hard: true }),
+    O('twinFireBars', 'Twin fire bars', 'twinsweep', 2, { c: 0x3a2420, g: 0xff6a2a, s: 'bar' }, { hard: true }),
+    O('moltenGap', 'Molten gap', 'dashswing', 2, { c: 0x3a2420, g: 0xff3a1a, s: 'ball' }, { hard: true }),
+    O('flameShaft', 'Flame shaft', 'kickjets', 2, { c: 0x2a1e1a, g: 0xff9a3d }, { hard: true }),
   ],
   city: [
     O('securitySweep', 'Security sweep', 'sweep', 0, { c: 0x2a3040, g: 0xff2a8a, s: 'laser' }, { n: 2 }),
@@ -178,6 +233,17 @@ export const OBSTACLES = {
     O('stampPresses', 'Stamping presses', 'crushrow', 1, { c: 0x3a3f4c, g: 0xffe066 }, { end: true }),
     O('steamCross', 'Steam crossfire', 'crossfire', 1, { c: 0x4a4f5c, g: 0xd8f0ff }, { end: true }),
     O('roofFan', 'Rooftop fan', 'spinsweep', 2, { c: 0x2a2e3a, g: 0x7cff6a, s: 'bar' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('sawDronePair', 'Twin saw drones', 'sawrun', 1, { c: 0xa8acb8, g: 0xff3d6a, s: 'disc' }, { hard: true }),
+    O('tripleCranes', 'Triple crane swing', 'triplegaunt', 1, { c: 0x3a3440, g: 0xffb43d, s: 'ball' }, { hard: true }),
+    O('spikeFloor', 'Spike floor wave', 'spikewave', 1, { c: 0x5a5a68, g: 0x3dffd0 }, { hard: true }),
+    O('compactorRow', 'Compactor row', 'pressgaps', 1, { c: 0x34303a, g: 0xff3d6a }, { hard: true }),
+    O('steamLadder', 'Steam ladder', 'jetladder', 1, { c: 0x34303a, g: 0xcfefff }, { hard: true }),
+    O('glitchRun', 'Glitch hologram run', 'blinkrace', 1, { c: 0x283440, g: 0x7cff6a }, { hard: true }),
+    O('serviceHatches', 'Service hatch chain', 'trapchain', 1, { c: 0x4a4a58, g: 0xffb43d }, { hard: true }),
+    O('twinSecurity', 'Twin security sweeps', 'twinsweep', 2, { c: 0x34303a, g: 0xff3d6a, s: 'laser' }, { hard: true }),
+    O('craneGap', 'Crane gap', 'dashswing', 2, { c: 0x3a3440, g: 0xffb43d, s: 'ball' }, { hard: true }),
+    O('steamShaft', 'Steam shaft', 'kickjets', 2, { c: 0x34303a, g: 0xcfefff }, { hard: true }),
   ],
   waterfall: [
     O('waterSlide', 'Water slide', 'slide', 0, { c: 0x2a9ae8, g: 0xbff4ff }),
@@ -208,6 +274,17 @@ export const OBSTACLES = {
     O('splashRow', 'Splash hammers', 'crushrow', 1, { c: 0x3a8ac8, g: 0xbff4ff }, { end: true }),
     O('cannonCross', 'Water cannon crossfire', 'crossfire', 1, { c: 0x2a6a9a, g: 0x9ae8ff }, { end: true }),
     O('whirlSprinkler', 'Whirlpool sprinkler', 'spinsweep', 2, { c: 0x2a8ac8, g: 0x7fe8ff, s: 'bar' }, { end: true }),
+    // The hardest: new ways to get hurt, from the middle of the climb up.
+    O('driftwoodPair', 'Twin driftwood', 'sawrun', 1, { c: 0x8a6a46, g: 0xffd08a, s: 'log' }, { hard: true }),
+    O('tripleBuoys', 'Triple buoy swing', 'triplegaunt', 1, { c: 0xff5a4a, g: 0xffffff, s: 'ball' }, { hard: true }),
+    O('fountainWave', 'Fountain wave', 'spikewave', 1, { c: 0x3a8ac8, g: 0x7fe8ff, s: 'water' }, { hard: true }),
+    O('splashRow2', 'Splash hammer row', 'pressgaps', 1, { c: 0x3a8ac8, g: 0xbff4ff }, { hard: true }),
+    O('cannonLadder', 'Water cannon ladder', 'jetladder', 1, { c: 0x2a6a9a, g: 0x9ae8ff }, { hard: true }),
+    O('bubbleRun', 'Bubble stones', 'blinkrace', 1, { c: 0x9ad8ff, g: 0xffffff }, { hard: true }),
+    O('lilyChain', 'Sinking lily chain', 'trapchain', 1, { c: 0x3a8a4a, g: 0xbff4ff }, { hard: true }),
+    O('twinSprinklers', 'Twin sprinklers', 'twinsweep', 2, { c: 0x2a8ac8, g: 0x7fe8ff, s: 'bar' }, { hard: true }),
+    O('buoyGap', 'Buoy gap', 'dashswing', 2, { c: 0xff5a4a, g: 0xffffff, s: 'ball' }, { hard: true }),
+    O('sprayShaft', 'Spray shaft', 'kickjets', 2, { c: 0x2a6a9a, g: 0x9ae8ff }, { hard: true }),
   ],
 };
 
@@ -215,10 +292,11 @@ export const OBSTACLES = {
 // higher hazard setting lean toward the upper zones. The endgame ones come in near the top, the top zones mix
 // in everything, and the higher the zone the more often obstacles are picked at all.
 export function zoneObstacles(mapKey, zone, nz = 9) {
-  const list = OBSTACLES[mapKey] || [], out = {}, ramp = 1, nReg = list.filter((o) => !o.end).length;
+  const list = OBSTACLES[mapKey] || [], out = {}, ramp = 1, nReg = list.filter((o) => !o.end && !o.hard).length;
   list.forEach((o, i) => {
     let w = 0;
     if (o.end) w = zone >= nz - 2 ? 2.5 : zone === nz - 3 ? 1 : 0;
+    else if (o.hard) w = zone >= nz - 3 ? 2 : zone >= nz - 5 ? 1 : 0;
     else {
       // Spread in catalogue order over zones 0 to 6, nudged up one zone per hazard level.
       const home = Math.min(6, Math.floor((i * 7) / nReg) + o.lvl), near = Math.abs(home - zone);

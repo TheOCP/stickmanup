@@ -73,6 +73,9 @@ export function placeDyn(c, t) {
   } else if (d.k === 'tilt') {
     const s = Math.sin(f(d.per, d.ph)) * d.amp;
     setRot(c, d.ax === 'x' ? s : 0, c.ry, d.ax === 'z' ? s : 0);
+  } else if (d.k === 'turn') {
+    // Turntable: spins on the spot, carrying whoever stands on it.
+    setRot(c, 0, d.a0 + d.w * t, 0);
   } else if (d.k === 'swing') {
     // Pendulum: hangs L below the pivot and swings along (ux, uz); the deck stays level.
     const a = d.amp * Math.sin(f(d.per, d.ph));

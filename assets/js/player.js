@@ -162,6 +162,9 @@ export class Body {
     // Walking away from the edge digs your feet in and hauls the partner up (slowly, they're heavy).
     const haul = dragged && inp.mx * this.drag.x + inp.mz * this.drag.z < -0.3;
     let speed = PC.SPEED;
+    // Mud (and tar, wet sand, gum): about half speed.
+    const mud = this.grounded && this.ground && this.ground.surf === 'mud';
+    if (mud) speed *= 0.5;
     if (dragged) { acc *= haul ? 0.5 : this.moving ? 0.25 : 0.12; speed *= haul ? 0.42 : 0.4; }
     let dvx = inp.mx * speed - this.vx, dvz = inp.mz * speed - this.vz;
     const dl = Math.hypot(dvx, dvz), mx = acc * dt;
@@ -177,7 +180,7 @@ export class Body {
 
     let jumped = false;
     if (this.buffer > 0 && (this.grounded || this.coyote > 0) && this.stun <= 0) {
-      this.vy = PC.JUMP + Math.max(0, pvy) * 0.5;
+      this.vy = (mud ? PC.JUMP * 0.8 : PC.JUMP) + Math.max(0, pvy) * 0.5;
       this.vx += pvx; this.vz += pvz;
       this.buffer = 0; this.coyote = 0; this.jumpHeld = true; jumped = true;
       this.events.push({ k: 'jump' });

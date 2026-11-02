@@ -25,10 +25,22 @@ const VERSION = N && N.version ? N.version() : 'dev';
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 if (!(settings.color >= 0 && settings.color < PALETTE.length)) settings.color = 0;
 const myColor = () => PALETTE[settings.color];
+// Custom rules for a new climb. -1 means Auto (follow the difficulty).
+const RULES = [
+  ['cps', 'Checkpoints', ['Every zone', 'A few', 'None']],
+  ['haz', 'Obstacles', ['Calm', 'Normal', 'Wild']],
+  ['rope', 'Cord', ['Long', 'Normal', 'Short']],
+];
+const cleanRules = (r = {}) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; return o; };
+function rulesHtml(r, editable, solo) {
+  return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
+    .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
+    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
+}
 // A player's colour in the session (their pick, or their slot's default).
 const pcol = (s, slot) => { const p = s.players.get(slot); return css((p && p.color) ?? COLORS[slot % 4]); };
 // Earlier versions had on/off switches for the two assists; carry them over to the sliders.
@@ -325,9 +337,16 @@ function soloPick() {
   const save = validSave('save.solo');
   show(`<div class="panel">${header('Solo climb')}
     ${mapCards(settings.map)}
-    <p class="sub">Pick a difficulty to start. Solo has no cord partner, so the teamwork tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
+    <div class="kind" style="margin:14px 0 0">Rules</div>
+    ${rulesHtml(settings.rules, true, true)}
+    <p class="sub" style="margin-top:14px">Pick a difficulty to start. Solo has no cord partner, so the teamwork tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
     ${diffCards(-1)}</div>`, {
     back: title,
+    rule: (b) => {
+      settings.rules[b.dataset.k] = +b.dataset.v;
+      saveSettings();
+      for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
+    },
     map: (b) => pickMap(+b.dataset.m, soloPick),
     pick: (b) => startSolo(settings.map, +b.dataset.d, null),
   });
@@ -335,7 +354,7 @@ function soloPick() {
 
 function startSolo(map, diff, save) {
   const s = new Session('solo', settings.name, null, myColor());
-  beginGame(s, { map, diff, t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
+  beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
 // ---------- hosting ----------
@@ -430,6 +449,8 @@ function lobby(s) {
         <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${(resume ? mp.map || 0 : s.lobby.map || 0) === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
+        <div class="kind" style="margin:10px 0 6px">Rules</div>
+        ${rulesHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord (nobody is tied together)</label>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
@@ -442,11 +463,12 @@ function lobby(s) {
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
     nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
+    rule: (b) => { if (host && !resume) s.setLobby({ rules: Object.assign({}, s.lobby.rules, { [b.dataset.k]: +b.dataset.v }) }); },
     start: () => {
       const save = s.lobby.resume && mp;
       const pos = {};
       if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0,
+      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0,
         doors: save ? save.doors : null, pos: save ? pos : null });
     },
   });
@@ -714,11 +736,13 @@ function howTo(back) {
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
     <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
-    <div><b>Sunny Isles</b>The route zig-zags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
+    <div><b>Sunny Isles</b>The route zigzags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
     <div><b>Magma Chimney</b>You climb up the inside of a volcano. Stand on a vent when it erupts and it launches you up to the ledge above, but standing next to it gets you shoved off. Shadows show where boulders are about to land.</div>
     <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
-    <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (Hardcore: back at the start).</div>
+    <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start).</div>
+    <div><b>Obstacles</b>Every map has 20 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning.</div>
+    <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
     <div><b>Keyboard and gamepad</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look. Controllers work too.</div>
     <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
   </div></div>`, { back });

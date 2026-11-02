@@ -227,7 +227,7 @@ export class Sound {
       this.pluck(t, n, six * 1.6, 0.05 + I * 0.03);
     }
     // Pads: a long chord every two bars.
-    if (i === 0 && bar % 2 === 0) this.pad(t, chord, beat * 8, sec === 3 ? 0.09 : 0.05);
+    if (i === 0 && bar % 2 === 0) this.musicPad(t, chord, beat * 8, sec === 3 ? 0.09 : 0.05);
   }
 
   kick(t) {
@@ -304,7 +304,7 @@ export class Sound {
     o.start(t); o.stop(t + dur + 0.05);
   }
 
-  pad(t, chord, dur, v) {
+  musicPad(t, chord, dur, v) {
     const c = this.ctx, f = this.filter('lowpass', 900, 0.7), g = this.gain(0, this.duck);
     f.connect(g);
     f.frequency.setValueAtTime(500, t);

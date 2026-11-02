@@ -32,13 +32,37 @@ Each map is a 745 m climb in seven zones, and each one climbs its own way.
   over a sky bridge or by zipline, and work your way round the ring to the top. Conveyor belts, drones and laser
   gates.
 
-Every map also has grapple hooks over wide gaps and doors that open when you shoot their target.
+Every map also has grapple hooks over wide gaps and doors that open when you shoot their target. The route
+does not just circle: it now and then rides a lift up and turns back the other way, or detours out to floating
+platforms away from the tower before heading back in.
+
+**Obstacles**
+
+Each map has 20 obstacles of its own, built to fit it, and the higher zones bring in the harder ones:
+
+* **Storm Tower**: turbine sweeps, Tesla pendulums, piston rams, hydraulic presses, arc spikes, plasma jets, phase
+  platforms, a saw track, a wrecking ball, grease pits and more
+* **Sunny Isles**: coconut drops, rolling beach balls, anchor pendulums, cannon shots, wave walls, a carousel deck,
+  wet sand, sinking planks, blowholes, buoy bumpers and more
+* **Wild Forest**: rolling logs, spiked log swings, thorn patches, spore bursts, mushroom bumpers, mud pits, root
+  trapdoors, a charging boar, beehive swings, bee swarms and more
+* **Magma Chimney**: fire bars, flame jets, obsidian spikes, molten pendulums, stone presses, tar pits, vent
+  trapdoors, lava surges, a meteor shower, fire bats and more
+* **Neon Skyline**: security sweeps, a crane wrecking ball, runaway carts, trash compactors, steam pipes, hologram
+  platforms, a spinning helipad, airbag bumpers, saw drones and more
+
+Most of them shake, flicker or glow just before they strike.
 
 **Difficulties**
 
-* **Easy**: a checkpoint in every zone, a long cord and calmer hazards
-* **Normal**: three checkpoints on the whole climb
-* **Hardcore**: no checkpoints and a shorter cord. Fall all the way down and the team starts over.
+* **Easy**: a checkpoint in every zone, a long cord, a calmer storm and only the gentler obstacles, running slower
+* **Normal**: three checkpoints on the whole climb and most obstacles
+* **Hardcore**: no checkpoints and a shorter cord. Every obstacle is on and faster. Fall all the way down and the
+  team starts over.
+
+**Rules**: when starting a climb (solo, or the host in the lobby) you can also set the checkpoints (every zone, a
+few, none), the obstacles (calm, normal, wild) and the cord length yourself. Auto follows the difficulty. Climbs
+with custom rules keep their own best times.
 
 The climb saves itself. Solo players can continue from the title screen, and a multiplayer host can continue the
 saved climb from the lobby.

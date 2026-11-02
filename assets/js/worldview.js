@@ -130,6 +130,8 @@ export class WorldView {
     this.arrowFx = [];
     this.swingFx = [];
     this.geyserFx = [];
+    this.obsFx = [];
+    this.looks = new Map();
     this.rockFx = [];
     this.convFx = null;
     this.camPos = null;
@@ -158,7 +160,9 @@ export class WorldView {
     this.buildHazards();
     this.buildSideTrees();
     this.buildVolcano();
+    this.buildVentsRocks();
     this.buildCity();
+    this.buildObstacles();
     this.freeze();
   }
 
@@ -188,7 +192,7 @@ export class WorldView {
 
   buildStatic() {
     const L = this.level, R = rng(99);
-    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && c.kind !== 'door');
+    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
     const bm = new THREE.InstancedMesh(BOXG, mat, boxes.length);
@@ -202,6 +206,7 @@ export class WorldView {
       else if (c.kind === 'wall') col.setHex(this.key === 'storm' ? 0x2a2f3a : this.key === 'sunny' ? 0xe8e2d4 : 0x4a3a2a);
       else if (c.kind === 'pier') col.setHex(0x3a3f48);
       else if (c.kind === 'pad') col.setHex(z.color).multiplyScalar(0.5);
+      else if (c.look) col.setHex(c.look.c);
       else if (c.surf === 'ice') col.setHex(0xb0dcf0);
       else col.setHex(z.tint);
       col.multiplyScalar(0.85 + R() * 0.3);
@@ -252,11 +257,13 @@ export class WorldView {
   buildDynamic() {
     const L = this.level;
     for (const c of L.cols) {
-      if (!c.dyn && !c.crumble) continue;
+      if (!c.dyn && !c.crumble && !c.blink && !c.trap) continue;
       const z = L.zones[c.zone];
-      const glow = c.crumble ? HDR(0xff5a2a, 2.2) : HDR(z.color, this.glowK);
+      const glow = c.crumble ? HDR(0xff5a2a, 2.2) : c.look ? HDR(c.look.g, this.glowK) : HDR(z.color, this.glowK);
       const parts = [{ geo: BOXG, m: mat4(0, 0, 0, c.hx * 2, c.hy * 2, c.hz * 2), glow: null }].concat(trimParts(c.hx, c.hy, c.hz, glow, true));
-      const mat = c.crumble ? this.crumbleMat : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
+      let mat = c.crumble ? this.crumbleMat : c.look ? this.lookMat(c.look) : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
+      // Blinking platforms fade in and out, so each gets its own see-through material.
+      if (c.blink) { mat = mat.clone(); mat.transparent = true; mat.userData.live = true; }
       const mesh = this.add(new THREE.Mesh(merge(parts), mat));
       this.dyn.push({ c, mesh, fall: 0 });
     }
@@ -849,7 +856,7 @@ export class WorldView {
     ]);
     const bmat = panelMat(0x2a2230, { roughness: 0.6, metalness: 0.1, pattern: 0, side: THREE.DoubleSide });
     for (const b of L.bats) {
-      const o = this.add(new THREE.Mesh(bg, bmat));
+      const o = this.add(new THREE.Mesh(bg, b.look ? this.lookMat(b.look) : bmat));
       o.scale.setScalar(1.5);
       this.anim.push(o);
       this.bats.push({ b, o, p: {} });
@@ -896,7 +903,7 @@ export class WorldView {
     for (const l of L.lasers) {
       const g = new THREE.Group();
       g.position.set(l.x, l.y, l.z);
-      const mat = new THREE.MeshBasicMaterial({ color: HDR(col, 3) });
+      const mat = new THREE.MeshBasicMaterial({ color: HDR(l.look ? l.look.g : col, 3) });
       if (l.k === 'spin') {
         const cap = new THREE.Mesh(capGeo, emitter);
         cap.position.y = 0.1;
@@ -921,7 +928,7 @@ export class WorldView {
       }
       this.root.add(g);
       this.anim.push(g);
-      this.lasers.push({ l, g, mat, col });
+      this.lasers.push({ l, g, mat, col: l.look ? l.look.g : col });
     }
     // Arrow traps: an instanced launcher body and glowing muzzle each, plus one pooled arrow per trap.
     const A = L.arrows;
@@ -939,7 +946,7 @@ export class WorldView {
         const ry = Math.atan2(a.dx, a.dz);
         body.setMatrixAt(i, mat4(a.x, a.y, a.z, 1, 1, 1, 0, ry, 0));
         muzzle.setMatrixAt(i, mat4(a.x + a.dx * 0.28, a.y, a.z + a.dz * 0.28, 1, 1, 1, 0, ry, 0));
-        const m = new THREE.Mesh(arrowGeo, arrowMat);
+        const m = new THREE.Mesh(arrowGeo, a.look ? this.lookMat(a.look) : arrowMat);
         m.rotation.y = ry;
         m.visible = false;
         this.root.add(m);
@@ -1004,10 +1011,184 @@ export class WorldView {
     }
     const g = merge(parts), mat = panelMat(0x30343e, { roughness: 0.4, metalness: 0.7, pattern: 0 });
     for (const b of this.level.bats) {
-      const o = this.add(new THREE.Mesh(g, mat));
+      const o = this.add(new THREE.Mesh(g, b.look ? this.lookMat(b.look) : mat));
       o.scale.setScalar(1.5);
       this.anim.push(o);
       this.bats.push({ b, o, p: {} });
+    }
+  }
+
+  // A lit material in an obstacle's colours (shared between obstacles with the same look).
+  lookMat(look) {
+    let m = this.looks.get(look);
+    if (!m) { m = panelMat(look.c, { roughness: 0.5, metalness: 0.3, emissive: look.g, emissiveIntensity: 0.22, pattern: 0 }); this.looks.set(look, m); }
+    return m;
+  }
+
+  // The themed obstacles (obstacles.js). Each gets its meshes here and an update for its animation.
+  buildObstacles() {
+    const L = this.level, glowM = (look, k = 3) => new THREE.MeshBasicMaterial({ color: HDR(look.g, k) });
+    const add = (o, obj, upd) => { this.root.add(obj); this.anim.push(obj); this.obsFx.push({ o, obj, upd }); obj.traverse((q) => { if (q !== obj) q.userData.anim = true; }); };
+    const cyl = (r, h, seg = 12) => new THREE.CylinderGeometry(r, r, h, seg);
+    for (const o of L.obs) {
+      const look = o.look, mat = this.lookMat(look);
+      if (o.prim === 'sweep') {
+        const g = new THREE.Group();
+        g.position.set(o.x, o.y, o.z);
+        const hub = new THREE.Mesh(cyl(0.3, 0.32, 16), mat);
+        hub.position.y = -0.2;
+        g.add(hub);
+        for (let k = 0; k < o.n; k++) {
+          const bar = look.s === 'laser' ? new THREE.Mesh(cyl(0.06, 1, 8).rotateZ(Math.PI / 2).translate(0.5, 0, 0), glowM(look))
+            : new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 0.26).translate(0.5, 0, 0), mat);
+          bar.scale.x = o.len;
+          bar.rotation.y = (k * Math.PI * 2) / o.n;
+          g.add(bar);
+        }
+        add(o, g, (st, t) => { g.rotation.y = st.laserAngle(o, t); });
+      } else if (o.prim === 'pendulum') {
+        const g = new THREE.Group(), ux = o.nz, uz = -o.nx;
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.16, 0.16), mat);
+        bar.position.set(o.x, o.y, o.z);
+        bar.rotation.y = Math.atan2(-uz, ux);
+        const rope = new THREE.Mesh(cyl(0.035, 1, 6), new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.8 }));
+        let head;
+        if (look.s === 'log') head = new THREE.Mesh(cyl(o.r * 0.7, 1.4, 12).rotateZ(Math.PI / 2), mat);
+        else if (look.s === 'anchor') head = new THREE.Mesh(merge([
+          { geo: new THREE.BoxGeometry(0.16, 1.0, 0.16), m: mat4(0, 0.1, 0, 1, 1, 1), glow: null },
+          { geo: new THREE.TorusGeometry(0.42, 0.08, 6, 16, Math.PI), m: mat4(0, -0.25, 0, 1, 1, 1, 0, 0, Math.PI), glow: null },
+          { geo: new THREE.BoxGeometry(0.7, 0.12, 0.12), m: mat4(0, 0.45, 0, 1, 1, 1), glow: HDR(look.g, 1.2) },
+        ]), mat);
+        else head = new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), mat);
+        head.castShadow = true;
+        if (look.s === 'log') head.rotation.y = Math.atan2(-uz, ux);
+        g.add(bar, rope, head);
+        const P = {};
+        add(o, g, (st, t) => {
+          const p = st.pendulum(o, t, P);
+          head.position.set(p.x, p.y, p.z);
+          if (look.s !== 'log') head.rotation.z = p.a;
+          stretchTo(rope, o.x, o.y, o.z, p.x, p.y, p.z);
+        });
+      } else if (o.prim === 'slider') {
+        let m;
+        if (o.shape === 'ram') { m = new THREE.Mesh(new THREE.BoxGeometry(o.len, 1.1, 0.6), mat); m.rotation.y = o.ry; }
+        else if (o.shape === 'ball') m = new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), mat);
+        else if (o.shape === 'log') { m = new THREE.Mesh(cyl(o.r, o.w, 14), mat); }
+        else m = new THREE.Mesh(merge([
+          { geo: cyl(o.r, 0.08, 24).rotateX(Math.PI / 2), m: mat4(0, 0, 0, 1, 1, 1), glow: null },
+          { geo: new THREE.TorusGeometry(o.r, 0.04, 6, 24), m: mat4(0, 0, 0, 1, 1, 1), glow: HDR(look.g, 2.5) },
+        ]), mat);
+        m.castShadow = true;
+        const P = {}, g = new THREE.Group();
+        g.add(m);
+        add(o, g, (st, t) => {
+          const p = st.slider(o, t, P);
+          g.position.set(p.x, p.y, p.z);
+          if (o.shape === 'ball') m.rotation.set(0, 0, -p.roll);
+          else if (o.shape === 'log') { g.rotation.y = o.ry; m.rotation.set(Math.PI / 2, 0, 0); m.rotateY(p.roll); }
+          else if (o.shape === 'disc') { g.rotation.y = o.ry; m.rotation.set(0, 0, t * 12); }
+          if (p.warn > 0) g.position.x += Math.sin(t * 50) * 0.04;
+        });
+      } else if (o.prim === 'crusher') {
+        const g = new THREE.Group();
+        const block = new THREE.Mesh(new THREE.BoxGeometry(o.hs * 2, 1.0, o.hs * 2), mat);
+        block.castShadow = true;
+        const rod = new THREE.Mesh(cyl(0.16, 2.6, 10), this.lookMat(look));
+        rod.position.y = 1.8;
+        const warnM = glowM(look, 1.5);
+        warnM.userData.live = true;
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(o.hs * 2 + 0.04, 0.12, o.hs * 2 + 0.04), warnM);
+        stripe.position.y = -0.4;
+        g.add(block, rod, stripe);
+        g.rotation.y = o.ry;
+        add(o, g, (st, t) => {
+          const c = st.crusher(o, t);
+          g.position.set(o.x + (c.shake ? Math.sin(t * 60) * 0.05 * c.shake : 0), o.y + c.h + 0.5, o.z);
+          warnM.color.setHex(look.g).multiplyScalar(1.2 + c.shake * 3);
+        });
+      } else if (o.prim === 'spikes') {
+        const parts = [], cone = new THREE.ConeGeometry(0.11, 0.45, 6).translate(0, 0.22, 0);
+        for (let a = -o.hx + 0.2; a <= o.hx - 0.2 + 1e-6; a += 0.42) for (let b = -o.hz + 0.2; b <= o.hz - 0.2 + 1e-6; b += 0.42) parts.push({ geo: cone, m: mat4(a, 0, b, 1, 1, 1), glow: null });
+        const sm = this.lookMat(look).clone();
+        sm.userData.live = true;
+        const m = new THREE.Mesh(merge(parts), sm);
+        const g = new THREE.Group();
+        g.add(m);
+        g.position.set(o.x, o.y, o.z);
+        g.rotation.y = o.ry;
+        add(o, g, (st, t) => {
+          const p = st.pulse(o, t);
+          m.position.y = p.on ? 0 : -0.5 + p.warn * 0.12;
+          sm.emissiveIntensity = p.on ? 0.6 : 0.22 + p.warn * (0.6 + Math.sin(t * 40) * 0.3);
+        });
+      } else if (o.prim === 'jet') {
+        const g = new THREE.Group();
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.6), mat);
+        const flame = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.7, o.range, 14, 1, true).rotateX(Math.PI / 2).translate(0, 0, o.range / 2 + 0.3),
+          new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.6), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+        const nozM = glowM(look, 1.2);
+        nozM.userData.live = true;
+        const noz = new THREE.Mesh(new THREE.CircleGeometry(0.16, 12).translate(0, 0, 0.31), nozM);
+        g.add(box, flame, noz);
+        g.position.set(o.x, o.y, o.z);
+        g.rotation.y = Math.atan2(o.dx, o.dz);
+        add(o, g, (st, t) => {
+          const p = st.pulse(o, t, 0.5);
+          flame.visible = p.on;
+          if (p.on) flame.scale.set(1 + Math.sin(t * 35) * 0.08, 1 + Math.cos(t * 29) * 0.08, Math.min(1, p.k * 8));
+          nozM.color.setHex(look.g).multiplyScalar(p.on ? 3 : 1 + p.warn * 3);
+        });
+      }
+    }
+    // Bumpers: a squat post in the obstacle's colour with a glowing ring on top.
+    const bG = cyl(0.45, 0.9, 20), rG = new THREE.TorusGeometry(0.42, 0.06, 6, 24).rotateX(Math.PI / 2);
+    for (const b of L.bumpers) {
+      const m = this.add(new THREE.Mesh(bG, this.lookMat(b.look)));
+      m.position.set(b.x, b.y + 0.45, b.z);
+      const ring = new THREE.Mesh(rG, new THREE.MeshBasicMaterial({ color: HDR(b.look.g, 2.4) }));
+      ring.position.set(b.x, b.y + 0.92, b.z);
+      this.add(ring, false);
+    }
+  }
+
+  // Vents and falling things: the volcano's own, and the themed ones every map now has.
+  buildVentsRocks() {
+    const L = this.level;
+    // Vents: a dark ring with a glowing middle; when erupting, a column of fire.
+    const ringG = new THREE.TorusGeometry(0.75, 0.16, 8, 24).rotateX(Math.PI / 2), coreG = new THREE.CircleGeometry(0.62, 20).rotateX(-Math.PI / 2);
+    const colG = new THREE.CylinderGeometry(0.55, 0.9, 1, 16, 1, true).translate(0, 0.5, 0);
+    const ringM = panelMat(0x1a1210, { roughness: 0.9, pattern: 0 });
+    const colM = new THREE.MeshBasicMaterial({ color: HDR(0xff8a2a, 3), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
+    const colFor = (look) => (look ? new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.6), transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }) : colM);
+    for (const v of L.geysers) {
+      const ring = this.add(new THREE.Mesh(ringG, ringM));
+      ring.position.set(v.x, v.y + 0.05, v.z);
+      const glowM = new THREE.MeshBasicMaterial({ color: HDR(v.look ? v.look.g : 0xff6a1a, 1.5) });
+      glowM.userData.live = true;
+      const core = new THREE.Mesh(coreG, glowM);
+      core.position.set(v.x, v.y + 0.03, v.z);
+      this.add(core, false);
+      const col = new THREE.Mesh(colG, colFor(v.look));
+      col.position.set(v.x, v.y, v.z);
+      col.visible = false;
+      this.root.add(col);
+      this.anim.push(col);
+      this.geyserFx.push({ v, glowM, col });
+    }
+    // Boulders: one rock and one shadow per drop spot.
+    const rockG = new THREE.DodecahedronGeometry(0.75, 0), rockM = panelMat(0x3a2a24, { roughness: 1, emissive: 0xff4a10, emissiveIntensity: 0.15, pattern: 0 });
+    const shadowG = new THREE.CircleGeometry(1.2, 24).rotateX(-Math.PI / 2);
+    for (const r of L.rocks) {
+      const m = this.add(new THREE.Mesh(rockG, r.look ? this.lookMat(r.look) : rockM));
+      m.visible = false;
+      const shM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
+      shM.userData.live = true;
+      const sh = new THREE.Mesh(shadowG, shM);
+      sh.position.set(r.x, r.y + 0.04, r.z);
+      this.add(sh, false);
+      this.anim.push(m);
+      this.rockFx.push({ r, m, sh, shM, p: {} });
     }
   }
 
@@ -1033,40 +1214,6 @@ export class WorldView {
       panelMat(0x2a1e1a, { side: THREE.DoubleSide, roughness: 0.95, metalness: 0, emissive: 0xffffff, emissiveMap: cracks, emissiveIntensity: 0.9, pattern: 2 }));
     wall.position.y = H / 2 - 30;
     this.add(wall);
-    // Vents: a dark ring with a glowing middle; when erupting, a column of fire.
-    const ringG = new THREE.TorusGeometry(0.75, 0.16, 8, 24).rotateX(Math.PI / 2), coreG = new THREE.CircleGeometry(0.62, 20).rotateX(-Math.PI / 2);
-    const colG = new THREE.CylinderGeometry(0.55, 0.9, 1, 16, 1, true).translate(0, 0.5, 0);
-    const ringM = panelMat(0x1a1210, { roughness: 0.9, pattern: 0 });
-    const colM = new THREE.MeshBasicMaterial({ color: HDR(0xff8a2a, 3), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
-    for (const v of L.geysers) {
-      const ring = this.add(new THREE.Mesh(ringG, ringM));
-      ring.position.set(v.x, v.y + 0.05, v.z);
-      const glowM = new THREE.MeshBasicMaterial({ color: HDR(0xff6a1a, 1.5) });
-      glowM.userData.live = true;
-      const core = new THREE.Mesh(coreG, glowM);
-      core.position.set(v.x, v.y + 0.03, v.z);
-      this.add(core, false);
-      const col = new THREE.Mesh(colG, colM);
-      col.position.set(v.x, v.y, v.z);
-      col.visible = false;
-      this.root.add(col);
-      this.anim.push(col);
-      this.geyserFx.push({ v, glowM, col });
-    }
-    // Boulders: one rock and one shadow per drop spot.
-    const rockG = new THREE.DodecahedronGeometry(0.75, 0), rockM = panelMat(0x3a2a24, { roughness: 1, emissive: 0xff4a10, emissiveIntensity: 0.15, pattern: 0 });
-    const shadowG = new THREE.CircleGeometry(1.2, 24).rotateX(-Math.PI / 2);
-    for (const r of L.rocks) {
-      const m = this.add(new THREE.Mesh(rockG, rockM));
-      m.visible = false;
-      const shM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false });
-      shM.userData.live = true;
-      const sh = new THREE.Mesh(shadowG, shM);
-      sh.position.set(r.x, r.y + 0.04, r.z);
-      this.add(sh, false);
-      this.anim.push(m);
-      this.rockFx.push({ r, m, sh, shM, p: {} });
-    }
     // Embers drifting up through the chimney around the camera.
     const n = 160, emb = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 5, 4), new THREE.MeshBasicMaterial({ color: HDR(0xffa040, 3.5) }), n);
     for (let i = 0; i < n; i++) { const a = R() * TAU, rr2 = 4 + R() * 18; emb.setMatrixAt(i, mat4(Math.cos(a) * rr2, R() * 40, Math.sin(a) * rr2, 1, 1, 1)); }
@@ -1154,6 +1301,15 @@ export class WorldView {
       const c = d.c, m = d.mesh;
       m.position.set(c.x, c.y, c.z);
       m.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+      if (c.blink) {
+        const st = storm.on(c.blink) ? storm.blink(c.blink, t) : { on: true, warn: 0 };
+        m.visible = st.on;
+        m.material.opacity = st.warn > 0 ? 0.35 + 0.65 * (Math.sin(t * 40) > 0 ? 1 : 0.3) : 1;
+      } else if (c.trap) {
+        const st = storm.on(c.trap) ? storm.trap(c.trap, t) : { open: false, warn: 0 };
+        m.visible = !st.open;
+        if (st.warn > 0) { m.position.x += (Math.random() - 0.5) * 0.06; m.position.z += (Math.random() - 0.5) * 0.06; }
+      }
       if (c.crumble) {
         const s = c.crumble.st;
         if (s === 1) m.position.x += (Math.random() - 0.5) * 0.08, m.position.z += (Math.random() - 0.5) * 0.08;
@@ -1211,7 +1367,7 @@ export class WorldView {
     const cam = this.camPos;
     const near = (y) => !cam || Math.abs(y - cam.y) < 45;
     for (const e of this.lasers) {
-      const l = e.l, vis = near(l.y);
+      const l = e.l, vis = near(l.y) && storm.on(l);
       if (l.k === 'spin') {
         e.g.visible = vis;
         if (vis) e.g.rotation.y = storm.laserAngle(l, t);
@@ -1227,22 +1383,27 @@ export class WorldView {
     }
     for (const e of this.arrowFx) {
       const a = e.a;
-      if (!near(a.y)) { e.m.visible = false; continue; }
+      if (!near(a.y) || !storm.on(a)) { e.m.visible = false; continue; }
       const p = storm.arrow(a, t, e.p);
       e.m.visible = p.fly;
       if (p.fly) e.m.position.set(p.x, p.y, p.z);
     }
+    for (const e of this.obsFx) {
+      const show = near(e.o.y) && storm.on(e.o);
+      e.obj.visible = show;
+      if (show) e.upd(storm, t);
+    }
     for (const e of this.geyserFx) {
       const v = e.v;
-      if (!near(v.y)) { e.col.visible = false; continue; }
+      if (!near(v.y) || !storm.on(v)) { e.col.visible = false; continue; }
       const st = storm.geyser(v, t);
       e.col.visible = st.on;
       if (st.on) e.col.scale.set(1 + Math.sin(t * 30) * 0.08, 6.5 * Math.min(1, st.k * 6) * (1 - Math.max(0, st.k - 0.8) * 4), 1 + Math.cos(t * 26) * 0.08);
-      e.glowM.color.setHex(0xff6a1a).multiplyScalar(st.on ? 4 : 1.2 + st.warn * (2 + Math.sin(t * 40) * 1.5));
+      e.glowM.color.setHex(v.look ? v.look.g : 0xff6a1a).multiplyScalar(st.on ? 4 : 1.2 + st.warn * (2 + Math.sin(t * 40) * 1.5));
     }
     for (const e of this.rockFx) {
       const r = e.r;
-      if (!near(r.y)) { e.m.visible = false; continue; }
+      if (!near(r.y) || !storm.on(r)) { e.m.visible = false; e.shM.opacity = 0; continue; }
       const st = storm.rock(r, t, e.p);
       e.m.visible = st.fall >= 0 || st.rest;
       if (e.m.visible) { e.m.position.set(r.x, st.rest && st.fall < 0 ? r.y + 0.7 - (t % 1) * 0 : st.y, r.z); e.m.rotation.set(t * 3 + r.i, t * 2, 0); }
@@ -1271,7 +1432,7 @@ export class WorldView {
       o.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
     }
     for (const e of this.bats) {
-      const b = e.b, near = !cam || Math.abs(b.cy - cam.y) < 45;
+      const b = e.b, near = (!cam || Math.abs(b.cy - cam.y) < 45) && storm.on(b);
       e.o.visible = near;
       if (!near) continue;
       const p = storm.batPos(b, t, e.p), o = e.o;

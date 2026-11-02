@@ -31,6 +31,12 @@ export class Game {
     this.diff = g.diff;
     this.D = DIFFS[g.diff];
     this.storm = new Storm(this.L, g.diff);
+    // Custom rules (game creation): checkpoints, hazards and cord length, each following the difficulty
+    // unless set. cpl 0 every zone / 1 a few / 2 none; hazards 0 calm / 1 normal / 2 wild.
+    this.rules = g.rules || {};
+    this.cpl = this.rules.cps ?? g.diff;
+    this.rope = DIFFS[this.rules.rope ?? g.diff].rope;
+    this.storm.setHaz(this.rules.haz ?? g.diff);
     this.solo = session.mode === 'solo';
     this.t0 = g.t0;
     this.base = g.base || 0;
@@ -70,7 +76,7 @@ export class Game {
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
     // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
-    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, maxReel: this.D.rope - 1.2, wind: null };
+    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, maxReel: this.rope - 1.2, wind: null };
     const th = Math.atan2(this.me.z, this.me.x);
     this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
@@ -83,7 +89,7 @@ export class Game {
     });
     session.on('S', (m) => {
       if (m.f !== undefined) this.falls = m.f;
-      if (m.cp !== undefined && m.cp !== this.cp) { this.cp = m.cp; app.view.setCheckpoints(this.diff, this.cp); }
+      if (m.cp !== undefined && m.cp !== this.cp) { this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
     // Names and colours can change mid-game (Settings): redraw stickmen, cords and name tags.
@@ -91,7 +97,7 @@ export class Game {
     session.on('lobby', () => { this.refreshPlayers(); if (lobbyH) lobbyH(); });
     session.on('gameTime', () => this.time);
     this.syncRoster();
-    app.view.setCheckpoints(this.diff, this.cp);
+    app.view.setCheckpoints(this.cpl, this.cp);
   }
 
   get time() {
@@ -110,7 +116,7 @@ export class Game {
   snapshot(slot) {
     const m = this.me, stuns = [];
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
-    return { map: this.map, diff: this.diff, noCord: this.noCord, t0: this.t0, base: this.base, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns,
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t0: this.t0, base: this.base, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns,
       pos: { [slot]: [m.x + 0.6, m.y + 1.2, m.z] } };
   }
 
@@ -137,7 +143,7 @@ export class Game {
     for (let i = 0; i + 1 < slots.length && !this.noCord; i++) {
       const a = slots[i], b = slots[i + 1], mesh = pool.ropes[i];
       mesh.setColors(this.colorOf(a), this.colorOf(b));
-      this.links.push({ a, b, chain: new Chain(12), mesh, ten: 0, L: this.D.rope });
+      this.links.push({ a, b, chain: new Chain(12), mesh, ten: 0, L: this.rope });
     }
     this.app.ui.players(this);
   }
@@ -218,6 +224,9 @@ export class Game {
     const t = this.simT, me = this.me, slot = this.slot;
     this.W.setTime(t);
     this.crumbles(STEP);
+    const S = this.storm;
+    for (const c of this.L.blinks) { c.on = !S.on(c.blink) || S.blink(c.blink, t).on; if (!c.on && me.anchorCol === c) me.release(); }
+    for (const c of this.L.traps) { c.on = !S.on(c.trap) || !S.trap(c.trap, t).open; if (!c.on && me.anchorCol === c) me.release(); }
     const zone = zoneAt(this.L, me.y);
     this.env.wind = (b, o) => this.storm.wind(b, o, t, zone);
     me.step(STEP, inp, this.env);
@@ -229,10 +238,10 @@ export class Game {
     for (const lk of this.links) {
       if (lk.a !== slot && lk.b !== slot) continue;
       if (!this.latest(lk.a === slot ? lk.b : lk.a, op)) continue;
-      const L = this.D.rope - Math.max(me.reel, op.reel || 0), mine = lk.a === slot, pc = lk.pc || (lk.pc = new Chain(10));
-      if (Math.hypot(op.x - me.x, op.y - me.y, op.z - me.z) > this.D.rope * 3) { pc.ok = false; continue; }
+      const L = this.rope - Math.max(me.reel, op.reel || 0), mine = lk.a === slot, pc = lk.pc || (lk.pc = new Chain(10));
+      if (Math.hypot(op.x - me.x, op.y - me.y, op.z - me.z) > this.rope * 3) { pc.ok = false; continue; }
       pc.step(mine ? me : op, mine ? op : me, L, this.W, STEP);
-      cord(me, op, L, this.env, this.D.rope * 3, pc, mine);
+      cord(me, op, L, this.env, this.rope * 3, pc, mine);
     }
 
     this.storm.strikes(t - STEP, t, (r) => this.strike(r));
@@ -262,14 +271,14 @@ export class Game {
       if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, 'monster');
     }
     for (const b of L.bats) {
-      if (Math.abs(b.cy - me.y) > 3 || Math.abs(b.cx - me.x) + Math.abs(b.cz - me.z) > 12) continue;
+      if (!this.storm.on(b) || Math.abs(b.cy - me.y) > 3 || Math.abs(b.cx - me.x) + Math.abs(b.cz - me.z) > 12) continue;
       const p = this.storm.batPos(b, t, tmpP);
       if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < b.r + PR) knock(p.x, p.z, 'bat');
     }
     // Lasers: a spinning bar (jump over it) and on/off curtains across bridges.
     const S = this.storm, feet = me.y - PR;
     for (const l of L.lasers) {
-      if (Math.abs(l.y - feet) > 4 || Math.abs(l.x - me.x) + Math.abs(l.z - me.z) > 9) continue;
+      if (!S.on(l) || Math.abs(l.y - feet) > 4 || Math.abs(l.x - me.x) + Math.abs(l.z - me.z) > 9) continue;
       if (l.k === 'spin') {
         if (Math.abs(me.y - l.y) > 0.55) continue;
         for (let k = 0; k < (l.n || 1); k++) {
@@ -291,7 +300,7 @@ export class Game {
     }
     // Lava geysers: ride an eruption up from the vent; right next to it you get shoved away.
     for (const g of L.geysers) {
-      if (Math.abs(g.y - feet) > 5 || Math.abs(g.x - me.x) + Math.abs(g.z - me.z) > 6) continue;
+      if (!S.on(g) || Math.abs(g.y - feet) > 5 || Math.abs(g.x - me.x) + Math.abs(g.z - me.z) > 6) continue;
       const st = S.geyser(g, t);
       if (!st.on || feet < g.y - 0.4 || feet > g.y + 5) continue;
       const d = Math.hypot(me.x - g.x, me.z - g.z);
@@ -301,22 +310,95 @@ export class Game {
     }
     // Falling boulders.
     for (const r of L.rocks) {
-      if (Math.abs(r.y - feet) > 3 || Math.abs(r.x - me.x) + Math.abs(r.z - me.z) > 5) continue;
+      if (!S.on(r) || Math.abs(r.y - feet) > 3 || Math.abs(r.x - me.x) + Math.abs(r.z - me.z) > 5) continue;
       const st = S.rock(r, t, tmpP);
       const d = Math.hypot(me.x - r.x, me.z - r.z);
       if (st.fall > 0.75 && d < 1.25 && feet < r.y + 2.2) this.zapKnock(((me.x - r.x) / (d || 1)) * 8, 5, ((me.z - r.z) / (d || 1)) * 8, 'rock');
     }
     // Arrow traps.
     for (const a of L.arrows) {
-      if (Math.abs(a.y - me.y) > 3 || Math.abs(a.x - me.x) + Math.abs(a.z - me.z) > 8) continue;
+      if (!S.on(a) || Math.abs(a.y - me.y) > 3 || Math.abs(a.x - me.x) + Math.abs(a.z - me.z) > 8) continue;
       const p = S.arrow(a, t, tmpP);
       if (p.fly && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < 0.55) this.zapKnock(a.dx * 7, 3.5, a.dz * 7, 'arrow');
     }
+    this.obstacles(t, feet);
     const th = this.storm.thunder(t, this.slot);
     if (th) this.zap(this.slot, th, me, true);
   }
 
-  zapKnock(vx, vy, vz, src) {
+  // The themed obstacles (obstacles.js): only nearby ones, only those the hazard setting switches on.
+  obstacles(t, feet) {
+    const me = this.me, S = this.storm, L = this.L, P = tmpP;
+    const away = (x, z, k, up, name) => {
+      const dx = me.x - x, dz = me.z - z, d = Math.hypot(dx, dz) || 1;
+      this.zapKnock((dx / d) * k, up, (dz / d) * k, 'obstacle', name);
+    };
+    for (const o of L.obs) {
+      if (!S.on(o) || Math.abs(o.y - feet) > 5 || Math.abs(o.x - me.x) + Math.abs(o.z - me.z) > 10) continue;
+      switch (o.prim) {
+        case 'sweep': {
+          if (Math.abs(me.y - o.y) > 0.5 + o.w) break;
+          for (let k = 0; k < o.n; k++) {
+            const a = S.laserAngle(o, t, k), ux = Math.cos(a), uz = -Math.sin(a), px = me.x - o.x, pz = me.z - o.z;
+            const along = clamp(px * ux + pz * uz, 0, o.len), dx = px - ux * along, dz = pz - uz * along;
+            if (dx * dx + dz * dz < (0.42 + o.w) ** 2) { const sg = Math.sign(o.per); this.zapKnock(uz * sg * 7, 5, -ux * sg * 7, 'obstacle', o.name); }
+          }
+          break;
+        }
+        case 'pendulum': {
+          const p = S.pendulum(o, t, P);
+          // Knocked the way it is swinging.
+          const sg = Math.cos(Math.PI * 2 * ((t * S.hs) / o.per + o.ph)) >= 0 ? 1 : -1;
+          if (Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < o.r + PR) this.zapKnock(o.nx * sg * 8, 4, o.nz * sg * 8, 'obstacle', o.name);
+          break;
+        }
+        case 'slider': {
+          const p = S.slider(o, t, P), dx = me.x - p.x, dz = me.z - p.z;
+          if (o.shape === 'ram') {
+            const a = dx * o.ux + dz * o.uz, b = dx * o.vx + dz * o.vz;
+            if (Math.abs(a) < o.len / 2 + PR && Math.abs(b) < 0.3 + PR && feet < o.y + 1.15 && p.dir >= 0) this.zapKnock(o.vx * 9, 3, o.vz * 9, 'obstacle', o.name);
+          } else if (o.shape === 'log') {
+            const a = dx * o.ux + dz * o.uz, b = dx * -o.uz + dz * o.ux;
+            if (Math.abs(a) < o.r + PR && Math.abs(b) < o.w / 2 && Math.abs(me.y - p.y) < o.r + PR) this.zapKnock(o.ux * p.dir * 7, 4, o.uz * p.dir * 7, 'obstacle', o.name);
+          } else if (Math.hypot(dx, me.y - p.y, dz) < o.r + PR) this.zapKnock(o.ux * p.dir * 7, 4, o.uz * p.dir * 7, 'obstacle', o.name);
+          break;
+        }
+        case 'crusher': {
+          const st = S.crusher(o, t), c = Math.cos(o.ry), sn = Math.sin(o.ry), dx = me.x - o.x, dz = me.z - o.z;
+          const a = dx * c - dz * sn, b = dx * sn + dz * c;
+          if (st.down && st.h < 1.3 && Math.abs(a) < o.hs + PR * 0.6 && Math.abs(b) < o.hs + PR * 0.6 && feet < o.y + 1.4) away(o.x, o.z, 8, 4, o.name);
+          break;
+        }
+        case 'spikes': {
+          const st = S.pulse(o, t), c = Math.cos(o.ry), sn = Math.sin(o.ry), dx = me.x - o.x, dz = me.z - o.z;
+          const a = dx * c - dz * sn, b = dx * sn + dz * c;
+          if (st.on && Math.abs(a) < o.hx + 0.1 && Math.abs(b) < o.hz + 0.1 && feet < o.y + 0.6) away(o.x, o.z, 3, 9, o.name);
+          break;
+        }
+        case 'jet': {
+          if (!S.pulse(o, t, 0.5).on) break;
+          const px = me.x - o.x, pz = me.z - o.z, along = px * o.dx + pz * o.dz, lat = Math.abs(px * -o.dz + pz * o.dx);
+          if (along > 0.2 && along < o.range && lat < 0.55 + along * 0.12 && Math.abs(me.y - o.y) < 1.0) this.zapKnock(o.dx * 7, 3, o.dz * 7, 'obstacle', o.name);
+          break;
+        }
+      }
+    }
+    // Bumpers: bouncy posts that throw you away (no stun).
+    this.bumpCd = Math.max(0, (this.bumpCd || 0) - STEP);
+    for (const b of L.bumpers) {
+      if (this.bumpCd > 0 || !S.on(b) || Math.abs(b.y - feet) > 1.5) continue;
+      const dx = me.x - b.x, dz = me.z - b.z, d = Math.hypot(dx, dz);
+      if (d < b.r + PR + 0.08 && feet < b.y + 1.0) {
+        me.vx = (dx / (d || 1)) * 9 * S.k; me.vz = (dz / (d || 1)) * 9 * S.k; me.vy = Math.max(me.vy, 3.5);
+        me.grounded = false; me.ground = null;
+        this.bumpCd = 0.25;
+        this.app.sound.pad();
+        this.app.ui.haptic('tick');
+      }
+    }
+  }
+
+  zapKnock(vx, vy, vz, src, name) {
     if (this.knockCd > 0) return;
     this.knockCd = 0.8;
     const k = this.storm.k;
@@ -325,7 +407,7 @@ export class Game {
       this.app.ui.haptic('heavy');
       if (src === 'laser') this.app.ui.flash('#ff3050');
       if (src === 'geyser') this.app.ui.flash('#ff7a1a');
-      this.app.ui.toast({ arrow: 'Hit by an arrow!', laser: 'Zapped by a laser!', geyser: 'Blasted by the eruption!', rock: 'Flattened by a boulder!' }[src] || 'Ouch!', 'bad');
+      this.app.ui.toast(name ? name + '!' : { arrow: 'Hit by an arrow!', laser: 'Zapped by a laser!', geyser: 'Blasted by the eruption!', rock: 'Flattened by a boulder!' }[src] || 'Ouch!', 'bad');
     }
   }
 
@@ -496,7 +578,7 @@ export class Game {
       this.s.toHost({ k: 'splash' });
     }
     for (const cp of L.cps) {
-      if (cp.i <= this.cp || this.cpSent.has(cp.i) || !cpEnabled(cp, this.diff)) continue;
+      if (cp.i <= this.cp || this.cpSent.has(cp.i) || !cpEnabled(cp, this.cpl)) continue;
       if (Math.hypot(me.x - cp.x, me.z - cp.z) < 3 && Math.abs(me.y - PR - cp.y) < 1.3) { this.cpSent.add(cp.i); this.s.toHost({ k: 'cp', i: cp.i }); }
     }
     if (!this.winSent && me.grounded && me.y > L.top - 0.5 && Math.hypot(me.x, me.z) < L.summit.r) { this.winSent = true; this.s.toHost({ k: 'win' }); }
@@ -523,14 +605,14 @@ export class Game {
         if (T < (this.locks[key] || 0)) return;
         this.locks[key] = T + 1.5;
         if (e.k === 'splash') this.falls++;
-        if (this.diff === 2 && one === null) this.cp = 0;
-        const pos = {}, at = this.diff === 2 ? 0 : this.cp;
+        if (this.cpl === 2 && one === null) this.cp = 0;
+        const pos = {}, at = this.cpl === 2 ? 0 : this.cp;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
         this.s.toAll({ k: 'respawn', cp: this.cp, at, pos, falls: this.falls, why: e.k, only: one });
         break;
       }
       case 'cp':
-        if (e.i > this.cp && cpEnabled(this.L.cps[e.i], this.diff)) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
+        if (e.i > this.cp && cpEnabled(this.L.cps[e.i], this.cpl)) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
         break;
       case 'sling': this.s.toSlot(e.to, e); break;
       case 'crumble': this.s.toAll(e); break;
@@ -564,13 +646,13 @@ export class Game {
         if (e.only === null || e.only === undefined) for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
         const th = Math.atan2(p[2], p[0]);
         Object.assign(this.cam, { yaw: Math.PI - th, x: p[0], y: p[1] + 0.7, z: p[2] });
-        this.app.view.setCheckpoints(this.diff, this.cp);
+        this.app.view.setCheckpoints(this.cpl, this.cp);
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.' }[this.L.mapKey] || 'Into the sea.';
-        ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.diff === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
+        ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
       }
       case 'cp':
-        if (e.i > this.cp) { this.cp = e.i; this.app.view.setCheckpoints(this.diff, this.cp); }
+        if (e.i > this.cp) { this.cp = e.i; this.app.view.setCheckpoints(this.cpl, this.cp); }
         for (const r of this.robots.values()) r.cheer();
         this.app.sound.checkpoint();
         ui.toast('Checkpoint reached', 'good');
@@ -587,7 +669,7 @@ export class Game {
 
   save() {
     const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, noCord: this.noCord, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z] });
   }
 
   finish(e) {
@@ -595,7 +677,9 @@ export class Game {
     this.won = true;
     for (const r of this.robots.values()) r.cheer();
     store.del(this.solo ? 'save.solo' : 'save.mp');
-    const key = this.map + ':' + this.diff, best = store.get('best2', {}), prev = best[key];
+    // Best times only count when playing the difficulty's own rules (no custom rules).
+    const custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
+    const key = this.map + ':' + this.diff + (custom ? ':custom' : ''), best = store.get('best2', {}), prev = best[key];
     if (!prev || e.t < prev) { best[key] = e.t; store.set('best2', best); }
     this.app.sound.win();
     this.app.finish({ time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size });
@@ -623,7 +707,7 @@ export class Game {
       const A = pos(lk.a), B = pos(lk.b);
       if (!A || !B) { lk.mesh.mesh.visible = false; continue; }
       lk.mesh.mesh.visible = true;
-      const L = this.D.rope - Math.max(A.reel || 0, B.reel || 0);
+      const L = this.rope - Math.max(A.reel || 0, B.reel || 0);
       lk.chain.step(A, B, L, this.W, Math.min(dt, 0.05));
       lk.L = L;
       lk.ten = Math.hypot(A.x - B.x, A.y - B.y, A.z - B.z) / L;

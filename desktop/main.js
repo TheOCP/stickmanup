@@ -146,6 +146,10 @@ function smoke() {
       await wait(8000);
       out.game = await js('SMU.screen');
       await shot('game');
+      await wait(7000);
+      await shot('game2');
+      await wait(7000);
+      await shot('game3');
       out.ok = !!out.screen && out.game === 'game' && out.desktop === 'object';
       finish(out.ok ? 0 : 1);
     } catch (e) {

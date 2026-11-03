@@ -1,6 +1,7 @@
 package io.stickmanup;
 
 import android.app.Activity;
+import android.content.Context;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -44,6 +45,8 @@ import java.util.Locale;
  * ES modules and WebRTC work. Exposes {@code window.Native} for haptics and local multiplayer sockets.
  */
 public class MainActivity extends Activity implements Net.Out {
+    private volatile String guardLast = "{}";
+    private volatile long guardAt = 0;
 
     private static final String ORIGIN = "https://appassets.androidplatform.net/";
     private static final int REQ_BT_PERM = 7, REQ_BT_ON = 8;
@@ -51,7 +54,7 @@ public class MainActivity extends Activity implements Net.Out {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.3";
+    static final String VERSION = "4.4";
     private Net net;
     private final Expose expose = new Expose();
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -364,6 +367,35 @@ public class MainActivity extends Activity implements Net.Out {
     }
 
     final class Bridge {
+        @JavascriptInterface
+        public String deviceId() {
+            return Guard.deviceId(getApplicationContext());
+        }
+
+        // The last answer from the checks (Guard.java). Run on their own thread, every couple of minutes.
+        @JavascriptInterface
+        public String guard() {
+            if (guardAt == 0 || System.currentTimeMillis() - guardAt > 110000) {
+                guardAt = System.currentTimeMillis();
+                final Context c = getApplicationContext();
+                new Thread(new Runnable() {
+                    @Override public void run() { guardLast = Guard.scan(c); }
+                }, "guard").start();
+            }
+            return guardLast;
+        }
+
+        // Asks the secure hardware to vouch for this app. It can take a few seconds, so the answer comes back by itself.
+        @JavascriptInterface
+        public void attestStart(final String challenge) {
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    final String r = Guard.attest(String.valueOf(challenge));
+                    js("window.SMU_attested&&SMU_attested(" + org.json.JSONObject.quote(r) + ")");
+                }
+            }, "attest").start();
+        }
+
         @JavascriptInterface
         public String version() {
             return VERSION;

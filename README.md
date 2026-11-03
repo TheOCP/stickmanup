@@ -183,13 +183,16 @@ Friends can join a climb that is already running.
 
 ## Accounts
 
-You never have to sign in: as a guest your progress stays on your phone. Sign in with Discord, Steam or Google on a game
-server and your coins, items, records and saved climb follow you to another phone.
+Coins and what you own are kept on the game server, so nobody can lose them or make them up. On first start you can accept the
+terms and play as a guest, or sign in with Discord, Steam or Google. A guest's coins are on the server too, but only that
+phone can reach them. Signing in moves them to an account that works on any phone. Or play without coins, with nothing
+sent anywhere. You can delete your account and everything on the server at any time.
 
-On an account, your coins and what you own are kept on the server, so editing the phone changes nothing and buying
-needs a connection. What you collect while offline waits on the phone and is sent later. The first time you sign in, what
-you had as a guest comes along, worth up to 5000 coins. Signing out gives you back the guest you were. You can delete
-your account and everything on the server at any time.
+Coins only count alone or in a room on the game server. Offline and in WiFi, Bluetooth and Online games you climb the same
+but earn nothing, because nothing can check those.
+
+Every climb that earns coins is played again on the server with the same physics, so a speed hack, a higher jump, flying, teleporting
+or an edited save all show up. Coins from older versions that were kept on the phone are gone: only the server counts now.
 
 ## Smooth on any phone
 
@@ -233,7 +236,9 @@ browser can play WiFi multiplayer against each other.
     from shared game time so every phone agrees
   * `net.js`, `game.js`: host relayed multiplayer; each phone simulates its own climber and applies its share of
     the cord pull, so the game stays responsive over a laggy connection
-  * `cloud.js`: the game server, signing in and keeping progress on your account
+  * `cloud.js`: the game server, signing in, coins and keeping progress on your account
+  * `replay.js`: writes down each climb as it is played, for the server to play again
+  * `detmath.js`: maths that comes out exactly the same on a phone and on a server
   * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen with their emotes
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray

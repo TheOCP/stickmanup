@@ -78,8 +78,9 @@ with sync_playwright() as p:
     check("the sign in buttons wait for the terms", ana.evaluate("[...document.querySelectorAll('.prov')].every(b => b.disabled)"))
     ana.screenshot(path=str(out / "signin.png"))
     click(ana, "#menu [data-a=back]")
-    check("Play as guest goes straight to the game", scr(ana) == "title", scr(ana))
-    check("guests are guests", ana.evaluate("!JSON.parse(localStorage.getItem('smu.account'))"))
+    check("Play without coins goes straight to the game", scr(ana) == "title", scr(ana))
+    check("and makes no account", ana.evaluate("!JSON.parse(localStorage.getItem('smu.account'))"))
+    check("coins an older version kept on the phone are gone", prof(ana)["coins"] == 0 and prof(ana)["own"] == [], prof(ana))
     ana.screenshot(path=str(out / "title.png"))
     check("the title says who made the game", "Made by TheOCProductions & ShortGG" in text(ana))
     ana.reload(); ana.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
@@ -239,7 +240,11 @@ with sync_playwright() as p:
     def wallet_of(tok):
         return json.loads(urllib.request.urlopen(urllib.request.Request(SERVER + "/api/wallet", headers={"Authorization": "Bearer " + tok})).read())
     wa = wallet_of(token)
-    check("your coins as a guest came along to your new account", wa["coins"] == 700 and "happy" in wa["own"] and wa["imported"], str(wa)[:200])
+    check("nothing the phone claims counts as coins", wa["coins"] == 0 and wa["own"] == [], str(wa)[:200])
+    def db(q, *args):
+        subprocess.run(["node", "--disable-warning=ExperimentalWarning", "-e", f"const {{DatabaseSync}}=require('node:sqlite');const d=new DatabaseSync({json.dumps(tmp + '/stickmanup.db')});d.prepare({json.dumps(q)}).run(...{json.dumps(list(args))})"], check=True)
+    db("UPDATE wallets SET coins = 700, earned = 1000, own = ? WHERE user_id = ?", json.dumps(["happy"]), acct["user"]["id"])
+    ana.evaluate("(async () => (await import('./js/cloud.js')).refreshWallet())()")
     check("the save holds no coins at all", sv["data"] and "coins" not in sv["data"]["profile"] and "own" not in sv["data"]["profile"], str(sv)[:200])
     fake = ana.evaluate("""async ([u, c]) => (await fetch(u + '/auth/exchange', { method: 'POST', body: JSON.stringify({ code: c, verifier: 'x'.repeat(43) }) })).status""", [SERVER, acode])
     check("the code from the browser works only once, and nobody else can use it", fake == 400, fake)
@@ -334,7 +339,7 @@ with sync_playwright() as p:
     st = sc.new_page()
     st.on("pageerror", lambda e: strict_errs.append(str(e)))
     st.on("console", lambda m: strict_errs.append(m.text) if "Content Security Policy" in m.text and "csp-probe" not in m.text and "onerror" not in m.text and "inline event" not in m.text else None)
-    st.add_init_script("localStorage.setItem('smu.settings', JSON.stringify(%s));localStorage.setItem('smu.welcomed','1');" % json.dumps({"quality": "low", "name": "Strict", "tips": False, "cap": 30, "server": SERVER}))
+    st.add_init_script("localStorage.setItem('smu.settings', JSON.stringify(%s));localStorage.setItem('smu.welcomed2','1');" % json.dumps({"quality": "low", "name": "Strict", "tips": False, "cap": 30, "server": SERVER}))
     st.goto(f"http://127.0.0.1:{web.server_port}/index.html?native=rec")
     for _ in range(600):
         if st.evaluate("!!(window.SMU && SMU.pool && SMU.pool.warm === 0)"): break
@@ -387,14 +392,25 @@ with sync_playwright() as p:
     check("buying with made up coins is refused by the server", bought[0] == "Not enough coins." and bought[1] is False and bought[2] == 700, bought)
     check("and takes nothing", wallet_of(btok0)["coins"] == 700)
     # Earning on one phone and spending on the other add up, because there is only one wallet
-    ana.evaluate("""(async () => {
-      const c = await import('./js/cloud.js');
-      c.runStart({ map: 0, diff: 3, custom: false });
-      for (let i = 0; i < 20; i++) c.runCoin(i);
-      await c.runEnd();
-    })()""")
-    ana.wait_for_function("JSON.parse(localStorage.getItem('smu.profile')).coins === 780", timeout=8000)
-    check("coins picked up in a climb reach the server", wallet_of(token)["coins"] == 780 and wallet_of(token)["earned"] >= 780, wallet_of(token))
+    def climb_start(pg, d):
+        pg.evaluate("(d) => SMU.startSolo(0, d, null)", d)
+        pg.wait_for_function("SMU.game && SMU.screen === 'game'", timeout=60000)
+        pg.wait_for_timeout(1500)
+    def pick_coins(pg, n):
+        return pg.evaluate("""async (n) => { const g = SMU.game, L = SMU.level; for (const c of L.coins.slice(0, n)) { g.me.spawn(c.x, c.y, c.z); await new Promise((r) => setTimeout(r, 250)); } return g.coinTaken.size; }""", n)
+    def climb_quit(pg):
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(300)
+        click(pg, "[data-a=quit]")
+    climb_start(ana, 3)
+    took0 = pick_coins(ana, 5)
+    climb_quit(ana)
+    ana.wait_for_function("JSON.parse(localStorage.getItem('smu.profile')).coins === %d" % (700 + took0 * 4), timeout=12000)
+    # The phone shows them straight away. The server has them once the climb's last piece has arrived.
+    for _ in range(40):
+        if wallet_of(token)["coins"] == 700 + took0 * 4: break
+        time.sleep(0.25)
+    check("coins picked up in a climb reach the server", took0 >= 5 and wallet_of(token)["coins"] == 700 + took0 * 4 and wallet_of(token)["earned"] >= 700 + took0 * 4, wallet_of(token))
     click(ben, "[data-a=shop]")
     ben.wait_for_selector("#menu .shopgrid", timeout=8000)
     # The cheapest thing on the screen that isn't owned yet, picked and bought with the real buttons
@@ -414,19 +430,11 @@ with sync_playwright() as p:
     ana.evaluate("""(async () => { const c = await import('./js/cloud.js'); await c.refreshWallet(); })()""")
     ana.wait_for_timeout(300)
     check("the other phone sees the same wallet", prof(ana)["coins"] == w2["coins"] == prof(ben)["coins"], f"{prof(ana)['coins']} {w2['coins']} {prof(ben)['coins']}")
-    # A win that a host just made up: paid by nobody
-    fake = ana.evaluate("""(async () => {
-      const c = await import('./js/cloud.js');
-      c.runStart({ map: 1, diff: 3, custom: false });
-      c.runWin(0);
-      await c.runEnd();
-      await c.refreshWallet();
-      return JSON.parse(localStorage.getItem('smu.profile')).ach;
-    })()""")
-    check("a win straight after starting pays nothing, whoever says so", "win3" not in fake and wallet_of(token)["coins"] == w2["coins"], fake)
     # No connection: climbs wait, and nothing is lost
+    climb_start(ana, 1)
     ana.context.set_offline(True)
-    ana.evaluate("""(async () => { const c = await import('./js/cloud.js'); c.runStart({ map: 0, diff: 1, custom: false }); for (let i = 50; i < 55; i++) c.runCoin(i); await c.runEnd(); })()""")
+    took1 = pick_coins(ana, 5)
+    climb_quit(ana)
     check("offline, the climb waits on the phone", len(ana.evaluate("JSON.parse(localStorage.getItem('smu.wallet.climbs') || '[]')")) >= 1)
     sold = ana.evaluate("""(async () => { const c = await import('./js/cloud.js'), s = await import('./js/skins.js'); return c.buyItem(s.HATS.find((x) => x.price > 0)); })()""")
     check("offline, buying says it needs a connection", sold and "connection" in sold, sold)
@@ -434,7 +442,7 @@ with sync_playwright() as p:
     ana.evaluate("""(async () => { const c = await import('./js/cloud.js'); await c.report(); })()""")
     ana.wait_for_timeout(500)
     ana.evaluate("""(async () => { const c = await import('./js/cloud.js'); await c.report(); })()""")
-    check("back online, its coins arrive", wallet_of(token)["coins"] == w2["coins"] + 5 * 2 and ana.evaluate("JSON.parse(localStorage.getItem('smu.wallet.climbs') || '[]').length") == 0, wallet_of(token))
+    check("back online, its coins arrive", wallet_of(token)["coins"] == w2["coins"] + took1 * 2 and ana.evaluate("JSON.parse(localStorage.getItem('smu.wallet.climbs') || '[]').length") == 0, wallet_of(token))
     # The donate button opens PayPal
     ana.context.route("https://paypal.me/**", lambda r: r.fulfill(status=200, content_type="text/plain", body="ok"))
     with ana.context.expect_page() as w:
@@ -489,6 +497,66 @@ with sync_playwright() as p:
     click(ana, "[data-a=back]")
     ana.wait_for_timeout(500)
     check("nothing is left waiting to be sent", ana.evaluate("JSON.parse(localStorage.getItem('smu.wallet.climbs') || '[]').filter((c) => c.coins.length || c.win).length") == 0)
+
+    # ---- a guest: the coins are on the server, and come along when signing in
+    gus = player("Gus")
+    gus.wait_for_selector("#tos", timeout=8000)
+    check("Play as guest waits for the terms too", gus.evaluate("document.querySelector('[data-a=guest]').disabled"))
+    click(gus, "#tos")
+    check("and accepting them wakes it", gus.evaluate("!document.querySelector('[data-a=guest]').disabled"))
+    gus.screenshot(path=str(out / "first.png"))
+    click(gus, "[data-a=guest]")
+    gus.wait_for_function("SMU.screen === 'title' && !!JSON.parse(localStorage.getItem('smu.account'))", timeout=8000)
+    ga = gus.evaluate("JSON.parse(localStorage.getItem('smu.account'))")
+    check("a guest gets an account on the server", ga["user"]["provider"] == "guest" and ga["user"]["num"] > 0 and bool(ga["token"]), ga["user"])
+    check("the title says so", "Guest" in gus.evaluate("document.querySelector('.acctbtn').textContent"))
+    gus.screenshot(path=str(out / "title-guest.png"))
+    gus.reload(); gus.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
+    check("and is still one after a restart", scr(gus) == "title" and gus.evaluate("JSON.parse(localStorage.getItem('smu.account')).token") == ga["token"], scr(gus))
+    climb_start(gus, 1)
+    took2 = pick_coins(gus, 3)
+    climb_quit(gus)
+    wg = wallet_is(ga["token"], lambda w: w["coins"] == took2 * 2)
+    check("a guest's coins are on the server", took2 >= 3 and wg["coins"] == took2 * 2, f"{took2} {wg}")
+    gus.wait_for_timeout(300)
+    check("and the phone shows the server's number", prof(gus)["coins"] == wg["coins"], prof(gus)["coins"])
+    click(gus, "[data-a=account]")
+    gus.wait_for_function("document.querySelector('#menu').textContent.includes('Player #')", timeout=8000)
+    gus.screenshot(path=str(out / "guest-account.png"))
+    check("the guest's account screen shows the number and offers signing in", "Sign in with Discord" in text(gus), text(gus)[:300])
+    mock_user.update(id="u9", username="Gus")
+    with gus.context.expect_page() as w:
+        click(gus, "[data-a=login][data-p=discord]")
+    tab = w.value
+    tab.wait_for_load_state()
+    tab.wait_for_selector("a", timeout=8000)
+    gcode = urllib.parse.parse_qs(urllib.parse.urlparse(tab.evaluate("document.querySelector('a').getAttribute('href')")).query)["code"][0]
+    tab.close()
+    gus.evaluate("code => SMU_authCode(code)", gcode)
+    gus.wait_for_function("JSON.parse(localStorage.getItem('smu.account')).user.provider === 'discord'", timeout=8000)
+    mock_user.update(id="u1", username="Ana")
+    gacct = gus.evaluate("JSON.parse(localStorage.getItem('smu.account'))")
+    check("signing in takes a guest's coins along", wallet_of(gacct["token"])["coins"] == took2 * 2, wallet_of(gacct["token"]))
+    check("and leaves none behind to spend twice", wallet_of(ga["token"])["coins"] == 0, wallet_of(ga["token"]))
+    gus.wait_for_timeout(500)
+    check("and the phone shows them", prof(gus)["coins"] == took2 * 2, prof(gus)["coins"])
+    # What a ban looks like.
+    db("INSERT INTO bans (kind, value, user_id, name, reason, by_who, at, until) VALUES ('user', ?, ?, 'Gus', 'Flying around', 'test', ?, NULL)", gacct["user"]["id"], gacct["user"]["id"], int(time.time() * 1000))
+    gus.reload(); gus.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
+    gus.wait_for_function("document.querySelector('#menu').textContent.includes('You are banned')", timeout=8000)
+    check("a banned player is told why, with their number", "Flying around" in text(gus) and f"#{gacct['user']['num']}" in text(gus), text(gus)[:300])
+    gus.screenshot(path=str(out / "banned.png"))
+    gus.evaluate("(d) => SMU.startSolo(0, d, null)", 1)
+    gus.wait_for_function("SMU.game && SMU.screen === 'game'", timeout=60000)
+    check("and can still climb, just not for coins", gus.evaluate("(async () => (await import('./js/cloud.js')).counting())()") is False)
+    gus.close()
+    # A message from the admins.
+    db("INSERT INTO settings (k, v) VALUES ('announce', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", json.dumps({"id": "a1", "text": "Event tonight!", "until": 0}))
+    ana.reload(); ana.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
+    ana.wait_for_function("document.querySelector('#menu').textContent.includes('Event tonight!')", timeout=8000)
+    check("a message from the admins shows on the title", scr(ana) == "title", scr(ana))
+    ana.screenshot(path=str(out / "announce.png"))
+    db("UPDATE settings SET v = '' WHERE k = 'announce'")
 
     # ---- the account screen
     click(ben, "[data-a=account]")
@@ -576,7 +644,7 @@ with sync_playwright() as p:
     try: urllib.request.urlopen(urllib.request.Request(SERVER + "/api/me", headers={"Authorization": "Bearer " + token}))
     except urllib.error.HTTPError as e: code_ = e.code
     check("deleting the account really deletes it", code_ == 401, code_)
-    check("and you are the guest you were before signing in", prof(ana)["coins"] == 700 and ana.evaluate("!JSON.parse(localStorage.getItem('smu.account'))"), prof(ana)["coins"])
+    check("and you are the guest you were before signing in", prof(ana)["coins"] == 0 and ana.evaluate("!JSON.parse(localStorage.getItem('smu.account'))"), prof(ana)["coins"])
     check("no errors", not errs, "; ".join(errs)[:500])
     b.close()
 srv.terminate()

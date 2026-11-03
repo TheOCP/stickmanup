@@ -433,4 +433,9 @@ body.pad .set { grid-template-columns: 1fr; }
 @media (max-width: 620px) { .acct { grid-template-columns: 1fr; } }
 .donate { color: #ffb3c8; border-color: rgba(255, 120, 160, 0.45); }
 .brand .donate { width: auto; align-self: flex-start; margin-top: 8px; padding: 7px 14px; font-size: 13px; pointer-events: auto; }
-
+/* A word from the server on the title: stays readable over whatever the climbers are doing behind it. */
+.notice { margin: 8px 0 2px; padding: 8px 12px; max-width: 460px; font-size: 13px; line-height: 1.35; color: #d8fff6; background: rgba(8, 12, 20, .86); border: 1px solid rgba(63, 240, 208, .55); border-radius: 10px; }
+.notice.warn { color: #ffe3ad; border-color: rgba(255, 176, 32, .6); }
+.notice.bad { color: #ffd6da; border-color: rgba(255, 75, 95, .7); }
+/* Two buttons side by side, one of them on two lines: both labels stay in the middle. */
+.row > .btn.sm { display: flex; align-items: center; justify-content: center; }

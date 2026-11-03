@@ -49,14 +49,30 @@ class DB {
         data TEXT NOT NULL,
         updated INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
     `);
+    // Servers from before these existed get them added. Nothing already there changes.
+    const have = new Set(this.db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+    for (const [col, def] of [['num', 'INTEGER'], ['last_ip', 'TEXT'], ['game_name', 'TEXT'], ['device', 'TEXT'], ['last_played', 'INTEGER'], ['last_map', 'INTEGER'], ['last_diff', 'INTEGER'], ['last_h', 'INTEGER'], ['trusted', 'INTEGER NOT NULL DEFAULT 0'], ['climbs', 'INTEGER NOT NULL DEFAULT 0']]) {
+      if (!have.has(col)) this.db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`);
+    }
+    // Every player has a short number, easy to read out and to type: #1042.
+    this.db.exec('BEGIN');
+    let num = this.db.prepare('SELECT COALESCE(MAX(num), 0) AS n FROM users').get().n;
+    const setNum = this.db.prepare('UPDATE users SET num = ? WHERE id = ?');
+    for (const u of this.db.prepare('SELECT id FROM users WHERE num IS NULL ORDER BY created, rowid').all()) setNum.run(++num, u.id);
+    this.db.exec('COMMIT');
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_num ON users(num)');
     const q = (s) => this.db.prepare(s);
     this.q = {
       identity: q('SELECT user_id FROM identities WHERE provider = ? AND subject = ?'),
-      addUser: q('INSERT INTO users (id, name, created, last_seen, tos_version, tos_at) VALUES (?, ?, ?, ?, ?, ?)'),
+      addUser: q('INSERT INTO users (id, name, created, last_seen, tos_version, tos_at, num) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+      getSetting: q('SELECT v FROM settings WHERE k = ?'),
+      putSetting: q('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v'),
+      maxNum: q('SELECT COALESCE(MAX(num), 0) AS n FROM users'),
       addIdentity: q('INSERT INTO identities (provider, subject, user_id) VALUES (?, ?, ?)'),
       seen: q('UPDATE users SET name = ?, last_seen = ?, tos_version = ?, tos_at = ? WHERE id = ?'),
-      user: q('SELECT u.id, u.name, u.created, u.tos_version, u.tos_at, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.id = ? LIMIT 1'),
+      user: q(`SELECT u.id, u.name, u.created, u.tos_version, u.tos_at, u.num, u.trusted, u.device, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.id = ? ORDER BY i.provider = 'guest' LIMIT 1`),
       addSession: q('INSERT INTO sessions (token_hash, user_id, created, expires) VALUES (?, ?, ?, ?)'),
       session: q('SELECT user_id, expires FROM sessions WHERE token_hash = ?'),
       touch: q('UPDATE sessions SET expires = ? WHERE token_hash = ?'),
@@ -72,6 +88,15 @@ class DB {
     };
   }
 
+  // Numbers are never used twice, even after an account is deleted.
+  nextNum() {
+    const n = Math.max(+this.setting('lastNum') || 0, this.q.maxNum.get().n) + 1;
+    this.setSetting('lastNum', String(n));
+    return n;
+  }
+  setting(k) { const r = this.q.getSetting.get(k); return r ? r.v : ''; }
+  setSetting(k, v) { this.q.putSetting.run(k, String(v)); }
+
   // The person behind this Discord, Steam or Google account. Created the first time. They accepted these terms just now.
   signIn(provider, subject, name, tosVersion) {
     const now = Date.now(), row = this.q.identity.get(provider, subject);
@@ -83,7 +108,7 @@ class DB {
       id = crypto.randomBytes(12).toString('base64url');
       this.db.exec('BEGIN');
       try {
-        this.q.addUser.run(id, name, now, now, tosVersion, now);
+        this.q.addUser.run(id, name, now, now, tosVersion, now, this.nextNum());
         this.q.addIdentity.run(provider, subject, id);
         this.db.exec('COMMIT');
       } catch (e) {
@@ -94,9 +119,21 @@ class DB {
     return id;
   }
 
+  // Playing without signing in anywhere: an account all the same, known only by the phone that holds its token.
+  newGuest(tosVersion) {
+    const subject = crypto.randomBytes(16).toString('base64url');
+    return { id: this.signIn('guest', subject, 'Guest', tosVersion), subject };
+  }
+
+  // Guests are told apart by their number.
+  renameGuest(id) {
+    const n = this.q.user.get(id).num;
+    this.db.prepare('UPDATE users SET name = ? WHERE id = ?').run(`Guest ${n}`, id);
+  }
+
   user(id) {
     const u = this.q.user.get(id);
-    return u ? { id: u.id, name: u.name, provider: u.provider, created: u.created, tos: u.tos_version } : null;
+    return u ? { id: u.id, name: u.name, provider: u.provider, created: u.created, tos: u.tos_version, num: u.num, trusted: u.trusted, device: u.device } : null;
   }
 
   // A new random token. Only its hash is kept.

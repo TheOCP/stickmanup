@@ -1,11 +1,10 @@
 'use strict';
-// The coins of everyone who is signed in. The balance and what they own live only here, so editing a phone changes nothing
-// and nothing can be bought without enough coins.
+// Everyone's coins, guests included. The balance and what they own live only here, so editing a phone changes nothing and
+// nothing can be bought without enough coins.
 //
-// The one thing the server has to take a phone's word for is what happened in a climb, because the phone runs the climb.
-// So that word is checked against what a climb can really give: every coin once per climb, no faster than a climber can
-// collect them, a win only after a climb's worth of time, each first win bonus once, and a limit per day. Lying can get
-// you what playing all day would, and no more. catalog.json is made from the game's own tables by dev/makecatalog.mjs.
+// What a climb pays comes from the server's own rerun of it (verifier.js). The older rules below are for when that isn't the
+// final word: every coin once per climb, no faster than a climber can collect them, a win only after a climb's worth of
+// time, each first win bonus once, and a limit per day. catalog.json is made from the game's own tables by dev/makecatalog.mjs.
 const crypto = require('node:crypto');
 const catalog = require('./catalog.json');
 const { Limiter } = require('./limits');
@@ -52,13 +51,20 @@ class Wallet {
       );
       CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id, at);
     `);
+    // Servers from before climbs were rerun get these added.
+    const have = new Set(this.d.prepare('PRAGMA table_info(runs)').all().map((c) => c.name));
+    for (const [col, def] of [['rules', 'TEXT'], ['forged', 'INTEGER NOT NULL DEFAULT 0'], ['mode', "TEXT NOT NULL DEFAULT 'solo'"], ['next_seq', 'INTEGER NOT NULL DEFAULT 0'], ['segment', 'INTEGER NOT NULL DEFAULT 0'], ['ticks', 'INTEGER NOT NULL DEFAULT 0'], ['last_at', 'INTEGER'], ['tainted', 'INTEGER NOT NULL DEFAULT 0'], ['verdict', 'TEXT'], ['snaps', 'TEXT'], ['seen', 'TEXT'], ['best_h', 'INTEGER NOT NULL DEFAULT 0'], ['later', 'TEXT'], ['build', 'TEXT'], ['falls', 'INTEGER NOT NULL DEFAULT 0'], ['dead', 'INTEGER NOT NULL DEFAULT 0'], ['snapshot_seq', 'INTEGER']]) {
+      if (!have.has(col)) this.d.exec(`ALTER TABLE runs ADD COLUMN ${col} ${def}`);
+    }
     const q = (s) => this.d.prepare(s);
     this.q = {
       add: q(`INSERT OR IGNORE INTO wallets (user_id, coins, earned, own, relics, ach, imported, day, day_earned) VALUES (?, 0, 0, '[]', '[]', '[]', 0, ?, 0)`),
       get: q('SELECT * FROM wallets WHERE user_id = ?'),
       put: q('UPDATE wallets SET coins = ?, earned = ?, own = ?, relics = ?, ach = ?, imported = ?, day = ?, day_earned = ? WHERE user_id = ?'),
       log: q('INSERT INTO ledger (user_id, at, delta, why) VALUES (?, ?, ?, ?)'),
-      addRun: q('INSERT INTO runs (id, user_id, map, diff, custom, started, coins, won) VALUES (?, ?, ?, ?, ?, ?, ?, 0)'),
+      addRun: q('INSERT INTO runs (id, user_id, map, diff, custom, started, coins, won, rules, mode) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)'),
+      ledgerOf: q('SELECT at, delta, why FROM ledger WHERE user_id = ? ORDER BY at DESC, rowid DESC LIMIT ?'),
+      allIds: this.d.prepare('SELECT id AS user_id FROM users'),
       run: q('SELECT * FROM runs WHERE id = ?'),
       putRun: q('UPDATE runs SET coins = ?, won = ? WHERE id = ?'),
       oldRuns: q('DELETE FROM runs WHERE started < ?'),
@@ -95,30 +101,107 @@ class Wallet {
   }
   get(id) { return this.show(this.load(id)); }
 
-  // The first time on an account, what you had as a guest comes along, up to a limit: nobody can check how a guest got it.
-  // Things first, the cheapest first, then coins with what is left.
-  importGuest(id, o) {
+  // Older phones ask to bring along the coins they kept themselves. Nobody can check how those were got, so nothing comes.
+  importGuest(id) {
     return this.tx(() => {
       const w = this.load(id);
-      if (w.imported) return { status: 409, wallet: this.show(w) };
-      let left = this.importCap, value = 0;
-      const own = unique(o && o.own, (x) => typeof x === 'string' && catalog.items[x] > 0).sort((a, b) => catalog.items[a] - catalog.items[b]);
-      for (const item of own) {
-        const price = catalog.items[item];
-        if (price > left) break;
-        left -= price;
-        value += price;
-        if (!w.own.includes(item)) w.own.push(item);
-      }
-      const coins = Math.min(left, Math.floor(num(o && o.coins, 0)));
-      w.coins += coins;
-      w.earned += coins + value;
       w.imported = 1;
       this.store(id, w);
-      if (coins + value) this.q.log.run(id, Date.now(), coins, 'guest coins and things worth ' + value);
       return { status: 200, wallet: this.show(w) };
     });
   }
+
+  // Signing in for the first time: what the guest on this phone earned moves to the new account. An account that already
+  // has something keeps what it has, and the guest stays as it was, for when you sign out again.
+  moveGuest(guestId, id) {
+    if (guestId === id) return false;
+    return this.tx(() => {
+      const g = this.load(guestId), w = this.load(id);
+      if (w.earned > 0 || w.coins > 0 || w.own.length || !(g.earned > 0 || g.own.length)) return false;
+      w.coins = g.coins;
+      w.earned = g.earned;
+      w.own = g.own;
+      w.relics = g.relics;
+      w.ach = g.ach;
+      w.imported = 1;
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), g.coins, 'moved from guest');
+      g.coins = 0; g.earned = 0; g.own = []; g.relics = []; g.ach = [];
+      this.store(guestId, g);
+      this.q.log.run(guestId, Date.now(), -w.coins, 'moved to an account');
+      return true;
+    });
+  }
+
+  // ---------------------------------------------------------------- what admins can do
+  history(id, n = 15) { return this.q.ledgerOf.all(id, n); }
+  // Give (or with a minus, take). Never below zero. Answers the new balance.
+  adjust(id, delta, why) {
+    return this.tx(() => {
+      const w = this.load(id), before = w.coins;
+      w.coins = Math.max(0, w.coins + Math.trunc(delta));
+      if (delta > 0) w.earned += w.coins - before;
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), w.coins - before, String(why).slice(0, 200));
+      return w.coins;
+    });
+  }
+  setCoins(id, coins, why) {
+    return this.tx(() => {
+      const w = this.load(id), before = w.coins;
+      w.coins = Math.max(0, Math.trunc(coins));
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), w.coins - before, String(why).slice(0, 200));
+      return w.coins;
+    });
+  }
+  reset(id, why) {
+    return this.tx(() => {
+      const w = this.load(id), before = w.coins;
+      w.coins = 0; w.earned = 0; w.own = []; w.relics = []; w.ach = [];
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), -before, String(why).slice(0, 200));
+    });
+  }
+  giveItem(id, item, why) {
+    if (!Object.hasOwn(catalog.items, item)) return false;
+    return this.tx(() => {
+      const w = this.load(id);
+      if (w.own.includes(item)) return false;
+      w.own.push(item);
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), 0, String('given ' + item + ': ' + why).slice(0, 200));
+      return true;
+    });
+  }
+  takeItem(id, item, why) {
+    return this.tx(() => {
+      const w = this.load(id), i = w.own.indexOf(item);
+      if (i < 0) return false;
+      w.own.splice(i, 1);
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), 0, String('taken ' + item + ': ' + why).slice(0, 200));
+      return true;
+    });
+  }
+  // Coins for everyone at once, an event say. Answers how many got them.
+  giveAll(delta, why) {
+    let n = 0;
+    for (const r of this.q.allIds.all()) { this.adjust(r.user_id, delta, why); n++; }
+    return n;
+  }
+  catalogItems() { return catalog.items; }
+  get mapNames() { return catalog.maps.map((m) => m.key); }
+  // Does this person really own what they are wearing? Free things and things earned another way aren't on sale.
+  // What someone is wearing, by the names the shop sells it under. Faces and hats that share a name with a suit are told apart.
+  ownsLook(id, look) {
+    if (!look || typeof look !== 'object') return true;
+    const key = (kind, x) => (Object.hasOwn(catalog.items, `${kind}:${x}`) ? `${kind}:${x}` : x);
+    const keys = [look.s, look.f && key('face', look.f), look.h && key('hat', look.h)].filter((k) => typeof k === 'string');
+    const w = this.load(id);
+    return keys.every((k) => !Object.hasOwn(catalog.items, k) || w.own.includes(k));
+  }
+  setDayCap(n) { this.dayCap = Math.max(0, Math.floor(n)); }
 
   buy(id, item) {
     const price = typeof item === 'string' && Object.hasOwn(catalog.items, item) ? catalog.items[item] : 0;
@@ -141,13 +224,18 @@ class Wallet {
     if (!Number.isInteger(map) || !catalog.maps[map] || !Number.isInteger(diff) || !catalog.diffs[diff]) return null;
     const run = crypto.randomBytes(16).toString('base64url');
     this.load(id);
-    this.q.addRun.run(run, id, map, diff, o.custom ? 1 : 0, Date.now(), '[]');
+    // With rules sent along the server works out for itself whether they are the difficulty's own.
+    const rules = o.rules && typeof o.rules === 'object' ? o.rules : null;
+    const custom = rules ? ['cps', 'haz', 'rope'].some((k) => rules[k] !== undefined && rules[k] !== diff) : !!o.custom;
+    const mode = o.mode === 'host' || o.mode === 'client' ? o.mode : 'solo';
+    this.q.addRun.run(run, id, map, diff, custom ? 1 : 0, Date.now(), '[]', JSON.stringify(rules || {}), mode);
     this.q.extraRuns.run(id, id, MAX_RUNS);
     return run;
   }
 
   // A phone says what happened in its climb. Answers what counted. What can't count yet comes back in `later` to send again.
-  report(id, o) {
+  // With replay set, this list is what the server itself saw happen, so the limits for guessing at honesty don't apply.
+  report(id, o, how = {}) {
     const r = typeof (o && o.run) === 'string' ? this.q.run.get(o.run) : null;
     if (!r || r.user_id !== id) return { status: 404, err: 'That climb is not known here.' };
     const M = catalog.maps[r.map], D = catalog.diffs[r.diff], elapsed = (Date.now() - r.started) / 1000;
@@ -167,8 +255,11 @@ class Wallet {
 
       // Coins: each one once, no faster than they can be collected.
       const fresh = unique(o.coins, (i) => Number.isInteger(i) && i >= 0 && i < M.coins && !taken.has(i));
-      let allow = Math.min(fresh.length, Math.max(0, Math.floor(elapsed * this.rate + this.burst) - taken.size));
-      while (allow > 0 && !this.coinLimit.take(id, allow)) allow = Math.floor(allow / 2);
+      let allow = fresh.length;
+      if (!how.replay) {
+        allow = Math.min(fresh.length, Math.max(0, Math.floor(elapsed * this.rate + this.burst) - taken.size));
+        while (allow > 0 && !this.coinLimit.take(id, allow)) allow = Math.floor(allow / 2);
+      }
       out.accepted = fresh.slice(0, allow);
       out.later = fresh.slice(allow);
       for (const i of out.accepted) taken.add(i);
@@ -186,8 +277,8 @@ class Wallet {
       // The top: once per climb, and only after a climb's worth of time.
       let won = r.won;
       if (o.win && !won) {
-        if (elapsed < this.minWin) out.win = 'too fast';
-        else if (!this.winLimit.take(id)) out.win = 'too many';
+        if (!how.replay && elapsed < this.minWin) out.win = 'too fast';
+        else if (!how.replay && !this.winLimit.take(id)) out.win = 'too many';
         else {
           won = 1;
           out.win = 'ok';

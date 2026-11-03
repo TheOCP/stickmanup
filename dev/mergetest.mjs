@@ -56,10 +56,10 @@ restore({ coins: 400, earned: 400 });
 check('the cheap hat can be bought', buy(hat) && coins() === 400 - hat.price);
 check('and that is all you get: not the suit', owned(hat, 'x') && !owned(suit, 'x'));
 
-// Whoever bought one of those before this was fixed keeps both
-localStorage.setItem('smu.profile', JSON.stringify({ coins: 5, own: ['santa', 'ninja'] }));
+// What an older version kept on the phone is gone: the server says what you have now.
+localStorage.setItem('smu.profile', JSON.stringify({ coins: 5000, earned: 5000, own: ['santa', 'ninja'], relics: ['storm:0'], ach: ['win0', 'name:x'], eq: { s: 'santa', f: 'ninja', h: 'pirate' } }));
 const fresh = await import('../assets/js/profile.js?again');
-check('old purchases keep both things', fresh.owned(hat, 'x') && fresh.owned(suit, 'x') && fresh.owned(face, 'x') && !fresh.owned(HATS.find((x) => x.id === 'pirate'), 'x'));
+check('coins and things kept on the phone are wiped', fresh.coins() === 0 && !fresh.owned(hat, 'x') && !fresh.owned(suit, 'x') && !fresh.owned(face, 'x'));
 
 const S = (y) => ({ v: 1, map: 0, diff: 1, t: 10, falls: 0, pos: [1, y, 2] });
 let d = mergeData({ profile: {}, best: { '0:1': 90, '0:2': 300, bad: evil }, solo: S(10) }, { profile: {}, best: { '0:1': 120, '1:1': 60, worse: -1 }, solo: S(40) });

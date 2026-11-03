@@ -9,6 +9,7 @@
 #
 #   --update            get the newest server files and restart, ask nothing
 #   --logins            change the Discord, Google and Steam sign in keys
+#   --bot               set up the Discord bot, or change who may use it
 #   --status            show how the server is doing
 #   --uninstall         remove the server (add --purge to delete players' data too)
 #   --domain NAME       your domain name
@@ -44,6 +45,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --update) MODE=update ;;
     --logins) MODE=logins ;;
+    --bot) MODE=bot ;;
     --status) MODE=status ;;
     --uninstall) MODE=uninstall ;;
     --purge) PURGE=1 ;;
@@ -108,7 +110,7 @@ write_env() {
   tmp=$(mktemp "$ETC_DIR/.server.env.XXXXXX")
   {
     echo "# StickManUp server settings. Keep this file private: it holds your sign in secrets."
-    for k in PORT HOST PUBLIC_URL DATA_DIR TERMS_FILE TLS_CERT TLS_KEY TRUST_PROXY DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET STEAM_LOGIN STEAM_API_KEY; do
+    for k in PORT HOST PUBLIC_URL DATA_DIR TERMS_FILE TLS_CERT TLS_KEY TRUST_PROXY DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET STEAM_LOGIN STEAM_API_KEY DISCORD_BOT_TOKEN DISCORD_BOT_GUILD DISCORD_BOT_LOG_CHANNEL DISCORD_BOT_WARN_CHANNEL DISCORD_BOT_ADMINS ANTICHEAT_WORKERS ANTICHEAT_BAN_SCORE ANTICHEAT_SPEED_SLACK ATTEST_SIGNATURE GUEST_LIMIT_BURST GUEST_LIMIT_PER_HOUR WALLET_DAILY_CAP WALLET_MIN_WIN_SECONDS WALLET_COINS_PER_SECOND WALLET_COIN_BURST; do
       [ -n "${ENVV[$k]:-}" ] && printf '%s=%s\n' "$k" "${ENVV[$k]}"
     done
     # Quiet the note about the built in database: it works, and the server only uses the plain parts of it.
@@ -469,6 +471,101 @@ EOF
 }
 
 # ---------------------------------------------------------------- the service
+# ---------------------------------------------------------------- the Discord bot
+is_id() { [[ "$1" =~ ^[0-9]{15,22}$ ]]; }
+ask_id() { # ask_id VAR "question" "current value" required|optional
+  local __id=""
+  while :; do
+    ask __id "$2" "$3"
+    if [ -z "$__id" ] && [ "$4" = optional ]; then break; fi
+    is_id "$__id" && break
+    warn "That isn't a Discord ID. It is a long number: with Developer Mode on, right click the thing and pick Copy ID."
+  done
+  printf -v "$1" '%s' "$__id"
+}
+# Who may use the commands: IDs with commas between them. Spaces are forgiven.
+ask_admins() {
+  local __who=""
+  while :; do
+    ask __who "User IDs, separated by commas" "$(get_env DISCORD_BOT_ADMINS)"
+    __who=${__who// /}
+    __who=${__who%,}
+    if [ -z "$__who" ]; then
+      warn "With nobody on the list, nobody can use a single command."
+      yes_no "Leave it empty for now?" n && break
+      continue
+    fi
+    [[ "$__who" =~ ^[0-9]{15,22}(,[0-9]{15,22})*$ ]] && break
+    warn "Those aren't all Discord user IDs. Each one is a long number, like 123456789012345678,234567890123456789"
+  done
+  ENVV[DISCORD_BOT_ADMINS]=$__who
+}
+# Asks Discord about the token. Sent through a config on standard input, so it never shows up in the list of running programs.
+bot_lookup() {
+  printf 'header = "Authorization: Bot %s"\n' "$1" | curl -sS --max-time 10 -K - -o "$2" -w '%{http_code}' "https://discord.com/api/v10/$3" 2>/dev/null || true
+}
+setup_bot() {
+  local v s app="" code tmp
+  [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ] && return 0
+  say "The Discord bot"
+  note "It writes every sign in and every cheater warning in a channel of yours, and gives you about 55 slash commands:"
+  note "bans with reasons, giving and taking coins, listing players, who played last, and more."
+  note "It's optional, and the game works the same without it. Press Enter at the token to skip it."
+  note "Add it later at any time with: install.sh --bot"
+  cat >&2 <<EOF
+
+  1. https://discord.com/developers/applications
+     New Application, then Bot. Press Reset Token and copy the token.
+  2. In Discord: User Settings, Advanced, turn on Developer Mode.
+     Now a right click on a server, a channel or a person gives you Copy ID.
+  3. Make a PRIVATE channel for the logs. They contain players' IP addresses.
+
+EOF
+  ask_secret s "Bot token" "$(get_env DISCORD_BOT_TOKEN)"
+  clean_key "$s" || die "That doesn't look like a bot token."
+  ENVV[DISCORD_BOT_TOKEN]=$s
+  [ -n "$s" ] || { note "No bot for now."; return 0; }
+  tmp=$(mktemp)
+  code=$(bot_lookup "$s" "$tmp" users/@me)
+  case "$code" in
+    200)
+      app=$(sed -n 's/.*"id": *"\([0-9]*\)".*/\1/p' "$tmp")
+      note "Discord knows this bot as: $(sed -n 's/.*"username": *"\([^"]*\)".*/\1/p' "$tmp")" ;;
+    401) warn "Discord says this token is wrong. It is saved anyway: fix it with install.sh --bot" ;;
+    *) warn "Could not ask Discord about this token from here, so it isn't checked." ;;
+  esac
+  ask_id v "Your Discord server's ID" "$(get_env DISCORD_BOT_GUILD)" required
+  ENVV[DISCORD_BOT_GUILD]=$v
+  if [ -n "$app" ]; then
+    code=$(bot_lookup "$s" "$tmp" "guilds/$v")
+    if [ "$code" != 200 ]; then
+      cat >&2 <<EOF
+
+The bot isn't on that server yet. Open this link and add it:
+  https://discord.com/oauth2/authorize?client_id=$app&scope=bot+applications.commands&permissions=19456
+
+EOF
+    fi
+  fi
+  rm -f "$tmp"
+  ask_id v "ID of the channel for the logs" "$(get_env DISCORD_BOT_LOG_CHANNEL)" required
+  ENVV[DISCORD_BOT_LOG_CHANNEL]=$v
+  ask_id v "ID of a channel for cheater warnings (Enter to use the same one)" "$(get_env DISCORD_BOT_WARN_CHANNEL)" optional
+  ENVV[DISCORD_BOT_WARN_CHANNEL]=$v
+  cat >&2 <<EOF
+
+Who may use the bot's commands? Everyone else gets refused, whatever their role on your Discord server.
+Give their Discord user IDs, with a comma between them, like: 123456789012345678,234567890123456789
+EOF
+  ask_admins
+}
+bot_state() {
+  local n=""
+  if [ -z "$(get_env DISCORD_BOT_TOKEN)" ]; then printf 'off (set it up with --bot)'; return 0; fi
+  n=$(get_env DISCORD_BOT_ADMINS)
+  if [ -z "$n" ]; then printf 'on, but nobody may use the commands'; else n=${n//[!,]/}; printf 'on, %d may use the commands' "$(( ${#n} + 1 ))"; fi
+}
+
 install_service() {
   [ "$NO_SERVICE" = 1 ] && return 0
   command -v systemctl >/dev/null 2>&1 || die "This needs a server with systemd."
@@ -549,6 +646,7 @@ summary() {
 
  Server address:  $url
  Sign in with:   ${providers:- nothing yet (guests can play)}
+ Discord bot:    $(bot_state)
 
  The game has one address built in, SERVER in assets/js/cloud.js.
  If this one is different, send it to whoever builds the game.
@@ -580,6 +678,7 @@ main() {
       load_env
       u=$(get_env PUBLIC_URL)
       [ -n "$u" ] && { note ""; note "Address: $u"; curl -fsS --max-time 6 "$u/api/health" || warn "No answer from there."; note ""; }
+      note "Discord bot: $(bot_state)"
       exit 0 ;;
     uninstall)
       need_root
@@ -610,6 +709,16 @@ main() {
       check_running
       note "Updated."
       exit 0 ;;
+    bot)
+      need_root
+      load_env
+      [ -n "$(get_env PUBLIC_URL)" ] || die "Install the server first: run this without --bot."
+      setup_bot
+      write_env
+      if [ "$NO_SERVICE" = 0 ]; then systemctl restart "$SERVICE"; fi
+      check_running
+      summary
+      exit 0 ;;
     logins)
       need_root
       load_env
@@ -634,6 +743,7 @@ main() {
   install_node
   install_app
   setup_logins
+  setup_bot
   write_env
   if [ "$(get_env TRUST_PROXY)" != 1 ]; then open_firewall "$(get_env PORT)"; fi
   install_service

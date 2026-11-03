@@ -9,13 +9,15 @@ class Q(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Q, directory=str(ROOT)))
 threading.Thread(target=srv.serve_forever, daemon=True).start()
+from testserver import TestServer
+TS = TestServer()
 A, B, X, Y, LB, RB, SELECT, START, UP, DOWN, LEFT, RIGHT = 0, 1, 2, 3, 4, 5, 8, 9, 12, 13, 14, 15
 STUB = """
 window.__pad = { id: 'Test Controller', mapping: 'standard', connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
 Object.defineProperty(navigator, 'getGamepads', { value: () => [window.__pad] });
-localStorage.setItem('smu.settings', JSON.stringify({ quality: 'high', map: 5, name: 'Ana', tips: false, cap: 60 }));
-localStorage.setItem('smu.profile', JSON.stringify({ coins: 5000, earned: 5000, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }));
-"""
+localStorage.setItem('smu.settings', JSON.stringify({ quality: 'high', map: 5, name: 'Ana', tips: false, cap: 60, server: '%s' }));
+localStorage.setItem('smu.welcomed2', '1');
+""" % TS.url
 fails = []
 def check(name, ok, info=""):
     print(("PASS " if ok else "FAIL ") + name + (f"  [{info}]" if info and not ok else ""), flush=True)
@@ -29,6 +31,8 @@ with sync_playwright() as p:
     pg.add_init_script(STUB)
     pg.goto(f"http://127.0.0.1:{srv.server_port}/index.html?native=rec")
     pg.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
+    TS.enter(pg, coins=5000)
+    pg.evaluate("SMU.title && SMU.title()")
     def frames(n=4): pg.evaluate("n => new Promise((r) => { const f = () => (--n <= 0 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); })", n + 1)
     def press(i):
         pg.evaluate("i => { __pad.buttons[i].pressed = true; }", i); frames()
@@ -191,7 +195,7 @@ with sync_playwright() as p:
     press(A)
     check("reach a letter on the board", seek(lambda o: o["ch"] != "", keys=(UP, RIGHT), limit=6))
     press(A); press(RIGHT); press(A)
-    check("the board fills the code box in capitals", len(pg.evaluate("document.querySelector('#code').value")) == 2 and pg.evaluate("document.querySelector('#code').value").isupper() or pg.evaluate("document.querySelector('#code').value").isdigit(), pg.evaluate("document.querySelector('#code').value"))
+    check("the board fills the code box in capitals", len(pg.evaluate("document.querySelector('#code, #scode').value")) == 2 and pg.evaluate("document.querySelector('#code, #scode').value").isupper() or pg.evaluate("document.querySelector('#code, #scode').value").isdigit(), pg.evaluate("document.querySelector('#code, #scode').value"))
     check("reach Done", seek(lambda o: o["e"] == "done", keys=(DOWN, RIGHT), limit=10))
     press(A); frames(2)
     check("Done closes and moves on to the Join button", pg.evaluate("!document.querySelector('#padKeys')") and on() and on()["tag"] == "BUTTON", str(on()))

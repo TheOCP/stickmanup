@@ -7,7 +7,10 @@ KS=stickmanup.jks
 OUT=build
 
 # The server's prices and coin counts have to match this game.
-if command -v node >/dev/null 2>&1; then node dev/makecatalog.mjs --check; fi
+if command -v node >/dev/null 2>&1; then node dev/makecatalog.mjs --check; node dev/makesim.mjs --check; fi
+
+# The app checks its own game files against this list, to notice a copy that has been changed.
+(cd assets && find js -type f -name '*.js' | LC_ALL=C sort | xargs sha256sum | sed 's/  / /') > assets/guard.txt
 
 rm -rf "$OUT" && mkdir -p "$OUT/gen" "$OUT/classes"
 

@@ -1,4 +1,5 @@
 // App shell: boot, menus, lobby flows, HUD and the main loop.
+import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
 import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
@@ -91,7 +92,9 @@ for (const lvl of ['error', 'warn']) {
   const orig = console[lvl].bind(console);
   console[lvl] = (...a) => { noteErr(lvl + ': ' + a.map(String).join(' ')); orig(...a); };
 }
-window.SMU = app;
+// The test scripts look inside the game through this. The real app runs from a fixed address and leaves it out, so nothing
+// else on the phone gets handed the game's insides.
+if (location.hostname !== 'appassets.androidplatform.net') window.SMU = app;
 
 // ---------- small UI helpers ----------
 const ui = (app.ui = {
@@ -392,17 +395,20 @@ function title() {
   const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map], acct = cloud.account();
   loadMap(settings.map);
   // The first time, and whenever the terms have changed, ask before anything else.
-  if ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !store.get('welcomed'))) {
-    store.set('welcomed', 1);
+  if ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2'))) {
+    store.set('welcomed2', 1);
     app.termsAsked = true;
     return accountScreen(title);
   }
+  const ban = cloud.banned();
+  const notice = ban ? `<p class="notice bad"><b>You are banned from the game server${ban.until ? ' until ' + esc(new Date(ban.until).toLocaleDateString()) : ''}.</b> Reason: ${esc(ban.reason)}${ban.num ? ` (player #${ban.num})` : ''}</p>` : app.maintenance ? `<p class="notice warn">${esc(app.maintenance)}</p>` : app.announcement ? `<p class="notice">${esc(app.announcement)}</p>` : '';
   show(`<div class="title">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
       <p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
+      ${notice}
       <button class="btn sm donate" data-a="donate">♥ Donate</button>
     </div>
     <div class="mainbtns">
@@ -410,7 +416,7 @@ function title() {
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
       <button class="btn" data-a="host"><b>Host a game</b><small>Server, online, WiFi or Bluetooth</small></button>
       <button class="btn" data-a="join"><b>Join a game</b><small>Room code or a game nearby</small></button>
-      <div class="row"><button class="btn sm" data-a="browser">Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.name) : 'Sign in'}</button></div>
+      <div class="row"><button class="btn sm" data-a="browser">Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</button></div>
       <div class="row"><button class="btn sm shopbtn" data-a="shop"><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records">Records</button></div>
       <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     </div></div>`, {
@@ -460,6 +466,11 @@ function startSolo(map, diff, save) {
   beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
+app.startSolo = startSolo;
+app.title = () => title();
+app.loadMapForTest = (id) => loadMap(id);
+app.beginGameForTest = (s, g) => beginGame(s, g);
+
 // ---------- hosting ----------
 function hostPick() {
   app.screen = 'host';
@@ -492,7 +503,7 @@ async function bluetoothReady() {
 
 async function hostWith(kind, roomOpts) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
-  const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(settings.name));
+  const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(settings.name));
   let cancelled = false;
   busy(kind === 'server' ? 'Opening your room...' : kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
@@ -668,7 +679,7 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
-  const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl() } : undefined), myColor(), myLook(settings.name));
+  const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken() } : undefined), myColor(), myLook(settings.name));
   const back = app.joinBack;
   busy('Connecting...', () => { s.close(); if (back) back(); else joinScreen(kind); });
   wireLobby(s);
@@ -805,10 +816,39 @@ async function accountScreen(back = title) {
     });
     return;
   }
+  if (a && cloud.isGuest()) {
+    const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info ? info.providers.filter((p) => names[p]) : [];
+    show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
+      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>Player #${a.user.num}</small></div>
+      <p class="sub" style="margin-top:10px">Your coins and items are safe on the server, but only this phone can reach them. Sign in to keep them on an account: they move there, and work on any phone.</p>
+      ${prov.length ? `<div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}">Sign in with ${names[p]}</button>`).join('')}</div>` : ''}
+      <button class="btn sm" data-a="back" style="margin-top:9px">Back</button>
+      <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my guest account</button></div>`, {
+      back,
+      login: async (b) => {
+        app.afterLogin = back;
+        await cloud.startLogin(b.dataset.p, info.termsVersion);
+        app.screen = 'signingin';
+        busy('Finish signing in in your browser, then come back here...', () => { cloud.cancelLogin(); accountScreen(back); });
+      },
+      del: () => {
+        app.screen = 'acctdel';
+        show(`<div class="panel" style="width:min(460px,100%)">${header('Delete my guest account')}<p class="sub">This deletes your guest account and its coins from the server, for good.</p>
+          <div class="row"><button class="btn sm danger" data-a="yes">Delete forever</button><button class="btn primary sm" data-a="back">Keep it</button></div></div>`, {
+          back: () => accountScreen(back),
+          yes: async () => {
+            if (await cloud.deleteAccount()) { ui.toast('Your guest account is deleted', 'good'); back(); }
+            else ui.toast('Could not reach the server, so nothing was deleted', 'bad');
+          },
+        });
+      },
+    });
+    return;
+  }
   if (a) {
     const when = cloud.lastSaved();
     show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
-      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')}</small></div>
+      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')} · Player #${a.user.num}</small></div>
       <p class="sub" id="asave" style="margin-top:10px">Your coins and items are kept on the server. Your records and saved climb go there by themselves${when ? `. Last saved ${Date.now() - when < 60000 ? 'just now' : Math.round((Date.now() - when) / 60000) + ' min ago'}` : ''}.</p>
       <div class="row"><button class="btn primary sm" data-a="sync">Save now</button><button class="btn sm" data-a="out">Sign out</button></div>
       <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my account</button></div>`, {
@@ -834,12 +874,19 @@ async function accountScreen(back = title) {
   }
   const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info.providers.filter((p) => names[p]);
   show(`<div class="panel">${header('Sign in')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
-    <p class="sub">Sign in to keep your coins, items and records on your account, safe on the server. As a guest they stay on this phone.</p>
-    ${prov.length ? `<label class="toggle"><input type="checkbox" id="tos" data-a="tos"> I accept these terms</label>
-    <div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}" disabled>Sign in with ${names[p]}</button>`).join('')}</div>` : '<p class="sub">Signing in is not set up on this server yet.</p>'}
-    <button class="btn sm" data-a="back" style="margin-top:9px">Play as guest</button></div></div></div>`, {
+    <p class="sub">Coins and items are kept on the server, so nobody can lose or fake them. Sign in to have them on any phone, or play as a guest on this one.</p>
+    <label class="toggle"><input type="checkbox" id="tos" data-a="tos"> I accept these terms</label>
+    ${prov.length ? `<div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}" disabled>Sign in with ${names[p]}</button>`).join('')}</div>` : ''}
+    <div class="row" style="margin-top:9px"><button class="btn primary sm prov" data-a="guest" disabled>Play as guest</button><button class="btn sm" data-a="back">Play without coins</button></div></div></div></div>`, {
     back,
     tos: (b) => { for (const x of document.querySelectorAll('#menu .prov')) x.disabled = !b.checked; },
+    guest: async () => {
+      if (!$('#tos').checked) return;
+      busy('Setting up your coins...', back);
+      if (await cloud.startGuest(info.termsVersion, settings.name)) { ui.toast('Welcome! Coins you find now count.', 'good'); back(); }
+      else if (cloud.banned()) back();
+      else { ui.toast(cloud.guestError || 'Could not reach the server', 'bad'); accountScreen(back); }
+    },
     login: async (b) => {
       if (!$('#tos').checked) return;
       app.afterLogin = back;
@@ -876,6 +923,27 @@ cloud.on('loginFailed', (why) => {
 });
 cloud.on('expired', () => ui.toast('Please sign in again to use your account', 'bad'));
 cloud.on('winRefused', () => ui.toast('That climb was too short to earn the top bonus on your account', 'bad'));
+cloud.on('guestMoved', () => ui.toast('Your guest coins moved to your account', 'good'));
+// Why a climb isn't earning. Said once per kind, so it stays out of the way.
+const NOT_COUNTING = {
+  room: 'Coins only count alone or in a game server room',
+  guest: 'Playing without coins. Open Account to change that',
+  save: 'This saved climb can not earn more coins. A new climb can!',
+  offline: 'No connection: this climb will not earn coins',
+  update: 'Update StickManUp to earn coins again',
+  tainted: 'This climb has stopped counting for coins',
+  dead: 'This climb has stopped counting for coins',
+  gap: 'This climb has stopped counting for coins',
+};
+const toldNot = new Set();
+cloud.on('notCounting', (why) => {
+  if (!NOT_COUNTING[why] || toldNot.has(why)) return;
+  toldNot.add(why);
+  ui.toast(NOT_COUNTING[why], 'bad');
+});
+cloud.on('announce', (text) => { app.announcement = text; if (app.screen === 'title') title(); else ui.toast(text); });
+cloud.on('maintenance', (text) => { app.maintenance = text; });
+cloud.on('banned', () => { if (!app.game) title(); });
 cloud.on('dayLimit', () => ui.toast('Daily coin limit reached. More tomorrow!', 'bad'));
 cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
 cloud.on('changed', () => { if (app.screen === 'title') title(); });
@@ -1336,7 +1404,7 @@ window.SMU_back = () => {
   return true;
 };
 window.SMU_vis = (v) => {
-  if (!v) cloud.flush();
+  if (!v) cloud.flush(); else cloud.checkNews();
   if (!app.sound) return;
   app.sound.suspend(!v);
   if (!v && app.game && app.game.solo && !app.paused) pause();

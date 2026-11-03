@@ -110,7 +110,8 @@ def reset():
         (X/"opt").mkdir(); (X/"opt/node").symlink_to(NODE_KEEP)
 Q_DOMAIN, Q_ANYWAY, Q_MAIL, Q_GO = r"Domain[^\n]*: $", r"Try anyway\? \(y/n\) \[n\]: $", r"Email for expiry[^\n]*: $", r"Go on\? \(y/n\) \[y\]: $"
 Q_DID, Q_DSEC, Q_GID, Q_GSEC, Q_STEAM, Q_SKEY = r"Discord Client ID[^\n]*: $", r"Discord Client Secret[^\n]*: $", r"Google Client ID[^\n]*: $", r"Google Client Secret[^\n]*: $", r"through Steam\? \(y/n\) \[y\]: $", r"Steam Web API key[^\n]*: $"
-SKIP_LOGINS = [(Q_DID, ""), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, "")]
+Q_BOT, Q_GUILD, Q_LOGC, Q_WARNC, Q_ADMINS, Q_LEAVE = r"Bot token[^\n]*: $", r"Your Discord server's ID[^\n]*: $", r"channel for the logs[^\n]*: $", r"cheater warnings[^\n]*: $", r"User IDs, separated by commas[^\n]*: $", r"Leave it empty for now\? \(y/n\) \[n\]: $"
+SKIP_LOGINS = [(Q_DID, ""), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, ""), (Q_BOT, "")]
 
 try:
     reset()
@@ -129,7 +130,7 @@ try:
     reset()
 
     # ---- a full install with everything typed
-    rc, out, left = run([], [(Q_DOMAIN, "  HTTPS://PointDesk.Test/  "), (Q_ANYWAY, "y"), (Q_MAIL, "me@pointdesk.test"), (Q_GO, ""), (Q_DID, "123456789"), (Q_DSEC, "dis_cord-Secret9"), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, "")])
+    rc, out, left = run([], [(Q_DOMAIN, "  HTTPS://PointDesk.Test/  "), (Q_ANYWAY, "y"), (Q_MAIL, "me@pointdesk.test"), (Q_GO, ""), (Q_DID, "123456789"), (Q_DSEC, "dis_cord-Secret9"), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, ""), (Q_BOT, "")])
     check("a full install finishes", rc == 0 and not left and "StickManUp server is ready" in out, out)
     e = env_file(); port = e.get("PORT", "")
     check("the address is what was typed, cleaned up", f"Server address:  https://pointdesk.test:{port}" in out and e.get("PUBLIC_URL") == f"https://pointdesk.test:{port}", out)
@@ -154,10 +155,32 @@ try:
 
     # ---- running it again
     (X/"data/keepme").write_text("players")
-    rc, out, left = run([], [(Q_DID, ""), (Q_DSEC, ""), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, "")])
+    rc, out, left = run([], [(Q_DID, ""), (Q_DSEC, ""), (Q_GID, ""), (Q_STEAM, ""), (Q_SKEY, ""), (Q_BOT, "")])
     e2 = env_file()
     check("running it again asks no domain and keeps everything", rc == 0 and not left and "The address of your server" not in out and e2 == e and (X/"data/keepme").exists(), out)
     check("and doesn't get a new certificate", calls().count("certbot certonly") == 1, calls())
+    # ---- the bot, added later, and who may use it
+    TOKEN = "MTIz.fake_Bot-Token9"
+    rc, out, left = run(["--bot"], [(Q_BOT, TOKEN), (Q_GUILD, "not a number"), (Q_GUILD, "111111111111111111"), (Q_LOGC, "222222222222222222"), (Q_WARNC, ""), (Q_ADMINS, "12, abc"), (Q_ADMINS, ""), (Q_LEAVE, "n"), (Q_ADMINS, " 123456789012345678, 234567890123456789 ,345678901234567890")])
+    e3 = env_file()
+    check("the bot's questions are all asked, and wrong answers asked again", rc == 0 and not left, out)
+    check("the bot's settings are saved", e3.get("DISCORD_BOT_TOKEN") == TOKEN and e3.get("DISCORD_BOT_GUILD") == "111111111111111111" and e3.get("DISCORD_BOT_LOG_CHANNEL") == "222222222222222222" and "DISCORD_BOT_WARN_CHANNEL" not in e3, e3)
+    check("several people may be allowed, with spaces forgiven", e3.get("DISCORD_BOT_ADMINS") == "123456789012345678,234567890123456789,345678901234567890", e3)
+    check("the token never shows on screen", TOKEN not in out)
+    check("the summary says the bot is on, and for how many", "Discord bot:    on, 3 may use the commands" in out, out)
+    check("the bot's channels are explained", "PRIVATE channel" in out and "Developer Mode" in out, out)
+    check("nothing else changed", all(e3.get(k) == v for k, v in e2.items()), e3)
+    check("a server with a bot token that doesn't work still runs", running() and "does not start" not in out, out)
+    rc, out, left = run(["--bot"], [(Q_BOT, ""), (Q_GUILD, ""), (Q_LOGC, ""), (Q_WARNC, ""), (Q_ADMINS, "")])
+    check("Enter keeps everything about the bot", rc == 0 and not left and env_file() == e3, out)
+    rc, out, left = run(["--update"], [])
+    check("an update keeps the bot's settings", rc == 0 and not left and env_file() == e3, out)
+    h = subprocess.run(["bash", str(ROOT/"server/install.sh"), "--help"], capture_output=True, text=True).stdout
+    check("the help mentions the bot", "--bot" in h and "--yes" in h, h)
+    e = e2
+    # Back to no bot for what follows.
+    lines = [l for l in (X/"etc/server.env").read_text().splitlines() if not l.startswith("DISCORD_BOT")]
+    (X/"etc/server.env").write_text("\n".join(lines) + "\n")
     rc, out, left = run(["--logins"], [(Q_DID, "555"), (Q_DSEC, ""), (Q_GID, "abc.apps.googleusercontent.com"), (Q_GSEC, "GOCSPX-x_y"), (Q_STEAM, "n")])
     e3 = env_file()
     check("--logins changes the keys", rc == 0 and e3.get("DISCORD_CLIENT_ID") == "555" and e3.get("DISCORD_CLIENT_SECRET") == "dis_cord-Secret9" and e3.get("GOOGLE_CLIENT_SECRET") == "GOCSPX-x_y" and e3.get("STEAM_LOGIN") == "0", (out, e3))

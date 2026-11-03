@@ -6,7 +6,7 @@ import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt } from './level.js';
 import { EMOTE } from './emotes.js';
-import { clamp, damp, store, r3 } from './util.js';
+import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
 import * as cloud from './cloud.js';
 import { resolveLook, plainLook } from './skins.js';
@@ -96,7 +96,10 @@ export class Game {
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
     // Real Hardcore or harder only: the hidden places don't exist with easier custom rules.
     this.hardcore = this.diff >= 2 && !this.custom;
-    cloud.runStart({ map: this.map, diff: this.diff, custom: this.custom, run: sv && sv.climbId });
+    // Coins only count where the server can see the climb: alone, or in a room on the game server.
+    this.earning = this.solo || !!(session.link && session.link.isServer);
+    this.rec = null;
+    cloud.runStart({ map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: g.base > 0 && !!sv, run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
     app.view.setSecrets(this.hardcore);
     this.coinTaken = new Set((sv && sv.coins) || []);
     this.coinB = this.L.coinB || (this.L.coinB = {});
@@ -114,6 +117,8 @@ export class Game {
     const th = Math.atan2(this.me.z, this.me.x);
     this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
+    // The moving parts start from this moment, so a rerun of this climb starts from exactly the same place.
+    this.W.setTime(this.simT);
     session.on('event', (e) => this.onEvent(e));
     session.on('hostEvent', (e, from) => this.hostEvent(e, from));
     const lobbyRoster = session.h.roster;
@@ -123,7 +128,7 @@ export class Game {
     });
     session.on('S', (m) => {
       if (m.f !== undefined) this.falls = m.f;
-      if (m.cp !== undefined && m.cp !== this.cp) { this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
+      if (m.cp !== undefined && m.cp !== this.cp) { if (this.rec) this.rec.act('m', m.cp); this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
       if (m.jp) this.jumpNet(m.jp);
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
@@ -133,6 +138,8 @@ export class Game {
     session.on('gameTime', () => this.time);
     this.syncRoster();
     app.view.setCheckpoints(this.cpl, this.cp);
+    // From here on the climb is written down, starting with everything it started from.
+    this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t: this.simT, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
   }
 
   get time() {
@@ -180,6 +187,7 @@ export class Game {
     const pool = this.app.pool, slots = [...this.s.players.keys()].sort((a, b) => a - b);
     for (const s of slots) if (!this.robots.has(s)) { const r = pool.robots[s % 4]; r.show(); this.robots.set(s, r); }
     for (const s of slots) this.dress(s, this.robots.get(s));
+    if (this.rec && !this.solo) this.rec.act('R', slots);
     for (const [s, r] of this.robots) if (!this.s.players.has(s)) { r.hide(); this.robots.delete(s); }
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.links = [];
@@ -229,11 +237,17 @@ export class Game {
     for (const slot of this.s.players.keys()) {
       if (slot === this.slot) continue;
       const o = this.vis.get(slot) || {};
-      if (this.sample(slot, T - DELAY, o)) { this.vis.set(slot, o); this.others.push(o); }
+      if (this.sample(slot, T - DELAY, o)) {
+        // Rounded the way it gets written down, so the rerun bumps into exactly the same place.
+        o.x = Math.round(o.x * 1024) / 1024; o.y = Math.round(o.y * 1024) / 1024; o.z = Math.round(o.z * 1024) / 1024;
+        o.slot = slot;
+        this.vis.set(slot, o);
+        this.others.push(o);
+      }
     }
 
     // Abilities are taps, handled once per frame. SHOOT aims while held and fires on release.
-    if (inp.shield && this.L.mapKey === 'storm' && this.me.raiseShield()) app.sound.shield();
+    if (inp.shield && this.L.mapKey === 'storm' && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
     if (inp.act && this.action) this.perform(this.action, T);
     this.aiming = this.me.aim = !!inp.aim && !this.me.hook;
     if (inp.fire) this.fire(T);
@@ -242,13 +256,13 @@ export class Game {
     // and a tap read on one of those frames used to be lost.
     if (inp.jumpPressed) this.jumpQueued = true;
     if (inp.dash) this.dashQueued = true;
-    if (T - this.simT > 0.25 || T < this.simT - 0.25) this.simT = T - STEP;
+    if (T - this.simT > 0.25 || T < this.simT - 0.25) { this.simT = T - STEP; if (this.rec) this.rec.act('t', this.simT); }
     let n = 0;
     while (this.simT + STEP <= T && n < 6) {
       const jp = this.jumpQueued, dq = this.dashQueued;
       this.jumpQueued = this.dashQueued = false;
       this.prevX = this.me.x; this.prevY = this.me.y; this.prevZ = this.me.z;
-      this.step(jp === inp.jumpPressed && dq === !!inp.dash ? inp : Object.assign({}, inp, { jumpPressed: jp, dash: dq }));
+      this.playStep(jp === inp.jumpPressed && dq === !!inp.dash ? inp : Object.assign({}, inp, { jumpPressed: jp, dash: dq }));
       n++;
     }
 
@@ -285,6 +299,25 @@ export class Game {
     me.x = x; me.y = y; me.z = z;
   }
 
+  // One physics step on the phone, written down first when this climb counts.
+  playStep(inp) {
+    const rec = this.rec;
+    this.stepping = true;
+    if (rec) { rec.stepping = true; this.step(rec.tick(inp)); rec.stepping = false; rec.done(this.me); }
+    else this.step(inp);
+    this.stepping = false;
+    if (this.saveLater) { this.saveLater = false; this.save(); }
+  }
+
+  // Where a partner was for the cord, rounded the way it gets written down.
+  partnerAt(slot, op) {
+    if (!this.latest(slot, op)) return null;
+    op.x = Math.round(op.x * 1024) / 1024; op.y = Math.round(op.y * 1024) / 1024; op.z = Math.round(op.z * 1024) / 1024;
+    op.vy = Math.round((op.vy || 0) * 1024) / 1024; op.reel = Math.round((op.reel || 0) * 1024) / 1024;
+    if (this.rec) this.rec.partner(0, slot, op);
+    return op;
+  }
+
   step(inp) {
     this.simT += STEP;
     for (const J of this.jumpers) if (J.active) { J.ox = J.x; J.oy = J.y; J.oz = J.z; }
@@ -297,6 +330,7 @@ export class Game {
     for (const c of this.L.traps) { c.on = !S.on(c.trap) || !S.trap(c.trap, t).open; if (!c.on && me.anchorCol === c) me.release(); }
     const zone = zoneAt(this.L, me.y);
     this.env.wind = (b, o) => this.storm.wind(b, o, t, zone);
+    if (this.rec && !this.solo && !this.noCord) for (const o of this.others) if (Math.abs(o.x - me.x) + Math.abs(o.y - me.y) + Math.abs(o.z - me.z) < 4) this.rec.partner(1, o.slot, o);
     me.step(STEP, inp, this.env);
     me.hanging = false;
 
@@ -305,7 +339,7 @@ export class Game {
     const op = this.tmpO || (this.tmpO = {});
     for (const lk of this.links) {
       if (lk.a !== slot && lk.b !== slot) continue;
-      if (!this.latest(lk.a === slot ? lk.b : lk.a, op)) continue;
+      if (!this.partnerAt(lk.a === slot ? lk.b : lk.a, op)) continue;
       const L = this.rope - Math.max(me.reel, op.reel || 0), mine = lk.a === slot, pc = lk.pc || (lk.pc = new Chain(10));
       if (Math.hypot(op.x - me.x, op.y - me.y, op.z - me.z) > this.rope * 3) { pc.ok = false; continue; }
       pc.step(mine ? me : op, mine ? op : me, L, this.W, STEP);
@@ -355,7 +389,7 @@ export class Game {
     this.coinTaken.add(c.i);
     cloud.runCoin(c.i);
     this.run.coins += v;
-    addCoins(v);
+    if (cloud.counting()) addCoins(v);
     // Quick ones in a row climb in pitch.
     this.coinRow = Math.min(12, this.coinRow + 1);
     this.coinAcc = 1.2;
@@ -472,7 +506,7 @@ export class Game {
           for (let k = 0; k < o.n; k++) {
             const a = S.laserAngle(o, t, k), ux = Math.cos(a), uz = -Math.sin(a), px = me.x - o.x, pz = me.z - o.z;
             const along = clamp(px * ux + pz * uz, 0, o.len), dx = px - ux * along, dz = pz - uz * along;
-            if (dx * dx + dz * dz < (0.42 + o.w) ** 2) { const sg = Math.sign(o.per); this.zapKnock(uz * sg * 7, 5, -ux * sg * 7, 'obstacle', o.name); }
+            if (dx * dx + dz * dz < (0.42 + o.w) * (0.42 + o.w)) { const sg = Math.sign(o.per); this.zapKnock(uz * sg * 7, 5, -ux * sg * 7, 'obstacle', o.name); }
           }
           break;
         }
@@ -635,6 +669,7 @@ export class Game {
       if (!J.hitMe && Math.hypot(me.x - fx, me.y - fy, me.z - fz) < 1.05) {
         J.hitMe = true;
         const k = this.storm.k;
+        if (this.rec && !this.solo) this.rec.acts.push([this.rec.tickNo, 'k', J.j.i, Math.sin(J.yaw) * 10 * k, 6, Math.cos(J.yaw) * 10 * k, J.j.name]);
         this.zapKnock(Math.sin(J.yaw) * 10 * k, 6, Math.cos(J.yaw) * 10 * k, 'kick', J.j.name + ' kicked you');
       }
     }
@@ -693,7 +728,8 @@ export class Game {
     if (!mine) return;
     const me = this.me, d = Math.hypot(me.x - z.x, me.z - z.z);
     if (d < 2.4 && Math.abs(me.y - PR - z.y) < 3) {
-      const k = this.storm.k, a = Math.random() * Math.PI * 2;
+      // Which way is a matter of luck, but the same luck for the rerun.
+      const k = this.storm.k, a = hash(th.k * 17 + slot * 3 + 11) * Math.PI * 2;
       if (me.knock(Math.cos(a) * 8 * k, 9 * k, Math.sin(a) * 8 * k, 0.7)) {
         this.app.sound.zap();
         this.app.ui.flash('#ffe08a');
@@ -746,8 +782,14 @@ export class Game {
     this.app.sound.shoot();
     this.lastShot = T;
     this.s.toHost({ k: 'shot', s: this.slot, a: from, b: to, h: h.kind ? 1 : 0 });
-    if (h.kind === 'door') this.s.toHost({ k: 'door', i: h.i });
-    else if (h.kind) this.s.toHost({ k: 'stun', m: (h.kind === 'bat' ? 1000 : h.kind === 'jumper' ? 2000 : 0) + h.i, from: r3(T), until: r3(T + 5) });
+    if (h.kind === 'door') {
+      if (this.rec && this.solo) this.rec.act('d', h.i);
+      this.s.toHost({ k: 'door', i: h.i });
+    } else if (h.kind) {
+      const m = (h.kind === 'bat' ? 1000 : h.kind === 'jumper' ? 2000 : 0) + h.i, from = r3(T), until = r3(T + 5);
+      if (this.rec && this.solo) this.rec.act('n', m, from, until);
+      this.s.toHost({ k: 'stun', m, from, until });
+    }
     if (h.kind) this.app.ui.haptic('tick');
   }
 
@@ -758,7 +800,11 @@ export class Game {
   }
 
   perform(a) {
-    if (a.k === 'grapple' && this.me.grapple(a.a)) { this.app.sound.grapple(); this.app.ui.haptic('tick'); }
+    if (a.k === 'grapple' && this.me.grapple(a.a)) {
+      if (this.rec) this.rec.act('g', this.L.anchors.indexOf(a.a));
+      this.app.sound.grapple();
+      this.app.ui.haptic('tick');
+    }
   }
 
   openDoor(i, quiet) {
@@ -791,7 +837,7 @@ export class Game {
     const em = EMOTE[id], me = this.me;
     if (!em) return;
     // A flip starts with a real jump when you're standing, no higher than a normal one.
-    if (em.hop) me.hop();
+    if (em.hop) { me.hop(); if (this.rec) this.rec.act('h'); }
     this.robots.get(this.slot).playEmote(id);
     if (em.icon) { this.app.ui.bubble(this.slot, em.icon); this.app.sound.emote(); }
     this.s.toHost({ k: 'emote', s: this.slot, e: id });
@@ -889,7 +935,9 @@ export class Game {
 
   // ----- host-only team rules -----
   hostEvent(e, from) {
-    const T = this.time;
+    // Alone, time is physics time: nothing else ever decides what happens.
+    const T = this.solo ? this.simT : this.time;
+    if (e.k === 'restart' && this.rec && this.solo) this.rec.act('r');
     switch (e.k) {
       case 'splash':
       case 'restart': {
@@ -927,6 +975,8 @@ export class Game {
 
   onEvent(e) {
     const ui = this.app.ui;
+    // With others, these come from elsewhere, so the rerun can't work them out and they get written down.
+    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win')) this.rec.act('e', e);
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
@@ -982,8 +1032,11 @@ export class Game {
   }
 
   save() {
-    const m = this.me;
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
+    // Halfway through a physics step the climber isn't anywhere yet. It happens when the step is done.
+    if (this.stepping) { this.saveLater = true; return; }
+    const m = this.me, rs = this.rec ? this.rec.save() : undefined;
+    cloud.climbSaved();
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
   }
 
   finish(e) {
@@ -994,11 +1047,12 @@ export class Game {
     // Best times only count when playing the difficulty's own rules (no custom rules).
     const custom = this.custom;
     const bonus = this.D.summit, unlocked = [];
+    const counts = cloud.counting();
     cloud.runWin(e.falls);
-    addCoins(bonus);
+    if (counts) addCoins(bonus);
     this.run.coins += bonus;
     // Easier custom rules don't count: otherwise Hardcore's bonus could be had with every checkpoint switched on.
-    const first = this.custom ? 0 : firstWin(this.diff, this.D.first);
+    const first = this.custom || !counts ? 0 : firstWin(this.diff, this.D.first);
     this.run.coins += first;
     this.run.won = true;
     this.run.h = Math.max(this.run.h, Math.min(1000, Math.round(this.L.top - 2)));

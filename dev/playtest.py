@@ -35,16 +35,22 @@ def check(what, ok, detail=""):
         fails.append(what)
 
 
+from testserver import TestServer
+TS = TestServer()
+
 def page(ctx, name, profile=None):
     pg = ctx.new_page()
     pg.on("console", lambda m: m.type == "error" and errors.append(f"[{name}] {m.text}"))
     pg.on("pageerror", lambda e: errors.append(f"[{name}] pageerror: {e}"))
     # Each player needs their own storage, so the name and profile are per context.
-    pg.add_init_script("localStorage.setItem('smu.settings', JSON.stringify({quality:'high', name:%s}));" % json.dumps(name)
-                       + (" if (!localStorage.getItem('smu.profile')) localStorage.setItem('smu.profile', %s);" % json.dumps(json.dumps(profile)) if profile else ""))
+    pg.add_init_script("localStorage.setItem('smu.welcomed2', '1'); localStorage.setItem('smu.settings', JSON.stringify({quality:'high', name:%s, server:%s}));" % (json.dumps(name), json.dumps(TS.url)))
     pg.goto(URL)
     pg.wait_for_function("window.SMU && window.SMU.level", timeout=60000)
     pg.wait_for_timeout(1000)
+    p = profile or {}
+    TS.enter(pg, coins=p.get("coins", 0), own=p.get("own", ()), relics=p.get("relics", ()), ach=p.get("ach", ()))
+    pg.evaluate("SMU.title && SMU.title()")
+    pg.wait_for_timeout(200)
     return pg
 
 

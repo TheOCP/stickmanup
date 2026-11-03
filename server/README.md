@@ -1,13 +1,15 @@
 # StickManUp server
 
-One program that does three jobs for the game:
+One program that does all of this for the game:
 
 * **Game server**: rooms, the server browser, passwords, and passing game messages between phones
 * **Accounts**: sign in with Discord, Steam or Google, plus accepting the terms
 * **Coins**: everyone's balance and what they own are held here and can't be changed from a phone (see below)
+* **Anticheat**: every climb that earns coins is played again here, with the game's own physics (see below)
+* **Discord bot**: logs sign ins and cheaters to your channels, and gives you about 55 commands (see below)
 * **Database**: everyone's coins, items, records and saved climb, in one SQLite file
 
-It needs almost nothing: any Linux server with systemd, about 100 MB of memory, and Node 22, which the installer brings
+It needs almost nothing: any Linux server with systemd, about 300 MB of memory, and Node 22, which the installer brings
 along in its own folder. It does not touch anything else on the server and uses its own port.
 
 ## Install
@@ -73,6 +75,7 @@ Add the option after `sudo bash -s --`, like in the line above:
 * `--status`: is it running, and does its address answer
 * `--update`: get the newest server files and restart. Your settings and data stay
 * `--logins`: change the sign in keys
+* `--bot`: set up the Discord bot, or change who may use it
 * `--uninstall`: remove the server, but keep the players' data. Add `--purge` to delete that too
 
 Logs: `journalctl -u stickmanup -f`
@@ -88,31 +91,89 @@ Where things are:
 
 ## Coins
 
-When someone is signed in, their coins and what they own live only in the database. The app shows a copy. Buying asks
-the server, so it needs a connection. A save sent by a phone is stripped of any coins or items in it.
+Everyone's coins and what they own live only in the database, for guests too. The app shows a copy. Buying asks the
+server, so it needs a connection. A save sent by a phone is stripped of any coins or items in it.
 
-What a climb earns is checked before it counts:
+A guest is an account like any other, with a number, that only their phone has the key to. Signing in moves what the guest
+has to the real account, if that account has nothing yet. Coins are only earned alone or in a room on this server, never
+offline or in WiFi, Bluetooth, Online or direct games, because nothing can check those.
+
+The limits, on top of the anticheat:
 
 * Each coin counts once per climb, and only if the map really has it, at the value of the difficulty
-* No faster than 6 coins a second across the whole account, however many climbs are going
-* A win only after 2 minutes of climbing, and once per climb
 * The first win bonus once per difficulty per account, never with custom rules
 * Relics only on real Hardcore or Insane, and only ones on that map
 * At most 20000 coins a day, not counting first win bonuses
 
-The first time on an account, what the person had as a guest comes along, once, worth at most 5000 coins. Everything
-that changes a balance is written to a log table called `ledger`, kept for 180 days.
-
-You can change these in `/etc/stickmanup/server.env`, then restart the server: `WALLET_DAILY_CAP`, `WALLET_IMPORT_CAP`,
-`WALLET_MIN_WIN_SECONDS`, `WALLET_COINS_PER_SECOND` and `WALLET_COIN_BURST`.
+Everything that changes a balance is written to a log table called `ledger`, kept for 180 days. You can change the limit in
+`/etc/stickmanup/server.env`, then restart the server: `WALLET_DAILY_CAP`, or with the bot's `/dailycap`.
 
 Prices and coin counts come from `lib/catalog.json`. If the game's prices change, update the server too with `--update`.
+
+## The anticheat
+
+The phone runs the climb, and writes down every press of a button as it goes. A piece of that comes here every 20 seconds,
+and the server plays it again with the very same physics code, which it keeps a copy of in `lib/sim`. Every second, the
+phone also says exactly where it is. If that isn't where the server's copy of the climb is, something was changed. A jump
+that goes too high, running too fast, flying, teleporting, an edited save, coins it never reached: all of them show up
+as a difference, and the warning says which and by how much.
+
+The rerun takes about a thousandth of the time the climb took. One worker can keep up with several hundred people climbing.
+With a lot of people, set `ANTICHEAT_WORKERS` higher, one per spare processor.
+
+Also checked:
+
+* **The clock**: playing faster than real time (game speed hacks) shows up in how long the server has known about the climb
+* **Rooms**: what a partner does is part of your climb, so in enforce mode coins in a room need every other person there to
+  be signed in, climbing and clean. Moving impossibly fast in a room and wearing what you don't own are caught by the relay
+* **The phone itself**: whether the app is the official one, whether its game files were changed, Frida, debuggers, Xposed
+  and cheat tools. Android's key attestation asks the phone's secure hardware to vouch for the app, on a certificate back to
+  Google. Being rooted is only noted, never held against anyone
+* **Old versions**: a phone on another version can't be compared, so it is told to update
+
+It has two modes, switched with the bot's `/anticheat`. It starts in **watch**: everything is checked and reported, coins are
+paid by the old rules, nobody is banned. Play real climbs on real phones for a while first. Anything flagged that shouldn't
+be is something to fix before switching. In **enforce**, only what the server's own rerun found gets paid, a climb that
+fails stops earning, and a score of 100 within 30 days bans automatically (`ANTICHEAT_BAN_SCORE`). `/trust` exempts testers.
+
+What it can't catch: someone who plays perfectly by machine. A program that presses the buttons a person could press plays a
+real climb, and the physics can't tell. It can't earn more than the daily limit that way, and it still takes as long as
+climbing does. In rooms it is weaker than alone: partners on a cord are the other phone's word, checked for being possible,
+so two cheaters working together are harder to spot than one. The checks on the phone itself can be fooled by someone
+determined, which is why none of the real checks depend on them.
+
+## The Discord bot
+
+It writes sign ins (with name, player number and IP address) to one channel, and cheater warnings to another or the same one,
+with the reason and buttons to ban, look at the player or clear the warning. It also gives you the commands below. Without
+a token it stays off, and everything else works the same.
+
+Setting it up:
+
+1. Go to https://discord.com/developers/applications, press New Application, then Bot, then Reset Token, and copy the token.
+2. In Discord: User Settings, Advanced, turn on Developer Mode. Now a right click gives you Copy ID on servers, channels and people.
+3. Make a **private** channel for the logs, because they contain players' IP addresses.
+4. Run the installer with `--bot`. It asks for the token, the server, the channels, and the Discord user IDs of the people
+   who may use the commands, with commas between them. It gives you the link to invite the bot if it isn't there yet.
+
+Everyone not on that list is refused, whatever their role on your Discord server, and the attempt is logged. Change the list by
+running `--bot` again. Answers are only visible to the person asking, and everything that changes something is written down
+in `/audit` and the log channel.
+
+A player can be given by name, by number (`#12`) or by ID, and Discord suggests them as you type.
+
+* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer`
+* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap`
+* **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
+* **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
+* **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`
 
 ## The terms
 
 `terms.txt` here is a simple draft, not legal advice. To use your own, put them in `/etc/stickmanup/terms.txt` and run
-`sudo systemctl restart stickmanup`. Any change to the text makes everyone accept again the next time they play signed
-in. Someone who says no is signed out, and keeps what is on their phone.
+`sudo systemctl restart stickmanup`. Any change to the text makes everyone accept again. Someone who says no is signed out,
+and plays without coins. The draft says plainly that IP addresses and phone checks are kept and shown to you on Discord. If you
+write your own, keep that in, and check what the law asks of you where you and your players are.
 
 ## If you already run a web server
 
@@ -142,13 +203,6 @@ map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 * **The host's phone still runs the climb.** The server passes messages along. If the host leaves, the room ends.
 * **Messages go over TCP**, so a bad connection stutters a little more than a direct one. The Online, WiFi and Bluetooth
   ways of playing are all still in the game.
-* **The server can't watch the climb.** It holds the balance and everything bought, so nobody can set their coins or
-  buy what they can't afford. But the phone runs the climb, so what happened in it is the phone's word, checked against
-  what a climb can really give (see Coins). Someone who writes their own program can earn up to those limits without
-  playing, including Legendaries found by reporting relics. They can't go past them. It doesn't affect anyone else's account.
-* **Guests are not on the server.** A guest's coins are on their own phone and can be edited there. Only a part of that
-  comes along when they sign in (see Coins). Someone with a modified game could still show a suit they don't own to
-  others in a room, since looks are sent between phones.
 * **No word filter** on room names and player names. Names are shown as plain text and nothing more.
 * **Limits**: 4 climbers in a room, 4 rooms per IP address, 1000 rooms and 5000 connections on the server, and 512 KB
   for one save. Password guesses, new rooms, joins and saves are all rate limited.
@@ -157,7 +211,9 @@ map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 
 Settings, in `server.env` or the environment: `PORT`, `HOST`, `PUBLIC_URL`, `DATA_DIR`, `TERMS_FILE`, `TLS_CERT`,
 `TLS_KEY`, `TRUST_PROXY`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-`STEAM_LOGIN`, `STEAM_API_KEY`. The server refuses plain HTTP on a public address. `SIGHUP` reloads the certificate.
+`STEAM_LOGIN`, `STEAM_API_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_BOT_GUILD`, `DISCORD_BOT_LOG_CHANNEL`, `DISCORD_BOT_WARN_CHANNEL`,
+`DISCORD_BOT_ADMINS`, `ANTICHEAT_WORKERS`, `ANTICHEAT_BAN_SCORE`, `ANTICHEAT_SPEED_SLACK`, `GUEST_LIMIT_BURST`,
+`GUEST_LIMIT_PER_HOUR`. The server refuses plain HTTP on a public address. `SIGHUP` reloads the certificate.
 
 Everything is on one port. The socket is `/ws`, text only:
 

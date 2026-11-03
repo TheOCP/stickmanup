@@ -20,11 +20,21 @@ const scrypt = (pass, salt) => new Promise((res, rej) => crypto.scrypt(pass, sal
 // What people can see of a name: no control characters or line breaks, a sensible length.
 const cleanText = (s, max) => String(s == null ? '' : s).normalize('NFC').replace(/[\p{C}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const small = (v) => (Number.isInteger(v) && v >= 0 && v < 64 ? v : 0);
+// Faster than anything in the game can go, with room to spare. Respawns are one jump, not a pattern, so it takes several.
+const MAX_SPEED = 60;
+const MAX_FAST = 4;
 
 class Rooms {
   constructor(opts = {}) {
     this.rooms = new Map();
     this.sockets = new Set();
+    // Who a token belongs to, whether they are shut out, and telling someone about what a room saw. All from server.js.
+    this.who = opts.who || (() => null);
+    this.isOff = opts.isOff || (() => null);
+    this.onCheat = opts.onCheat || (() => {});
+    this.ownsLook = opts.ownsLook || (() => true);
+    this.needToken = opts.needToken || (() => false);
+    this.ipKey = opts.ipKey || ((x) => x);
     this.perIp = new Map();
     this.ipRooms = new Map();
     this.maxSockets = opts.maxSockets || 5000;
@@ -61,6 +71,13 @@ class Rooms {
     ws.peerId = 0;
     ws.busy = false;
     ws.rate = new SocketRate(500, 250, 4 * 1024 * 1024, 2 * 1024 * 1024);
+    ws.userId = null;
+    ws.lastPos = null;
+    ws.lastCheck = 0;
+    ws.fast = 0;
+    ws.warned = false;
+    ws.lookAt = 0;
+    ws.lookFlag = false;
     // Say what you came for quickly, or go.
     ws.helloTimer = setTimeout(() => { if (!ws.role) ws.close(4000, 'no hello'); }, 15000);
     ws.on('pong', () => { ws.alive = true; });
@@ -88,10 +105,68 @@ class Rooms {
       const i = text.indexOf('|');
       if (i < 1 || i > 8) return;
       const peer = ws.room.peers.get(+text.slice(0, i));
-      if (peer) this.send(peer, text.slice(i + 1));
+      const out = this.checkLook(ws, text.slice(i + 1));
+      if (peer && out !== null) this.send(peer, out);
+      this.watch(ws, text.slice(i + 1));
     } else if (ws.role === 'peer') {
-      this.send(ws.room.host, ws.peerId + '|' + text);
+      const out = this.checkLook(ws, text);
+      if (out === null) return;
+      this.watch(ws, out);
+      this.send(ws.room.host, ws.peerId + '|' + out);
     }
+  }
+
+  // Items are bought on the server, and in a room that is where anyone else's copy comes from. Wearing what you don't own
+  // reaches the others without it. A peer's own message says it directly, a host's is its line in the player list.
+  checkLook(ws, text) {
+    if (!ws.userId) return text;
+    const isPeer = ws.role === 'peer' && (text.startsWith('{"k":"hello"') || text.startsWith('{"k":"info"'));
+    const isHost = ws.role === 'host' && text.startsWith('{"k":"lobby"');
+    if (!isPeer && !isHost) return text;
+    const now = Date.now();
+    if (isPeer && text.startsWith('{"k":"info"') && now - ws.lookAt < 200) return null;
+    ws.lookAt = now;
+    let m;
+    try { m = JSON.parse(text); } catch (e) { return text; }
+    const me = isPeer ? m : Array.isArray(m.players) ? m.players.find((p) => p && p.slot === 0) : null;
+    if (!me || !me.look || this.ownsLook(ws.userId, me.look)) return text;
+    if (!ws.lookFlag) {
+      ws.lookFlag = true;
+      this.onCheat(ws.userId, 'look', 'Wearing items in a room that it does not own.', 5);
+    }
+    me.look = null;
+    return JSON.stringify(m);
+  }
+
+  // A quick look at where someone says they are, a few times a second. The relay never changes what it passes on for this:
+  // the climb's own rerun does the real checking, and this catches what is plain from here, like moving at 200 m/s.
+  watch(ws, text) {
+    if (!ws.userId || ws.warned) return;
+    const now = Date.now();
+    if (now - ws.lastCheck < 250 || text.length > 2000) return;
+    const own = ws.role === 'host' ? text.startsWith('{"k":"S"') : text.startsWith('{"k":"st"');
+    if (!own) return;
+    ws.lastCheck = now;
+    let m;
+    try { m = JSON.parse(text); } catch (e) { return; }
+    const s = ws.role === 'host' ? m.p && m.p[0] : m.s;
+    if (!Array.isArray(s) || s.length < 3) return;
+    if (!s.slice(0, 6).every(Number.isFinite)) return this.caught(ws, 'room', 'Sent an impossible position in a room.', 30);
+    if (ws.lastPos) {
+      const dt = (now - ws.lastPos.t) / 1000, d = Math.hypot(s[0] - ws.lastPos.x, s[1] - ws.lastPos.y, s[2] - ws.lastPos.z);
+      if (dt > 0.1 && dt < 3) {
+        const v = d / dt;
+        if (v > MAX_SPEED) {
+          if (++ws.fast >= MAX_FAST) this.caught(ws, 'room', `Moving ${Math.round(v)} m/s in room ${ws.room.code}, over and over. Nothing in the game goes faster than about 20 m/s.`, 40);
+        } else if (ws.fast > 0 && v < MAX_SPEED / 2) ws.fast--;
+      }
+    }
+    ws.lastPos = { t: now, x: s[0], y: s[1], z: s[2] };
+    if (Math.hypot(s[3] || 0, s[4] || 0, s[5] || 0) > 120) this.caught(ws, 'room', `Says it is moving at ${Math.round(Math.hypot(s[3], s[4], s[5]))} m/s in room ${ws.room.code}.`, 30);
+  }
+  caught(ws, kind, detail, score) {
+    ws.warned = true;
+    this.onCheat(ws.userId, kind, detail, score);
   }
 
   // Someone who can't keep up is dropped rather than filling the server's memory.
@@ -115,6 +190,10 @@ class Rooms {
     if (!ws.role) {
       // Only one thing at a time while a password is being worked out.
       if (ws.busy) return;
+      const off = this.isOff(ws.ip, typeof m.token === 'string' ? m.token : null);
+      if (off) return this.err(ws, off);
+      ws.userId = typeof m.token === 'string' ? this.who(m.token) : null;
+      if (!ws.userId && this.needToken()) return this.err(ws, 'Please update StickManUp, and accept the terms in the game, to play on the server.');
       if (m.t === 'host') return this.host(ws, m).catch(() => this.err(ws, 'Could not open the room.'));
       if (m.t === 'join') return this.join(ws, m).catch(() => this.err(ws, 'Could not join the room.'));
       return;
@@ -232,6 +311,52 @@ class Rooms {
       ws.alive = false;
       if (ws.readyState === WebSocket.OPEN) ws.ping();
     }
+  }
+
+  // ---------------------------------------------------------------- for the admins
+  all() {
+    const out = [];
+    for (const r of this.rooms.values()) {
+      const users = [r.host.userId, ...[...r.peers.values()].map((p) => p.userId)].filter(Boolean);
+      out.push({ code: r.code, name: r.name, n: r.peers.size + 1, map: r.map, diff: r.diff, pub: r.pub, locked: !!r.hash, started: r.started, users });
+    }
+    return out;
+  }
+  closeRoom(code, why) {
+    const r = this.rooms.get(code);
+    if (!r) return false;
+    this.tell(r.host, { t: 'closed', why });
+    r.host.close(1000);
+    return true;
+  }
+  // Out of whatever rooms they are in. A host going takes the room along, the same as when a host leaves.
+  kickUser(id, why) {
+    let n = 0;
+    for (const ws of [...this.sockets]) {
+      if (ws.userId !== id || !ws.room) continue;
+      this.tell(ws, { t: 'closed', why });
+      ws.close(1000);
+      n++;
+    }
+    return n;
+  }
+  kickIp(ip, why) {
+    let n = 0;
+    for (const ws of [...this.sockets]) {
+      if (this.ipKey(ws.ip) !== this.ipKey(ip)) continue;
+      this.tell(ws, { t: 'closed', why });
+      ws.close(1000);
+      n++;
+    }
+    return n;
+  }
+  // Is anyone else in this person's room who could really be their partner?
+  roomOf(id) {
+    for (const r of this.rooms.values()) {
+      const users = [r.host.userId, ...[...r.peers.values()].map((p) => p.userId)];
+      if (users.includes(id)) return { code: r.code, users: users.filter(Boolean), n: users.length };
+    }
+    return null;
   }
 
   // The public rooms for this version of the game, newest first.

@@ -223,7 +223,7 @@ class PeerLink {
 // Through a StickManUp server: it finds the room, checks the password and passes messages along. The host phone runs the
 // climb as always. This works on every network, because every phone only connects out to the server.
 class ServerLink {
-  constructor(o) { this.url = o.url; this.room = o.room || {}; this.stopped = false; this.sentInfo = ''; }
+  constructor(o) { this.url = o.url; this.room = o.room || {}; this.stopped = false; this.sentInfo = ''; this.isServer = true; this.token = o.token || ''; }
   connect(onReady, onFail) {
     let ws;
     try { ws = this.ws = new WebSocket(this.url); } catch (e) { return onFail('Could not reach the game server.'); }
@@ -238,7 +238,7 @@ class ServerLink {
     return new Promise((resolve) => {
       let settled = false;
       const done = (r) => { clearTimeout(this.opener); if (!settled) { settled = true; resolve(r); } };
-      this.connect(() => this.ctl({ t: 'host', proto: PROTO, host: name, name: this.room.name, pub: !!this.room.pub, pass: this.room.pass || '', map: this.room.map, diff: this.room.diff }), (err) => done({ ok: false, err }));
+      this.connect(() => this.ctl({ t: 'host', proto: PROTO, token: this.token, host: name, name: this.room.name, pub: !!this.room.pub, pass: this.room.pass || '', map: this.room.map, diff: this.room.diff }), (err) => done({ ok: false, err }));
       this.ws.onmessage = (e) => {
         const d = String(e.data);
         if (d[0] === '!') {
@@ -248,6 +248,8 @@ class ServerLink {
           else if (m.t === 'err') { if (settled) cb.error(m.why); else done({ ok: false, err: m.why }); }
           else if (m.t === 'peer+') cb.open(m.id);
           else if (m.t === 'peer-') cb.close(m.id, 'left');
+          // Closed by an admin, or banned: the reason says more than losing the connection does.
+          else if (m.t === 'closed') { this.stopped = true; cb.error(m.why); }
           return;
         }
         const i = d.indexOf('|');
@@ -263,7 +265,7 @@ class ServerLink {
     this.cb = cb;
     let inside = false, told = false;
     const fail = (why) => { clearTimeout(this.opener); if (!told) { told = true; cb.error(why); } };
-    this.connect(() => this.ctl({ t: 'join', proto: PROTO, code: target.code, pass: target.pass || '' }), fail);
+    this.connect(() => this.ctl({ t: 'join', proto: PROTO, token: this.token, code: target.code, pass: target.pass || '' }), fail);
     this.ws.onmessage = (e) => {
       const d = String(e.data);
       if (d[0] === '!') {

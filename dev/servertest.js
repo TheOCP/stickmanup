@@ -473,15 +473,20 @@ async function signIn(provider, o = {}) {
   const [c1, p1] = cheap[0], [c2, p2] = cheap[1];
   check('nothing can be bought without coins', (await post('/api/buy', { id: c1 })).status === 402 && (await me()).own.length === 0);
 
-  // What a guest had comes along once, up to the limit
+  // The old way of bringing a guest's coins along is gone: anyone could have made those up.
   let r = await post('/api/wallet/import', { coins: 999999, own: [c1, 'made_up', 7, null, '__proto__', pricey[0]] });
   w = r.json.wallet;
-  check('guest things come along, made up ones do not', w.own.includes(c1) && !w.own.includes('made_up') && !w.own.includes('__proto__'), w);
-  check('things and coins together stay within the limit', w.coins + p1 === 500 && !w.own.includes(pricey[0]), w);
-  check('the guest import works once', (await post('/api/wallet/import', { coins: 999999 })).status === 409 && (await me()).coins === w.coins);
+  check('claiming to have been a rich guest brings nothing', w.coins === 0 && w.own.length === 0, w);
   r = await post('/api/wallet/import', { coins: -5, own: 'nope' }, b);
-  check('a nonsense import gives nothing, and uses it up', r.json.wallet.coins === 0 && r.json.wallet.imported === true, r.text);
+  check('a nonsense import gives nothing', r.json.wallet.coins === 0, r.text);
   check('a negative import is not a debt', (await me(b)).coins === 0);
+  // Coins for the shop, as if earned.
+  {
+    const { DatabaseSync } = await import('node:sqlite');
+    const id = (await api('/api/me', { token: a })).json.user.id, d0 = new DatabaseSync(path.join(W, 'stickmanup.db'));
+    d0.prepare('UPDATE wallets SET coins = 500, earned = 500 WHERE user_id = ?').run(id);
+    d0.close();
+  }
 
   // Buying
   for (const id of ['made_up', '', 5, null, '__proto__', 'constructor']) check(`can't buy ${id}`, (await post('/api/buy', { id })).status === 400);
@@ -591,6 +596,36 @@ async function signIn(provider, o = {}) {
   check('the wallet survives a restart', JSON.stringify(kept2) === JSON.stringify(kept), kept2);
   const stillRun = await post('/api/run/report', { run, coins: [] }, b);
   check('and so does a climb in progress', stillRun.status === 200, stillRun.text);
+
+  // A guest signing in: the coins move once, and only to an empty account.
+  {
+    const { DatabaseSync } = await import('node:sqlite');
+    const hand = (id, coins) => { const d = new DatabaseSync(path.join(W, 'stickmanup.db')); d.prepare('UPDATE wallets SET coins = ?, earned = ? WHERE user_id = ?').run(coins, coins, id); d.close(); };
+    const newGuest = async () => (await api('/api/guest', { body: { tos: TOS, device: crypto.randomBytes(16).toString('hex'), name: 'G' } })).json;
+    const asAccount = async (id, guestToken) => {
+      const st = await startLogin('steam'), page = await callback('steam', steamQuery(st.state, id));
+      return (await api('/auth/exchange', { body: { code: appCode(page.text), verifier: st.k.verifier, guest: guestToken } })).json;
+    };
+    const coinsOf = async (token) => (await api('/api/wallet', { token })).json.coins;
+    const g1 = await newGuest();
+    check('a guest starts with nothing', (await coinsOf(g1.token)) === 0, await coinsOf(g1.token));
+    hand(g1.user.id, 300);
+    const a1 = await asAccount('76561198000000071', g1.token);
+    check('signing in to a new account brings a guest\'s coins', a1.moved === true && (await coinsOf(a1.token)) === 300, a1);
+    check('and the guest has none left', (await coinsOf(g1.token)) === 0);
+    const again = await asAccount('76561198000000072', g1.token);
+    check('so they can not be moved twice', !again.moved && (await coinsOf(again.token)) === 0, again);
+    const g2 = await newGuest();
+    await coinsOf(g2.token);
+    hand(g2.user.id, 500);
+    const a2 = await asAccount('76561198000000071', g2.token);
+    check('an account that already has coins takes none from a guest', !a2.moved && (await coinsOf(a2.token)) === 300, a2);
+    { const gw = await api('/api/wallet', { token: g2.token }); check('and the guest keeps theirs, nothing is lost', gw.json.coins === 500, gw.status + ' ' + gw.text); }
+    const notGuest = await asAccount('76561198000000073', a2.token);
+    check('only a guest can be emptied this way', !notGuest.moved && (await coinsOf(a2.token)) === 300, notGuest);
+    const rubbish = await asAccount('76561198000000074', 'not a token');
+    check('a made up guest token does nothing', !rubbish.moved && (await coinsOf(rubbish.token)) === 0, rubbish);
+  }
 
   // Deleting
   check('deleting an account deletes the wallet', (await api('/api/me', { token: b, method: 'DELETE' })).status === 200 && (await api('/api/wallet', { token: b })).status === 401);

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
-// The StickManUp server: the server browser and room codes, the game relay, sign in with Discord, Steam or Google, and
-// saved progress. One process, one port, one SQLite file. Settings come from the environment (see README.md).
+// The StickManUp server: the server browser and room codes, the game relay, sign in with Discord, Steam or Google, saved
+// progress, coins, the anticheat and the Discord bot. One process, one port, one SQLite file. Settings come from the
+// environment (see README.md).
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
@@ -12,6 +13,10 @@ const { Rooms } = require('./lib/rooms');
 const { Auth } = require('./lib/auth');
 const { Limiter } = require('./lib/limits');
 const { Wallet } = require('./lib/wallet');
+const { Admin, ipKey } = require('./lib/admin');
+const { Verifier, cleanRules, BUILD } = require('./lib/verifier');
+const { Bot } = require('./lib/discord');
+const { Attest } = require('./lib/attest');
 
 const VERSION = require('./package.json').version;
 const env = process.env;
@@ -46,14 +51,43 @@ const terms = fs.readFileSync(cfg.termsFile, 'utf8').trim();
 const termsVersion = crypto.createHash('sha256').update(terms).digest('hex').slice(0, 12);
 const db = new DB(cfg.dataDir);
 const wallet = new Wallet(db, env);
-const rooms = new Rooms();
-const auth = new Auth(cfg, db, termsVersion);
+const admin = new Admin(db, wallet, env);
+if (db.setting('dayCap')) wallet.setDayCap(+db.setting('dayCap'));
+const verifier = new Verifier(db, wallet, admin, env);
+const attest = new Attest(env);
+const rooms = verifier.rooms = new Rooms({
+  who: (token) => db.sessionUser(token),
+  isOff: (ip, token) => {
+    if (admin.maintenance) return admin.maintenance;
+    const id = token ? db.sessionUser(token) : null, u = id ? db.user(id) : null;
+    const b = admin.banFor(id, ip, u ? u.device : null);
+    return b ? `You are banned from this server. Reason: ${b.reason}` : null;
+  },
+  onCheat: (id, kind, detail, score) => admin.flag(id, kind, detail, score),
+  ownsLook: (id, look) => wallet.ownsLook(id, look),
+  ipKey,
+  // Old games have no token to give. Once the anticheat is enforcing, they need the update.
+  needToken: () => admin.mode === 'enforce',
+});
+const auth = new Auth(cfg, db, termsVersion, admin);
+admin.onBan = ({ userId, ip, reason }) => {
+  const why = `You are banned from this server. Reason: ${reason}`;
+  if (userId) rooms.kickUser(userId, why);
+  if (ip) rooms.kickIp(ip, why);
+};
+const bot = new Bot({
+  token: env.DISCORD_BOT_TOKEN || '', guild: env.DISCORD_BOT_GUILD || '', logChannel: env.DISCORD_BOT_LOG_CHANNEL || '', warnChannel: env.DISCORD_BOT_WARN_CHANNEL || '', admins: env.DISCORD_BOT_ADMINS || '',
+  api: cfg.devUrls && cfg.devUrls.botApi, gateway: cfg.devUrls && cfg.devUrls.botGateway,
+}, { db, wallet, admin, verifier, rooms, version: VERSION });
 
 const limits = {
   auth: new Limiter(20, 20 / 60),
   api: new Limiter(120, 2),
   save: new Limiter(30, 30 / 60),
   wallet: new Limiter(120, 2),
+  // Whole phone networks can share one address, so this only stops someone making accounts by the hundred.
+  guest: new Limiter(+env.GUEST_LIMIT_BURST || 20, (+env.GUEST_LIMIT_PER_HOUR || 20) / 3600),
+  device: new Limiter(30, 30 / 3600),
 };
 const sweep = setInterval(() => { for (const l of Object.values(limits)) l.sweep(); }, 60000);
 sweep.unref();
@@ -125,7 +159,44 @@ function signedIn(req) {
   return id ? { id, token: m[1] } : null;
 }
 
-const publicUser = (u) => ({ id: u.id, name: u.name, provider: u.provider, created: u.created, tosOk: u.tos === termsVersion });
+const publicUser = (u) => ({ id: u.id, num: u.num, name: u.name, provider: u.provider, created: u.created, tosOk: u.tos === termsVersion });
+const deviceOf = (d) => (typeof d === 'string' && /^[0-9a-f]{16,64}$/.test(d) ? d : null);
+
+// What each thing a phone can report counts for. Being rooted alone never counts: plenty of honest people are, the owner too.
+const GUARD_SCORES = [
+  ['sig', (g) => g.sig === false, 'phone', 80, 'Running a changed copy of the app: the signature is not the official one.'],
+  ['assets', (g) => g.assets === false, 'phone', 60, 'The game files inside the app have been changed.'],
+  ['frida', (g) => !!g.frida, 'phone', 60, 'Frida, a tool for changing running apps, was found in the game.'],
+  ['dbg', (g) => !!g.dbg, 'phone', 40, 'A debugger is attached to the game.'],
+  ['hook', (g) => !!g.hook, 'phone', 20, 'Xposed or a similar hooking tool is loaded into the game.'],
+  ['apps', (g) => Array.isArray(g.apps) && g.apps.length > 0, 'phone', 15, 'Cheat tools are installed on the phone.'],
+];
+function cleanGuard(g) {
+  if (!g || typeof g !== 'object') return null;
+  const b = (k) => (g[k] === true ? true : g[k] === false ? false : undefined), s = (k) => (typeof g[k] === 'string' ? g[k].slice(0, 60) : undefined);
+  return { sig: b('sig'), assets: b('assets'), dbg: b('dbg'), frida: b('frida'), hook: b('hook'), root: b('root'), emu: b('emu'), apps: Array.isArray(g.apps) ? g.apps.filter((x) => typeof x === 'string').slice(0, 12).map((x) => x.slice(0, 60)) : undefined, model: s('model'), sdk: s('sdk'), version: s('version') };
+}
+function deviceReport(id, user, b) {
+  const device = deviceOf(b.device), g = cleanGuard(b.guard) || {};
+  // Each thing counts once per account, not once per start of the game: having a cheat app installed shouldn't add up to a ban.
+  const before = admin.devices(id, 1)[0], said = new Set((before && before.guard && before.guard.said) || []);
+  const once = (key, kind, detail, score) => {
+    if (said.has(key)) return;
+    said.add(key);
+    admin.flag(id, kind, detail, score);
+  };
+  if (b.attest && typeof b.attest === 'object') {
+    const a = attest.check(id, b.attest);
+    g.attest = a.text;
+    if (a.flag) once(a.notOfficial ? 'attestApp' : 'attestBad', 'attest', a.flag, a.score || 10);
+    if (a.notOfficial) g.sig = false;
+  } else if (before && before.guard && before.guard.attest) g.attest = before.guard.attest;
+  for (const [k, on, kind, score, detail] of GUARD_SCORES) if (on(g)) once(k, kind, k === 'apps' ? `${detail} ${g.apps.join(', ')}` : detail, score);
+  g.said = [...said];
+  if (device) admin.setDevice(id, device, g);
+  const off = device ? admin.banRow('device', device) : null;
+  return off ? admin.showBan(off, user) : { ok: true };
+}
 
 async function route(req, res) {
   const ip = clientIp(req), url = new URL(req.url, 'http://x'), p = url.pathname, method = req.method;
@@ -143,7 +214,7 @@ async function route(req, res) {
       if (r.err) return page(res, 400, 'Could not sign in', r.err);
       return send(res, 302, '', { Location: r.url });
     }
-    const r = await auth.finish(a[1], url.searchParams);
+    const r = await auth.finish(a[1], url.searchParams, ip);
     if (r.err) return page(res, 400, 'Not signed in', r.err);
     return page(res, 200, `Hi ${r.name}`, 'You are signed in. Going back to the game...', { href: r.link, text: 'Back to StickManUp' });
   }
@@ -154,7 +225,7 @@ async function route(req, res) {
   if (!limits.api.take(ip)) return json(res, 429, { err: 'Too many requests' });
 
   if (method === 'GET' && p === '/api/info') {
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), online: rooms.stats() });
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined });
   }
   if (method === 'GET' && p === '/api/rooms') {
     const proto = +url.searchParams.get('proto');
@@ -166,19 +237,48 @@ async function route(req, res) {
     const b = await readJson(req);
     const r = b && auth.exchange(b.code, b.verifier);
     if (!r) return json(res, 400, { err: 'That sign in has expired. Please try again.' });
-    return json(res, 200, { token: db.newSession(r.userId), user: publicUser(db.user(r.userId)) });
+    const u = db.user(r.userId), device = deviceOf(b && b.device), off = admin.banFor(r.userId, ip, device);
+    if (off) return json(res, 403, admin.showBan(off, u));
+    // What the guest on this phone earned comes along, if the account has nothing yet.
+    let moved = false;
+    if (b && typeof b.guest === 'string') {
+      const g = db.sessionUser(b.guest), gu = g ? db.user(g) : null;
+      if (gu && gu.provider === 'guest') moved = wallet.moveGuest(g, r.userId);
+    }
+    if (device) admin.setDevice(r.userId, device);
+    admin.seen(r.userId, ip);
+    return json(res, 200, { token: db.newSession(r.userId), user: publicUser(db.user(r.userId)), moved });
+  }
+  // Starting as a guest: an account all the same, with its coins kept here. They accepted the terms to get this far.
+  if (method === 'POST' && p === '/api/guest') {
+    if (admin.maintenance) return json(res, 503, { err: admin.maintenance });
+    const b = await readJson(req);
+    if (!b || b.tos !== termsVersion) return json(res, 409, { err: 'The terms have changed', termsVersion });
+    const device = deviceOf(b.device), off = admin.banFor(null, ip, device);
+    if (off) return json(res, 403, admin.showBan(off));
+    if (!limits.guest.take(ip)) return json(res, 429, { err: 'Too many new guests from this address. Try again later.' });
+    const g = db.newGuest(termsVersion);
+    db.renameGuest(g.id);
+    if (device) admin.setDevice(g.id, device);
+    if (b.name) admin.setGameName(g.id, b.name);
+    admin.seen(g.id, ip);
+    admin.notify.signin({ user: db.user(g.id), provider: 'guest', ip, isNew: true });
+    return json(res, 200, { token: db.newSession(g.id), user: publicUser(db.user(g.id)) });
   }
 
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
+  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
   const user = db.user(me.id);
   if (!user) return json(res, 401, { err: 'Please sign in' });
+  admin.seen(me.id, ip);
 
-  if (p === '/api/me' && method === 'GET') return json(res, 200, { user: publicUser(user) });
+  // Banned: the game gets told why, and can still leave or delete the account. Nothing else.
+  const off = admin.banFor(me.id, ip, user.device);
+  if (p === '/api/me' && method === 'GET') return json(res, 200, { user: publicUser(user), ban: off ? admin.showBan(off, user) : undefined });
   if (p === '/api/me') {
     db.deleteUser(me.id);
     return json(res, 200, { ok: true });
@@ -186,6 +286,20 @@ async function route(req, res) {
   if (p === '/api/logout') {
     db.endSession(me.token);
     return json(res, 200, { ok: true });
+  }
+  if (off) return json(res, 403, admin.showBan(off, user));
+  if (p === '/api/run/start' && admin.maintenance) return json(res, 503, { err: admin.maintenance });
+  // What a phone says about itself. It can lie, so it can only ever count against it, and a hardware check says how far to believe it.
+  if (p === '/api/attest/challenge') {
+    if (!limits.device.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    return json(res, 200, { challenge: attest.newChallenge(me.id) });
+  }
+  if (p === '/api/device') {
+    if (!limits.device.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    const b = await readJson(req);
+    if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
+    const r = deviceReport(me.id, user, b);
+    return json(res, r.banned ? 403 : 200, r);
   }
   if (p === '/api/tos') {
     const b = await readJson(req);
@@ -208,9 +322,18 @@ async function route(req, res) {
       return json(res, r.status, { err: r.err, wallet: r.wallet });
     }
     if (p === '/api/run/start') {
-      const run = wallet.startRun(me.id, b);
-      return run ? json(res, 200, { run }) : json(res, 400, { err: 'Bad climb' });
+      if (b.name) admin.setGameName(me.id, b.name);
+      const run = wallet.startRun(me.id, b.rules ? Object.assign({}, b, { rules: cleanRules(b.rules) }) : b);
+      if (run) admin.played(me.id, { map: b.map, diff: b.diff, h: 0, newClimb: false });
+      return run ? json(res, 200, { run, build: BUILD }) : json(res, 400, { err: 'Bad climb' });
     }
+    if (p === '/api/run/chunk') {
+      const r = await verifier.chunk(user, b);
+      const { status, ...out } = r;
+      return json(res, status, out);
+    }
+    // Older games report coins with nothing to check them against. Once the anticheat is enforcing that pays nothing.
+    if (admin.mode === 'enforce' && !user.trusted) return json(res, 200, { paid: 0, accepted: [], later: [], update: true, wallet: wallet.get(me.id) });
     const r = wallet.report(me.id, b);
     const { status, ...out } = r;
     return json(res, status, out);
@@ -269,6 +392,8 @@ function backupNow() {
     db.backup();
     db.cleanup();
     wallet.cleanup();
+    admin.cleanup();
+    verifier.cleanup();
   } catch (e) {
     console.error('backup failed:', e.message);
   }
@@ -282,6 +407,8 @@ function stop() {
   stopping = true;
   rooms.stop();
   auth.stop();
+  bot.stop();
+  verifier.stop();
   server.close(() => {
     db.close();
     process.exit(0);
@@ -292,6 +419,8 @@ process.on('SIGTERM', stop);
 process.on('SIGINT', stop);
 
 server.listen(cfg.port, cfg.host, () => {
-  console.log(`StickManUp server ${VERSION} on ${cfg.host}:${server.address().port}, ${tls ? 'HTTPS' : 'plain HTTP'}. Public address: ${cfg.publicUrl}. Sign in: ${auth.providers().join(', ') || 'none set up yet'}. Accounts: ${db.userCount()}.`);
+  console.log(`StickManUp server ${VERSION} on ${cfg.host}:${server.address().port}, ${tls ? 'HTTPS' : 'plain HTTP'}. Public address: ${cfg.publicUrl}. Sign in: ${auth.providers().join(', ') || 'none set up yet'}. Accounts: ${db.userCount()}. Anticheat: ${admin.mode}. Bot: ${bot.on ? 'on' : 'off'}.`);
   backupNow();
+  bot.start();
+  attest.refresh();
 });

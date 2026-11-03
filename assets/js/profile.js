@@ -4,10 +4,12 @@ import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, ownerKey, cleanLook, itemKey } fro
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
-// Buying the Santa hat used to give the Santa suit as well, because they share a name. Whoever has one of those keeps both.
-if (!P.ownV) {
-  for (const it of [...Object.values(FACE), ...Object.values(HAT)]) if (itemKey(it) !== it.id && P.own.includes(it.id)) P.own.push(itemKey(it));
-  P.ownV = 2;
+// Coins and what you own are the server's to say now, for guests too. What an older version kept on this phone is gone.
+// Someone signed in keeps what they wear, if the server says it is theirs. See setWallet.
+if ((P.ownV || 0) < 3) {
+  P.coins = 0; P.earned = 0; P.own = []; P.relics = []; P.ach = P.ach.filter((x) => x.startsWith('name:'));
+  if (P.eq && !store.get('account', null)) P.eq = { s: FREE_SUIT, f: 'smile', h: 'none' };
+  P.ownV = 3;
 }
 let timer = 0;
 const saveNow = () => { clearTimeout(timer); timer = 0; store.set('profile', P); };
@@ -68,6 +70,14 @@ export function setWallet(w, extra = 0) {
   P.own = list(w.own);
   P.relics = list(w.relics);
   P.ach = [...new Set([...list(w.ach), ...P.ach.filter((x) => x.startsWith('name:'))])];
+  // Anything worn that isn't yours (taken back by an admin, say) comes off.
+  if (P.eq) {
+    const nameFree = (it) => !it || it.price === 0 || it.owner;
+    const mine = (it) => nameFree(it) || (it.relic ? P.relics.includes(it.relic) : it.ach ? P.ach.includes(it.ach) : P.own.includes(itemKey(it)));
+    if (!mine(SUIT[P.eq.s])) P.eq.s = FREE_SUIT;
+    if (!mine(FACE[P.eq.f])) P.eq.f = 'smile';
+    if (!mine(HAT[P.eq.h])) P.eq.h = 'none';
+  }
   saveNow();
 }
 // Everything, for going back to being the guest you were.

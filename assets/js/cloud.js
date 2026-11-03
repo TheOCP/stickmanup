@@ -1,12 +1,15 @@
-// Talking to a StickManUp server: the room list, signing in, and keeping your progress on your account.
-// Everything still works without a server or an account. Guests just keep their progress on this phone.
+// Talking to a StickManUp server: the room list, signing in, your coins, and keeping your progress on your account.
+// Climbing still works without a connection, it just doesn't earn coins. Guests have an account too, with the coins kept on
+// the server, known only by the token this phone holds. Signing in moves them to a real one that can't get lost.
 //
 // Signing in happens in the phone's browser, never in the game. The browser comes back to the app with a one time code,
 // and only this copy of the game can use it, because only it knows the secret it started with (see server/lib/auth.js).
 import { store } from './util.js';
-import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun, buy as guestBuy } from './profile.js';
+import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun } from './profile.js';
 import { DIFFS } from './level.js';
 import { itemKey } from './skins.js';
+import { Recorder, toBase64, fromBase64, deflate } from './replay.js';
+import { SIM_BUILD } from './simbuild.js';
 
 // The one game server this game talks to. Using another means changing this and building the game again.
 export const SERVER = 'https://pointdesk.net:47810';
@@ -19,6 +22,7 @@ const PENDING_MAX = 15 * 60000;
 let address = '';
 let acct = store.get('account', null);
 let needsTerms = false;
+let ban = null;
 let muted = false;
 let timer = 0;
 let lastSent = '';
@@ -37,7 +41,12 @@ export const wsUrl = () => serverUrl().replace(/^http/, 'ws') + '/ws';
 
 // The account only counts on the server it belongs to.
 export const account = () => (acct && acct.server === serverUrl() ? acct : null);
+export const isGuest = () => { const a = account(); return !!a && a.user.provider === 'guest'; };
 export const termsNeeded = () => !!account() && needsTerms;
+// Why this player can't use the server, if they can't: { reason, until }.
+export const banned = () => ban;
+// What a room on the server wants to know who you are by.
+export const roomToken = () => (account() ? acct.token : '');
 export const lastSaved = () => lastSync;
 
 async function call(path, o = {}) {
@@ -54,11 +63,23 @@ async function call(path, o = {}) {
   try { json = await r.json(); } catch (e) {}
   // The session is over. What the account has stays on the server until the next sign in.
   if (r.status === 401 && o.auth && acct) {
+    const wasGuest = isGuest();
     forget();
+    if (wasGuest) store.del('guestAcct');
     backToGuest();
     emit('expired');
   }
+  if (r.status === 403 && json && json.banned) setBan(json);
   return { ok: r.ok, status: r.status, json };
+}
+
+function setBan(j) {
+  const was = ban;
+  ban = j && j.banned !== false ? { reason: String(j.reason || ''), until: +j.until || 0, num: j.num } : null;
+  if (ban && !was) {
+    if (climb) stopClimb(climb, 'banned');
+    emit('banned', ban);
+  }
 }
 
 export async function getInfo() {
@@ -91,20 +112,55 @@ export async function finishLogin(code) {
   const p = store.get('auth.pending', null);
   store.del('auth.pending');
   if (!p || Date.now() - p.t > PENDING_MAX || p.server !== serverUrl()) return false;
-  const r = await call('/auth/exchange', { body: { code: String(code), verifier: p.verifier } });
+  const g = store.get('guestAcct', null);
+  const r = await call('/auth/exchange', { body: { code: String(code), verifier: p.verifier, device: deviceId(), guest: g && g.server === p.server ? g.token : undefined } });
+  if (r.status === 403 && r.json.banned) return false;
   if (!r.ok || typeof r.json.token !== 'string') {
     emit('loginFailed', r.json.err || (r.status ? 'Sign in failed. Please try again.' : 'Could not reach the server.'));
     return false;
   }
+  // Remember the guest, to go back to when signing out. Whatever climb was going on belongs to them.
+  await runEnd();
+  await report();
+  flushProfile();
+  store.set('guest', { profile: snapshot(), best: store.get('best2', {}), solo: store.get('save.solo', null) });
   acct = { server: p.server, token: r.json.token, user: r.json.user, rev: 0 };
   needsTerms = !r.json.user.tosOk;
   store.set('account', acct);
-  // Remember the guest, to go back to when signing out.
-  flushProfile();
-  store.set('guest', { profile: snapshot(), best: store.get('best2', {}), solo: store.get('save.solo', null) });
   await refreshWallet();
   await syncNow();
+  watchDevice();
   emit('signedIn', acct.user);
+  if (r.json.moved) emit('guestMoved');
+  return true;
+}
+
+export let guestError = '';
+// Starting without signing in anywhere. They have just accepted the terms. A guest from before is simply picked up again.
+export async function startGuest(termsVersion, name) {
+  if (account()) return true;
+  const g = store.get('guestAcct', null);
+  if (g && g.server === serverUrl()) {
+    acct = g;
+    store.set('account', acct);
+    if (termsVersion) await call('/api/tos', { auth: true, body: { version: termsVersion } });
+    needsTerms = false;
+    await refreshWallet();
+    watchDevice();
+    return true;
+  }
+  const r = await call('/api/guest', { body: { tos: termsVersion, device: deviceId(), name: String(name || '').slice(0, 14) } });
+  if (!r.ok || typeof r.json.token !== 'string') {
+    guestError = r.json.err || '';
+    return false;
+  }
+  acct = { server: serverUrl(), token: r.json.token, user: r.json.user, rev: 0 };
+  store.set('account', acct);
+  store.set('guestAcct', acct);
+  needsTerms = false;
+  await refreshWallet();
+  watchDevice();
+  emit('changed');
   return true;
 }
 window.SMU_authCode = (code) => { finishLogin(code); };
@@ -116,17 +172,21 @@ export async function start() {
     const c = N.authPending();
     if (c) await finishLogin(c);
   }
+  checkNews();
   if (!account()) return;
   const r = await call('/api/me', { auth: true });
   if (r.ok && r.json.user) {
     acct.user = r.json.user;
     store.set('account', acct);
     needsTerms = !r.json.user.tosOk;
+    setBan(r.json.ban || null);
+    if (ban) return;
     if (needsTerms) emit('terms');
     else {
       await refreshWallet();
       report();
       syncNow();
+      watchDevice();
     }
   }
 }
@@ -137,8 +197,10 @@ export async function acceptTerms(version) {
   needsTerms = false;
   acct.user = r.json.user;
   store.set('account', acct);
+  if (isGuest()) store.set('guestAcct', acct);
   await refreshWallet();
   syncNow();
+  watchDevice();
   return true;
 }
 
@@ -176,7 +238,7 @@ export function mergeData(a, b) {
 }
 
 function soon() {
-  if (!account() || needsTerms || timer) return;
+  if (!account() || isGuest() || needsTerms || timer) return;
   timer = setTimeout(() => { timer = 0; push(); }, PUSH_AFTER);
 }
 
@@ -202,7 +264,7 @@ async function send(data, keepalive) {
   return false;
 }
 async function push(keepalive) {
-  if (!account() || needsTerms) return false;
+  if (!account() || isGuest() || needsTerms) return false;
   if (busy) await busy;
   if (!account()) return false;
   return send(localData(), keepalive);
@@ -210,6 +272,7 @@ async function push(keepalive) {
 // Going to the background or finishing a climb: don't wait.
 export function flush() {
   if (timer) { clearTimeout(timer); timer = 0; }
+  sealNow();
   saveClimbs();
   report();
   return push(true);
@@ -219,7 +282,7 @@ export function flush() {
 export function syncNow() {
   if (busy) return busy;
   busy = (async () => {
-    if (!account() || needsTerms) return false;
+    if (!account() || isGuest() || needsTerms) return false;
     const g = await call('/api/save', { auth: true });
     if (!g.ok || !acct) return false;
     acct.rev = g.json.rev;
@@ -233,18 +296,37 @@ export function syncNow() {
   return busy;
 }
 
-// ---------------------------------------------------------------- the coins of an account
-// The server holds them. This phone shows a copy, plus what it has earned that the server hasn't heard about yet.
-// Climbs are reported as they go. If the connection drops they wait here, and the server decides what still counts.
+// ---------------------------------------------------------------- the coins
+// The server holds them, for guests as well. This phone shows a copy, plus what it has earned that hasn't reached the server.
+// Each climb gets written down as it is played (replay.js) and goes to the server a chunk at a time, where it is played
+// again. If the connection drops the chunks wait here, and go when it comes back.
+const START_GRACE = 20000;
+const MAX_QUEUE = 80;
+const STOP_WORDS = {
+  update: 'Update StickManUp to earn coins again.',
+  save: 'This saved climb can not earn more coins. A new climb can!',
+  tainted: 'This climb has stopped counting for coins.',
+  dead: 'This climb has stopped counting for coins.',
+  gap: 'This climb has stopped counting for coins.',
+  offline: 'No connection: this climb will not earn coins.',
+};
 let climbs = store.get('wallet.climbs', []);
 // Nothing is being climbed yet when the game starts: what is listed here is left over from last time.
 for (const c of climbs) c.live = false;
 let climb = null;
+let rec = null;
 let reportTimer = 0;
 let reporting = null;
 let again = false;
 const saveClimbs = () => store.set('wallet.climbs', climbs);
-const waiting = () => climbs.reduce((n, c) => n + c.coins.length * ((DIFFS[c.diff] && DIFFS[c.diff].coin) || 0), 0);
+const coinValue = (c) => (DIFFS[c.diff] && DIFFS[c.diff].coin) || 0;
+const waiting = () => climbs.reduce((n, c) => {
+  if (c.dead) return n;
+  let k = c.coins.length;
+  for (const q of c.queue || []) k += q.claims.coins.length;
+  const wins = (c.win ? 1 : 0) + (c.queue || []).filter((q) => q.claims.win).length;
+  return n + k * coinValue(c) + wins * ((DIFFS[c.diff] && DIFFS[c.diff].summit) || 0);
+}, 0);
 
 function haveWallet(w) {
   if (!w || typeof w.coins !== 'number') return false;
@@ -254,69 +336,122 @@ function haveWallet(w) {
   emit('changed');
   return true;
 }
-// The first time on an account, what you had as a guest comes along, as far as the server allows.
 export async function refreshWallet() {
   if (!account()) return false;
   const r = await call('/api/wallet', { auth: true });
-  if (!r.ok || !account()) return false;
-  if (r.json.imported) return haveWallet(r.json);
-  // Someone already signed in from before the server held the coins has no guest kept aside: what is here is theirs.
-  const g = store.get('guest', null), p = (g && g.profile) || snapshot();
-  const i = await call('/api/wallet/import', { auth: true, body: { coins: p.coins, own: p.own } });
-  return haveWallet(i.json.wallet);
+  return r.ok && account() ? haveWallet(r.json) : false;
 }
 
-// Buying is the server's call when signed in, so it needs a connection. Answers what went wrong, or nothing.
+// Buying is the server's call, so it needs a connection. Answers what went wrong, or nothing.
 export async function buyItem(item) {
-  if (!account()) return guestBuy(item) ? null : 'Not enough coins.';
+  if (!account()) return 'Coins are kept on the game server. Open Account to get started.';
   const r = await call('/api/buy', { auth: true, body: { id: itemKey(item) } });
   if (r.json.wallet) haveWallet(r.json.wallet);
   if (r.ok) return null;
-  if (r.status === 0) return 'You need a connection to buy things on your account.';
+  if (r.status === 0) return 'You need a connection to buy things.';
   return r.json.err || 'That did not work. Please try again.';
 }
 
 export const runId = () => (climb ? climb.run : null);
+// Whether this climb is earning anything at all right now.
+export const counting = () => !!climb && !climb.dead;
+
 export function runStart(o) {
+  if (rec) { rec.seal(); rec = null; }
   if (climb) climb.live = false;
   climb = null;
-  if (!account() || needsTerms) return;
-  climb = { run: typeof o.run === 'string' ? o.run : null, map: o.map, diff: o.diff, custom: !!o.custom, coins: [], relics: [], win: null, t: Date.now(), live: true };
+  if (!o.earning) { emit('notCounting', 'room'); return; }
+  if (!account() || needsTerms || ban) { emit('notCounting', ban ? 'banned' : 'guest'); return; }
+  // Picking up a save needs the climb it belongs to, or the server can't know how it got there.
+  if (o.resumed && (typeof o.run !== 'string' || !Number.isInteger(o.rs))) { emit('notCounting', 'save'); return; }
+  climb = { run: o.resumed ? o.run : null, map: o.map, diff: o.diff, rules: o.rules || {}, mode: o.mode || 'solo', name: String(o.name || '').slice(0, 14), coins: [], relics: [], win: null, t: Date.now(), live: true, dead: false, seq: 0, fresh: true, resume: o.resumed ? o.rs : null, needSeq: !!o.resumed, queue: [], tail: null };
   climbs.push(climb);
   while (climbs.length > 8) climbs.shift();
   saveClimbs();
   report();
 }
-export function runCoin(i) {
-  if (!climb) return;
-  climb.coins.push(i);
-  reportSoon();
+export function recorder(head) {
+  if (!climb) return null;
+  const c = climb;
+  rec = new Recorder(head, (b) => sealed(c, b));
+  rec.saves = climb.resume || 0;
+  return rec;
 }
-export function runRelic(id) {
-  if (!climb) return;
-  climb.relics.push(id);
-  report();
+// A chunk is full, or the climb stops. It waits here until the server has it.
+function sealed(c, b, claims) {
+  if (c.dead) return;
+  const q = { seq: c.seq++, start: b.start, n: b.n, fresh: c.fresh, resume: c.fresh ? c.resume : null, raw: toBase64(b.bytes), data: null, claims: claims || { coins: c.coins.splice(0), relics: c.relics.splice(0), win: c.win } };
+  if (!claims) c.win = null;
+  c.fresh = false;
+  c.tail = null;
+  c.queue.push(q);
+  if (c.queue.length > MAX_QUEUE) { stopClimb(c, 'offline'); return; }
+  saveClimbs();
+  packNext();
+  reportSoon(800);
 }
+// Compressing is done between frames, oldest first. Anyone asking while it is going on waits for the same work.
+let packing = null;
+function packNext() {
+  if (!packing) {
+    packing = (async () => {
+      try {
+        for (;;) {
+          const c = climbs.find((x) => x.queue.some((q) => !q.data && q.raw));
+          if (!c) break;
+          const q = c.queue.find((x) => !x.data && x.raw);
+          q.data = toBase64(await deflate(fromBase64(q.raw)));
+          q.raw = null;
+        }
+        saveClimbs();
+      } catch (e) {
+        // No compression on this phone: then the climb can't be sent, and nothing else is wrong.
+      }
+    })().finally(() => { packing = null; });
+  }
+  return packing;
+}
+// Saving a climb also keeps what was played since the last chunk, so a crash can't leave the server not knowing about a save.
+export function climbSaved() {
+  if (!climb || !rec) return;
+  const b = rec.pack();
+  climb.tail = b ? { start: b.start, n: b.n, raw: toBase64(b.bytes), fresh: climb.fresh, resume: climb.fresh ? climb.resume : null } : null;
+  saveClimbs();
+}
+function stopClimb(c, why) {
+  c.dead = true;
+  c.queue = [];
+  c.tail = null;
+  c.coins = [];
+  c.relics = [];
+  c.win = null;
+  saveClimbs();
+  if (c === climb) emit('notCounting', why);
+}
+export function runCoin(i) { if (counting()) climb.coins.push(i); }
+export function runRelic(id) { if (counting()) { climb.relics.push(id); sealNow(); } }
 export function runWin(falls) {
-  if (!climb) return;
+  if (!counting()) return;
   climb.win = { falls: Number.isFinite(falls) ? falls : 1 };
-  report();
+  sealNow();
 }
+function sealNow() { if (rec) rec.seal(); }
 export function runEnd() {
+  sealNow();
+  rec = null;
   if (climb) climb.live = false;
   climb = null;
   saveClimbs();
   return report();
 }
 
-function reportSoon() {
-  if (!reportTimer) reportTimer = setTimeout(() => { reportTimer = 0; report(); }, REPORT_AFTER);
+function reportSoon(ms = REPORT_AFTER) {
+  if (!reportTimer) reportTimer = setTimeout(() => { reportTimer = 0; report(); }, ms);
 }
-// One at a time, and anything that turned up meanwhile goes straight after. Coins the server says are too quick to count
-// yet stay here and go again in a moment.
+// One at a time, and anything that turned up meanwhile goes straight after.
 export function report() {
   if (reporting) { again = true; return reporting; }
-  if (!account() || needsTerms || !climbs.length) return Promise.resolve(true);
+  if (!account() || needsTerms || ban || !climbs.length) return Promise.resolve(true);
   clearTimeout(reportTimer);
   reportTimer = 0;
   reporting = (async () => {
@@ -329,46 +464,129 @@ export function report() {
   })().finally(() => { reporting = null; });
   return reporting;
 }
+// What was left from last time: the bit played after the last whole chunk.
+function recoverTail(c) {
+  if (!c.tail || c.live) return;
+  const t = c.tail;
+  c.tail = null;
+  c.queue.push({ seq: c.seq++, start: t.start, n: t.n, fresh: t.fresh, resume: t.resume, raw: t.raw, data: null, claims: { coins: c.coins.splice(0), relics: c.relics.splice(0), win: c.win } });
+  c.win = null;
+  c.fresh = false;
+}
 async function sendClimbs() {
   let ok = true, wallet = null;
   for (const c of [...climbs]) {
     if (!account()) return false;
-    if (!c.live && Date.now() - c.t > RUN_MAX_AGE) { climbs.splice(climbs.indexOf(c), 1); continue; }
+    if (c.dead) { if (!c.live) climbs.splice(climbs.indexOf(c), 1); continue; }
+    recoverTail(c);
+    if (c.queue.some((q) => !q.data)) await packNext();
     if (!c.run) {
-      const s = await call('/api/run/start', { auth: true, body: { map: c.map, diff: c.diff, custom: c.custom } });
-      if (!s.ok || !s.json.run) { ok = false; break; }
-      c.run = s.json.run;
-    }
-    if (c.coins.length || c.relics.length || c.win) {
-      const sent = { coins: [...c.coins], relics: [...c.relics], win: c.win };
-      const r = await call('/api/run/report', { auth: true, body: { run: c.run, ...sent } });
-      // The server no longer knows this climb, an old save perhaps. What it found goes under a new one next time.
-      if (r.status === 404) { c.run = null; ok = false; continue; }
-      if (!r.ok) { ok = false; break; }
-      const done = new Set(r.json.accepted || []);
-      c.coins = c.coins.filter((i) => !done.has(i));
-      c.relics = c.relics.filter((x) => !sent.relics.includes(x));
-      if (sent.win) {
-        c.win = null;
-        if (r.json.win === 'too fast' || r.json.win === 'too many') emit('winRefused');
+      const s = await call('/api/run/start', { auth: true, body: { map: c.map, diff: c.diff, custom: false, rules: c.rules, mode: c.mode, name: c.name, build: SIM_BUILD } });
+      if (s.ok && s.json.run) c.run = s.json.run;
+      else {
+        // The server has to know about a climb from the start, or it can't believe how long it has been going.
+        if (Date.now() - c.t > START_GRACE) stopClimb(c, 'offline');
+        ok = false;
+        reportSoon(4000);
+        continue;
       }
-      if (r.json.capped) emit('dayLimit');
-      if (r.json.wallet) wallet = r.json.wallet;
     }
-    if (!c.live && !c.coins.length && !c.relics.length && !c.win) climbs.splice(climbs.indexOf(c), 1);
+    if (c.needSeq) {
+      const n = await call('/api/run/chunk', { auth: true, body: { run: c.run, build: SIM_BUILD } });
+      if (n.status === 404) { stopClimb(c, 'save'); continue; }
+      if (!n.ok || !Number.isInteger(n.json.next)) { ok = false; break; }
+      if (n.json.stop) { stopClimb(c, n.json.stop); continue; }
+      let seq = n.json.next;
+      for (const q of c.queue) q.seq = seq++;
+      c.seq = seq;
+      c.needSeq = false;
+    }
+    while (c.queue.length && c.queue[0].data) {
+      const q = c.queue[0];
+      const r = await call('/api/run/chunk', { auth: true, keepalive: q.data.length < 50000, body: { run: c.run, seq: q.seq, build: SIM_BUILD, start: q.start, n: q.n, fresh: q.fresh || undefined, resume: q.resume === null ? undefined : q.resume, data: q.data, coins: q.claims.coins, relics: q.claims.relics, win: q.claims.win } });
+      if (r.status === 404) { stopClimb(c, 'save'); break; }
+      if (!r.ok) { ok = false; reportSoon(); break; }
+      if (r.json.wallet) wallet = r.json.wallet;
+      if (r.json.capped) emit('dayLimit');
+      if (r.json.stop) { stopClimb(c, r.json.stop); break; }
+      c.queue.shift();
+      if (r.json.winResult === 'too fast' || r.json.winResult === 'too many') emit('winRefused');
+      saveClimbs();
+    }
+    if (!ok) break;
+    if (!c.live && !c.queue.length && !c.tail) climbs.splice(climbs.indexOf(c), 1);
   }
   saveClimbs();
   if (wallet) haveWallet(wallet);
-  if (climbs.some((c) => c.coins.length || c.relics.length || c.win)) reportSoon();
   return ok;
+}
+
+// ---------------------------------------------------------------- about this phone
+// A number that stays with this phone and means nothing anywhere else, and what the app's own checks found (Guard.java).
+export function deviceId() {
+  if (N && N.deviceId) { const d = N.deviceId(); if (d) return d; }
+  let d = store.get('deviceId', '');
+  if (!d) {
+    d = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    store.set('deviceId', d);
+  }
+  return d;
+}
+const guardNow = () => {
+  try { return N && N.guard ? JSON.parse(N.guard()) : {}; } catch (e) { return {}; }
+};
+let lastGuard = '';
+let deviceTimer = 0;
+export async function reportDevice() {
+  if (!account() || ban) return;
+  const guard = guardNow(), text = JSON.stringify(guard);
+  if (text === lastGuard) return;
+  const r = await call('/api/device', { auth: true, body: { device: deviceId(), guard } });
+  if (r.ok) lastGuard = text;
+}
+// Asking the phone's secure hardware to vouch for it, once each time the game starts. It takes a moment, so the phone calls back.
+window.SMU_attested = async (text) => {
+  let a;
+  try { a = JSON.parse(text); } catch (e) { return; }
+  if (!account()) return;
+  await call('/api/device', { auth: true, body: { device: deviceId(), guard: guardNow(), attest: a } });
+};
+async function attestNow() {
+  if (!N || !N.attestStart || !account() || ban) return;
+  const c = await call('/api/attest/challenge', { auth: true, body: {} });
+  if (c.ok && c.json.challenge) N.attestStart(c.json.challenge);
+}
+function watchDevice() {
+  // Asking starts the checks, which take a moment. The answer goes a little later, and whenever it changes.
+  guardNow();
+  setTimeout(reportDevice, 6000);
+  attestNow();
+  clearInterval(deviceTimer);
+  deviceTimer = setInterval(reportDevice, 120000);
+}
+
+// ---------------------------------------------------------------- news from the server
+// A message from the admins, shown once, and whether the server is closed for the moment.
+export async function checkNews() {
+  const info = await getInfo();
+  if (!info) return;
+  emit('maintenance', info.maintenance || '');
+  if (info.announce && info.announce.id !== store.get('news.seen', '')) {
+    store.set('news.seen', info.announce.id);
+    emit('announce', info.announce.text);
+  }
 }
 
 // ---------------------------------------------------------------- leaving
 function forget() {
   clearTimeout(reportTimer);
   reportTimer = 0;
+  clearInterval(deviceTimer);
+  lastGuard = '';
   climbs = [];
   climb = null;
+  rec = null;
+  ban = null;
   store.del('wallet.climbs');
   if (timer) { clearTimeout(timer); timer = 0; }
   acct = null;
@@ -386,11 +604,18 @@ function backToGuest() {
   if (g && g.solo) store.set('save.solo', g.solo); else store.del('save.solo');
   store.del('guest');
   muted = false;
+  const a = store.get('guestAcct', null);
+  if (a && a.server === serverUrl()) {
+    acct = a;
+    store.set('account', acct);
+    refreshWallet();
+    watchDevice();
+  }
   emit('changed');
 }
 // First make sure everything has reached the server, unless told to go anyway.
 export async function signOut(force) {
-  if (!account()) return true;
+  if (!account() || isGuest()) return true;
   if (!force) {
     const sent = await report();
     if (!(await syncNow()) || !sent) return false;
@@ -400,9 +625,10 @@ export async function signOut(force) {
   backToGuest();
   return true;
 }
-// Someone who won't accept new terms just leaves. The account stays on the server.
+// Someone who won't accept new terms just leaves. The account stays on the server. A guest stays too, and plays without coins.
 export async function declineTerms() {
   if (!account()) return;
+  if (isGuest()) { forget(); emit('changed'); return; }
   await call('/api/logout', { auth: true, method: 'POST', body: {}, timeout: 5000 });
   forget();
   backToGuest();
@@ -412,7 +638,9 @@ export async function deleteAccount() {
   if (!account()) return false;
   const r = await call('/api/me', { auth: true, method: 'DELETE' });
   if (!r.ok) return false;
+  const wasGuest = isGuest();
   forget();
+  if (wasGuest) store.del('guestAcct');
   backToGuest();
   return true;
 }

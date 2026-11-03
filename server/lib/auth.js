@@ -35,9 +35,10 @@ const VERIFIER = /^[A-Za-z0-9_-]{43,128}$/;
 const STEAM_ID = /^https?:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
 
 class Auth {
-  constructor(cfg, db, termsVersion) {
+  constructor(cfg, db, termsVersion, admin) {
     this.cfg = cfg;
     this.db = db;
+    this.admin = admin;
     this.termsVersion = termsVersion;
     this.urls = Object.assign({}, URLS, cfg.devUrls || {});
     this.states = new Map();
@@ -91,7 +92,7 @@ class Auth {
   }
 
   // The browser came back from the provider. Returns { code, name } to send on to the app, or { err }.
-  async finish(provider, query) {
+  async finish(provider, query, ip) {
     const state = String(query.get('state') || ''), pending = this.states.get(state);
     // A state works once, for the provider it was made for.
     if (!pending || pending.exp < Date.now() || pending.provider !== provider) return { err: 'That sign in has expired. Please start again from the game.' };
@@ -105,7 +106,15 @@ class Auth {
     }
     if (!who) return { err: 'Sign in was cancelled. You can go back to the game.' };
     const name = cleanText(who.name, 32) || 'Climber';
+    // Someone banned can't get back in by deleting the account and signing in again.
+    const banned = this.admin && (this.admin.banForIdentity(provider, who.subject) || this.admin.banRow('ip', ip));
+    if (banned) return { err: `You are banned from this server. Reason: ${banned.reason}` };
+    const isNew = !this.db.q.identity.get(provider, who.subject);
     const userId = this.db.signIn(provider, who.subject, name, this.termsVersion);
+    if (this.admin) {
+      this.admin.seen(userId, ip);
+      this.admin.notify.signin({ user: this.db.user(userId), provider, ip, isNew });
+    }
     if (this.codes.size >= MAX_PENDING) this.clean();
     const code = token();
     this.codes.set(code, { userId, challenge: pending.challenge, exp: Date.now() + CODE_TTL });

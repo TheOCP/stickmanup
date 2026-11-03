@@ -11,12 +11,14 @@ class Q(http.server.SimpleHTTPRequestHandler):
 srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Q, directory=str(ROOT)))
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 A, B, X, Y, LB, RB, LT, RT, SELECT, START, L3, R3, UP, DOWN, LEFT, RIGHT = range(16)
+from testserver import TestServer
+TS = TestServer()
 STUB = """
 window.__pad = { id: 'Test Controller', mapping: 'standard', connected: true, axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), index: 0 };
 Object.defineProperty(navigator, 'getGamepads', { value: () => [window.__pad] });
-localStorage.setItem('smu.settings', JSON.stringify({ quality: 'high', map: 0, name: 'Ana', tips: false, cap: 60 }));
-if (!localStorage.getItem('smu.profile')) localStorage.setItem('smu.profile', JSON.stringify({ coins: 5000, earned: 5000, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }));
-"""
+localStorage.setItem('smu.settings', JSON.stringify({ quality: 'high', map: 0, name: 'Ana', tips: false, cap: 60, server: '%s' }));
+localStorage.setItem('smu.welcomed2', '1');
+""" % TS.url
 fails = []
 def check(name, ok, info=""):
     print(("PASS " if ok else "FAIL ") + name + (f"  [{info}]" if info and not ok else ""), flush=True)
@@ -30,6 +32,8 @@ with sync_playwright() as p:
     pg.add_init_script(STUB)
     pg.goto(f"http://127.0.0.1:{srv.server_port}/index.html?native=rec")
     pg.wait_for_function("window.SMU && SMU.pool && SMU.pool.warm === 0", timeout=120000)
+    TS.enter(pg, coins=5000)
+    pg.evaluate("SMU.title && SMU.title()")
     def frames(n=4): pg.evaluate("n => new Promise((r) => { const f = () => (--n <= 0 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); })", n)
     def hold(i, on=True): pg.evaluate("([i, on]) => { __pad.buttons[i].pressed = on; __pad.buttons[i].value = on ? 1 : 0; }", [i, on])
     def press(i):

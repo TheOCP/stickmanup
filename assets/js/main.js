@@ -792,9 +792,10 @@ async function accountScreen(back = title) {
       <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>Player #${a.user.num}</small></div>
       <p class="sub" style="margin-top:10px">Your coins and items are safe on the server, but only this phone can reach them. Sign in to keep them on an account: they move there, and work on any phone.</p>
       ${prov.length ? `<div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}">Sign in with ${names[p]}</button>`).join('')}</div>` : ''}
-      <button class="btn sm" data-a="back" style="margin-top:9px">Back</button>
+      <div class="row" style="margin-top:9px"><button class="btn sm" data-a="back">Back</button><button class="btn sm" data-a="out">Sign out</button></div>
       <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my guest account</button></div>`, {
       back,
+      out: () => signOutFlow(back),
       login: async (b) => {
         app.afterLogin = back;
         await cloud.startLogin(b.dataset.p, info.termsVersion);
@@ -867,13 +868,19 @@ async function accountScreen(back = title) {
   });
 }
 
-async function signOutFlow(back) {
-  if (await cloud.signOut()) { ui.toast('Signed out. Your progress is safe on your account.', 'good'); return afterAccount(back); }
+async function signOutFlow(back, force) {
+  const guest = cloud.isGuest();
   app.screen = 'acctout';
+  // Something on screen right away, because the server can take a moment. It ends by itself within seconds, either way.
+  show('<div class="panel" style="width:min(420px,100%);text-align:center"><p style="margin:18px 0"><span class="spin"></span>&nbsp; Signing out...</p></div>');
+  if (await cloud.signOut(force)) {
+    ui.toast(guest ? 'Signed out. Play as guest to get your coins back.' : 'Signed out. Your progress is safe on your account.', 'good');
+    return afterAccount(back);
+  }
   show(`<div class="panel" style="width:min(460px,100%)">${header('Sign out')}<p class="sub">Could not reach the server to save your latest progress. If you sign out now, coins and records it hasn't got yet are lost.</p>
     <div class="row"><button class="btn primary sm" data-a="back">Stay signed in</button><button class="btn sm danger" data-a="force">Sign out anyway</button></div></div>`, {
     back: () => accountScreen(back),
-    force: async () => { await cloud.signOut(true); afterAccount(back); },
+    force: () => signOutFlow(back, true),
   });
 }
 function afterAccount(back) { app.afterLogin = null; back(); }

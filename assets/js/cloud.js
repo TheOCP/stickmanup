@@ -58,7 +58,12 @@ export const lastSaved = () => lastSync;
 async function call(path, o = {}) {
   const headers = {};
   if (o.body !== undefined) headers['Content-Type'] = 'application/json';
-  if (o.auth) headers.Authorization = 'Bearer ' + acct.token;
+  // Signed out while this was on its way: it is nobody's any more, and an answer to it says nothing about whoever is here now.
+  const who = acct;
+  if (o.auth) {
+    if (!who) return { ok: false, status: 0, json: {} };
+    headers.Authorization = 'Bearer ' + who.token;
+  }
   let r;
   try {
     r = await fetch(serverUrl() + path, { method: o.method || (o.body !== undefined ? 'POST' : 'GET'), headers, body: o.body !== undefined ? JSON.stringify(o.body) : undefined, keepalive: !!o.keepalive, signal: AbortSignal.timeout(o.timeout || 12000) });
@@ -68,7 +73,7 @@ async function call(path, o = {}) {
   let json = {};
   try { json = await r.json(); } catch (e) {}
   // The session is over. What the account has stays on the server until the next sign in.
-  if (r.status === 401 && o.auth && acct) {
+  if (r.status === 401 && o.auth && acct === who) {
     const wasGuest = isGuest();
     forget();
     if (wasGuest) store.del('guestAcct');
@@ -254,11 +259,13 @@ function soon() {
 
 // Send what is here, over the version last seen. If another phone got there first, merge the two and go again.
 async function send(data, keepalive) {
+  const who = acct;
   for (let k = 0; k < 3; k++) {
     const text = JSON.stringify(data);
     if (text === lastSent) return true;
     if (text.length > 480 * 1024) return false;
     const r = await call('/api/save', { auth: true, method: 'PUT', body: { rev: acct.rev, data }, keepalive: keepalive && text.length < 60000 });
+    if (acct !== who) return false;
     if (r.ok) {
       acct.rev = r.json.rev;
       store.set('account', acct);
@@ -266,7 +273,7 @@ async function send(data, keepalive) {
       lastSync = Date.now();
       return true;
     }
-    if (r.status !== 409 || !acct) return false;
+    if (r.status !== 409) return false;
     acct.rev = r.json.rev;
     data = r.json.data ? mergeData(data, r.json.data) : data;
     applyData(data);
@@ -293,8 +300,8 @@ export function syncNow() {
   if (busy) return busy;
   busy = (async () => {
     if (!account() || isGuest() || needsTerms) return false;
-    const g = await call('/api/save', { auth: true });
-    if (!g.ok || !acct) return false;
+    const who = acct, g = await call('/api/save', { auth: true });
+    if (!g.ok || acct !== who) return false;
     acct.rev = g.json.rev;
     const local = localData(), data = g.json.data ? mergeData(local, g.json.data) : local;
     if (g.json.data) applyData(data);
@@ -484,6 +491,7 @@ function recoverTail(c) {
   c.fresh = false;
 }
 async function sendClimbs() {
+  const who = acct;
   let ok = true, wallet = null;
   for (const c of [...climbs]) {
     if (!account()) return false;
@@ -527,7 +535,7 @@ async function sendClimbs() {
     if (!c.live && !c.queue.length && !c.tail) climbs.splice(climbs.indexOf(c), 1);
   }
   saveClimbs();
-  if (wallet) haveWallet(wallet);
+  if (wallet && acct === who) haveWallet(wallet);
   return ok;
 }
 
@@ -659,14 +667,29 @@ function backToGuest() {
   }
   emit('changed');
 }
-// First make sure everything has reached the server, unless told to go anyway.
+// First make sure everything has reached the server, unless told to go anyway. That can't take forever: past this, the player
+// gets asked. A banned player, or one with new terms to accept, can't send anything, so there's nothing to wait for.
+const LEAVE_WAIT = 8000;
 export async function signOut(force) {
-  if (!account() || isGuest()) return true;
-  if (!force) {
-    const sent = await report();
-    if (!(await syncNow()) || !sent) return false;
+  const me = account();
+  if (!me) return true;
+  const guest = isGuest();
+  if (!force && !ban && !needsTerms) {
+    const saved = (async () => {
+      const sent = await report();
+      return (guest || (await syncNow())) && sent;
+    })().catch(() => false);
+    const ok = await Promise.race([saved, new Promise((done) => setTimeout(done, LEAVE_WAIT, false))]);
+    // The server may have ended the session meanwhile, and then this is already done.
+    if (!ok) return acct !== me;
   }
-  await call('/api/logout', { auth: true, method: 'POST', body: {} });
+  // A guest's session stays good on the server: Play as guest picks the same one up again, coins and all.
+  if (guest) {
+    forget();
+    haveWallet({ coins: 0, earned: 0, own: [], relics: [], ach: [], role: '' });
+    return true;
+  }
+  await call('/api/logout', { auth: true, method: 'POST', body: {}, timeout: 5000 });
   forget();
   backToGuest();
   return true;

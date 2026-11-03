@@ -386,4 +386,7 @@ export default [
   ["This friend needs the newest version of the game to be watched.", "Este amigo necesita la versión más reciente del juego para que lo vean.", "Este amigo precisa da versão mais recente do jogo para ser assistido.", "Cet ami doit avoir la dernière version du jeu pour qu'on le regarde.", "Dieser Freund braucht die neueste Spielversion, damit man zuschauen kann.", "Чтобы смотреть за этим другом, ему нужна последняя версия игры.", "Bu arkadaşının izlenebilmesi için oyunun en yeni sürümü gerekiyor."],
   ["The climb you were watching has ended.", "La escalada que veías ha terminado.", "A escalada que você assistia terminou.", "L'ascension que tu regardais est terminée.", "Der Aufstieg, dem du zugeschaut hast, ist vorbei.", "Подъём, за которым ты смотрел, закончился.", "İzlediğin tırmanış bitti."],
   ["Bad request", "Solicitud incorrecta", "Pedido inválido", "Demande invalide", "Ungültige Anfrage", "Неверный запрос", "Geçersiz istek"],
+  // Signing out
+  ["Signing out...", "Cerrando sesión...", "Saindo...", "Déconnexion...", "Abmelden...", "Выход...", "Çıkış yapılıyor..."],
+  ["Signed out. Play as guest to get your coins back.", "Sesión cerrada. Juega como invitado para recuperar tus monedas.", "Você saiu. Jogue como convidado para recuperar suas moedas.", "Déconnecté. Joue en invité pour récupérer tes pièces.", "Abgemeldet. Spiele als Gast, um deine Münzen zurückzubekommen.", "Ты вышел. Играй как гость, чтобы вернуть монеты.", "Çıkış yapıldı. Altınlarını geri almak için misafir olarak oyna."],
 ];

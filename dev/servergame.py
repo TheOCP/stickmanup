@@ -546,7 +546,7 @@ with sync_playwright() as p:
     gus.wait_for_function("document.querySelector('#menu').textContent.includes('You are banned')", timeout=8000)
     check("a banned player is told why, with their number", "Flying around" in text(gus) and f"#{gacct['user']['num']}" in text(gus), text(gus)[:300])
     gus.screenshot(path=str(out / "banned.png"))
-    check("and every mode is grayed out", gus.evaluate("[...document.querySelectorAll('.mainbtns [data-a=solo], .mainbtns [data-a=host], .mainbtns [data-a=join], .mainbtns [data-a=shop]')].every((b) => b.disabled)"))
+    check("and every mode is grayed out", gus.evaluate("[...document.querySelectorAll('.mainbtns [data-a=solo], .mainbtns [data-a=host], .mainbtns [data-a=join], .mainbtns [data-a=shop]')].every((b) => b.getAttribute('aria-disabled') === 'true')"))
     gus.close()
     # A message from the admins.
     db("INSERT INTO settings (k, v) VALUES ('announce', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", json.dumps({"id": "a1", "text": "Event tonight!", "until": 0}))

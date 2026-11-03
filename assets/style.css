@@ -440,7 +440,8 @@ body.pad .set { grid-template-columns: 1fr; }
 /* Two buttons side by side, one of them on two lines: both labels stay in the middle. */
 .row > .btn.sm { display: flex; align-items: center; justify-content: center; }
 /* Banned: every way into the game is grayed out, and the reason is the first thing on the screen. */
-.title.banned .mainbtns .btn[disabled] { filter: grayscale(1); opacity: 0.32; }
+.title.banned .mainbtns .btn[aria-disabled="true"] { filter: grayscale(1); opacity: 0.45; }
+.title.banned .mainbtns .btn[aria-disabled="true"] small { color: #ffd6da; }
 .bancard { margin: 12px 0 6px; padding: 14px 16px; max-width: 460px; color: #ffe1e4; background: rgba(40, 8, 14, 0.92); border: 1px solid rgba(255, 75, 95, 0.8); border-radius: 12px; }
 .bancard b { display: block; font-size: 20px; color: #ff8a97; }
 .bancard p { margin: 6px 0; font-size: 15px; line-height: 1.35; }

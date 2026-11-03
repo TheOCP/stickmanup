@@ -395,6 +395,14 @@ function banCard(ban) {
   return `<div class="bancard"><b>You are banned</b><p>Reason: ${esc(ban.reason) || 'No reason given'}</p><small>${until}${ban.num ? ` · Player #${ban.num}` : ''}</small></div>`;
 }
 
+// Banned: everything still answers when pressed, to say why it won't open. The checks inside those screens stay as well.
+function lockedIf(ban, h) {
+  if (!ban) return h;
+  const no = () => ui.toast(`You can't use this because you are banned. Reason: ${ban.reason || 'No reason given'}`, 'bad');
+  for (const k of ['cont', 'solo', 'host', 'join', 'browser', 'shop', 'records', 'settings', 'how', 'donate']) h[k] = no;
+  return h;
+}
+
 function title() {
   app.screen = 'title';
   const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map], acct = cloud.account();
@@ -407,7 +415,8 @@ function title() {
   }
   const ban = cloud.banned();
   // Banned: every way into the game is grayed out. Account stays, because the terms promise everyone can delete their data there.
-  const off = ban ? ' disabled' : '';
+  const off = ban ? ' aria-disabled="true"' : '';
+  const why = ban ? `Banned: ${esc(ban.reason || 'No reason given')}` : '';
   const notice = ban ? '' : app.maintenance ? `<p class="notice warn">${esc(app.maintenance)}</p>` : app.announcement ? `<p class="notice">${esc(app.announcement)}</p>` : '';
   show(`<div class="title${ban ? ' banned' : ''}">
     <div class="brand">
@@ -419,14 +428,14 @@ function title() {
       ${ban ? '' : `<button class="btn sm donate" data-a="donate">♥ Donate</button>`}
     </div>
     <div class="mainbtns">
-      ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
-      <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
-      <button class="btn" data-a="host"${off}><b>Host a game</b><small>Server, online, WiFi or Bluetooth</small></button>
-      <button class="btn" data-a="join"${off}><b>Join a game</b><small>Room code or a game nearby</small></button>
+      ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${ban ? why : `${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}`}</small></button>` : ''}
+      <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>${ban ? why : `Pick a map and practise on your own`}</small></button>
+      <button class="btn" data-a="host"${off}><b>Host a game</b><small>${ban ? why : `Server, online, WiFi or Bluetooth`}</small></button>
+      <button class="btn" data-a="join"${off}><b>Join a game</b><small>${ban ? why : `Room code or a game nearby`}</small></button>
       <div class="row"><button class="btn sm" data-a="browser"${off}>Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</button></div>
       <div class="row"><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records"${off}>Records</button></div>
       <div class="row"><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
-    </div></div>`, {
+    </div></div>`, lockedIf(ban, {
     shop: () => { app.screen = 'shop'; openShop(shopCtx, title); },
     records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
     cont: () => startSolo(save.map || 0, save.diff, save),
@@ -439,7 +448,7 @@ function title() {
     settings: () => settingsScreen(title),
     how: () => howTo(title),
     back: () => { if (N && N.exit) N.exit(); },
-  }, false);
+  }), false);
 }
 
 function diffCards(sel) {

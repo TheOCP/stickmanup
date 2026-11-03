@@ -12,14 +12,17 @@ const { generateLevel, MAPS, DIFFS } = await import('../assets/js/level.js');
 const { SUITS, FACES, HATS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
 
-const items = {};
-for (const it of [...SUITS, ...FACES, ...HATS, ...EMOTES]) {
-  // Only what the shop sells: free things need no buying, and legendaries can't be bought.
-  if (!(it.price > 0) || it.relic || it.ach) continue;
+const items = {}, names = {};
+for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...EMOTES]) {
+  // Free things everybody has already. All the rest can be given by the bot, except the team suits: those go with a flag.
+  if (it.price === 0) continue;
   const key = itemKey(it);
-  if (items[key] !== undefined) throw new Error(`${key} is on sale twice`);
-  items[key] = it.price;
+  if (names[key] !== undefined) throw new Error(`${key} is in the game twice`);
+  names[key] = it.name;
+  // Only what the shop sells has a price: legendaries can't be bought.
+  if (it.price > 0 && !it.relic && !it.ach) items[key] = it.price;
 }
+const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
 const maps = MAPS.map((M) => {
   const L = generateLevel(M.id);
   L.coins.forEach((c, i) => { if (c.i !== i) throw new Error(`coin numbers on ${M.key} have holes`); });
@@ -28,7 +31,7 @@ const maps = MAPS.map((M) => {
 const relicCount = LEGENDS.filter((l) => l.relic).length;
 // Which flags may wear the team suits.
 const team = Object.fromEntries(OWNERS.map((o) => [o.id, o.team]));
-const catalog = { team, items: Object.fromEntries(Object.entries(items).sort(([a], [b]) => (a < b ? -1 : 1))), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount };
+const catalog = { team, items: sorted(items), names: sorted(names), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount };
 
 const file = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server/lib/catalog.json');
 const text = JSON.stringify(catalog) + '\n';

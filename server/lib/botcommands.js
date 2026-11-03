@@ -46,7 +46,7 @@ const COMMANDS = [
   cmd('items', 'What a player owns', PLAYER),
   cmd('giveitem', 'Give an item to a player', PLAYER, ITEM, REASON(false)),
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
-  cmd('catalog', 'What is on sale, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 }),
+  cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 }),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),
   // Climbs
   cmd('climbs', 'A player\'s last climbs and what the rerun found', PLAYER, COUNT),
@@ -316,23 +316,27 @@ const RUN = {
   giveitem(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const item = opt(d, 'item'), said = opt(d, 'reason'), why = said || 'no reason given';
-    if (!Object.hasOwn(ctx.s.wallet.catalogItems(), item)) return ctx.reply('That item is not in the catalog. Try /catalog.', { color: 'warn' });
+    const found = ctx.s.wallet.findItem(opt(d, 'item')), said = opt(d, 'reason'), why = said || 'no reason given';
+    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${esc(k)}\``).join(', ')}`, { color: 'warn' });
+    if (!found.key) return ctx.reply('That item is not in the catalog. Try /catalog. The Hacker and GG Girl go with a flag: use /setrole.', { color: 'warn' });
+    const item = found.key, name = ctx.s.wallet.itemName(item);
     if (!ctx.s.wallet.giveItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} already has that.`, { color: 'warn' });
-    tell(ctx, u, `You got a new item: ${item}.`, said);
-    return done(ctx, 'giveitem', `${item} to ${playerLine(u)}: ${why}`, `Gave ${esc(item)} to ${line(u)}.${withWhy(said)}`);
+    tell(ctx, u, `You got a new item: ${name}.`, said);
+    return done(ctx, 'giveitem', `${item} to ${playerLine(u)}: ${why}`, `Gave ${esc(name)} to ${line(u)}.${withWhy(said)}`);
   },
   takeitem(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const item = opt(d, 'item'), said = opt(d, 'reason'), why = said || 'no reason given';
+    const text = opt(d, 'item'), found = ctx.s.wallet.findItem(text), said = opt(d, 'reason'), why = said || 'no reason given';
+    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${esc(k)}\``).join(', ')}`, { color: 'warn' });
+    const item = found.key || text, name = ctx.s.wallet.itemName(item);
     if (!ctx.s.wallet.takeItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} does not have that.`, { color: 'warn' });
-    tell(ctx, u, `An item was taken from you: ${item}.`, said);
-    return done(ctx, 'takeitem', `${item} from ${playerLine(u)}: ${why}`, `Took ${esc(item)} from ${line(u)}.${withWhy(said)}`);
+    tell(ctx, u, `An item was taken from you: ${name}.`, said);
+    return done(ctx, 'takeitem', `${item} from ${playerLine(u)}: ${why}`, `Took ${esc(name)} from ${line(u)}.${withWhy(said)}`);
   },
   catalog(ctx, d) {
-    const q = String(opt(d, 'search') || '').toLowerCase(), all = Object.entries(ctx.s.wallet.catalogItems()).filter(([k]) => k.toLowerCase().includes(q));
-    return ctx.reply(`${all.length} items\n${all.slice(0, 80).map(([k, v]) => `\`${esc(k)}\` ${n0(v)}`).join(', ')}${all.length > 80 ? '\nAnd more: search for part of a name.' : ''}`);
+    const q = String(opt(d, 'search') || '').toLowerCase(), all = ctx.s.wallet.catalogList().filter(([k, name]) => k.toLowerCase().includes(q) || name.toLowerCase().includes(q));
+    return ctx.reply(`${all.length} items\n${all.slice(0, 60).map(([k, name, price]) => `${esc(name)} \`${esc(k)}\` ${price ? n0(price) : 'not for sale'}`).join(', ')}${all.length > 60 ? '\nAnd more: search for part of a name.' : ''}`);
   },
   dailycap(ctx, d) {
     const a = opt(d, 'amount');
@@ -733,7 +737,7 @@ function suggest(s, data) {
   }
   if (focus.name === 'item') {
     const q = text.toLowerCase();
-    return Object.keys(s.wallet.catalogItems()).filter((k) => k.toLowerCase().includes(q)).slice(0, 25).map((k) => ({ name: k.slice(0, 100), value: k }));
+    return s.wallet.catalogList().filter(([k, name]) => k.toLowerCase().includes(q) || name.toLowerCase().includes(q)).slice(0, 25).map(([k, name]) => ({ name: `${name} (${k})`.slice(0, 100), value: k }));
   }
   if (focus.name === 'command') {
     const q = text.toLowerCase();

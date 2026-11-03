@@ -86,8 +86,9 @@ function thumbFor(item) {
 // ---------------------------------------------------------------- the shop
 const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['legend', 'Legendary']];
 const listFor = (tab) => {
-  if (tab === 'faces') return FACES.filter((f) => !f.hidden);
-  if (tab === 'hats') return HATS.filter((f) => !f.hidden);
+  // What's hidden from the shop still shows for someone who was given it.
+  if (tab === 'faces') return FACES.filter((f) => !f.hidden || owned(f));
+  if (tab === 'hats') return HATS.filter((f) => !f.hidden || owned(f));
   if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
   if (tab === 'legend') return [...OWNERS.filter((o) => owned(o)), ...LEGENDS];
   return SUITS.filter((s) => s.tab === tab);

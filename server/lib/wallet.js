@@ -164,7 +164,7 @@ class Wallet {
     });
   }
   giveItem(id, item, why) {
-    if (!Object.hasOwn(catalog.items, item)) return false;
+    if (!Object.hasOwn(catalog.names, item)) return false;
     return this.tx(() => {
       const w = this.load(id);
       if (w.own.includes(item)) return false;
@@ -190,7 +190,18 @@ class Wallet {
     for (const r of this.q.allIds.all()) { this.adjust(r.user_id, delta, why); n++; }
     return n;
   }
-  catalogItems() { return catalog.items; }
+  // All that can be given, as [key, name, price], with what is not for sale first. A price of 0 means it can't be bought.
+  catalogList() {
+    return Object.entries(catalog.names).map(([k, name]) => [k, name, catalog.items[k] || 0]).sort((a, b) => (a[2] ? 1 : 0) - (b[2] ? 1 : 0) || a[1].localeCompare(b[1]));
+  }
+  itemName(item) { return Object.hasOwn(catalog.names, item) ? catalog.names[item] : item; }
+  // By its key or by its name. Some names are shared, like a suit and a face both called Ninja.
+  findItem(text) {
+    const t = String(text || '').trim();
+    if (Object.hasOwn(catalog.names, t)) return { key: t };
+    const low = t.toLowerCase(), hits = Object.keys(catalog.names).filter((k) => catalog.names[k].toLowerCase() === low);
+    return hits.length === 1 ? { key: hits[0] } : hits.length ? { many: hits } : {};
+  }
   get mapNames() { return catalog.maps.map((m) => m.key); }
   // Does this person really own what they are wearing? Free things and things earned another way aren't on sale.
   // What someone is wearing, by the names the shop sells it under. Faces and hats that share a name with a suit are told apart.

@@ -177,7 +177,7 @@ those channels private. The bot gets every message in the channels it can see, b
 and it stores none of them.
 
 * **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer`
-* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap`
+* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`.
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
 * **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`

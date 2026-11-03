@@ -101,14 +101,15 @@ export function addCoins(n) { P.coins += n; P.earned += n; saveSoon(); return P.
 // The flag the server last gave you. Changing it on the phone changes nothing for anyone else: the server writes those itself.
 export const myRole = () => cleanRole(P.role);
 
-// Do you have this thing? Free things yes; legendaries by finding or earning them; the team suits with a flag from the
-// server; everything else by buying.
+// Do you have this thing? The team suits only with a flag from the server; whatever you bought or an admin gave you, yes;
+// free things yes; legendaries by finding or earning them.
 export function owned(item) {
   if (item.team) return item.team.includes(myRole());
+  if (P.own.includes(itemKey(item))) return true;
   if (item.price === 0) return true;
   if (item.relic) return P.relics.includes(item.relic);
   if (item.ach) return P.ach.includes(item.ach);
-  return P.own.includes(itemKey(item));
+  return false;
 }
 
 export function buy(item) {

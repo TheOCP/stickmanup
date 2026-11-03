@@ -49,7 +49,9 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
-if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
+// On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
+if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
+if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
 // The colour you picked before there were suits becomes your first suit.
 startLang(settings.lang);
 initProfile(settings.color);
@@ -1009,7 +1011,9 @@ function settingsScreen(back) {
   show(`<div class="panel">${header('Settings')}<div class="set">
     <h3>Graphics</h3>
     <label class="full">Preset${seg('quality', [['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']])}</label>
+    ${ON_PC ? `<label>Frame rate (fps)${seg('cap', [[60, '60'], [90, '90'], [120, '120'], [144, '144']])}</label>` : ''}
     ${canFullscreen() ? '<button class="btn sm" data-a="full">Fullscreen</button>' : ''}
+    ${ON_PC ? `<p class="sub full" style="margin:0">Your screen sets the real limit: a 60 Hz screen shows 60 frames a second, whatever you pick here.</p>` : ''}
     ${nat ? `<label>Resolution ${val('res', '%')}${range('res', 0.5, 1, 0.05, '%')}</label>
     <label>Sharpness ${val('sharp', '%')}${range('sharp', 0, 1, 0.05, '%')}</label>
     <label>Glow ${val('glow', '%')}${range('glow', 0, 1.5, 0.05, '%')}</label>

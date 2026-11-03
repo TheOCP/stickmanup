@@ -5,6 +5,7 @@
 
 const PLAYER = { type: 3, name: 'player', description: 'Name, #number or ID', required: true, autocomplete: true };
 const REASON = (required) => ({ type: 3, name: 'reason', description: 'Why', required, max_length: 300 });
+const { DEFAULT_WELCOME } = require('./community');
 const COUNT = { type: 4, name: 'count', description: 'How many to show', required: false, min_value: 1, max_value: 50 };
 const PAGE = { type: 4, name: 'page', description: 'Which page', required: false, min_value: 1, max_value: 100000 };
 const AMOUNT = { type: 4, name: 'amount', description: 'How many coins', required: true, min_value: 1, max_value: 100000000 };
@@ -80,6 +81,12 @@ const COMMANDS = [
   cmd('backup', 'Make a backup of everything now'),
   cmd('audit', 'What the admins did lately', COUNT),
   cmd('admins', 'Who may use the bot'),
+  cmd('welcome', 'Where to say who joined and who left, or see how it is set', { type: 7, name: 'channel', description: 'The channel for joins, and for leaves unless given below', required: false, channel_types: [0, 5] }, { type: 7, name: 'leavechannel', description: 'Another channel for who left (optional)', required: false, channel_types: [0, 5] }, { type: 3, name: 'message', description: 'The welcome. {user} pings them, {name} is their name', required: false, max_length: 500 }, { type: 5, name: 'off', description: 'Turn these messages off', required: false }, { type: 5, name: 'test', description: 'Show both messages using you as the example', required: false }),
+  cmd('ticketsetup', 'Where tickets go and who answers them, or see how it is set', { type: 7, name: 'category', description: 'The category new ticket channels go in', required: false, channel_types: [4] }, { type: 7, name: 'logchannel', description: 'A private channel for finished tickets (otherwise the log channel)', required: false, channel_types: [0] }, { type: 8, name: 'staffrole', description: 'The role that sees and answers tickets', required: false }),
+  cmd('ticketpanel', 'Put the Open a ticket button in a channel', { type: 7, name: 'channel', description: 'The channel for the button', required: true, channel_types: [0, 5] }, { type: 3, name: 'text', description: 'What it says above the button', required: false, max_length: 1500 }),
+  cmd('tickets', 'List tickets: open ones, or for one person', { type: 3, name: 'status', description: 'Which tickets', required: false, choices: [{ name: 'open', value: 'open' }, { name: 'closed', value: 'closed' }, { name: 'all', value: 'all' }] }, { type: 6, name: 'user', description: 'All tickets of this person', required: false }, COUNT),
+  cmd('transcript', 'Post what was said in a ticket, as a file in the private channel', { type: 4, name: 'number', description: 'The ticket number', required: true, min_value: 1, max_value: 100000000 }),
+  cmd('closeticket', 'Close a ticket. Without a number, the one in this channel', { type: 4, name: 'number', description: 'The ticket number', required: false, min_value: 1, max_value: 100000000 }, REASON(false)),
 ];
 
 // ---------------------------------------------------------------- helpers
@@ -132,6 +139,18 @@ function banAll(ctx, u, cmdName, why, days, withIp, withPhone) {
   ctx.s.admin.ban({ userId: u.id, reason: why, by: ctx.whoShort, days, ip, device });
   const also = [device && 'phone', ip && 'address'].filter(Boolean);
   return done(ctx, cmdName, `${playerLine(u)}${days ? ` for ${days} days` : ''}: ${why}`, `Banned ${line(u)}${days ? ` for ${days} days` : ''}. Reason: ${esc(why)}${also.length ? `\nAlso banned: their ${also.join(' and ')}.` : ''}`);
+}
+
+// What takes a while and talks to Discord: say so first, and always come back with an answer.
+function safely(ctx, fn) {
+  return ctx.slow(async () => {
+    try {
+      return await fn();
+    } catch (e) {
+      console.error('bot: command failed:', e.message);
+      return 'That went wrong on the server. The server log has the details.';
+    }
+  });
 }
 
 const RUN = {
@@ -448,7 +467,7 @@ const RUN = {
   },
   status(ctx) {
     const s = ctx.s, m = process.memoryUsage(), b = ctx.bot.status(), v = s.verifier.stats, a = s.admin;
-    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting, ! commands ${b.bang ? 'on' : 'off'}${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
+    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting, ! commands ${b.bang ? 'on' : 'off'}, join and leave messages ${b.members ? 'on' : 'off'}${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
   },
   announce(ctx, d) {
     const text = opt(d, 'text');
@@ -478,6 +497,73 @@ const RUN = {
   },
   audit(ctx, d) {
     return ctx.reply(clip(ctx.s.admin.auditLog(opt(d, 'count') || 15).map((x) => `${when(x.at)} ${esc(x.who)} /${esc(x.cmd)}: ${esc(x.detail)}`), 'Nothing yet.'));
+  },
+  welcome(ctx, d) {
+    const c = ctx.bot.community, cfg = c.config('welcome'), ch = opt(d, 'channel'), leave = opt(d, 'leavechannel'), msg = opt(d, 'message');
+    if (opt(d, 'test') === true) {
+      if (!cfg.channel) return ctx.reply('Pick a channel first: /welcome channel', { color: 'warn' });
+      c.onJoin({ user: ctx.whoUser });
+      c.onLeave({ user: ctx.whoUser });
+      return ctx.reply(`Sent the examples to <#${cfg.channel}>${cfg.leave ? ` and <#${cfg.leave}>` : ''}.`);
+    }
+    if (opt(d, 'off') === true) {
+      c.setConfig('welcome', Object.assign(cfg, { channel: '', leave: '' }));
+      return done(ctx, 'welcome', 'off', 'Join and leave messages are off.');
+    }
+    if (ch === undefined && leave === undefined && msg === undefined) {
+      if (!cfg.channel) return ctx.reply('Join and leave messages are not set up. Use /welcome with a channel.');
+      return ctx.reply(`Joins go to <#${cfg.channel}>, leaves to <#${cfg.leave || cfg.channel}>.\nThe welcome says: ${esc(cfg.text || DEFAULT_WELCOME)}${ctx.bot.noMembers ? '\n**Nothing will be sent yet: turn on Server Members Intent in the Discord developer portal, then restart the server.**' : ''}`);
+    }
+    if (ch !== undefined) cfg.channel = ch;
+    if (leave !== undefined) cfg.leave = leave;
+    if (msg !== undefined) cfg.text = msg;
+    c.setConfig('welcome', cfg);
+    if (!cfg.channel) return ctx.reply('Saved, but it also needs a channel: /welcome with a channel.', { color: 'warn' });
+    return done(ctx, 'welcome', `joins <#${cfg.channel}>, leaves <#${cfg.leave || cfg.channel}>`, `Joins go to <#${cfg.channel}>, leaves to <#${cfg.leave || cfg.channel}>. Try it with the test option.${ctx.bot.noMembers ? '\n**Nothing will be sent yet: turn on Server Members Intent in the Discord developer portal, then restart the server.**' : ''}`);
+  },
+  ticketsetup(ctx, d) {
+    const c = ctx.bot.community, cfg = c.config('tickets'), cat = opt(d, 'category'), log = opt(d, 'logchannel'), role = opt(d, 'staffrole');
+    if (cat !== undefined) cfg.category = cat;
+    if (log !== undefined) cfg.log = log;
+    if (role !== undefined) cfg.staff = role;
+    const how = `New tickets go ${cfg.category ? `in <#${cfg.category}>` : 'outside any category'}.\nFinished tickets are posted in <#${cfg.log || ctx.bot.logChannel}>.\n${cfg.staff ? `<@&${cfg.staff}>` : 'Only people on the bot\'s admin list and Discord admins'} can see and answer them.`;
+    if (cat === undefined && log === undefined && role === undefined) return ctx.reply(how);
+    c.setConfig('tickets', cfg);
+    return done(ctx, 'ticketsetup', how.split('\n').join(' '), how);
+  },
+  ticketpanel(ctx, d) {
+    const ch = opt(d, 'channel'), text = opt(d, 'text');
+    return safely(ctx, async () => {
+      if (!(await ctx.bot.community.postPanel(ch, text))) return `Could not write in <#${ch}>. Can the bot see that channel and write in it?`;
+      ctx.s.admin.audit(ctx.who, 'ticketpanel', ch);
+      return `The ticket button is now in <#${ch}>.`;
+    });
+  },
+  tickets(ctx, d) {
+    const user = opt(d, 'user'), status = opt(d, 'status') || 'open';
+    const rows = ctx.bot.community.list({ user, status, count: opt(d, 'count') });
+    const text = rows.map((t) => `**${t.num}** ${t.closed_at ? 'closed' : t.channel_id ? `<#${t.channel_id}>` : 'being made'} ${esc(t.user_name)}, ${when(t.opened_at)}: ${esc(t.topic.slice(0, 60))}`);
+    return ctx.reply(`${user ? `Tickets of <@${user}>` : status === 'all' ? 'All tickets' : status === 'closed' ? 'Closed tickets' : 'Open tickets'}\n${clip(text, 'None.')}`);
+  },
+  transcript(ctx, d) {
+    const num = opt(d, 'number'), c = ctx.bot.community;
+    if (!c.ticket(num)) return ctx.reply(`There is no ticket ${num}.`, { color: 'warn' });
+    return safely(ctx, async () => {
+      if (!(await c.postTranscript(num))) return 'Could not post the file. The bot needs Attach Files in that channel.';
+      ctx.s.admin.audit(ctx.who, 'transcript', String(num));
+      return `Ticket ${num} is posted in <#${c.config('tickets').log || ctx.bot.logChannel}>.`;
+    });
+  },
+  closeticket(ctx, d) {
+    const num = opt(d, 'number'), c = ctx.bot.community, t = num !== undefined ? c.ticket(num) : c.ticketIn(ctx.channel);
+    if (!t) return ctx.reply(num !== undefined ? `There is no ticket ${num}.` : 'This channel is not a ticket. Give a number.', { color: 'warn' });
+    if (t.closed_at) return ctx.reply(`Ticket ${t.num} is already closed.`, { color: 'warn' });
+    const why = opt(d, 'reason') || '';
+    return safely(ctx, async () => {
+      if (!(await c.close(t, ctx.whoShort, why))) return `Ticket ${t.num} is already closed.`;
+      ctx.s.admin.audit(ctx.who, 'closeticket', `${t.num}: ${why}`);
+      return `Ticket ${t.num} is closed and saved.`;
+    });
   },
   admins(ctx) {
     return ctx.reply(`These Discord accounts may use the bot:\n${clip([...ctx.bot.admins].map((id) => `<@${id}> \`${id}\``), 'Nobody.')}\nChange the list with: install.sh --bot`);
@@ -523,6 +609,11 @@ function splitWords(line) {
   return out;
 }
 function checkValue(o, text) {
+  // A person, a channel or a role: as a mention or as a plain ID.
+  if (o.type === 6 || o.type === 7 || o.type === 8) {
+    const id = /^(?:<[@#]?[!&]?)?(\d{15,22})>?$/.exec(text);
+    return id ? { value: id[1] } : { err: `\`${o.name}\` has to be a mention or an ID.` };
+  }
   if (o.type === 5) {
     const v = text.toLowerCase();
     if (YES.has(v)) return { value: true };

@@ -582,7 +582,7 @@ async function main() {
   d.contentSwitchOff = true;
   const before3 = d.posts.length;
   await start();
-  const onlySlash = await until(() => d.lastIdentify && d.lastIdentify.intents === 0 && d.socket && d.socket.readyState === 1);
+  const onlySlash = await until(() => d.lastIdentify && (d.lastIdentify.intents & (1 << 15)) === 0 && d.socket && d.socket.readyState === 1);
   await wait(800);
   check('without the switch the bot reconnects without asking to read messages', !!onlySlash, d.lastIdentify);
   check('the log channel is told what to do', d.posts.slice(before3).some((p) => /Message Content Intent/.test(JSON.stringify(p.msg))));

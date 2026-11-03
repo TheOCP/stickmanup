@@ -508,7 +508,7 @@ setup_bot() {
   local v s app="" code tmp
   [ "$YES" = 1 ] || [ "$HAS_TTY" = 0 ] && return 0
   say "The Discord bot"
-  note "It writes every sign in and every cheater warning in a channel of yours, and gives you about 55 slash commands:"
+  note "It writes every sign in and every cheater warning in a channel of yours, and gives you over 60 slash commands:"
   note "bans with reasons, giving and taking coins, listing players, who played last, and more."
   note "It's optional, and the game works the same without it. Press Enter at the token to skip it."
   note "Add it later at any time with: install.sh --bot"
@@ -516,7 +516,8 @@ setup_bot() {
 
   1. https://discord.com/developers/applications
      New Application, then Bot. Press Reset Token and copy the token.
-     On the same page turn on Message Content Intent, for the ! commands.
+     On the same page turn on Message Content Intent and Server Members Intent,
+     for the ! commands, saving tickets, and join and leave messages.
   2. In Discord: User Settings, Advanced, turn on Developer Mode.
      Now a right click on a server, a channel or a person gives you Copy ID.
   3. Make a PRIVATE channel for the logs. They contain players' IP addresses.
@@ -543,7 +544,7 @@ EOF
       cat >&2 <<EOF
 
 The bot isn't on that server yet. Open this link and add it:
-  https://discord.com/oauth2/authorize?client_id=$app&scope=bot+applications.commands&permissions=19456
+  https://discord.com/oauth2/authorize?client_id=$app&scope=bot+applications.commands&permissions=117776
 
 EOF
     fi

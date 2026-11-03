@@ -6,7 +6,7 @@ One program that does all of this for the game:
 * **Accounts**: sign in with Discord, Steam or Google, plus accepting the terms
 * **Coins**: everyone's balance and what they own are held here and can't be changed from a phone (see below)
 * **Anticheat**: every climb that earns coins is played again here, with the game's own physics (see below)
-* **Discord bot**: logs sign ins and cheaters to your channels, and gives you about 55 commands (see below)
+* **Discord bot**: logs sign ins and cheaters to your channels, and welcomes people, runs support tickets, and gives you over 60 commands (see below)
 * **Database**: everyone's coins, items, records and saved climb, in one SQLite file
 
 It needs almost nothing: any Linux server with systemd, about 300 MB of memory, and Node 22, which the installer brings
@@ -151,7 +151,8 @@ a token it stays off, and everything else works the same.
 Setting it up:
 
 1. Go to https://discord.com/developers/applications, press New Application, then Bot, then Reset Token, and copy the token.
-   On the same page turn on Message Content Intent, or the `!` commands stay off. Everything else works without it.
+   On the same page turn on Message Content Intent (for the `!` commands and saving tickets) and Server Members Intent (for join
+   and leave messages). What needs a switch that is off stays off, and the bot says so in the log channel. Everything else works.
 2. In Discord: User Settings, Advanced, turn on Developer Mode. Now a right click gives you Copy ID on servers, channels and people.
 3. Make a **private** channel for the logs, because they contain players' IP addresses.
 4. Run the installer with `--bot`. It asks for the token, the server, the channels, and the Discord user IDs of the people
@@ -179,6 +180,27 @@ and it stores none of them.
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
 * **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`
+
+### Join and leave messages
+
+`/welcome channel:#join-leave` says who joined and who left in that channel. Add `leavechannel` to split them, and
+`message` to change the welcome, where `{user}` pings them and `{name}` is their name. `test:true` shows both messages using you.
+
+### Tickets
+
+1. `/ticketsetup` with a `category` for the channels, a `staffrole` that answers them, and a private `logchannel` for finished tickets.
+2. `/ticketpanel channel:#support` puts the button there. Anyone on your Discord server can press it.
+
+Each ticket gets the next number, which is never used again, and its own private channel called `ticket-12`. One person can
+have one open ticket, and has to wait a minute after opening one before opening the next. Closing it posts the whole
+conversation as a file in the private channel and removes the ticket channel.
+
+Tickets and what was said in them stay in the server's database for good, and the people using them are told so. `/tickets`
+lists them, `/tickets user:@someone` shows all of one person's, and `/transcript number:12` posts one again. Attached
+files are kept as a name and a link, and Discord's links stop working after a while.
+
+The bot needs Manage Channels, Attach Files and Read Message History for this. Invite it with this link, using your Application
+ID: `https://discord.com/oauth2/authorize?client_id=YOUR_ID&scope=bot+applications.commands&permissions=117776`
 
 ## The terms
 

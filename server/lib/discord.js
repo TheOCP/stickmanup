@@ -10,17 +10,22 @@
 const { WebSocket } = require('../vendor/ws');
 const crypto = require('node:crypto');
 const { COMMANDS, runCommand, runButton, runModal, suggest, playerLine, parseBang } = require('./botcommands');
+const { Community } = require('./community');
 
 const API = 'https://discord.com/api/v10';
 const GATEWAY = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const MAX_QUEUE = 500;
 const EPHEMERAL = 64;
 const NO_RETRY = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
-// Guild messages and their text, for the ! commands. The text needs a switch in Discord's developer portal.
+// Guild messages and their text, for the ! commands and the tickets, and members joining and leaving. Each needs a switch in
+// Discord's developer portal. If one is off Discord refuses the whole connection without saying which, so it tries less until it works.
 const MESSAGE_INTENTS = (1 << 9) | (1 << 15);
+const MEMBER_INTENTS = 1 << 1;
+const INTENT_TRIES = [MEMBER_INTENTS | MESSAGE_INTENTS, MESSAGE_INTENTS, MEMBER_INTENTS, 0];
 const DISALLOWED_INTENTS = 4014;
 const NO_COMMANDS = 'Could not set up the slash commands.';
-const BANG_OFF = 'The ! commands are off, because Discord says the bot may not read messages. To use them: in the Discord developer portal, open your application, then Bot, turn on Message Content Intent, and restart the server. Slash commands, logs and warnings all still work.';
+const BANG_OFF = 'The ! commands are off and tickets save less, because Discord says the bot may not read messages. To fix it: in the Discord developer portal, open your application, then Bot, turn on Message Content Intent, and restart the server. Slash commands, logs and warnings all still work.';
+const MEMBERS_OFF = 'Join and leave messages are off, because Discord says the bot may not see members. To fix it: in the Discord developer portal, open your application, then Bot, turn on Server Members Intent, and restart the server. Everything else still works.';
 const COLOR = { info: 0x3ff0d0, good: 0x4cd964, warn: 0xffb020, bad: 0xff3b5c, ban: 0xb0202c };
 
 // Names come from players. They can't be allowed to format messages, ping people or pretend to be something else.
@@ -54,9 +59,13 @@ class Bot {
     this.lastError = '';
     this.registerEvery = cfg.registerEvery || 60000;
     this.registerSaid = '';
+    this.intentTry = 0;
     this.noBang = false;
-    this.saidNoBang = false;
+    this.noMembers = false;
+    this.saidOff = new Set();
     this.lastNote = new Map();
+    this.botId = '';
+    this.community = new Community(this, services.db, { esc, COLOR });
   }
 
   get on() { return !!this.token; }
@@ -94,14 +103,12 @@ class Bot {
       clearInterval(this.beat);
       this.ready = false;
       if (this.stopped) return;
-      // The switch for the ! commands is off. That must not cost anyone the slash commands, the logs or the warnings.
-      if (code === DISALLOWED_INTENTS && !this.noBang) {
-        this.noBang = true;
+      // A switch in the developer portal is off. That must not cost anyone the slash commands, the logs or the warnings.
+      if (code === DISALLOWED_INTENTS && this.intentTry < INTENT_TRIES.length - 1) {
+        this.intentTry++;
         this.session = null;
         this.seq = null;
         this.resumeUrl = null;
-        this.lastError = BANG_OFF;
-        console.error(`bot: ${BANG_OFF}`);
         this.again = setTimeout(() => this.connect(), 500);
         this.again.unref();
         return;
@@ -137,7 +144,7 @@ class Bot {
         }, m.d.heartbeat_interval);
         this.beat.unref();
         if (this.session) this.sendGateway({ op: 6, d: { token: this.token, session_id: this.session, seq: this.seq } });
-        else this.sendGateway({ op: 2, d: { token: this.token, intents: this.noBang ? 0 : MESSAGE_INTENTS, properties: { os: 'linux', browser: 'stickmanup', device: 'stickmanup' } } });
+        else this.sendGateway({ op: 2, d: { token: this.token, intents: INTENT_TRIES[this.intentTry], properties: { os: 'linux', browser: 'stickmanup', device: 'stickmanup' } } });
         break;
       }
       case 11: this.acked = true; break;
@@ -153,15 +160,16 @@ class Bot {
           this.resumeUrl = m.d.resume_gateway_url;
           this.appId = m.d.application && m.d.application.id;
           this.user = m.d.user ? m.d.user.username : '';
+          this.botId = m.d.user ? String(m.d.user.id) : '';
           this.ready = true;
           this.backoff = 2000;
           this.connectedAt = Date.now();
           console.log(`bot: connected as ${this.user}, ${this.admins.size} admin(s) allowed`);
           this.register();
-          if (this.noBang && !this.saidNoBang) {
-            this.saidNoBang = true;
-            this.log('! commands are off', BANG_OFF, COLOR.warn);
-          }
+          this.noBang = !(INTENT_TRIES[this.intentTry] & MESSAGE_INTENTS);
+          this.noMembers = !(INTENT_TRIES[this.intentTry] & MEMBER_INTENTS);
+          if (this.noBang) this.sayOff('! commands are off', BANG_OFF);
+          if (this.noMembers) this.sayOff('Join and leave messages are off', MEMBERS_OFF);
         } else if (m.t === 'RESUMED') {
           this.ready = true;
           this.backoff = 2000;
@@ -169,9 +177,19 @@ class Bot {
           this.onInteraction(m.d).catch((e) => console.error('bot: command failed:', e.message));
         } else if (m.t === 'MESSAGE_CREATE') {
           this.onMessage(m.d).catch((e) => console.error('bot: command failed:', e.message));
+        } else if ((m.t === 'GUILD_MEMBER_ADD' || m.t === 'GUILD_MEMBER_REMOVE') && m.d && String(m.d.guild_id) === String(this.guild)) {
+          if (m.t === 'GUILD_MEMBER_ADD') this.community.onJoin(m.d);
+          else this.community.onLeave(m.d);
         }
         break;
     }
+  }
+
+  sayOff(title, text) {
+    if (this.saidOff.has(title)) return;
+    this.saidOff.add(title);
+    console.error(`bot: ${text}`);
+    this.log(title, text, COLOR.warn);
   }
 
   // A bot that isn't on the server yet can't have commands there, and nothing tells it when it gets invited. So it keeps trying.
@@ -233,6 +251,31 @@ class Bot {
       await new Promise((f) => setTimeout(f, Math.min(60, wait) * 1000 + 100));
     }
     return null;
+  }
+  // A file, which goes differently from everything else. Answers whether it got there.
+  async upload(channel, msg, filename, text) {
+    if (!channel || !this.on) return false;
+    for (let k = 0; k < 3; k++) {
+      const form = new FormData();
+      form.append('payload_json', JSON.stringify(Object.assign({ allowed_mentions: { parse: [] } }, msg, { attachments: [{ id: 0, filename }] })));
+      form.append('files[0]', new Blob([text], { type: 'text/plain' }), filename);
+      let r;
+      try {
+        r = await fetch(`${this.api}/channels/${channel}/messages`, { method: 'POST', headers: { Authorization: `Bot ${this.token}`, 'User-Agent': 'StickManUpServer (https://github.com/TheOCP/stickmanup, 1)' }, body: form });
+      } catch (e) {
+        this.lastError = e.message;
+        await new Promise((f) => setTimeout(f, 1500 * (k + 1)));
+        continue;
+      }
+      if (r.status !== 429) {
+        if (!r.ok) this.lastError = `Discord answered ${r.status} when sending a file to channel ${channel}.`;
+        return r.ok;
+      }
+      let wait = 2;
+      try { wait = (await r.json()).retry_after || 2; } catch (e) {}
+      await new Promise((f) => setTimeout(f, Math.min(60, wait) * 1000 + 100));
+    }
+    return false;
   }
   // In order, one at a time, and it never grows without end when Discord is away.
   post(channel, msg) {
@@ -298,6 +341,11 @@ class Bot {
     // Autocomplete shows names, so it is for admins too.
     const allowed = this.admins.has(String(who.id)) && (!this.guild || String(i.guild_id) === String(this.guild));
     const whoName = `${who.username || 'someone'} (${who.id})`;
+    // Ticket buttons are for everyone on our Discord server, and check for themselves who may do what.
+    if ((i.type === 3 || i.type === 5) && String(i.data && i.data.custom_id).startsWith('tk:')) {
+      if (!this.guild || String(i.guild_id) !== String(this.guild)) return undefined;
+      return this.community.onInteraction(i, who);
+    }
     if (i.type === 4) {
       if (!allowed) return this.answer(i, 8, { choices: [] });
       return this.answer(i, 8, { choices: suggest(this.s, i.data) });
@@ -308,7 +356,7 @@ class Bot {
       return this.say(i, this.admins.size ? 'You are not allowed to use this.' : 'Nobody is allowed to use the bot yet. Add Discord user IDs with: install.sh --bot', { color: 'bad' });
     }
     const ctx = {
-      s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id),
+      s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id), userId: String(who.id), whoUser: who, channel: String(i.channel_id),
       reply: (text, o) => this.say(i, text, o),
       modal: (d) => this.answer(i, 9, d),
       // Something that can take a while: say so first, then answer.
@@ -328,6 +376,8 @@ class Bot {
   // Only the people on the list, only on our server, and only in the bot's own channels: an answer here is for everyone in the
   // channel to read, and answers can show IP addresses. Anyone else talking to some other bot with a ! gets no answer from this one.
   async onMessage(m) {
+    // Whatever it says, if it is in a ticket it gets remembered.
+    if (m && String(m.guild_id) === String(this.guild)) this.community.capture(m);
     if (!m || typeof m.content !== 'string' || m.content[0] !== '!') return;
     if ((m.author && m.author.bot) || m.webhook_id || !m.author) return;
     if (!this.guild || String(m.guild_id) !== String(this.guild)) return;
@@ -354,7 +404,7 @@ class Bot {
     if (b.unknown) return reply(`There is no \`!${esc(b.unknown).slice(0, 40)}\`. \`!help\` lists them all.`, { color: 'warn' });
     if (b.err) return reply(`${esc(b.err)}\nHow to use it: \`${b.usage}\``, { color: 'warn' });
     const ctx = {
-      s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id), bang: true,
+      s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id), userId: String(who.id), whoUser: who, channel, bang: true,
       reply,
       modal: () => reply('That only works from a button.', { color: 'warn' }),
       slow: async (fn) => reply(await fn()),
@@ -377,7 +427,7 @@ class Bot {
 
   status() {
     if (!this.on) return { on: false };
-    return { on: true, bang: !this.noBang, ready: this.ready, user: this.user, since: this.connectedAt, admins: this.admins.size, commands: COMMANDS.length, queue: this.queue.length, error: this.lastError };
+    return { on: true, bang: !this.noBang, members: !this.noMembers, ready: this.ready, user: this.user, since: this.connectedAt, admins: this.admins.size, commands: COMMANDS.length, queue: this.queue.length, error: this.lastError };
   }
 }
 

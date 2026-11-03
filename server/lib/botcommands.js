@@ -51,7 +51,7 @@ const COMMANDS = [
   cmd('climbs', 'A player\'s last climbs and what the rerun found', PLAYER, COUNT),
   cmd('climb', 'One climb in detail', { type: 3, name: 'id', description: 'The climb ID, from /climbs', required: true, max_length: 64 }),
   // Bans
-  cmd('ban', 'Ban a player, with a reason', PLAYER, REASON(true), DAYS, { type: 5, name: 'ip', description: 'Their address too', required: false }, { type: 5, name: 'phone', description: 'Their phone too', required: false }),
+  cmd('ban', 'Ban a player, with a reason', PLAYER, REASON(true), DAYS, { type: 5, name: 'ip', description: 'Their address too (yes unless you say no)', required: false }, { type: 5, name: 'phone', description: 'Their phone too (yes unless you say no)', required: false }),
   cmd('unban', 'Lift a player\'s ban', PLAYER, REASON(false)),
   cmd('tempban', 'Ban a player for some days', PLAYER, { ...DAYS, required: true }, REASON(true)),
   cmd('banip', 'Ban an address', IP, REASON(true), DAYS),
@@ -109,6 +109,9 @@ function done(ctx, cmdName, detail, text, o) {
   ctx.bot.log('Admin', `**${esc(ctx.whoShort)}** used /${cmdName}\n${esc(detail)}`);
   return ctx.reply(text, Object.assign({ color: 'good' }, o));
 }
+// The player hears about it in the game, with the reason.
+function tell(ctx, u, what, why) { ctx.s.admin.tell(u.id, why ? `${what} Reason: ${why}` : what); }
+const withWhy = (why) => (why ? ` Reason: ${esc(why)}` : ' No reason given.');
 function mapName(ctx, i) { const m = ctx.s.wallet.mapNames; return m[i] || String(i); }
 
 function playerText(ctx, u) {
@@ -123,6 +126,14 @@ function playerText(ctx, u) {
 }
 
 // ---------------------------------------------------------------- the commands
+// The account, its phone and its address, so a new account on the same phone doesn't get round it. /unban lifts all of it.
+function banAll(ctx, u, cmdName, why, days, withIp, withPhone) {
+  const ip = withIp ? u.last_ip : null, device = withPhone ? u.device : null;
+  ctx.s.admin.ban({ userId: u.id, reason: why, by: ctx.whoShort, days, ip, device });
+  const also = [device && 'phone', ip && 'address'].filter(Boolean);
+  return done(ctx, cmdName, `${playerLine(u)}${days ? ` for ${days} days` : ''}: ${why}`, `Banned ${line(u)}${days ? ` for ${days} days` : ''}. Reason: ${esc(why)}${also.length ? `\nAlso banned: their ${also.join(' and ')}.` : ''}`);
+}
+
 const RUN = {
   help(ctx, d) {
     const c = opt(d, 'command');
@@ -232,29 +243,33 @@ const RUN = {
   givecoins(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const amount = opt(d, 'amount'), why = opt(d, 'reason') || 'no reason given';
+    const amount = opt(d, 'amount'), said = opt(d, 'reason'), why = said || 'no reason given';
     const left = ctx.s.wallet.adjust(u.id, amount, `given by ${ctx.whoShort}: ${why}`);
-    return done(ctx, 'givecoins', `${n0(amount)} to ${playerLine(u)}: ${why}`, `Gave ${n0(amount)} coins to ${line(u)}, who now has ${n0(left)}.`);
+    tell(ctx, u, `You got ${n0(amount)} coins.`, said);
+    return done(ctx, 'givecoins', `${n0(amount)} to ${playerLine(u)}: ${why}`, `Gave ${n0(amount)} coins to ${line(u)}, who now has ${n0(left)}.${withWhy(said)}`);
   },
   takecoins(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const amount = opt(d, 'amount'), why = opt(d, 'reason') || 'no reason given';
+    const amount = opt(d, 'amount'), said = opt(d, 'reason'), why = said || 'no reason given';
     const left = ctx.s.wallet.adjust(u.id, -amount, `taken by ${ctx.whoShort}: ${why}`);
-    return done(ctx, 'takecoins', `${n0(amount)} from ${playerLine(u)}: ${why}`, `Took coins from ${line(u)}, who now has ${n0(left)}.`);
+    tell(ctx, u, `${n0(amount)} coins were taken from you.`, said);
+    return done(ctx, 'takecoins', `${n0(amount)} from ${playerLine(u)}: ${why}`, `Took coins from ${line(u)}, who now has ${n0(left)}.${withWhy(said)}`);
   },
   setcoins(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const amount = opt(d, 'amount'), why = opt(d, 'reason') || 'no reason given';
+    const amount = opt(d, 'amount'), said = opt(d, 'reason'), why = said || 'no reason given';
     const left = ctx.s.wallet.setCoins(u.id, amount, `set by ${ctx.whoShort}: ${why}`);
-    return done(ctx, 'setcoins', `${playerLine(u)} to ${n0(amount)}: ${why}`, `${line(u)} now has ${n0(left)} coins.`);
+    tell(ctx, u, `Your coins were set to ${n0(left)}.`, said);
+    return done(ctx, 'setcoins', `${playerLine(u)} to ${n0(amount)}: ${why}`, `${line(u)} now has ${n0(left)} coins.${withWhy(said)}`);
   },
   giveall(ctx, d) {
     if (opt(d, 'confirm') !== true) return ctx.reply('Nothing was given. Say confirm: true if you mean it.', { color: 'warn' });
     const amount = opt(d, 'amount'), why = opt(d, 'reason');
     const n = ctx.s.wallet.giveAll(amount, `event from ${ctx.whoShort}: ${why}`);
-    return done(ctx, 'giveall', `${n0(amount)} to ${n} players: ${why}`, `Gave ${n0(amount)} coins to ${n0(n)} players.`);
+    ctx.s.admin.tellAll(`Everyone got ${n0(amount)} coins. Reason: ${why}`);
+    return done(ctx, 'giveall', `${n0(amount)} to ${n} players: ${why}`, `Gave ${n0(amount)} coins to ${n0(n)} players.${withWhy(why)}`);
   },
   resetwallet(ctx, d) {
     if (opt(d, 'confirm') !== true) return ctx.reply('Nothing changed. Say confirm: true if you mean it.', { color: 'warn' });
@@ -262,7 +277,8 @@ const RUN = {
     if (!u) return undefined;
     const why = opt(d, 'reason');
     ctx.s.wallet.reset(u.id, `reset by ${ctx.whoShort}: ${why}`);
-    return done(ctx, 'resetwallet', `${playerLine(u)}: ${why}`, `${line(u)} now has no coins and no items.`);
+    tell(ctx, u, 'Your coins and items were reset.', why);
+    return done(ctx, 'resetwallet', `${playerLine(u)}: ${why}`, `${line(u)} now has no coins and no items.${withWhy(why)}`);
   },
   history(ctx, d) {
     const u = target(ctx, d);
@@ -277,17 +293,19 @@ const RUN = {
   giveitem(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const item = opt(d, 'item'), why = opt(d, 'reason') || 'no reason given';
+    const item = opt(d, 'item'), said = opt(d, 'reason'), why = said || 'no reason given';
     if (!Object.hasOwn(ctx.s.wallet.catalogItems(), item)) return ctx.reply('That item is not in the catalog. Try /catalog.', { color: 'warn' });
     if (!ctx.s.wallet.giveItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} already has that.`, { color: 'warn' });
-    return done(ctx, 'giveitem', `${item} to ${playerLine(u)}: ${why}`, `Gave ${esc(item)} to ${line(u)}.`);
+    tell(ctx, u, `You got a new item: ${item}.`, said);
+    return done(ctx, 'giveitem', `${item} to ${playerLine(u)}: ${why}`, `Gave ${esc(item)} to ${line(u)}.${withWhy(said)}`);
   },
   takeitem(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const item = opt(d, 'item'), why = opt(d, 'reason') || 'no reason given';
+    const item = opt(d, 'item'), said = opt(d, 'reason'), why = said || 'no reason given';
     if (!ctx.s.wallet.takeItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} does not have that.`, { color: 'warn' });
-    return done(ctx, 'takeitem', `${item} from ${playerLine(u)}: ${why}`, `Took ${esc(item)} from ${line(u)}.`);
+    tell(ctx, u, `An item was taken from you: ${item}.`, said);
+    return done(ctx, 'takeitem', `${item} from ${playerLine(u)}: ${why}`, `Took ${esc(item)} from ${line(u)}.${withWhy(said)}`);
   },
   catalog(ctx, d) {
     const q = String(opt(d, 'search') || '').toLowerCase(), all = Object.entries(ctx.s.wallet.catalogItems()).filter(([k]) => k.toLowerCase().includes(q));
@@ -316,8 +334,7 @@ const RUN = {
     const u = target(ctx, d);
     if (!u) return undefined;
     const why = opt(d, 'reason'), days = opt(d, 'days');
-    ctx.s.admin.ban({ userId: u.id, reason: why, by: ctx.whoShort, days, ip: opt(d, 'ip') ? u.last_ip : null, device: opt(d, 'phone') ? u.device : null });
-    return done(ctx, 'ban', `${playerLine(u)}: ${why}`, `Banned ${line(u)}${days ? ` for ${days} days` : ''}. Reason: ${esc(why)}`);
+    return banAll(ctx, u, 'ban', why, days, opt(d, 'ip') !== false, opt(d, 'phone') !== false);
   },
   unban(ctx, d) {
     const u = target(ctx, d);
@@ -330,8 +347,7 @@ const RUN = {
     const u = target(ctx, d);
     if (!u) return undefined;
     const why = opt(d, 'reason'), days = opt(d, 'days');
-    ctx.s.admin.ban({ userId: u.id, reason: why, by: ctx.whoShort, days });
-    return done(ctx, 'tempban', `${playerLine(u)} for ${days} days: ${why}`, `Banned ${line(u)} for ${days} days. Reason: ${esc(why)}`);
+    return banAll(ctx, u, 'tempban', why, days, true, true);
   },
   banip(ctx, d) {
     const ip = opt(d, 'ip'), why = opt(d, 'reason'), days = opt(d, 'days');
@@ -595,7 +611,7 @@ function runModal(ctx, data) {
   const u = ctx.s.admin.info(m[1]);
   if (!u) return ctx.reply('That player is gone.', { color: 'warn' });
   const reason = (((data.components || [])[0] || {}).components || [])[0]?.value || 'Cheating';
-  ctx.s.admin.ban({ userId: u.id, reason, by: ctx.whoShort });
+  ctx.s.admin.ban({ userId: u.id, reason, by: ctx.whoShort, ip: u.last_ip, device: u.device });
   return done(ctx, 'ban', `${playerLine(u)}: ${reason}`, `Banned ${line(u)}. Reason: ${esc(reason)}`);
 }
 

@@ -163,6 +163,11 @@ in `/audit` and the log channel.
 
 A player can be given by name, by number (`#12`) or by ID, and Discord suggests them as you type.
 
+`/ban` and `/tempban` ban the account, its phone and its address, stored on the server, so a new account on the same phone or
+network is refused too. Say `ip:false` or `phone:false` to leave one out, because everyone on a banned address is locked out.
+`/unban` lifts all of it. A banned player is thrown out of what they are doing within half a minute, and every game mode is
+grayed out with the reason on the screen. A given or taken coin or item is told to the player in the game, with the reason.
+
 Every command also works with a `!` in the log and warning channels, like `!ban #12 flying around` or `!givecoins Ana 100 a gift`.
 A name with spaces goes in quotes, and optional parts go by name: `!ban "Cool Guy" flying around days=3`. `!help ban` shows how
 to use one. They work only in those channels because everyone there can read the answers, which can show IP addresses, so keep

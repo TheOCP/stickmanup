@@ -390,35 +390,42 @@ function pickMap(id, redraw) {
 
 const shopCtx = { app, show, esc, ui, header, name: () => settings.name, lookChanged };
 
+function banCard(ban) {
+  const until = ban.until ? `Until ${esc(new Date(ban.until).toLocaleDateString())}` : 'No end date';
+  return `<div class="bancard"><b>You are banned</b><p>Reason: ${esc(ban.reason) || 'No reason given'}</p><small>${until}${ban.num ? ` · Player #${ban.num}` : ''}</small></div>`;
+}
+
 function title() {
   app.screen = 'title';
   const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map], acct = cloud.account();
   loadMap(settings.map);
   // The first time, and whenever the terms have changed, ask before anything else.
-  if ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2'))) {
+  if (!cloud.banned() && ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2')))) {
     store.set('welcomed2', 1);
     app.termsAsked = true;
     return accountScreen(title);
   }
   const ban = cloud.banned();
-  const notice = ban ? `<p class="notice bad"><b>You are banned from the game server${ban.until ? ' until ' + esc(new Date(ban.until).toLocaleDateString()) : ''}.</b> Reason: ${esc(ban.reason)}${ban.num ? ` (player #${ban.num})` : ''}</p>` : app.maintenance ? `<p class="notice warn">${esc(app.maintenance)}</p>` : app.announcement ? `<p class="notice">${esc(app.announcement)}</p>` : '';
-  show(`<div class="title">
+  // Banned: every way into the game is grayed out. Account stays, because the terms promise everyone can delete their data there.
+  const off = ban ? ' disabled' : '';
+  const notice = ban ? '' : app.maintenance ? `<p class="notice warn">${esc(app.maintenance)}</p>` : app.announcement ? `<p class="notice">${esc(app.announcement)}</p>` : '';
+  show(`<div class="title${ban ? ' banned' : ''}">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
-      <p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>
+      ${ban ? banCard(ban) : `<p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>`}
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
       ${notice}
-      <button class="btn sm donate" data-a="donate">♥ Donate</button>
+      ${ban ? '' : `<button class="btn sm donate" data-a="donate">♥ Donate</button>`}
     </div>
     <div class="mainbtns">
-      ${save ? `<button class="btn primary" data-a="cont"><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
-      <button class="btn ${save ? '' : 'primary'}" data-a="solo"><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
-      <button class="btn" data-a="host"><b>Host a game</b><small>Server, online, WiFi or Bluetooth</small></button>
-      <button class="btn" data-a="join"><b>Join a game</b><small>Room code or a game nearby</small></button>
-      <div class="row"><button class="btn sm" data-a="browser">Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</button></div>
-      <div class="row"><button class="btn sm shopbtn" data-a="shop"><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records">Records</button></div>
-      <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
+      ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}</small></button>` : ''}
+      <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>Pick a map and practise on your own</small></button>
+      <button class="btn" data-a="host"${off}><b>Host a game</b><small>Server, online, WiFi or Bluetooth</small></button>
+      <button class="btn" data-a="join"${off}><b>Join a game</b><small>Room code or a game nearby</small></button>
+      <div class="row"><button class="btn sm" data-a="browser"${off}>Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</button></div>
+      <div class="row"><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records"${off}>Records</button></div>
+      <div class="row"><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
     </div></div>`, {
     shop: () => { app.screen = 'shop'; openShop(shopCtx, title); },
     records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
@@ -442,6 +449,7 @@ function diffCards(sel) {
 }
 
 function soloPick() {
+  if (cloud.banned()) return title();
   app.screen = 'solo';
   const save = validSave('save.solo');
   show(`<div class="panel">${header('Solo climb')}
@@ -473,6 +481,7 @@ app.beginGameForTest = (s, g) => beginGame(s, g);
 
 // ---------- hosting ----------
 function hostPick() {
+  if (cloud.banned()) return title();
   app.screen = 'host';
   show(`<div class="panel">${header('Host a game')}
     <p class="sub">Up to 4 climbers. Everyone needs StickManUp, and the same version.</p>
@@ -537,10 +546,12 @@ function wireLobby(s) {
     else if (s.isHost && app.room && app.room.kind === 'server') { if (app.game && app.game.s === s) { endGame(); message('Disconnected', e); } else if (app.screen === 'lobby') { s.close(); message('Disconnected', e); } }
   });
   s.on('start', (g) => beginGame(s, g));
-  s.on('closed', (why) => { if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } });
+  s.on('closed', (why) => { cloud.checkStanding(); if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } });
 }
 
 function lobby(s) {
+  if (cloud.banned()) { s.close(); return title(); }
+  app.lobbyS = s;
   app.screen = 'lobby';
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
@@ -600,6 +611,7 @@ function lobby(s) {
 // ---------- joining ----------
 let stopDisc = null;
 function joinScreen(tab) {
+  if (cloud.banned()) return title();
   app.screen = 'join';
   app.joinTab = tab;
   app.joinBack = null;
@@ -732,6 +744,7 @@ function roomRow(r) {
 }
 
 function browserScreen(back = title) {
+  if (cloud.banned()) return title();
   app.screen = 'browser';
   app.joinTab = 'server';
   app.joinBack = () => browserScreen(back);
@@ -909,6 +922,7 @@ async function signOutFlow(back) {
 function afterAccount(back) { app.afterLogin = null; back(); }
 
 cloud.on('signedIn', (u) => {
+  cloud.checkStanding();
   ui.toast(`Signed in as ${u.name}`, 'good');
   if (app.game) return;
   const next = app.afterLogin || title;
@@ -943,7 +957,52 @@ cloud.on('notCounting', (why) => {
 });
 cloud.on('announce', (text) => { app.announcement = text; if (app.screen === 'title') title(); else ui.toast(text); });
 cloud.on('maintenance', (text) => { app.maintenance = text; });
-cloud.on('banned', () => { if (!app.game) title(); });
+// Out of whatever they were doing, straight away.
+cloud.on('banned', () => {
+  const s = (app.game && app.game.s) || (app.screen === 'lobby' ? app.lobbyS : null);
+  if (app.game) endGame();
+  if (s && s.close) s.close();
+  title();
+});
+cloud.on('unbanned', () => {
+  ui.toast('You are not banned any more', 'good');
+  if (cloud.account()) cloud.refreshWallet();
+  title();
+});
+// How high this player is right now, for Discord. Only for showing: nothing is paid on it.
+cloud.setClimbProbe(() => {
+  const g = app.game;
+  if (!g || !g.me) return null;
+  return { map: g.map | 0, diff: g.diff | 0, h: Math.max(0, Math.round(g.me.y - PR - 2)) };
+});
+// A word from the admins: what they gave or took, and why. It stays out of the way of a climb and goes by itself.
+const inboxWaiting = [];
+let inboxShowing = false;
+function nextInbox() {
+  if (inboxShowing || !inboxWaiting.length) return;
+  inboxShowing = true;
+  const el = document.createElement('button'), head = document.createElement('b'), body = document.createElement('span'), foot = document.createElement('small');
+  el.className = 'svmsg';
+  head.textContent = 'From the StickManUp team';
+  body.textContent = inboxWaiting.shift();
+  foot.textContent = 'Tap to close';
+  el.append(head, body, foot);
+  document.body.appendChild(el);
+  let gone = false;
+  const close = () => {
+    if (gone) return;
+    gone = true;
+    el.remove();
+    inboxShowing = false;
+    nextInbox();
+  };
+  el.addEventListener('click', close);
+  setTimeout(close, 12000);
+}
+cloud.on('inbox', (list) => {
+  for (const m of list) inboxWaiting.push(m.text);
+  nextInbox();
+});
 cloud.on('dayLimit', () => ui.toast('Daily coin limit reached. More tomorrow!', 'bad'));
 cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
 cloud.on('changed', () => { if (app.screen === 'title') title(); });
@@ -1305,6 +1364,7 @@ function message(t, text, then = title) {
 
 // ---------- in game ----------
 function beginGame(s, g) {
+  if (cloud.banned()) { if (s && s.close) s.close(); return title(); }
   if (app.game) app.game.destroy();
   if (stopDisc) { stopDisc(); stopDisc = null; }
   hideMenu();
@@ -1323,6 +1383,8 @@ function beginGame(s, g) {
 }
 
 function endGame() {
+  // Asked now because the game is still here: this is the last height Discord gets to see.
+  cloud.checkStanding();
   cloud.runEnd();
   cloud.flush();
   closeEmotes();

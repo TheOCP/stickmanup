@@ -54,6 +54,12 @@ class Admin {
       );
       CREATE INDEX IF NOT EXISTS bans_value ON bans(kind, value);
       CREATE INDEX IF NOT EXISTS bans_user ON bans(user_id);
+      CREATE TABLE IF NOT EXISTS inbox (
+        id INTEGER PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        at INTEGER NOT NULL, text TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS inbox_user ON inbox(user_id, id);
       CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -130,6 +136,11 @@ class Admin {
       oldIps: q('DELETE FROM user_ips WHERE last < ?'),
       oldFlags: q('DELETE FROM flags WHERE at < ?'),
       oldAudit: q('DELETE FROM audit WHERE at < ?'),
+      addMsg: q('INSERT INTO inbox (user_id, at, text) VALUES (?, ?, ?)'),
+      addMsgAll: q('INSERT INTO inbox (user_id, at, text) SELECT id, ?, ? FROM users'),
+      msgsOf: q('SELECT id, at, text FROM inbox WHERE user_id = ? ORDER BY id LIMIT 20'),
+      delMsg: q('DELETE FROM inbox WHERE id = ? AND user_id = ?'),
+      oldMsgs: q('DELETE FROM inbox WHERE at < ?'),
       oldGuests: q(`DELETE FROM users WHERE id IN (
         SELECT u.id FROM users u JOIN identities i ON i.user_id = u.id LEFT JOIN wallets w ON w.user_id = u.id
         WHERE i.provider = 'guest' AND u.last_seen < ? AND COALESCE(w.earned, 0) = 0)`),
@@ -183,10 +194,21 @@ class Admin {
     return true;
   }
   played(id, o) {
-    this.q.played.run(now(), o.map | 0, o.diff | 0, o.h | 0, o.newClimb ? 1 : 0, id);
-    const p = this.presence.get(id) || {};
-    Object.assign(p, { at: now(), map: o.map, diff: o.diff, h: o.h, climbing: now() });
+    const p = this.presence.get(id) || {}, t = now();
+    // What the phone said lately beats the rest: starting a climb says 0, and the rerun only knows the best so far, a little later.
+    const h = !o.live && p.liveAt > t - 90000 ? p.h : o.h;
+    this.q.played.run(t, o.map | 0, o.diff | 0, h | 0, o.newClimb ? 1 : 0, id);
+    Object.assign(p, { at: t, map: o.map, diff: o.diff, h, climbing: t });
+    if (o.live) p.liveAt = t;
     this.presence.set(id, p);
+  }
+  // A word for a player, shown in the game the next time it asks.
+  tell(id, text) { this.q.addMsg.run(id, now(), String(text).slice(0, 400)); }
+  tellAll(text) { this.q.addMsgAll.run(now(), String(text).slice(0, 400)); }
+  inbox(id) { return this.q.msgsOf.all(id); }
+  inboxRead(id, ids) {
+    if (!Array.isArray(ids)) return;
+    for (const m of ids.slice(0, 20)) if (Number.isInteger(m)) this.q.delMsg.run(m, id);
   }
   online() {
     const t = now() - ONLINE_FOR, out = [];
@@ -338,6 +360,7 @@ class Admin {
     const t = now();
     this.q.oldIps.run(t - IP_KEEP);
     this.q.oldFlags.run(t - FLAG_KEEP);
+    this.q.oldMsgs.run(t - FLAG_KEEP);
     this.q.oldAudit.run(t - AUDIT_KEEP);
     this.q.oldGuests.run(t - 60 * DAY);
     this.seenAt.clear();

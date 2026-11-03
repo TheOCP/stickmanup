@@ -22,7 +22,7 @@ const PENDING_MAX = 15 * 60000;
 let address = '';
 let acct = store.get('account', null);
 let needsTerms = false;
-let ban = null;
+let ban = store.get('banInfo', null);
 let muted = false;
 let timer = 0;
 let lastSent = '';
@@ -44,7 +44,13 @@ export const account = () => (acct && acct.server === serverUrl() ? acct : null)
 export const isGuest = () => { const a = account(); return !!a && a.user.provider === 'guest'; };
 export const termsNeeded = () => !!account() && needsTerms;
 // Why this player can't use the server, if they can't: { reason, until }.
-export const banned = () => ban;
+export function banned() {
+  if (ban && ban.until && ban.until < Date.now()) {
+    ban = null;
+    store.del('banInfo');
+  }
+  return ban;
+}
 // What a room on the server wants to know who you are by.
 export const roomToken = () => (account() ? acct.token : '');
 export const lastSaved = () => lastSync;
@@ -76,10 +82,13 @@ async function call(path, o = {}) {
 function setBan(j) {
   const was = ban;
   ban = j && j.banned !== false ? { reason: String(j.reason || ''), until: +j.until || 0, num: j.num } : null;
-  if (ban && !was) {
+  // Kept, so going offline or restarting doesn't end it. Only the server can.
+  if (ban) store.set('banInfo', ban);
+  else store.del('banInfo');
+  if (ban && (!was || was.reason !== ban.reason || was.until !== ban.until)) {
     if (climb) stopClimb(climb, 'banned');
     emit('banned', ban);
-  }
+  } else if (!ban && was) emit('unbanned');
 }
 
 export async function getInfo() {
@@ -173,13 +182,14 @@ export async function start() {
     if (c) await finishLogin(c);
   }
   checkNews();
+  watchStanding();
   if (!account()) return;
   const r = await call('/api/me', { auth: true });
   if (r.ok && r.json.user) {
     acct.user = r.json.user;
     store.set('account', acct);
     needsTerms = !r.json.user.tosOk;
-    setBan(r.json.ban || null);
+    if (r.json.ban) setBan(r.json.ban);
     if (ban) return;
     if (needsTerms) emit('terms');
     else {
@@ -567,6 +577,32 @@ function watchDevice() {
 
 // ---------------------------------------------------------------- news from the server
 // A message from the admins, shown once, and whether the server is closed for the moment.
+// ---------------------------------------------------------------- may this player play?
+// The server decides, every half a minute and whenever a game ends. With no connection, what it said last stays.
+let probe = null;
+let standingTimer = 0;
+export function setClimbProbe(f) { probe = f; }
+export async function checkStanding() {
+  if (!serverUrl()) return;
+  const c = probe ? probe() : null;
+  const r = await call('/api/standing', { auth: !!account(), body: { device: deviceId(), climb: c || undefined }, timeout: 8000 });
+  if (r.status !== 200) return;
+  setBan(r.json.ban || null);
+  const list = Array.isArray(r.json.inbox) ? r.json.inbox.filter((m) => m && Number.isInteger(m.id) && typeof m.text === 'string') : [];
+  if (!list.length) return;
+  emit('inbox', list);
+  if (account()) {
+    call('/api/inbox/read', { auth: true, body: { ids: list.map((m) => m.id) } });
+    refreshWallet();
+  }
+}
+function watchStanding() {
+  checkStanding();
+  clearInterval(standingTimer);
+  standingTimer = setInterval(checkStanding, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStanding(); });
+}
+
 export async function checkNews() {
   const info = await getInfo();
   if (!info) return;
@@ -586,7 +622,6 @@ function forget() {
   climbs = [];
   climb = null;
   rec = null;
-  ban = null;
   store.del('wallet.climbs');
   if (timer) { clearTimeout(timer); timer = 0; }
   acct = null;

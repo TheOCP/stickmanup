@@ -266,9 +266,28 @@ async function route(req, res) {
     return json(res, 200, { token: db.newSession(g.id), user: publicUser(db.user(g.id)) });
   }
 
+  // Every copy of the game asks this every half a minute, signed in or not: may this person play, and is there anything to tell them?
+  // The answer is worked out here from the account, the address and the phone, so nothing done to the game can change it.
+  // The phone also says how high it is. That is only for showing on Discord, nothing is paid on it.
+  if (method === 'POST' && p === '/api/standing') {
+    const b = (await readJson(req)) || {};
+    const me = signedIn(req), user = me ? db.user(me.id) : null, device = deviceOf(b.device);
+    if (user) {
+      admin.seen(user.id, ip);
+      if (device && device !== user.device) admin.setDevice(user.id, device);
+      const c = b.climb;
+      if (c && typeof c === 'object' && Number.isInteger(c.map) && Number.isInteger(c.diff) && Number.isInteger(c.h)) {
+        admin.played(user.id, { map: Math.max(0, Math.min(20, c.map)), diff: Math.max(0, Math.min(20, c.diff)), h: Math.max(0, Math.min(2000, c.h)), live: true });
+      }
+    }
+    const off = admin.banFor(user ? user.id : null, ip, device) || (user && user.device ? admin.banRow('device', user.device) : null);
+    if (off) return json(res, 200, { ban: admin.showBan(off, user) });
+    return json(res, 200, { ban: null, inbox: user ? admin.inbox(user.id) : [] });
+  }
+
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
+  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
@@ -288,6 +307,11 @@ async function route(req, res) {
     return json(res, 200, { ok: true });
   }
   if (off) return json(res, 403, admin.showBan(off, user));
+  if (p === '/api/inbox/read') {
+    const b = (await readJson(req)) || {};
+    admin.inboxRead(me.id, b.ids);
+    return json(res, 200, { ok: true });
+  }
   if (p === '/api/run/start' && admin.maintenance) return json(res, 503, { err: admin.maintenance });
   // What a phone says about itself. It can lie, so it can only ever count against it, and a hardware check says how far to believe it.
   if (p === '/api/attest/challenge') {

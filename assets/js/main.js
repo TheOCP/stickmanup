@@ -20,7 +20,8 @@ import { css } from './colors.js';
 import { SUIT, resolveLook, plainLook, ROLE_TAGS, cleanRole, tagColor } from './skins.js';
 import { initProfile, myLook, myRole, owned, wonOnce, coins as myCoins } from './profile.js';
 import { openShop, openRecords } from './shop.js';
-import { Chain } from './chain.js';
+import { TitleShow } from './titleshow.js';
+import { startLang, tr, LANG_NAMES } from './i18n.js';
 import { Fx } from './fx.js';
 import { PR, PC } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
@@ -29,14 +30,16 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const N = window.Native;
 const VERSION = N && N.version ? N.version() : 'dev';
+const shareText = (t) => N.share(tr(t));
 
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 // The colour you picked before there were suits becomes your first suit.
+startLang(settings.lang);
 initProfile(settings.color);
 const myColor = () => tagColor(SUIT[myLook().s].c);
 let myResolved = null;
@@ -179,7 +182,8 @@ const ui = (app.ui = {
     const rb0 = $('#bReel');
     if (rb0.classList.contains('nocord') !== g.noCord) rb0.classList.toggle('nocord', g.noCord);
     const rl = $('#bReel span'), mode = g.reelMode || 'REEL';
-    if (rl.textContent !== mode) rl.textContent = mode;
+    const modeText = tr(mode);
+    if (rl.textContent !== modeText) rl.textContent = modeText;
     $('#bReel').classList.toggle('help', mode !== 'REEL');
     const db = $('#bDash');
     db.style.setProperty('--v', (me.dashReady ? 1 - me.dashCd / PC.DASH_CD : 0).toFixed(3));
@@ -602,7 +606,7 @@ function lobby(s) {
       </div>
     </div></div>`, {
     back: () => { s.close(); title(); },
-    share: () => N.share(room.kind === 'server' ? `Join my StickManUp climb! Open StickManUp, tap Join a game and type the code ${room.code}` : room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp, tap Join a game, then Direct, and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
+    share: () => shareText(room.kind === 'server' ? `Join my StickManUp climb! Open StickManUp, tap Join a game and type the code ${room.code}` : room.kind === 'direct' ? `Join my StickManUp climb! Open StickManUp, tap Join a game, then Direct, and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
@@ -1069,6 +1073,7 @@ function settingsScreen(back) {
     <label>Right stick dead zone ${val('deadR', '%')}${range('deadR', 0, 0.6, 0.02, '%')}</label>
     <p class="sub full" style="margin:0">In menus: direction pad or left stick to move, A to select, B to go back, LB and RB to switch tabs. In a climb: Start pauses, and Select opens the pause menu on Back to checkpoint.</p>
     <h3>Sound and other</h3>
+    <label class="full">Language${seg('lang', LANG_NAMES)}</label>
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label${app.game ? ' class="full"' : ''}>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
@@ -1093,6 +1098,7 @@ function settingsScreen(back) {
       const k = b.dataset.k, v = b.dataset.v;
       settings[k] = k === 'cap' ? +v : k === 'lefty' ? v === 'true' : v;
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
+      if (k === 'lang') { saveSettings(); return restartApp('Restarting...'); }
       if (k === 'quality') {
         if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics...'); }
         Object.assign(settings, PRESETS[v]);
@@ -1701,89 +1707,13 @@ function checkGpu() {
   if (health.white >= 3) gfxTrouble(white === 5 ? 'render buffer white' : 'render buffer black');
 }
 
-// Behind the menus: all four stickmen free-run up the first stretch of the climb in a line, tied
-// together by their cords, hopping from platform to platform with flips. The camera stays high and
-// cycles through a few shots (high chase, overhead orbit, side track, wide view of the tower).
-const RUN = { path: null, level: null, segs: null, total: 0, t: 0, prev: [], chains: null, cam: null, look: null, shot: 0, shotT: 0 };
-app.titleRun = RUN; // for the dev screenshot scripts
-function runnerPath(L) {
-  // The first zone's route platforms in the order the climb goes. It's a show, so the runners take big
-  // superhero leaps over bridges and gaps; they only stop where the route jumps somewhere far away.
-  const C = L.cols.filter((c) => (c.kind === 'plat' || c.kind === 'branch' || c.kind === 'pad' || c.kind === 'conveyor') && c.zone === 0 && c.y < 90);
-  const pts = [];
-  for (const c of C) {
-    const p = { x: c.x, y: c.y + c.hy, z: c.z }, q = pts[pts.length - 1];
-    if (q) {
-      const d = Math.hypot(p.x - q.x, p.z - q.z), dy = p.y - q.y;
-      if (d < 1.5) continue;
-      if (d > 16 || dy > 6 || dy < -5) { if (pts.length >= 8) break; pts.length = 0; }
-    }
-    pts.push(p);
-    if (pts.length >= 36) break;
-  }
-  return pts;
-}
-
-// Where a runner is t seconds into the loop: a short run across each platform, then a hop (every third a flip).
-function runnerAt(t, out) {
-  const P = RUN.path, S = RUN.segs;
-  t = ((t % RUN.total) + RUN.total) % RUN.total;
-  let k = 0;
-  while (k < S.length - 1 && t >= S[k].end) k++;
-  const a = P[k], b = P[k + 1], s = S[k], u = t - s.start, ux = s.ux, uz = s.uz;
-  out.flip = 0;
-  if (u < s.run) {
-    const f = u / s.run;
-    out.x = a.x - ux * 0.5 + ux * f; out.y = a.y; out.z = a.z - uz * 0.5 + uz * f; out.ground = true;
-  } else {
-    const f = Math.min(1, (u - s.run) / s.hop), sx = a.x + ux * 0.5, sz = a.z + uz * 0.5, ex = b.x - ux * 0.5, ez = b.z - uz * 0.5;
-    const h = Math.max(0.9, b.y - a.y + 0.9, Math.hypot(ex - sx, ez - sz) * 0.18);
-    out.x = sx + (ex - sx) * f; out.y = a.y + (b.y - a.y) * f + 4 * h * f * (1 - f); out.z = sz + (ez - sz) * f; out.ground = false;
-    if (k % 3 === 2) out.flip = -Math.PI * 2 * (f * f * (3 - 2 * f));
-  }
-  out.k = k;
-  return out;
-}
-function titleRunners(dt) {
-  const L = app.level;
-  if (RUN.level !== L) {
-    RUN.level = L; RUN.path = runnerPath(L); RUN.t = 0; RUN.cam = null; RUN.chains = null;
-    const P = RUN.path, S = [];
-    let t = 0;
-    for (let k = 0; k + 1 < P.length; k++) {
-      const dx = P[k + 1].x - P[k].x, dz = P[k + 1].z - P[k].z, d = Math.hypot(dx, dz) || 1, run = 0.32, hop = 0.42 + d * 0.045;
-      S.push({ start: t, end: t + run + hop, run, hop, ux: dx / d, uz: dz / d });
-      t += run + hop;
-    }
-    RUN.segs = S; RUN.total = t;
-  }
-  if (!RUN.path || RUN.path.length < 4 || !app.pool || app.pool.warm > 0) return null;
-  RUN.t += dt;
-  const pool = app.pool, PR = 0.42, pos = [], c = { x: 0, y: 0, z: 0 };
-  if (!RUN.chains) RUN.chains = [0, 1, 2].map(() => new Chain(12));
-  for (let j = 0; j < 4; j++) {
-    const r = pool.robots[j], o = runnerAt(RUN.t - j * 0.45, {}), prev = RUN.prev[j] || o;
-    const vx = (o.x - prev.x) / Math.max(dt, 1e-3), vy = (o.y - prev.y) / Math.max(dt, 1e-3), vz = (o.z - prev.z) / Math.max(dt, 1e-3);
-    const jumpBack = Math.hypot(o.x - prev.x, o.z - prev.z) > 4; // looped back to the start
-    RUN.prev[j] = o;
-    r.flip = o.flip;
-    r.setLook(j === 0 ? myOutfit() : plainLook(COLORS[j]));
-    r.show();
-    r.update(dt, o.x, o.y + PR, o.z, jumpBack ? 0 : vx, o.ground || jumpBack ? 0 : vy, jumpBack ? 0 : vz, o.ground ? 1 | 64 : 0, 0, o.y);
-    if (jumpBack && j < 3) RUN.chains[j].ok = false;
-    if (jumpBack && j > 0) RUN.chains[j - 1].ok = false;
-    pos.push({ x: o.x, y: o.y + PR, z: o.z, k: o.k });
-    c.x += o.x / 4; c.y += o.y / 4; c.z += o.z / 4;
-  }
-  // Cords between neighbours in the line.
-  for (let j = 0; j < 3; j++) {
-    const ch = RUN.chains[j], rope = pool.ropes[j], A = pos[j], B = pos[j + 1];
-    rope.setColors(j === 0 ? myColor() : COLORS[j], COLORS[j + 1]);
-    ch.step(A, B, 6.5, app.world, Math.min(dt, 0.05));
-    rope.mesh.visible = true;
-    rope.update(ch.p, Math.max(0, Math.min(1, (Math.hypot(A.x - B.x, A.y - B.y, A.z - B.z) / 6.5 - 0.85) / 0.15)), titleT);
-  }
-  return { lead: pos[0], center: c };
+// Behind the menus: the team on the dock, see titleshow.js.
+let team = null;
+function titleTeam(dt) {
+  if (!app.pool || app.pool.warm > 0) return null;
+  if (!team || team.level !== app.level) team = new TitleShow(app.level, app.world);
+  team.update(dt, app.pool, (j) => (j === 0 ? myOutfit() : plainLook(COLORS[j])), (j) => (j === 0 ? myColor() : COLORS[j]), titleT);
+  return team;
 }
 
 // The shop: one climber standing on the start circle, on the left of the screen and turning slowly, with the
@@ -1820,32 +1750,20 @@ function titleScene(dt) {
   app.sound.setIntensity(0.6);
   const mk = app.level && app.level.mapKey;
   app.sound.ambient(0.2, false, 0, mk === 'storm' ? 0.7 : 0, mk === 'waterfall' ? 0.6 : 0);
-  const R = app.renderer, cam = R.camera, g = app.preview ? null : titleRunners(dt);
+  const R = app.renderer, cam = R.camera, g = app.preview ? null : titleTeam(dt);
   if (app.preview) shopScene(dt);
-  else if (g) {
-    // Shots, each about 8 s, blended smoothly. All of them look down from well above the route.
-    const p = g.center, lead = g.lead, r = Math.hypot(p.x, p.z) || 1, ox = p.x / r, oz = p.z / r;
-    RUN.shotT += dt;
-    if (RUN.shotT > 8) { RUN.shotT = 0; RUN.shot = (RUN.shot + 1) % 4; }
-    const s = RUN.shot, a = titleT * 0.25;
-    let want, look;
-    if (s === 0) { want = { x: p.x + ox * 7, y: p.y + 7, z: p.z + oz * 7 }; look = { x: lead.x, y: lead.y, z: lead.z }; }
-    else if (s === 1) { want = { x: p.x + Math.cos(a) * 7, y: p.y + 12, z: p.z + Math.sin(a) * 7 }; look = { x: p.x, y: p.y, z: p.z }; }
-    else if (s === 2) { want = { x: lead.x + ox * 8 - oz * 3, y: lead.y + 5, z: lead.z + oz * 8 + ox * 3 }; look = { x: lead.x, y: lead.y + 0.6, z: lead.z }; }
-    else { want = { x: ox * 30 + Math.cos(a * 0.4) * 6, y: p.y + 16, z: oz * 30 + Math.sin(a * 0.4) * 6 }; look = { x: p.x * 0.6, y: p.y + 4, z: p.z * 0.6 }; }
-    const C = RUN.cam || (RUN.cam = { ...want }), Lk = RUN.look || (RUN.look = { ...look }), k = Math.min(1, dt * 1.6);
-    for (const ax of ['x', 'y', 'z']) { C[ax] += (want[ax] - C[ax]) * k; Lk[ax] += (look[ax] - Lk[ax]) * Math.min(1, dt * 3); }
-    cam.position.set(C.x, C.y, C.z);
-    cam.lookAt(Lk.x, Lk.y, Lk.z);
-  } else {
+  else if (g) g.camera(dt, cam);
+  else {
     const a = titleT * 0.045 + 0.6, y = 16 + Math.sin(titleT * 0.08) * 9;
     cam.position.set(Math.cos(a) * 36, y, Math.sin(a) * 36);
     cam.lookAt(0, y + 6, 0);
+    if (cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
   }
-  if (!app.preview && cam.fov !== 60) { cam.fov = 60; cam.updateProjectionMatrix(); }
   app.world.setTime(titleT);
   R.update(dt, cam.position, app.level.zones[0], 0, { x: 0, z: 0 });
-  R.shadowFocus(cam.position.x, cam.position.y - 2, cam.position.z);
+  // Crisp shadows where the team is standing.
+  if (g) R.shadowFocus(g.center.x, g.center.y, g.center.z);
+  else R.shadowFocus(cam.position.x, cam.position.y - 2, cam.position.z);
   app.view.camPos = cam.position;
   app.view.update(titleT, dt, app.titleStorm);
   if ((bolt -= dt) <= 0 && app.level.mapKey === 'storm') {

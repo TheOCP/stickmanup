@@ -4,6 +4,7 @@ One program that does all of this for the game:
 
 * **Game server**: rooms, the server browser, passwords, and passing game messages between phones
 * **Accounts**: sign in with Discord, Steam or Google, plus accepting the terms
+* **Friends**: requests, search by name or player ID, who is doing what, and watching a friend's climb live
 * **Coins**: everyone's balance and what they own are held here and can't be changed from a phone (see below)
 * **Anticheat**: every climb that earns coins is played again here, with the game's own physics (see below)
 * **Discord bot**: logs sign ins and cheaters to your channels, and welcomes people, runs support tickets, and gives you over 60 commands (see below)
@@ -96,7 +97,7 @@ server, so it needs a connection. A save sent by a phone is stripped of any coin
 
 A guest is an account like any other, with a number, that only their phone has the key to. Signing in moves what the guest
 has to the real account, if that account has nothing yet. Coins are only earned alone or in a room on this server, never
-offline or in WiFi, Bluetooth, Online or direct games, because nothing can check those.
+offline or in Online games, because nothing can check those.
 
 The limits, on top of the anticheat:
 
@@ -187,7 +188,7 @@ and it stores none of them.
 away, and `/roles` lists everyone who has one. They are kept on this server and it writes them into every room itself, so a
 changed app or a chosen name gets nobody a flag. Owners can wear The Hacker and GG Girl, admins GG Girl.
 
-A flag only shows in rooms on this server. WiFi, Bluetooth and direct online games don't go through it, so nobody can check
+A flag only shows in rooms on this server. Online games don't go through it, so nobody can check
 them, and nobody has a flag or a team suit there. A flag gives no power: who may use the bot is still the list of Discord IDs.
 
 ### Join and leave messages

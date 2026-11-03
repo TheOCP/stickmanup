@@ -15,7 +15,7 @@ export const LANG_NAMES = [['auto', 'Auto'], ['en', 'English'], ['es', 'Español
 // Everything the game writes starts out in English, so anything without two English letters in a row needs no look.
 const LATIN = /[A-Za-z]{2}/;
 // Not ours to change, or changing many times a second with nothing to translate.
-const SKIP = '#tags, #hFps, #hTime, .terms, .notice, .svmsg span, script, style, textarea';
+const SKIP = '#tags, #hFps, #hTime, .terms, .notice, .svmsg span, .frname, script, style, textarea';
 const exact = new Map(), patterns = [], done = new Set(), memory = new Map();
 let on = false;
 

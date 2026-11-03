@@ -172,12 +172,17 @@ everyone keeps their own checkpoint: a fall only sends you back to yours.
   Run your own: see [server/README.md](server/README.md).
 * **Online**: the host gets a 5 letter room code and friends type it in. The phones connect directly over
   WebRTC; the free [PeerJS](https://peerjs.com) server only introduces them. Some networks (often mobile data)
-  don't allow that direct connection, so use Internet (direct) then.
-* **Internet (direct)**: no server at all. The host's phone asks its router to open the game port (UPnP), finds
-  its public address with a STUN lookup and shows a 10 character code; friends anywhere type it in and connect
-  straight to the host. Host from a home WiFi.
-* **WiFi or hotspot**: games on the same network show up by themselves. No internet needed.
-* **Bluetooth**: for when there is no WiFi at all. Pair the phones once in Android settings, then join from the list.
+  don't allow that direct connection, so use the game server then.
+
+Friends can join a climb that is already running.
+
+## Friends
+
+Every player has a player ID, shown on the Friends screen with a button to share it. Search by in game name or ID and
+send a request. Once it is accepted you can see which friends are online and, while they climb, the map, difficulty,
+height, time, falls and who they climb with. Tap Watch to follow their climb live (it works for solo climbs too), or Join
+if their room has a free spot. Anyone who would rather not be watched can turn that off on the same screen, and a climber is
+told who is watching. Both people need the game server.
 
 Friends can join a climb that is already running.
 
@@ -188,7 +193,7 @@ terms and play as a guest, or sign in with Discord, Steam or Google. A guest's c
 phone can reach them. Signing in moves them to an account that works on any phone. Or play without coins, with nothing
 sent anywhere. You can delete your account and everything on the server at any time.
 
-Coins only count alone or in a room on the game server. Offline and in WiFi, Bluetooth and Online games you climb the same
+Coins only count alone or in a room on the game server. Offline and in Online games you climb the same
 but earn nothing, because nothing can check those.
 
 Every climb that earns coins is played again on the server with the same physics, so a speed hack, a higher jump, flying, teleporting
@@ -224,8 +229,7 @@ aapt, apksigner, zipalign, the Android platform 23 jar and dalvik exchange, then
 That makes `build/StickManUp.apk`. On first run `build.sh` creates a local signing key (`stickmanup.jks`). The key
 is not in this repo. Keep your own copy, because Android only installs updates signed with the same key.
 
-To play or debug in a desktop browser, serve the `assets` folder with any static web server. Two tabs in the same
-browser can play WiFi multiplayer against each other.
+To play or debug in a desktop browser, serve the `assets` folder with any static web server.
 
 ## How it works
 

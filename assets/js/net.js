@@ -1,7 +1,5 @@
 // Multiplayer. A star network: clients talk only to the host, the host relays.
-// Transports: a StickManUp server (WebSocket relay), Online (PeerJS/WebRTC), Internet direct and WiFi (native TCP sockets via the Android
-// bridge; direct opens the router port with UPnP), Bluetooth, and a BroadcastChannel stand-in so two
-// browser tabs can test the netcode on a desktop.
+// Transports: a StickManUp server (WebSocket relay) and Online (PeerJS/WebRTC).
 import { LEVEL_VERSION, DIFFS, MAPS } from './level.js';
 import { validColor } from './colors.js';
 import { cleanLook, cleanRole } from './skins.js';
@@ -35,144 +33,6 @@ const ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:1
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const MAX_PLAYERS = 4;
 
-export const hasNative = () => !!(window.Native && window.Native.netHostLan);
-
-// ---------- native bridge (WiFi / Bluetooth) ----------
-const NB = { active: null, onFound: null, onBt: null };
-window.NET_open = (id) => NB.active && NB.active.cb.open(id);
-window.NET_msg = (id, s) => NB.active && NB.active.cb.msg(id, s);
-window.NET_close = (id, why) => NB.active && NB.active.cb.close(id, why || '');
-window.NET_fail = (why) => NB.active && NB.active.cb.error(why);
-window.NET_found = (list) => NB.onFound && NB.onFound(list);
-window.NET_bt = (state) => NB.onBt && NB.onBt(state);
-window.NET_expose = (r) => { const f = NB.onExpose; NB.onExpose = null; if (f) f(r); };
-
-// Direct internet hosting: ask the router to forward the game port and find the public address.
-export function exposeHost(port) {
-  if (!hasNative() || !window.Native.netExpose) return Promise.resolve({ ok: false, err: 'Needs the Android app' });
-  return new Promise((res) => {
-    NB.onExpose = res;
-    window.Native.netExpose(port);
-    setTimeout(() => { if (NB.onExpose === res) { NB.onExpose = null; res({ ok: false, err: 'Timed out' }); } }, 12000);
-  });
-}
-
-// Short codes for an internet address: IPv4 + port packed into 10 characters (Crockford base32).
-const B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-export function addrToCode(ip, port) {
-  const p = ip.split('.').map(Number);
-  let n = (BigInt(p[0]) << 40n) | (BigInt(p[1]) << 32n) | (BigInt(p[2]) << 24n) | (BigInt(p[3]) << 16n) | BigInt(port);
-  let s = '';
-  for (let i = 0; i < 10; i++) { s = B32[Number(n & 31n)] + s; n >>= 5n; }
-  return s.slice(0, 5) + ' ' + s.slice(5);
-}
-// Accepts a code (spaces, any punctuation and lowercase are fine) or a plain "ip:port". Returns { ip, port } or null.
-export function parseAddr(text) {
-  const t = text.trim();
-  const m = t.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
-  if (m) return { ip: m[1], port: +(m[2] || 47800) };
-  const c = t.toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/[IL]/g, '1').replace(/O/g, '0');
-  if (c.length !== 10) return null;
-  let n = 0n;
-  for (const ch of c) { const v = B32.indexOf(ch); if (v < 0) return null; n = (n << 5n) | BigInt(v); }
-  const port = Number(n & 0xffffn), ip = [40n, 32n, 24n, 16n].map((s) => Number((n >> s) & 255n)).join('.');
-  return port ? { ip, port } : null;
-}
-
-class NativeLink {
-  constructor(kind) { this.kind = kind; }
-  host(name, cb) {
-    this.cb = cb;
-    NB.active = this;
-    const r = JSON.parse(this.kind === 'lan' ? window.Native.netHostLan(name) : window.Native.netHostBt(name));
-    if (!r.ok) setTimeout(() => cb.error(r.err || 'Could not start hosting'), 0);
-    return Promise.resolve(r);
-  }
-  join(target, cb) {
-    this.cb = cb;
-    NB.active = this;
-    if (this.kind === 'lan') window.Native.netJoinLan(target.ip, target.port || 0);
-    else window.Native.netJoinBt(target.addr);
-  }
-  send(id, s) { window.Native.netSend(id, s); }
-  close(id) { window.Native.netClose(id); }
-  setInfo(name, n) { window.Native.netInfo(name, n); }
-  stop() {
-    window.Native.netStop();
-    if (NB.active === this) NB.active = null;
-  }
-}
-
-export function lanDiscover(onList) {
-  if (hasNative()) {
-    NB.onFound = onList;
-    window.Native.netDiscover(true);
-    return () => { NB.onFound = null; window.Native.netDiscover(false); };
-  }
-  const ch = new BroadcastChannel('stickmanup-dev'), seen = new Map();
-  ch.onmessage = (e) => {
-    if (e.data.k !== 'here') return;
-    seen.set(e.data.from, { name: e.data.name, ip: e.data.from, port: 0, n: e.data.n, t: Date.now() });
-    for (const [k, v] of seen) if (Date.now() - v.t > 3000) seen.delete(k);
-    onList([...seen.values()]);
-  };
-  return () => ch.close();
-}
-
-export function btPrepare(cb) {
-  if (!hasNative()) return cb('none');
-  NB.onBt = cb;
-  window.Native.btPrepare();
-}
-export const btDevices = () => (hasNative() ? JSON.parse(window.Native.btDevices()) : []);
-export const lanAddresses = () => (hasNative() ? JSON.parse(window.Native.netAddrs()) : ['dev-tab']);
-
-// Desktop test transport: tabs in the same browser find each other over a BroadcastChannel.
-class DevLink {
-  constructor() {
-    this.me = 'tab-' + Math.random().toString(36).slice(2, 7);
-    this.ch = new BroadcastChannel('stickmanup-dev');
-    this.peers = new Set();
-  }
-  host(name, cb) {
-    this.cb = cb;
-    this.name = name;
-    this.n = 1;
-    this.ch.onmessage = (e) => {
-      const m = e.data;
-      if (m.to !== this.me) return;
-      if (m.k === 'conn') { this.peers.add(m.from); this.post({ k: 'acc', to: m.from }); cb.open(m.from); }
-      else if (m.k === 'msg') cb.msg(m.from, m.d);
-      else if (m.k === 'bye') { this.peers.delete(m.from); cb.close(m.from, 'left'); }
-    };
-    this.beacon = setInterval(() => this.ch.postMessage({ k: 'here', from: this.me, name: this.name, n: this.n }), 800);
-    return Promise.resolve({ ok: true });
-  }
-  join(target, cb) {
-    this.cb = cb;
-    this.hostId = target.ip;
-    this.ch.onmessage = (e) => {
-      const m = e.data;
-      if (m.to !== this.me) return;
-      if (m.k === 'acc') { clearTimeout(this.to); cb.open(this.hostId); }
-      else if (m.k === 'msg') cb.msg(this.hostId, m.d);
-      else if (m.k === 'bye') cb.close(this.hostId, 'Host closed the game');
-    };
-    this.post({ k: 'conn', to: this.hostId });
-    this.to = setTimeout(() => cb.error('No answer from that game'), 4000);
-  }
-  post(m) { m.from = this.me; this.ch.postMessage(m); }
-  send(id, s) { this.post({ k: 'msg', to: id, d: s }); }
-  close(id) { this.post({ k: 'bye', to: id }); }
-  setInfo(name, n) { this.name = name; this.n = n; }
-  stop() {
-    clearInterval(this.beacon);
-    for (const p of this.peers) this.post({ k: 'bye', to: p });
-    if (this.hostId) this.post({ k: 'bye', to: this.hostId });
-    this.ch.close();
-  }
-}
-
 // Online play over WebRTC data channels; the public PeerJS server only introduces the phones.
 class PeerLink {
   constructor() { this.conns = new Map(); }
@@ -198,7 +58,7 @@ class PeerLink {
   join(code, cb) {
     this.cb = cb;
     const peer = (this.peer = new window.Peer({ debug: 0, config: { iceServers: ICE } }));
-    const fail = setTimeout(() => cb.error('Could not connect. Some networks (often mobile data) block direct connections: ask the host to use Internet (direct) from a home WiFi.'), 15000);
+    const fail = setTimeout(() => cb.error('Could not connect. Some networks (often mobile data) block direct connections: ask the host to open a room on the game server.'), 15000);
     peer.on('open', () => {
       const c = peer.connect(PREFIX + code.toUpperCase(), { reliable: true, serialization: 'raw' });
       this.wire(c, () => clearTimeout(fail));
@@ -306,9 +166,7 @@ class ServerLink {
 
 export function makeLink(kind, o) {
   if (kind === 'server') return new ServerLink(o);
-  if (kind === 'online') return new PeerLink();
-  if (kind === 'direct') kind = 'lan'; // the same TCP transport, reached over the internet
-  return hasNative() ? new NativeLink(kind) : new DevLink();
+  return new PeerLink();
 }
 
 // ---------- session ----------
@@ -335,8 +193,8 @@ export class Session {
     return { slot, name, id, color, look, role, samples: [], ping: 0 };
   }
 
-  // A flag only counts when it came through the game server, which writes them itself (server/lib/rooms.js). Over WiFi,
-  // Bluetooth or a direct connection anyone could claim anything, so nobody has one there.
+  // A flag only counts when it came through the game server, which writes them itself (server/lib/rooms.js). In
+  // an Online room anyone could claim anything, so nobody has one there.
   vouch(role) {
     return this.mode === 'solo' || (this.link && this.link.isServer) ? cleanRole(role) : '';
   }

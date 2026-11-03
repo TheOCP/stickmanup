@@ -582,6 +582,17 @@ function watchDevice() {
 let probe = null;
 let standingTimer = 0;
 export function setClimbProbe(f) { probe = f; }
+// Friends. The server decides what comes back.
+async function friendCall(path, body) {
+  if (!account()) return { err: 'Please sign in' };
+  const r = await call(path, body === undefined ? { auth: true, timeout: 8000 } : { auth: true, body, timeout: 8000 });
+  return r.ok ? r.json : { err: (r.json && r.json.err) || 'Could not reach the game server.' };
+}
+export const friendList = () => friendCall('/api/friends');
+export const friendSearch = (q) => friendCall('/api/friends/search', { q });
+export const friendAct = (act, num) => friendCall('/api/friends/act', { act, num });
+export const friendWatch = (allow) => friendCall('/api/friends/watch', { allow });
+
 export async function checkStanding() {
   if (!serverUrl()) return;
   const c = probe ? probe() : null;

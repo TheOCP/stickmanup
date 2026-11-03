@@ -1,6 +1,6 @@
 StickManUp is made by TheOCProductions and ShortGG.
 
-These are the simple rules for using this game server. If you would rather not accept them, you can still play without coins, on your own or over WiFi and Bluetooth.
+These are the simple rules for using this game server. If you would rather not accept them, you can still play without coins, on your own or in Online rooms.
 
 1. Your coins and your account
 Coins, items and relics are kept on this server, so nobody can lose them or make them up. As a guest you get an account only this phone can reach: if you lose the phone or clear the app, it is gone. Sign in with Discord, Steam or Google to keep it for good and use it on any phone. We never see your password for those services.
@@ -12,21 +12,24 @@ Your ID and display name from the service you signed in with, your player number
 Every climb that earns coins is recorded as you play it (your buttons, your position and what happens) and sent to this server, which plays it again to check that it could really happen. Recordings are deleted after a few days, or after some months for a climb that failed the check. The app also checks whether it has been changed, whether cheat tools are running or installed, your phone's model, whether it is rooted, and asks your phone's secure hardware to vouch for the app. Only the results of those checks are sent, never a list of your apps. Being rooted is allowed and is not held against you.
 
 4. Who can see this
-The people who run this server can see all of the above, including your name and IP address, in a private channel on Discord when you sign in or when something looks wrong. That means Discord handles that information too. Nothing here is sold or shown to other players.
+The people who run this server can see all of the above, including your name and IP address, in a private channel on Discord when you sign in or when something looks wrong. That means Discord handles that information too. Nothing here is sold, and other players only see what points 5 and 6 say.
 
 5. Playing online
 Games on this server pass through it, including player names and room names. A room password is only kept in scrambled form, and only while the room is open. Other players in your room can see your name and what you wear.
 
-6. Be decent
+6. Friends
+Anyone playing can find you by your in game name or your player number and ask to be your friend. Your other names and your IP address are never shown. Only people you said yes to, and you can remove them at any time, can see that you are online, when you were last online, how many climbs you made and finished, and while you play: the map, difficulty, height, time and falls of your climb and the code of your room. Friends can also watch your climb live, which shows them your climber and the people climbing with you, with their names and what they wear. You are told who is watching, and you can turn watching off under Friends. A climb that is being watched sends its positions through this server, and they are not kept.
+
+7. Be decent
 No cheating, no harassing other players and no attacking or overloading the server. If you break these rules you can lose coins and items and be banned, by the anticheat itself or by a person, along with your IP address or phone. You are told the reason. A banned account keeps a scrambled record of its sign in ID even after being deleted, so that deleting it doesn't lift the ban. If you think we got it wrong, ask us at the address below.
 
-7. Deleting your account
+8. Deleting your account
 You can delete your account and everything saved with it at any time in the game, under Account.
 
-8. No guarantees
+9. No guarantees
 StickManUp and this server are free and come as they are. The server can be down, change or shut down, and progress can be lost.
 
-9. Changes
+10. Changes
 If these terms change, you will be asked to accept them again before earning more coins.
 
 Questions: github.com/TheOCP/stickmanup

@@ -562,3 +562,99 @@ body.pad .set { grid-template-columns: 1fr; }
   .rrow { grid-template-columns: 20px 54px minmax(60px, 1fr) 56px 56px 52px; }
   .rrow small { display: none; }
 }
+
+/* Friends. */
+.row.three > .btn.sm { padding-left: 6px; padding-right: 6px; font-size: 13px; }
+.row > .btn.sm.frbtn { flex-direction: row; gap: 6px; }
+#frCount { display: inline-flex; gap: 3px; }
+#frCount:empty { display: none; }
+.frc { font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #04130f; background: var(--good); }
+.frc.req { color: #fff; background: var(--bad); }
+.frpanel { width: min(880px, 100%); }
+.friends { display: grid; grid-template-columns: minmax(170px, 220px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.fside { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fid { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 12px; border-radius: 14px; text-align: center; background: linear-gradient(135deg, rgba(63, 240, 208, 0.16), rgba(63, 240, 208, 0.04)); border: 1px solid rgba(63, 240, 208, 0.35); }
+.fid small { color: var(--tx2); font-size: 10px; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; }
+.fid b { color: var(--a); font-size: 28px; font-weight: 850; line-height: 1.1; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.fid span { color: var(--tx2); font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fid .btn { margin-top: 5px; }
+.ftabs { display: flex; flex-direction: column; gap: 4px; }
+.ftabs button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 9px 11px; border-radius: 10px; text-align: left; font-size: 14px; font-weight: 650; color: var(--tx2); background: rgba(255, 255, 255, 0.04); }
+.ftabs button.on { color: var(--tx); background: rgba(63, 240, 208, 0.16); }
+.ftabs i { font-style: normal; font-size: 12px; font-weight: 750; color: var(--tx3); font-variant-numeric: tabular-nums; }
+.ftabs i.hot { min-width: 18px; padding: 1px 5px; border-radius: 9px; text-align: center; color: #fff; background: var(--bad); }
+.fside .toggle { margin-top: 0; font-size: 12px; line-height: 1.3; }
+.fmain { min-width: 0; }
+.fmain .list { margin: 0; }
+.fmain .sub { margin-bottom: 8px; }
+#ffound { margin-top: 10px; }
+.frow { display: flex; align-items: stretch; gap: 8px; }
+.frow .item { flex: 1; min-width: 0; text-align: left; }
+.frow > .btn { width: auto; flex: none; min-width: 72px; align-items: center; justify-content: center; }
+.fdot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--tx3); }
+.fdot.on { background: var(--good); box-shadow: 0 0 8px var(--good); }
+.fdot.lobby { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.fdot.climb { background: var(--a); box-shadow: 0 0 10px var(--a); animation: fpulse 1.4s ease-in-out infinite; }
+@keyframes fpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.ftext { display: block; flex: 1; min-width: 0; }
+.ftext b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fnum { margin-left: 6px; font-style: normal; font-size: 12px; font-weight: 600; color: var(--tx3); }
+.fbar { display: block; height: 4px; margin-top: 6px; border-radius: 2px; overflow: hidden; background: rgba(255, 255, 255, 0.1); }
+.fbar i { display: block; height: 100%; border-radius: 2px; background: var(--a); transition: width 0.6s; }
+.ftag { flex: none; align-self: center; padding: 0 8px; font-size: 12px; font-weight: 700; color: var(--tx2); }
+.ftag.good { color: var(--good); }
+.fchead { display: flex; align-items: flex-start; gap: 10px; }
+.fchead .fdot { margin-top: 5px; }
+.fchead .ftext b { font-size: 18px; }
+.fchead .ftext small { display: block; color: var(--tx2); font-size: 12px; }
+.fstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; margin: 12px 0; }
+.fstats div { padding: 9px 6px; border-radius: 12px; text-align: center; background: rgba(255, 255, 255, 0.05); }
+.fstats b { display: block; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fstats small { color: var(--tx2); font-size: 11px; }
+.fbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.fbtns .btn { width: auto; flex: 1 1 auto; align-items: center; justify-content: center; }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+@media (max-width: 620px) {
+  .friends { grid-template-columns: minmax(0, 1fr); }
+  .frow { flex-wrap: wrap; }
+}
+@media (max-height: 389px) {
+  .fid { padding: 7px 10px; }
+  .fid b { font-size: 22px; }
+  .ftabs button { padding: 7px 10px; }
+  .frow .item { padding: 8px 11px; }
+}
+
+/* Watching a friend's climb. */
+#menu.specm { padding: 0; overflow: hidden; touch-action: none; }
+.specui { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.specui button { pointer-events: auto; }
+.sptop { position: absolute; left: calc(14px + var(--il)); right: calc(14px + var(--ir)); top: calc(10px + var(--it)); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.spwho { display: flex; flex-direction: column; min-width: 0; max-width: 38vw; padding: 8px 14px; border-radius: 14px; background: rgba(6, 12, 20, 0.55); border: 1px solid var(--line); }
+.spwho small { display: flex; align-items: center; gap: 6px; color: var(--a); font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.spdot { width: 7px; height: 7px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 8px #ff4d5e; animation: fpulse 1.4s ease-in-out infinite; }
+.spwho b { font-size: 17px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#spMap { color: var(--tx2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sptime { position: absolute; left: 50%; top: 0; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; font: 800 22px/1 system-ui; font-variant-numeric: tabular-nums; background: rgba(6, 12, 20, 0.55); }
+.specui .spleave { width: auto; background: rgba(6, 12, 20, 0.6); }
+.spalt { position: absolute; left: calc(22px + var(--il)); top: calc(96px + var(--it)); bottom: calc(84px + var(--ib)); width: 8px; }
+.spalt .track { position: absolute; inset: 0; border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+.spalt .track i { position: absolute; left: 0; right: 0; opacity: 0.75; }
+.spalt .marks i { position: absolute; left: -4px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; background: currentColor; box-shadow: 0 0 10px currentColor; transform: translateY(50%); transition: bottom 0.25s linear; }
+.spnote { position: absolute; left: 50%; top: 28%; transform: translateX(-50%); padding: 8px 18px; border-radius: 14px; font-size: 20px; font-weight: 800; white-space: nowrap; background: rgba(6, 12, 20, 0.6); }
+.spnote:empty { display: none; }
+.spbot { position: absolute; left: calc(14px + var(--il)); right: calc(14px + var(--ir)); bottom: calc(10px + var(--ib)); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.spstats { display: flex; gap: 6px; }
+.spstats div { min-width: 56px; padding: 6px 12px; border-radius: 12px; text-align: center; background: rgba(6, 12, 20, 0.55); }
+.spstats b { display: block; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.spstats small { color: var(--tx2); font-size: 10px; }
+.spteam { flex: 1; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-width: 0; }
+.spchip { display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 20px; font-size: 12px; font-weight: 750; background: rgba(6, 12, 20, 0.55); border: 1px solid var(--line); }
+.spchip span { color: var(--tx); }
+.spchip i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.spchip.on { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; }
+.specui .spjoin { width: auto; }
+
+/* While someone is watching your climb. */
+#hWatch { position: absolute; left: 50%; top: calc(38px + var(--it)); transform: translateX(-50%); display: none; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 750; background: rgba(6, 12, 20, 0.5); }
+#hWatch.on { display: block; }

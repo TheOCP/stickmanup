@@ -17,6 +17,7 @@ const { Admin, ipKey } = require('./lib/admin');
 const { Verifier, cleanRules, BUILD } = require('./lib/verifier');
 const { Bot } = require('./lib/discord');
 const { Attest } = require('./lib/attest');
+const { Friends } = require('./lib/friends');
 
 const VERSION = require('./package.json').version;
 const env = process.env;
@@ -70,11 +71,12 @@ const rooms = verifier.rooms = new Rooms({
   // Old games have no token to give. Once the anticheat is enforcing, they need the update.
   needToken: () => admin.mode === 'enforce',
 });
+const friends = new Friends(db, admin, rooms);
 const auth = new Auth(cfg, db, termsVersion, admin);
 admin.onBan = ({ userId, ip, reason }) => {
   const why = `You are banned from this server. Reason: ${reason}`;
-  if (userId) rooms.kickUser(userId, why);
-  if (ip) rooms.kickIp(ip, why);
+  if (userId) { rooms.kickUser(userId, why); friends.kickUser(userId, why); }
+  if (ip) { rooms.kickIp(ip, why); friends.kickIp(ip, why); }
 };
 const bot = new Bot({
   token: env.DISCORD_BOT_TOKEN || '', guild: env.DISCORD_BOT_GUILD || '', logChannel: env.DISCORD_BOT_LOG_CHANNEL || '', warnChannel: env.DISCORD_BOT_WARN_CHANNEL || '', admins: env.DISCORD_BOT_ADMINS || '',
@@ -89,6 +91,7 @@ const limits = {
   // Whole phone networks can share one address, so this only stops someone making accounts by the hundred.
   guest: new Limiter(+env.GUEST_LIMIT_BURST || 20, (+env.GUEST_LIMIT_PER_HOUR || 20) / 3600),
   device: new Limiter(30, 30 / 3600),
+  friends: new Limiter(60, 1),
 };
 const sweep = setInterval(() => { for (const l of Object.values(limits)) l.sweep(); }, 60000);
 sweep.unref();
@@ -246,6 +249,7 @@ async function route(req, res) {
       const g = db.sessionUser(b.guest), gu = g ? db.user(g) : null;
       if (gu && gu.provider === 'guest') {
         moved = wallet.moveGuest(g, r.userId);
+        friends.moveGuest(g, r.userId);
         // A flag moves along with the rest.
         if (gu.role && !db.user(r.userId).role) { admin.setRole(r.userId, gu.role); admin.setRole(g, ''); }
       }
@@ -292,7 +296,7 @@ async function route(req, res) {
 
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT'));
+  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT')) || (p === '/api/friends' && method === 'GET') || (method === 'POST' && (p === '/api/friends/search' || p === '/api/friends/act' || p === '/api/friends/watch'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
@@ -312,6 +316,20 @@ async function route(req, res) {
     return json(res, 200, { ok: true });
   }
   if (off) return json(res, 403, admin.showBan(off, user));
+  // Friends. What a friend can see of someone is decided in lib/friends.js, never by the phone asking.
+  if (p.startsWith('/api/friends')) {
+    if (!limits.friends.take(me.id)) return json(res, 429, { err: 'Too many requests. Try again later.' });
+    if (p === '/api/friends') return json(res, 200, friends.list(me.id));
+    const b = await readJson(req);
+    if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
+    if (p === '/api/friends/search') {
+      const r = friends.search(me.id, b.q);
+      return json(res, r.err ? 429 : 200, r);
+    }
+    if (p === '/api/friends/watch') return json(res, 200, friends.setWatch(me.id, !!b.allow));
+    const r = friends.act(me.id, b.act, b.num);
+    return json(res, r.err ? 400 : 200, r);
+  }
   if (p === '/api/inbox/read') {
     const b = (await readJson(req)) || {};
     admin.inboxRead(me.id, b.ids);
@@ -400,8 +418,10 @@ server.keepAliveTimeout = 10000;
 server.maxHeadersCount = 60;
 server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => {});
-  if (new URL(req.url, 'http://x').pathname !== '/ws') return socket.destroy();
-  rooms.upgrade(req, socket, head, clientIp(req));
+  const where = new URL(req.url, 'http://x').pathname;
+  if (where === '/ws') return rooms.upgrade(req, socket, head, clientIp(req));
+  if (where === '/live') return friends.upgrade(req, socket, head, clientIp(req));
+  socket.destroy();
 });
 server.on('clientError', (e, socket) => socket.destroy());
 
@@ -423,6 +443,7 @@ function backupNow() {
     wallet.cleanup();
     admin.cleanup();
     verifier.cleanup();
+    friends.cleanup();
   } catch (e) {
     console.error('backup failed:', e.message);
   }
@@ -435,6 +456,7 @@ function stop() {
   if (stopping) return;
   stopping = true;
   rooms.stop();
+  friends.stop();
   auth.stop();
   bot.stop();
   verifier.stop();

@@ -2,7 +2,6 @@ package io.stickmanup;
 
 import android.app.Activity;
 import android.content.Context;
-import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -42,21 +41,17 @@ import java.util.Locale;
 
 /**
  * Full-screen landscape WebView running the game from assets/, served from a secure https origin so
- * ES modules and WebRTC work. Exposes {@code window.Native} for haptics and local multiplayer sockets.
+ * ES modules and WebRTC work. Exposes {@code window.Native} for haptics and the like.
  */
-public class MainActivity extends Activity implements Net.Out {
+public class MainActivity extends Activity {
     private volatile String guardLast = "{}";
     private volatile long guardAt = 0;
 
     private static final String ORIGIN = "https://appassets.androidplatform.net/";
-    private static final int REQ_BT_PERM = 7, REQ_BT_ON = 8;
-    private static final String BT_CONNECT = "android.permission.BLUETOOTH_CONNECT";
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.8";
-    private Net net;
-    private final Expose expose = new Expose();
+    static final String VERSION = "4.9";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final StringBuilder jsQueue = new StringBuilder();
     private boolean jsPosted;
@@ -84,7 +79,6 @@ public class MainActivity extends Activity implements Net.Out {
             w.setAttributes(lp);
         } catch (Exception ignored) {
         }
-        net = new Net(this, this);
         // Crash guard: "booting" stays set until the game reports 20 s of healthy rendering or the user
         // leaves normally. Still set at the next launch means the GPU took the app down, so go one level safer.
         prefs = getSharedPreferences("stickmanup", MODE_PRIVATE);
@@ -255,7 +249,6 @@ public class MainActivity extends Activity implements Net.Out {
     }
 
     /** Queues JavaScript and runs it in batches on the UI thread (network messages arrive in bursts). */
-    @Override
     public void js(String code) {
         synchronized (jsQueue) {
             jsQueue.append(code).append(";\n");
@@ -329,41 +322,8 @@ public class MainActivity extends Activity implements Net.Out {
 
     @Override
     protected void onDestroy() {
-        net.stopAll();
         web.destroy();
         super.onDestroy();
-    }
-
-    private String btState() {
-        BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
-        if (a == null) return "none";
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(BT_CONNECT) != PackageManager.PERMISSION_GRANTED) return "denied";
-        try {
-            return a.isEnabled() ? "ok" : "off";
-        } catch (SecurityException e) {
-            return "denied";
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int code, String[] perms, int[] res) {
-        if (code == REQ_BT_PERM) {
-            if ("off".equals(btState())) askBluetoothOn();
-            else js("NET_bt('" + btState() + "')");
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int code, int result, Intent data) {
-        if (code == REQ_BT_ON) js("NET_bt('" + btState() + "')");
-    }
-
-    private void askBluetoothOn() {
-        try {
-            startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), REQ_BT_ON);
-        } catch (Exception e) {
-            js("NET_bt('off')");
-        }
     }
 
     final class Bridge {
@@ -554,91 +514,6 @@ public class MainActivity extends Activity implements Net.Out {
                     finish();
                 }
             });
-        }
-
-        @JavascriptInterface
-        public String netHostLan(String name) {
-            return net.hostLan(name);
-        }
-
-        @JavascriptInterface
-        public void netJoinLan(String ip, int port) {
-            net.joinLan(ip, port);
-        }
-
-        @JavascriptInterface
-        public void netDiscover(boolean on) {
-            net.discover(on);
-        }
-
-        @JavascriptInterface
-        public String netAddrs() {
-            return net.addrs().toString();
-        }
-
-        @JavascriptInterface
-        public void netInfo(String name, int players) {
-            net.info(name, players);
-        }
-
-        @JavascriptInterface
-        public void netSend(String id, String msg) {
-            net.send(id, msg);
-        }
-
-        @JavascriptInterface
-        public void netClose(String id) {
-            net.close(id, "closed", true);
-        }
-
-        @JavascriptInterface
-        public void netStop() {
-            net.stopAll();
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    expose.close();
-                }
-            }).start();
-        }
-
-        /** Direct internet hosting: open the router port and find the public address (async, the answer arrives via NET_expose). */
-        @JavascriptInterface
-        public void netExpose(final int port) {
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    js("NET_expose(" + expose.open(port) + ")");
-                }
-            }).start();
-        }
-
-        @JavascriptInterface
-        public void btPrepare() {
-            ui.post(new Runnable() {
-                @Override
-                public void run() {
-                    String s = btState();
-                    if ("denied".equals(s)) requestPermissions(new String[]{BT_CONNECT}, REQ_BT_PERM);
-                    else if ("off".equals(s)) askBluetoothOn();
-                    else js("NET_bt('" + s + "')");
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public String btDevices() {
-            return net.btDevices();
-        }
-
-        @JavascriptInterface
-        public String netHostBt(String name) {
-            return net.hostBt(name);
-        }
-
-        @JavascriptInterface
-        public void netJoinBt(String addr) {
-            net.joinBt(addr);
         }
     }
 }

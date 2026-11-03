@@ -17,8 +17,8 @@ import { Session, PROTO, makeLink, lanDiscover, btPrepare, btDevices, lanAddress
 import { Game } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
-import { SUIT, resolveLook, plainLook, roleOf, tagColor } from './skins.js';
-import { initProfile, myLook, nameChanged, owned, wonOnce, coins as myCoins } from './profile.js';
+import { SUIT, resolveLook, plainLook, ROLE_TAGS, cleanRole, tagColor } from './skins.js';
+import { initProfile, myLook, myRole, owned, wonOnce, coins as myCoins } from './profile.js';
 import { openShop, openRecords } from './shop.js';
 import { Chain } from './chain.js';
 import { Fx } from './fx.js';
@@ -38,13 +38,13 @@ const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music:
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
 // The colour you picked before there were suits becomes your first suit.
 initProfile(settings.color);
-const myColor = () => tagColor(SUIT[myLook(settings.name).s].c);
+const myColor = () => tagColor(SUIT[myLook().s].c);
 let myResolved = null;
-const myOutfit = () => myResolved || (myResolved = resolveLook(myLook(settings.name), settings.name));
+const myOutfit = () => myResolved || (myResolved = resolveLook(myLook(), myRole()));
 // Something you wear changed: everyone in the game should see it.
 function lookChanged() {
   myResolved = null;
-  if (app.game) { app.game.s.setMe(settings.name, myColor(), myLook(settings.name)); app.game.refreshPlayers(); }
+  if (app.game) { app.game.s.setMe(settings.name, myColor(), myLook(), myRole()); app.game.refreshPlayers(); }
 }
 // Custom rules for a new climb. -1 means Auto (follow the difficulty).
 const RULES = [
@@ -58,7 +58,8 @@ function rulesHtml(r, editable, solo) {
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
     <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
 }
-const roleTag = (p) => { const r = roleOf(p.look, p.name); return r ? `<em class="role">${r}</em>` : ''; };
+const roleChip = (r) => (cleanRole(r) ? `<em class="role ${r}">${ROLE_TAGS[r]}</em>` : '');
+const roleTag = (p) => roleChip(p.role);
 // A player's colour in the session (their pick, or their slot's default).
 const pcol = (s, slot) => { const p = s.players.get(slot); return css((p && p.color) ?? COLORS[slot % 4]); };
 // Earlier versions had on/off switches for the two assists; carry them over to the sliders.
@@ -263,8 +264,7 @@ const ui = (app.ui = {
         el = document.createElement('div');
         el.dataset.s = slot;
         el.style.color = pcol(g.s, slot);
-        const role = roleOf(p.look, p.name);
-        el.textContent = (role ? role + ' · ' : '') + p.name;
+        el.textContent = (cleanRole(p.role) ? ROLE_TAGS[p.role] + ' · ' : '') + p.name;
         box.appendChild(el);
       }
       v.set(o.x, o.y + 1.45, o.z).project(cam);
@@ -312,7 +312,7 @@ function closeEmotes() {
 }
 function openEmotes(viaPad) {
   if (app.screen !== 'game' || !app.game) return;
-  const name = settings.name, list = EMOTES.filter((e) => !e.hidden && owned(e, name)), more = EMOTES.filter((e) => !e.hidden).length - list.length;
+  const list = EMOTES.filter((e) => !e.hidden && owned(e)), more = EMOTES.filter((e) => !e.hidden).length - list.length;
   $('#emoteMenu').innerHTML = `<div class="emHead"><b>Emotes</b><small>${more ? `${more} more in the shop` : 'You have them all'}</small></div>
     <div class="emGrid">${list.map((e) => `<button class="emo r${e.r}" data-em="${e.id}"><i>${e.icon}</i><span>${esc(e.name)}</span></button>`).join('')}</div>`;
   $('#emoteMenu').className = 'on';
@@ -329,6 +329,7 @@ let handlers = {};
 function show(html, h = {}, dim = true) {
   const m = $('#menu');
   m.innerHTML = html;
+  m.scrollTop = 0;
   m.className = 'on' + (dim ? ' dim' : '');
   handlers = h;
   app.back = h.back || null;
@@ -432,7 +433,7 @@ function title() {
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>${ban ? why : `Pick a map and practise on your own`}</small></button>
       <button class="btn" data-a="host"${off}><b>Host a game</b><small>${ban ? why : `Server, online, WiFi or Bluetooth`}</small></button>
       <button class="btn" data-a="join"${off}><b>Join a game</b><small>${ban ? why : `Room code or a game nearby`}</small></button>
-      <div class="row"><button class="btn sm" data-a="browser"${off}>Server browser</button><button class="btn sm acctbtn" data-a="account">${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</button></div>
+      <div class="row"><button class="btn sm" data-a="browser"${off}>Server browser</button><button class="btn sm acctbtn" data-a="account"><span>${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</span>${roleChip(myRole())}</button></div>
       <div class="row"><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button><button class="btn sm" data-a="records"${off}>Records</button></div>
       <div class="row"><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
     </div></div>`, lockedIf(ban, {
@@ -479,7 +480,7 @@ function soloPick() {
 }
 
 function startSolo(map, diff, save) {
-  const s = new Session('solo', settings.name, null, myColor(), myLook(settings.name));
+  const s = new Session('solo', settings.name, null, myColor(), myLook(), myRole());
   beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
@@ -521,7 +522,7 @@ async function bluetoothReady() {
 
 async function hostWith(kind, roomOpts) {
   if (kind === 'bt' && !(await bluetoothReady())) return;
-  const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(settings.name));
+  const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(), myRole());
   let cancelled = false;
   busy(kind === 'server' ? 'Opening your room...' : kind === 'online' ? 'Opening an online room...' : kind === 'direct' ? 'Opening your router for friends...' : 'Starting...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
@@ -700,7 +701,7 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   if (stopDisc) { stopDisc(); stopDisc = null; }
-  const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken() } : undefined), myColor(), myLook(settings.name));
+  const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken() } : undefined), myColor(), myLook(), myRole());
   const back = app.joinBack;
   busy('Connecting...', () => { s.close(); if (back) back(); else joinScreen(kind); });
   wireLobby(s);
@@ -1014,7 +1015,12 @@ cloud.on('inbox', (list) => {
 });
 cloud.on('dayLimit', () => ui.toast('Daily coin limit reached. More tomorrow!', 'bad'));
 cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
-cloud.on('changed', () => { if (app.screen === 'title') title(); });
+let roleSeen = myRole();
+cloud.on('changed', () => {
+  // A flag given or taken away by the bot: the suit that goes with it comes or goes right away.
+  if (myRole() !== roleSeen) { roleSeen = myRole(); lookChanged(); }
+  if (app.screen === 'title') title();
+});
 
 // ---------- settings & help ----------
 const PRESETS = {
@@ -1120,8 +1126,6 @@ function settingsScreen(back) {
       if (!n) return;
       settings.name = n;
       saveSettings();
-      const owner = nameChanged(n);
-      if (owner) ui.toast(`Welcome back, ${n}. Your ${owner.name} suit is on.`, 'gold');
       lookChanged();
     }, 450);
   });
@@ -1793,7 +1797,7 @@ function shopScene(dt) {
   // out of shape over on the side of the picture.
   const th = Math.atan2(c.z, c.x) - 0.25, rad = 13, x = Math.cos(th) * rad, z = Math.sin(th) * rad, ox = Math.cos(th), oz = Math.sin(th);
   const fl = app.world.floorBelow(x, c.y + 3, z, 12), gy = fl > -50 ? fl : c.y, y = gy + PR;
-  r0.setLook(resolveLook(P.look, settings.name));
+  r0.setLook(resolveLook(P.look, myRole()));
   r0.show();
   r0.flip = 0;
   // An emote picked in the shop plays, and plays again after a short rest.

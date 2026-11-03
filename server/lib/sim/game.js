@@ -173,7 +173,7 @@ export class Game {
   // What someone wears. Their colour is for the cord, the name tag and their effects.
   dress(s, r) {
     const p = this.s.players.get(s), c = this.colorOf(s);
-    r.setLook(p && p.look ? resolveLook(p.look, p.name) : plainLook(c));
+    r.setLook(p && p.look ? resolveLook(p.look, p.role) : plainLook(c));
     this.app.fx.setColor(s, c);
   }
 

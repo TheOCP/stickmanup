@@ -181,6 +181,15 @@ and it stores none of them.
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
 * **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`
 
+### Flags in the game
+
+`/setrole player:Name role:owner` gives a player a flag next to their name: `owner`, `admin` or `mod`. `role:none` takes it
+away, and `/roles` lists everyone who has one. They are kept on this server and it writes them into every room itself, so a
+changed app or a chosen name gets nobody a flag. Owners can wear The Hacker and GG Girl, admins GG Girl.
+
+A flag only shows in rooms on this server. WiFi, Bluetooth and direct online games don't go through it, so nobody can check
+them, and nobody has a flag or a team suit there. A flag gives no power: who may use the bot is still the list of Discord IDs.
+
 ### Join and leave messages
 
 `/welcome channel:#join-leave` says who joined and who left in that channel. Add `leavechannel` to split them, and

@@ -4,7 +4,7 @@
 // browser tabs can test the netcode on a desktop.
 import { LEVEL_VERSION, DIFFS, MAPS } from './level.js';
 import { validColor } from './colors.js';
-import { cleanLook } from './skins.js';
+import { cleanLook, cleanRole } from './skins.js';
 
 export const PROTO = LEVEL_VERSION * 100 + 1;
 
@@ -313,12 +313,13 @@ export function makeLink(kind, o) {
 
 // ---------- session ----------
 export class Session {
-  constructor(mode, name, link, color = null, look = null) {
+  constructor(mode, name, link, color = null, look = null, role = '') {
     this.mode = mode; // 'solo' | 'host' | 'client'
     this.name = name;
     this.color = validColor(color);
     this.look = cleanLook(look);
     this.link = link;
+    this.role = this.vouch(role);
     this.slot = 0;
     this.players = new Map();
     this.h = {};
@@ -327,21 +328,28 @@ export class Session {
     this.ping = 0;
     this.lobby = { diff: 1, resume: false };
     this.game = null;
-    if (mode !== 'client') this.players.set(0, this.player(0, name, null, this.color, this.look));
+    if (mode !== 'client') this.players.set(0, this.player(0, name, null, this.color, this.look, this.role));
   }
 
-  player(slot, name, id, color = null, look = null) {
-    return { slot, name, id, color, look, samples: [], ping: 0 };
+  player(slot, name, id, color = null, look = null, role = '') {
+    return { slot, name, id, color, look, role, samples: [], ping: 0 };
+  }
+
+  // A flag only counts when it came through the game server, which writes them itself (server/lib/rooms.js). Over WiFi,
+  // Bluetooth or a direct connection anyone could claim anything, so nobody has one there.
+  vouch(role) {
+    return this.mode === 'solo' || (this.link && this.link.isServer) ? cleanRole(role) : '';
   }
 
   // Changing your name or colour mid-game: update it here and tell everyone. A client tells the host,
   // the host passes the new player list on, and every screen redraws the stickmen and name tags.
-  setMe(name, color, look) {
+  setMe(name, color, look, role) {
     this.name = String(name || 'Climber').slice(0, 14);
     this.color = validColor(color);
     if (look !== undefined) this.look = cleanLook(look);
+    if (role !== undefined) this.role = this.vouch(role);
     const me = this.players.get(this.slot);
-    if (me) { me.name = this.name; me.color = this.color; me.look = this.look; }
+    if (me) { me.name = this.name; me.color = this.color; me.look = this.look; if (this.mode !== 'client') me.role = this.role; }
     if (this.mode === 'client') this.send(this.hostId, { k: 'info', name: this.name, color: this.color, look: this.look });
     else this.sendLobby();
   }
@@ -377,7 +385,7 @@ export class Session {
         let slot = -1;
         for (let i = 1; i < MAX_PLAYERS; i++) if (!this.players.has(i)) { slot = i; break; }
         if (slot < 0) return this.deny(id, 'This game is full (4 robots).');
-        this.players.set(slot, this.player(slot, String(m.name || 'Climber').slice(0, 14), id, validColor(m.color), cleanLook(m.look)));
+        this.players.set(slot, this.player(slot, String(m.name || 'Climber').slice(0, 14), id, validColor(m.color), cleanLook(m.look), this.vouch(m.role)));
         this.send(id, { k: 'welcome', slot, players: this.list(), lobby: this.lobby, game: this.game ? this.emitGet('snapshot', slot) : null });
         this.sendLobby();
         this.emit('roster', slot, true);
@@ -385,7 +393,7 @@ export class Session {
       }
       case 'ping': this.send(id, { k: 'pong', c: m.c, h: performance.now() }); break;
       case 'info':
-        if (p) { p.name = String(m.name || p.name).slice(0, 14); p.color = validColor(m.color); p.look = cleanLook(m.look); this.sendLobby(); }
+        if (p) { p.name = String(m.name || p.name).slice(0, 14); p.color = validColor(m.color); p.look = cleanLook(m.look); p.role = this.vouch(m.role); this.sendLobby(); }
         break;
       case 'st': if (p) { if (Number.isFinite(m.r) && m.r > 0) p.ping = Math.round(m.r); this.push(p, this.emitGet('gameTime'), m.s); } break;
       case 'ev': if (p && m.e && typeof m.e === 'object') this.emit('hostEvent', m.e, p.slot); break;
@@ -409,7 +417,9 @@ export class Session {
   }
 
   list() {
-    return [...this.players.values()].map((p) => ({ slot: p.slot, name: p.name, color: p.color, look: p.look, ping: p.ping }));
+    // The game server needs to know who is who to write their flags. Nobody else needs those ids.
+    const sv = this.link && this.link.isServer;
+    return [...this.players.values()].map((p) => ({ slot: p.slot, name: p.name, color: p.color, look: p.look, ping: p.ping, role: p.role, id: sv && p.id !== null ? p.id : undefined }));
   }
 
   sendLobby() {
@@ -538,7 +548,7 @@ export class Session {
       const name = String(p.name || 'Climber').slice(0, 14);
       if (!this.players.has(p.slot)) { this.players.set(p.slot, this.player(p.slot, name, null)); this.emit('roster', p.slot, true); }
       const q = this.players.get(p.slot);
-      q.name = name; q.ping = count(p.ping); q.color = validColor(p.color); q.look = cleanLook(p.look);
+      q.name = name; q.ping = count(p.ping); q.color = validColor(p.color); q.look = cleanLook(p.look); q.role = this.vouch(p.role);
       before.delete(p.slot);
     }
     for (const s of before) { this.players.delete(s); this.emit('roster', s, false); }

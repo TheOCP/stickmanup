@@ -194,8 +194,10 @@ class Wallet {
   get mapNames() { return catalog.maps.map((m) => m.key); }
   // Does this person really own what they are wearing? Free things and things earned another way aren't on sale.
   // What someone is wearing, by the names the shop sells it under. Faces and hats that share a name with a suit are told apart.
-  ownsLook(id, look) {
+  ownsLook(id, look, role = '') {
     if (!look || typeof look !== 'object') return true;
+    // The team suits go with a flag from the bot.
+    if (typeof look.s === 'string' && Object.hasOwn(catalog.team, look.s) && !catalog.team[look.s].includes(role)) return false;
     const key = (kind, x) => (Object.hasOwn(catalog.items, `${kind}:${x}`) ? `${kind}:${x}` : x);
     const keys = [look.s, look.f && key('face', look.f), look.h && key('hat', look.h)].filter((k) => typeof k === 'string');
     const w = this.load(id);

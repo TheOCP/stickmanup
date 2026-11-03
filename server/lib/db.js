@@ -53,7 +53,7 @@ class DB {
     `);
     // Servers from before these existed get them added. Nothing already there changes.
     const have = new Set(this.db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
-    for (const [col, def] of [['num', 'INTEGER'], ['last_ip', 'TEXT'], ['game_name', 'TEXT'], ['device', 'TEXT'], ['last_played', 'INTEGER'], ['last_map', 'INTEGER'], ['last_diff', 'INTEGER'], ['last_h', 'INTEGER'], ['trusted', 'INTEGER NOT NULL DEFAULT 0'], ['climbs', 'INTEGER NOT NULL DEFAULT 0']]) {
+    for (const [col, def] of [['num', 'INTEGER'], ['last_ip', 'TEXT'], ['game_name', 'TEXT'], ['device', 'TEXT'], ['last_played', 'INTEGER'], ['last_map', 'INTEGER'], ['last_diff', 'INTEGER'], ['last_h', 'INTEGER'], ['trusted', 'INTEGER NOT NULL DEFAULT 0'], ['climbs', 'INTEGER NOT NULL DEFAULT 0'], ['role', "TEXT NOT NULL DEFAULT ''"]]) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE users ADD COLUMN ${col} ${def}`);
     }
     // Every player has a short number, easy to read out and to type: #1042.
@@ -72,7 +72,7 @@ class DB {
       maxNum: q('SELECT COALESCE(MAX(num), 0) AS n FROM users'),
       addIdentity: q('INSERT INTO identities (provider, subject, user_id) VALUES (?, ?, ?)'),
       seen: q('UPDATE users SET name = ?, last_seen = ?, tos_version = ?, tos_at = ? WHERE id = ?'),
-      user: q(`SELECT u.id, u.name, u.created, u.tos_version, u.tos_at, u.num, u.trusted, u.device, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.id = ? ORDER BY i.provider = 'guest' LIMIT 1`),
+      user: q(`SELECT u.id, u.name, u.created, u.tos_version, u.tos_at, u.num, u.trusted, u.device, u.role, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.id = ? ORDER BY i.provider = 'guest' LIMIT 1`),
       addSession: q('INSERT INTO sessions (token_hash, user_id, created, expires) VALUES (?, ?, ?, ?)'),
       session: q('SELECT user_id, expires FROM sessions WHERE token_hash = ?'),
       touch: q('UPDATE sessions SET expires = ? WHERE token_hash = ?'),
@@ -133,7 +133,7 @@ class DB {
 
   user(id) {
     const u = this.q.user.get(id);
-    return u ? { id: u.id, name: u.name, provider: u.provider, created: u.created, tos: u.tos_version, num: u.num, trusted: u.trusted, device: u.device } : null;
+    return u ? { id: u.id, name: u.name, provider: u.provider, created: u.created, tos: u.tos_version, num: u.num, trusted: u.trusted, device: u.device, role: u.role || '' } : null;
   }
 
   // A new random token. Only its hash is kept.

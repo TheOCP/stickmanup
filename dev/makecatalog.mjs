@@ -9,13 +9,13 @@ import { fileURLToPath } from 'node:url';
 const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
 const { generateLevel, MAPS, DIFFS } = await import('../assets/js/level.js');
-const { SUITS, FACES, HATS, LEGENDS, itemKey } = await import('../assets/js/skins.js');
+const { SUITS, FACES, HATS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
 
 const items = {};
 for (const it of [...SUITS, ...FACES, ...HATS, ...EMOTES]) {
-  // Only what the shop sells: free things need no buying, and legendaries and personal suits can't be bought.
-  if (!(it.price > 0) || it.relic || it.ach || it.owner) continue;
+  // Only what the shop sells: free things need no buying, and legendaries can't be bought.
+  if (!(it.price > 0) || it.relic || it.ach) continue;
   const key = itemKey(it);
   if (items[key] !== undefined) throw new Error(`${key} is on sale twice`);
   items[key] = it.price;
@@ -26,7 +26,9 @@ const maps = MAPS.map((M) => {
   return { key: M.key, coins: L.coins.length, relics: L.relics.map((r) => r.id) };
 });
 const relicCount = LEGENDS.filter((l) => l.relic).length;
-const catalog = { items: Object.fromEntries(Object.entries(items).sort(([a], [b]) => (a < b ? -1 : 1))), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount };
+// Which flags may wear the team suits.
+const team = Object.fromEntries(OWNERS.map((o) => [o.id, o.team]));
+const catalog = { team, items: Object.fromEntries(Object.entries(items).sort(([a], [b]) => (a < b ? -1 : 1))), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount };
 
 const file = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server/lib/catalog.json');
 const text = JSON.stringify(catalog) + '\n';

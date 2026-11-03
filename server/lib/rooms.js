@@ -33,6 +33,7 @@ class Rooms {
     this.isOff = opts.isOff || (() => null);
     this.onCheat = opts.onCheat || (() => {});
     this.ownsLook = opts.ownsLook || (() => true);
+    this.roleOf = opts.roleOf || (() => '');
     this.needToken = opts.needToken || (() => false);
     this.ipKey = opts.ipKey || ((x) => x);
     this.perIp = new Map();
@@ -105,11 +106,11 @@ class Rooms {
       const i = text.indexOf('|');
       if (i < 1 || i > 8) return;
       const peer = ws.room.peers.get(+text.slice(0, i));
-      const out = this.checkLook(ws, text.slice(i + 1));
+      const out = this.checkPlayers(ws, text.slice(i + 1));
       if (peer && out !== null) this.send(peer, out);
       this.watch(ws, text.slice(i + 1));
     } else if (ws.role === 'peer') {
-      const out = this.checkLook(ws, text);
+      const out = this.checkPlayers(ws, text);
       if (out === null) return;
       this.watch(ws, out);
       this.send(ws.room.host, ws.peerId + '|' + out);
@@ -118,24 +119,46 @@ class Rooms {
 
   // Items are bought on the server, and in a room that is where anyone else's copy comes from. Wearing what you don't own
   // reaches the others without it. A peer's own message says it directly, a host's is its line in the player list.
-  checkLook(ws, text) {
-    if (!ws.userId) return text;
-    const isPeer = ws.role === 'peer' && (text.startsWith('{"k":"hello"') || text.startsWith('{"k":"info"'));
-    const isHost = ws.role === 'host' && text.startsWith('{"k":"lobby"');
-    if (!isPeer && !isHost) return text;
-    const now = Date.now();
-    if (isPeer && text.startsWith('{"k":"info"') && now - ws.lookAt < 200) return null;
-    ws.lookAt = now;
+  // The flags are the server's word alone: whatever a phone says about them is replaced here, before anyone else sees it.
+  checkPlayers(ws, text) {
+    const host = ws.role === 'host';
+    // Something written with escapes could be hiding what it really is, so those get read as well.
+    const maybe = text.includes('\\u') || (host ? text.includes('players') : text.includes('hello') || text.includes('info'));
+    if (!maybe) return text;
     let m;
     try { m = JSON.parse(text); } catch (e) { return text; }
-    const me = isPeer ? m : Array.isArray(m.players) ? m.players.find((p) => p && p.slot === 0) : null;
-    if (!me || !me.look || this.ownsLook(ws.userId, me.look)) return text;
-    if (!ws.lookFlag) {
-      ws.lookFlag = true;
-      this.onCheat(ws.userId, 'look', 'Wearing items in a room that it does not own.', 5);
+    if (!m || typeof m !== 'object') return text;
+    if (host ? !Array.isArray(m.players) : m.k !== 'hello' && m.k !== 'info') return text;
+    const now = Date.now();
+    if (!host && m.k === 'info' && now - ws.lookAt < 200) return null;
+    ws.lookAt = now;
+    const me = host ? m.players.find((p) => p && p.slot === 0) : m;
+    if (ws.userId && me && me.look && !this.ownsLook(ws.userId, me.look)) {
+      if (!ws.lookFlag) {
+        ws.lookFlag = true;
+        this.onCheat(ws.userId, 'look', 'Wearing items in a room that it does not own.', 5);
+      }
+      me.look = null;
     }
-    me.look = null;
+    if (host) this.stampAll(ws, m.players);
+    else {
+      ws.sentName = m.name ? String(m.name).slice(0, 14) : ws.sentName || 'Climber';
+      m.role = this.flagOf(ws);
+    }
     return JSON.stringify(m);
+  }
+  flagOf(ws) { return (ws.userId && this.roleOf(ws.userId)) || ''; }
+  // A host can't lend out a flag either: a line only gets one if it really is that person, under the name they gave themselves.
+  stampAll(host, players) {
+    const seen = new Set();
+    for (const p of players) {
+      if (!p || typeof p !== 'object') continue;
+      const who = p.slot === 0 ? host : host.room.peers.get(+p.id);
+      const real = who && !seen.has(who) && (who === host || p.name === who.sentName);
+      if (real) seen.add(who);
+      p.role = real ? this.flagOf(who) : '';
+      delete p.id;
+    }
   }
 
   // A quick look at where someone says they are, a few times a second. The relay never changes what it passes on for this:

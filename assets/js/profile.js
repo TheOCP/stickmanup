@@ -1,13 +1,13 @@
 // What this phone remembers about you: coins, what you own and wear, relics found and the record of your climbs.
 import { store } from './util.js';
-import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, ownerKey, cleanLook, itemKey } from './skins.js';
+import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
 // Coins and what you own are the server's to say now, for guests too. What an older version kept on this phone is gone.
 // Someone signed in keeps what they wear, if the server says it is theirs. See setWallet.
 if ((P.ownV || 0) < 3) {
-  P.coins = 0; P.earned = 0; P.own = []; P.relics = []; P.ach = P.ach.filter((x) => x.startsWith('name:'));
+  P.coins = 0; P.earned = 0; P.own = []; P.relics = []; P.ach = [];
   if (P.eq && !store.get('account', null)) P.eq = { s: FREE_SUIT, f: 'smile', h: 'none' };
   P.ownV = 3;
 }
@@ -62,18 +62,17 @@ export function setRecords(o) {
   if (m.eq) P.eq = m.eq;
   saveNow();
 }
-// The server's word on the money. `extra` is what was earned here and hasn't reached it yet. The flags for having used a
-// personal name stay this phone's own: they only decide when to put that suit on.
+// The server's word on the money and on your flag. `extra` is what was earned here and hasn't reached it yet.
 export function setWallet(w, extra = 0) {
   P.coins = count(w.coins) + extra;
   P.earned = count(w.earned) + extra;
   P.own = list(w.own);
   P.relics = list(w.relics);
-  P.ach = [...new Set([...list(w.ach), ...P.ach.filter((x) => x.startsWith('name:'))])];
+  P.ach = list(w.ach);
+  if (w.role !== undefined) P.role = cleanRole(w.role);
   // Anything worn that isn't yours (taken back by an admin, say) comes off.
   if (P.eq) {
-    const nameFree = (it) => !it || it.price === 0 || it.owner;
-    const mine = (it) => nameFree(it) || (it.relic ? P.relics.includes(it.relic) : it.ach ? P.ach.includes(it.ach) : P.own.includes(itemKey(it)));
+    const mine = (it) => !it || owned(it);
     if (!mine(SUIT[P.eq.s])) P.eq.s = FREE_SUIT;
     if (!mine(FACE[P.eq.f])) P.eq.f = 'smile';
     if (!mine(HAT[P.eq.h])) P.eq.h = 'none';
@@ -99,10 +98,13 @@ export function restore(o) {
 export const coins = () => P.coins;
 export function addCoins(n) { P.coins += n; P.earned += n; saveSoon(); return P.coins; }
 
-// Does this person have this thing? Free things yes; legendaries by finding or earning them; the two personal
-// suits by name; everything else by buying.
-export function owned(item, name) {
-  if (item.owner) return item.owner === ownerKey(name);
+// The flag the server last gave you. Changing it on the phone changes nothing for anyone else: the server writes those itself.
+export const myRole = () => cleanRole(P.role);
+
+// Do you have this thing? Free things yes; legendaries by finding or earning them; the team suits with a flag from the
+// server; everything else by buying.
+export function owned(item) {
+  if (item.team) return item.team.includes(myRole());
   if (item.price === 0) return true;
   if (item.relic) return P.relics.includes(item.relic);
   if (item.ach) return P.ach.includes(item.ach);
@@ -121,26 +123,13 @@ const SLOT = { suit: 's', face: 'f', hat: 'h' };
 export function equip(item) { P.eq[SLOT[item.kind]] = item.id; saveNow(); }
 export const worn = (item) => P.eq[SLOT[item.kind]] === item.id;
 
-// What to send out and show: your picks, with the personal suits only under the right name.
-export function myLook(name) {
+// What to send out and show: your picks, with the team suits only with the right flag.
+export function myLook() {
   const e = P.eq || { s: FREE_SUIT, f: 'smile', h: 'none' }, s = SUIT[e.s];
-  const suit = s && (!s.owner || s.owner === ownerKey(name)) ? e.s : FREE_SUIT;
+  const suit = s && (!s.team || owned(s)) ? e.s : FREE_SUIT;
   return { s: suit, f: FACE[e.f] ? e.f : 'smile', h: HAT[e.h] ? e.h : 'none' };
 }
 
-// Called when the name changes. Calling yourself TheOCP or ShortGG puts your suit on the first time.
-export function nameChanged(name) {
-  const k = ownerKey(name), cur = SUIT[P.eq.s];
-  if (cur && cur.owner && cur.owner !== k) { P.eq.s = FREE_SUIT; saveNow(); }
-  if (!k) return null;
-  const s = Object.values(SUIT).find((x) => x.owner === k);
-  const flag = 'name:' + k;
-  if (P.ach.includes(flag)) return null;
-  P.ach.push(flag);
-  P.eq.s = s.id;
-  saveNow();
-  return s;
-}
 
 export const hasRelic = (id) => P.relics.includes(id);
 export const relicsFound = () => P.relics.length;

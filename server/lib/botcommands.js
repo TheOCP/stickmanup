@@ -81,6 +81,8 @@ const COMMANDS = [
   cmd('backup', 'Make a backup of everything now'),
   cmd('audit', 'What the admins did lately', COUNT),
   cmd('admins', 'Who may use the bot'),
+  cmd('setrole', 'Give a player a flag in the game, or take it away', PLAYER, { type: 3, name: 'role', description: 'The flag, or none to take it away', required: true, choices: [{ name: 'owner', value: 'owner' }, { name: 'admin', value: 'admin' }, { name: 'mod', value: 'mod' }, { name: 'none', value: 'none' }] }),
+  cmd('roles', 'Everyone with a flag in the game'),
   cmd('welcome', 'Where to say who joined and who left, or see how it is set', { type: 7, name: 'channel', description: 'The channel for joins, and for leaves unless given below', required: false, channel_types: [0, 5] }, { type: 7, name: 'leavechannel', description: 'Another channel for who left (optional)', required: false, channel_types: [0, 5] }, { type: 3, name: 'message', description: 'The welcome. {user} pings them, {name} is their name', required: false, max_length: 500 }, { type: 5, name: 'off', description: 'Turn these messages off', required: false }, { type: 5, name: 'test', description: 'Show both messages using you as the example', required: false }),
   cmd('ticketsetup', 'Where tickets go and who answers them, or see how it is set', { type: 7, name: 'category', description: 'The category new ticket channels go in', required: false, channel_types: [4] }, { type: 7, name: 'logchannel', description: 'A private channel for finished tickets (otherwise the log channel)', required: false, channel_types: [0] }, { type: 8, name: 'staffrole', description: 'The role that sees and answers tickets', required: false }),
   cmd('ticketpanel', 'Put the Open a ticket button in a channel', { type: 7, name: 'channel', description: 'The channel for the button', required: true, channel_types: [0, 5] }, { type: 3, name: 'text', description: 'What it says above the button', required: false, max_length: 1500 }),
@@ -98,6 +100,7 @@ const opt = (data, name) => { const o = (data.options || []).find((x) => x.name 
 const nameOf = (u) => (u.game_name && u.game_name !== u.name ? `${u.name} (plays as ${u.game_name})` : u.name);
 const playerLine = (u) => `${nameOf(u)} #${u.num}`;
 const line = (u) => `\`#${u.num}\` ${esc(nameOf(u))}`;
+const ROLE_NAME = { owner: 'Owner', admin: 'Admin', mod: 'Mod' };
 const PROVIDER = { discord: 'Discord', google: 'Google', steam: 'Steam', guest: 'Guest' };
 const DIFF = ['Easy', 'Normal', 'Hardcore', 'Insane'];
 const fmtH = (ms) => { const m = Math.floor(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
@@ -124,6 +127,7 @@ function mapName(ctx, i) { const m = ctx.s.wallet.mapNames; return m[i] || Strin
 function playerText(ctx, u) {
   const a = ctx.s.admin, w = ctx.s.wallet.get(u.id), ban = a.banOf(u.id), score = a.score(u.id);
   const out = [`**${esc(nameOf(u))}** \`#${u.num}\``, `ID: \`${u.id}\``, `Signed in with: ${PROVIDER[u.provider] || esc(u.provider)}`, `Joined ${when(u.created)}, last seen ${when(u.last_seen)}`];
+  if (ROLE_NAME[u.role]) out.push(`Flag in the game: **${ROLE_NAME[u.role]}**`);
   out.push(`Last address: \`${code(u.last_ip || 'unknown')}\``);
   out.push(`Coins: **${n0(w.coins)}**, ever earned ${n0(w.earned)}, items ${w.own.length}, relics ${w.relics.length}`);
   out.push(u.last_played ? `Last played ${when(u.last_played)}: ${esc(mapName(ctx, u.last_map))}, ${DIFF[u.last_diff] || u.last_diff}, ${u.last_h} m up. ${u.climbs} climbs in all.` : 'Has not played yet.');
@@ -497,6 +501,19 @@ const RUN = {
   },
   audit(ctx, d) {
     return ctx.reply(clip(ctx.s.admin.auditLog(opt(d, 'count') || 15).map((x) => `${when(x.at)} ${esc(x.who)} /${esc(x.cmd)}: ${esc(x.detail)}`), 'Nothing yet.'));
+  },
+  setrole(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const role = opt(d, 'role') === 'none' ? '' : opt(d, 'role'), was = u.role || '';
+    if (role === was) return ctx.reply(`${line(u)} already has ${role ? `the ${ROLE_NAME[role]} flag` : 'no flag'}.`, { color: 'warn' });
+    ctx.s.admin.setRole(u.id, role);
+    tell(ctx, u, role ? `You now have the ${ROLE_NAME[role]} flag in the game.` : 'Your flag in the game was taken away.');
+    return done(ctx, 'setrole', `${playerLine(u)}: ${ROLE_NAME[was] || 'none'} to ${ROLE_NAME[role] || 'none'}`, role ? `${line(u)} now has the **${ROLE_NAME[role]}** flag. It reaches their game within about 30 seconds.` : `${line(u)} has no flag now.`);
+  },
+  roles(ctx) {
+    const rows = ctx.s.admin.withRoles().map((u) => `**${ROLE_NAME[u.role] || esc(u.role)}** ${line(u)}`);
+    return ctx.reply(`Flags in the game\n${clip(rows, 'Nobody has one yet. Use /setrole.')}`);
   },
   welcome(ctx, d) {
     const c = ctx.bot.community, cfg = c.config('welcome'), ch = opt(d, 'channel'), leave = opt(d, 'leavechannel'), msg = opt(d, 'message');

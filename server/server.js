@@ -64,7 +64,8 @@ const rooms = verifier.rooms = new Rooms({
     return b ? `You are banned from this server. Reason: ${b.reason}` : null;
   },
   onCheat: (id, kind, detail, score) => admin.flag(id, kind, detail, score),
-  ownsLook: (id, look) => wallet.ownsLook(id, look),
+  ownsLook: (id, look) => { const u = db.user(id); return wallet.ownsLook(id, look, u ? u.role : ''); },
+  roleOf: (id) => { const u = db.user(id); return u ? u.role : ''; },
   ipKey,
   // Old games have no token to give. Once the anticheat is enforcing, they need the update.
   needToken: () => admin.mode === 'enforce',
@@ -243,7 +244,11 @@ async function route(req, res) {
     let moved = false;
     if (b && typeof b.guest === 'string') {
       const g = db.sessionUser(b.guest), gu = g ? db.user(g) : null;
-      if (gu && gu.provider === 'guest') moved = wallet.moveGuest(g, r.userId);
+      if (gu && gu.provider === 'guest') {
+        moved = wallet.moveGuest(g, r.userId);
+        // A flag moves along with the rest.
+        if (gu.role && !db.user(r.userId).role) { admin.setRole(r.userId, gu.role); admin.setRole(g, ''); }
+      }
     }
     if (device) admin.setDevice(r.userId, device);
     admin.seen(r.userId, ip);
@@ -334,7 +339,7 @@ async function route(req, res) {
   // The money. Nothing below this ever takes a phone's word for a balance.
   if (p.startsWith('/api/wallet') || p === '/api/buy' || p.startsWith('/api/run/')) {
     if (!limits.wallet.take(me.id)) return json(res, 429, { err: 'Too many requests' });
-    if (p === '/api/wallet') return json(res, 200, wallet.get(me.id));
+    if (p === '/api/wallet') return json(res, 200, Object.assign(wallet.get(me.id), { role: user.role }));
     const b = await readJson(req);
     if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
     if (p === '/api/wallet/import') {

@@ -111,6 +111,8 @@ class Admin {
       byName: q(`SELECT id, num, name, game_name, last_played FROM users WHERE name = ? COLLATE NOCASE OR game_name = ? COLLATE NOCASE ORDER BY last_seen DESC LIMIT 25`),
       search: q(`SELECT id, num, name, game_name, last_seen, last_played FROM users WHERE name LIKE ? ESCAPE '\\' OR game_name LIKE ? ESCAPE '\\' OR id = ? OR num = ? ORDER BY last_seen DESC LIMIT ?`),
       full: q(`SELECT u.*, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.id = ? LIMIT 1`),
+      setRole: q('UPDATE users SET role = ? WHERE id = ?'),
+      withRoles: q(`SELECT u.*, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id WHERE u.role <> '' GROUP BY u.id ORDER BY u.num`),
       list: q(`SELECT u.id, u.num, u.name, u.game_name, u.last_seen, u.last_played, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id GROUP BY u.id ORDER BY u.num LIMIT ? OFFSET ?`),
       recent: q(`SELECT u.id, u.num, u.name, u.game_name, u.last_played, u.last_map, u.last_diff, u.last_h, u.last_ip FROM users u WHERE u.last_played IS NOT NULL ORDER BY u.last_played DESC LIMIT ?`),
       newest: q(`SELECT u.id, u.num, u.name, u.game_name, u.created, u.last_ip, i.provider FROM users u LEFT JOIN identities i ON i.user_id = u.id GROUP BY u.id ORDER BY u.created DESC LIMIT ?`),
@@ -243,6 +245,9 @@ class Admin {
     return this.q.search.all(l, l, t, num ? +num[1] : -1, n);
   }
   info(id) { return this.q.full.get(id) || null; }
+  // The flag someone has in the game. Only the bot changes it, and nothing a phone sends can.
+  setRole(id, role) { this.q.setRole.run(role, id); }
+  withRoles() { return this.q.withRoles.all(); }
   label(u) {
     if (!u) return 'nobody';
     const n = u.game_name && u.game_name !== u.name ? `${u.name} (plays as ${u.game_name})` : u.name;

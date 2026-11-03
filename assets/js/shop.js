@@ -1,6 +1,6 @@
 // The shop (and wardrobe) and the records screen. A real climber stands in the world on the left, wearing what you
 // tap, while the cards are on the right.
-import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark, ownerKey } from './skins.js';
+import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
 import { gearTris } from './gear.js';
 import { coins, owned, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
 import { buyItem } from './cloud.js';
@@ -85,25 +85,25 @@ function thumbFor(item) {
 
 // ---------------------------------------------------------------- the shop
 const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['legend', 'Legendary']];
-const listFor = (tab, name) => {
+const listFor = (tab) => {
   if (tab === 'faces') return FACES.filter((f) => !f.hidden);
   if (tab === 'hats') return HATS.filter((f) => !f.hidden);
   if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
-  if (tab === 'legend') return [...OWNERS.filter((o) => o.owner === ownerKey(name)), ...LEGENDS];
+  if (tab === 'legend') return [...OWNERS.filter((o) => owned(o)), ...LEGENDS];
   return SUITS.filter((s) => s.tab === tab);
 };
 
 export function openShop(ctx, goBack, startTab = 'suits') {
-  const { app, show, esc, ui, name, lookChanged } = ctx;
+  const { app, show, esc, ui, lookChanged } = ctx;
   let tab = startTab, sel = null, gridScroll = 0, drawTok = 0;
 
   const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : { ...look, h: item.id });
   const preview = () => {
-    app.preview = { look: sel ? sameSlot(sel, myLook(name())) : myLook(name()), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null };
+    app.preview = { look: sel ? sameSlot(sel, myLook()) : myLook(), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null };
   };
 
   function card(it) {
-    const have = owned(it, name()), on = have && worn(it);
+    const have = owned(it), on = have && worn(it);
     const tag = it.kind === 'emote' && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : it.price > 0 ? `<em class="price">${COIN}${it.price}</em>` : '<em class="lock">Locked</em>';
     return `<button class="skin r${it.r} ${sel === it ? 'sel' : ''} ${have ? '' : 'no'}" data-a="pick" data-id="${it.id}"><img data-th="${it.id}" alt=""><b>${esc(it.name)}</b>${tag}</button>`;
   }
@@ -112,7 +112,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     return RARITY.map((r) => {
       const items = list.filter((x) => x.r === r.id);
       if (!items.length) return '';
-      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x, name())).length} of ${items.length}</small></h3><div class="skins">${items.map(card).join('')}</div>`;
+      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x)).length} of ${items.length}</small></h3><div class="skins">${items.map(card).join('')}</div>`;
     }).join('');
   }
 
@@ -120,7 +120,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     const it = sel;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
       : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth.</p>`;
-    const r = RARITY[it.r], have = owned(it, name()), on = have && worn(it);
+    const r = RARITY[it.r], have = owned(it), on = have && worn(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
     else if (on) act = '<button class="btn sm" disabled>Wearing it</button>';
@@ -128,13 +128,13 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     else if (it.price > 0) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
     else act = '';
     const need = !have && it.price > 0 && coins() < it.price ? `<p class="need">${it.price - coins()} more coins needed</p>` : '';
-    const hint = it.hint && !(have && !it.owner) ? `<p class="hint">${esc(it.hint)}</p>` : it.hint && have ? `<p class="hint">Found it. Well done.</p>` : '';
-    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${it.role || r.name}</span>${hint}${need}${act}`;
+    const hint = it.hint && !(have && !it.team) ? `<p class="hint">${esc(it.hint)}</p>` : it.hint && have ? `<p class="hint">Found it. Well done.</p>` : '';
+    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${hint}${need}${act}`;
   }
 
   function loadThumbs() {
     const tok = ++drawTok, imgs = [...document.querySelectorAll('#menu img[data-th]')];
-    const list = listFor(tab, name()), find = (id) => list.find((x) => x.id === id);
+    const list = listFor(tab), find = (id) => list.find((x) => x.id === id);
     let i = 0;
     // A few per frame, so the screen opens at once and the pictures pop in.
     const step = () => {
@@ -148,7 +148,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   function render() {
     const scrollEl = document.querySelector('#menu .shopgrid');
     if (scrollEl) gridScroll = scrollEl.scrollTop;
-    const list = listFor(tab, name());
+    const list = listFor(tab);
     show(`<div class="shop">
       <div class="shopside">
         <div class="ph"><button class="back" data-a="back">‹</button><div class="wallet">${COIN}<b>${coins()}</b></div></div>
@@ -161,7 +161,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },
       tab: (b) => { tab = b.dataset.t; sel = null; gridScroll = 0; preview(); render(); },
-      pick: (b) => { sel = listFor(tab, name()).find((x) => x.id === b.dataset.id); preview(); if (app.preview) app.preview.yaw = sel.flag || sel.cape ? 2.6 : -0.4; render(); },
+      pick: (b) => { sel = listFor(tab).find((x) => x.id === b.dataset.id); preview(); if (app.preview) app.preview.yaw = sel.flag || sel.cape ? 2.6 : -0.4; render(); },
       buy: async () => {
         if (!sel || buying) return;
         const item = sel;

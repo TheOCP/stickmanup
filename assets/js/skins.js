@@ -22,7 +22,7 @@ export const RARITY = [
   { id: 1, name: 'Rare', css: '#4aa8ff' },
   { id: 2, name: 'Epic', css: '#b86bff' },
   { id: 3, name: 'Legendary', css: '#ff9a2e' },
-  { id: 4, name: 'Owner', css: '#ff3b5c' },
+  { id: 4, name: 'Team', css: '#ff3b5c' },
 ];
 
 // ---------------------------------------------------------------- how a suit texture is laid out
@@ -434,8 +434,8 @@ export const LEGENDS = [
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
 // server to check it against.)
 export const OWNERS = [
-  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', owner: 'theocp', role: 'OWNER', c: 0x40ff70, shader: { mode: 5, a: 0x020604, b: 0x12c040, c: 0x70ffa0 }, trail: 0x40ff70, face: 'hacker', gear: ['hood'], hint: 'Only for TheOCP.' }),
-  s('o_shortgg', 'GG Girl', 4, -1, { tab: 'legend', owner: 'shortgg', role: 'ADMIN', c: 0xff6aa8, p: paintFn.fengish, face: 'cute', gear: ['hairgg', 'headset', 'hemgg'], trail: 0xff8ac0, glow: 0.22, hint: 'Only for ShortGG.' }),
+  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x020604, b: 0x12c040, c: 0x70ffa0 }, trail: 0x40ff70, face: 'hacker', gear: ['hood'], hint: 'Only for TheOCP.' }),
+  s('o_shortgg', 'GG Girl', 4, -1, { tab: 'legend', team: ['owner', 'admin'], c: 0xff6aa8, p: paintFn.fengish, face: 'cute', gear: ['hairgg', 'headset', 'hemgg'], trail: 0xff8ac0, glow: 0.22, hint: 'Only for ShortGG.' }),
 ];
 
 export const ALL_SUITS = [...SUITS, ...LEGENDS, ...OWNERS];
@@ -572,12 +572,11 @@ export function suitIsDark(suit) {
 const lumOf = (x) => (0.3 * ((x >> 16) & 255) + 0.59 * ((x >> 8) & 255) + 0.11 * (x & 255)) / 255;
 
 // What someone is wearing, from their saved picks: { s, f, h } ids. Anything unknown falls back to the free
-// look, and the two personal suits only work under the right name.
-export const ownerKey = (name) => { const n = String(name || '').trim().toLowerCase(); return n === 'theocp' || n === 'shortgg' ? n : null; };
-export function resolveLook(look, name) {
+// look, and the team suits only work with a flag from the server.
+export function resolveLook(look, role) {
   const l = look || {};
   let suit = SUIT[l.s] || SUIT[FREE_SUIT];
-  if (suit.owner && suit.owner !== ownerKey(name)) suit = SUIT[FREE_SUIT];
+  if (suit.team && !suit.team.includes(role)) suit = SUIT[FREE_SUIT];
   // No hat or the classic face picked: the suit may bring its own.
   const fid = l.f && l.f !== 'smile' ? l.f : suit.face || 'smile', hid = l.h && l.h !== 'none' ? l.h : suit.hat || 'none';
   const face = FACE[fid] || FACE.smile, hat = HAT[hid] || HAT.none;
@@ -594,4 +593,6 @@ const known = (table, id) => typeof id === 'string' && Object.hasOwn(table, id);
 // the other.
 export const itemKey = (it) => ((it.kind === 'face' || it.kind === 'hat') && Object.hasOwn(SUIT, it.id) ? it.kind + ':' + it.id : it.id);
 export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none' } : null);
-export const roleOf = (look, name) => { const k = ownerKey(name), s = look && SUIT[look.s]; return k && s && s.owner === k ? s.role : null; };
+// The flags someone can have. A name means nothing: only the server says who has which (server/lib/rooms.js).
+export const ROLE_TAGS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MOD' };
+export const cleanRole = (r) => (typeof r === 'string' && Object.hasOwn(ROLE_TAGS, r) ? r : '');

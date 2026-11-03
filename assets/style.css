@@ -126,7 +126,10 @@ input[type=range] { -webkit-appearance: none; appearance: none; height: 28px; ba
 input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--a) var(--p, 50%), rgba(255, 255, 255, 0.12) var(--p, 50%)); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; margin-top: -7px; box-shadow: 0 0 0 4px rgba(63, 240, 208, 0.3); }
 .set .chk { flex-direction: row; align-items: center; gap: 10px; padding: 8px 0; color: var(--tx); }
-.set .chk input { width: 20px; height: 20px; accent-color: var(--a); }
+.set .chk input { flex: none; width: 20px; height: 20px; accent-color: var(--a); }
+/* A button next to something taller keeps its own size, level with the bottom of its neighbour. */
+.set > .btn { align-self: end; }
+.set .chks { display: flex; flex-wrap: wrap; gap: 0 22px; }
 .set .full { grid-column: 1 / -1; }
 
 .how { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

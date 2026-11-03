@@ -658,3 +658,10 @@ body.pad .set { grid-template-columns: 1fr; }
 /* While someone is watching your climb. */
 #hWatch { position: absolute; left: 50%; top: calc(38px + var(--it)); transform: translateX(-50%); display: none; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 750; background: rgba(6, 12, 20, 0.5); }
 #hWatch.on { display: block; }
+
+/* Host and Join only have two choices: the panel fits them, with the icon beside the title to keep the cards low. */
+.panel.fitpanel { width: min(500px, 100%); }
+.fitpanel .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fitpanel .card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: start; gap: 6px 10px; padding: 11px 12px; }
+.fitpanel .card .ic { align-self: center; }
+.fitpanel .card small { grid-column: 1 / -1; }

@@ -86,11 +86,30 @@ class DB {
         ON CONFLICT(user_id) DO UPDATE SET rev = excluded.rev, data = excluded.data, updated = excluded.updated`),
       users: q('SELECT COUNT(*) AS n FROM users'),
     };
+    // Player numbers have at least 4 digits. Everyone from before that moves up by 1000, once, and a guest's name keeps matching
+    // their number. It goes through negative numbers because no two players may hold the same number, even for a moment.
+    if (this.setting('numsMoved') !== '1') {
+      this.db.exec('BEGIN');
+      try {
+        if (this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE num < 1000').get().n) {
+          this.db.exec('UPDATE users SET num = -(num + 1000)');
+          this.db.exec('UPDATE users SET num = -num');
+          this.db.exec(`UPDATE users SET name = 'Guest ' || num WHERE name GLOB 'Guest [0-9]*' AND id IN (SELECT user_id FROM identities WHERE provider = 'guest')`);
+          const last = +this.setting('lastNum') || 0;
+          if (last) this.setSetting('lastNum', String(last + 1000));
+        }
+        this.setSetting('numsMoved', '1');
+        this.db.exec('COMMIT');
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
+    }
   }
 
   // Numbers are never used twice, even after an account is deleted.
   nextNum() {
-    const n = Math.max(+this.setting('lastNum') || 0, this.q.maxNum.get().n) + 1;
+    const n = Math.max(+this.setting('lastNum') || 0, this.q.maxNum.get().n, 1000) + 1;
     this.setSetting('lastNum', String(n));
     return n;
   }

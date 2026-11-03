@@ -500,7 +500,7 @@ app.beginGameForTest = (s, g) => beginGame(s, g);
 function hostPick() {
   if (cloud.banned()) return title();
   app.screen = 'host';
-  show(`<div class="panel">${header('Host a game')}
+  show(`<div class="panel fitpanel">${header('Host a game')}
     <p class="sub">Up to 4 climbers. Everyone needs StickManUp, and the same version.</p>
     <div class="cards">
       <button class="card" data-a="server"><span class="ic">🖥</span><b>Game server</b><small>Public or private, with a password if you like. Works on every network.</small></button>
@@ -611,7 +611,7 @@ function joinScreen(tab) {
       <button class="btn sm" data-a="browser" style="margin-top:10px">Open the server browser</button>`
     : `<p class="sub">Type the 5 letter code from the host's screen.</p>
       <div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
-  show(`<div class="panel">${header('Join a game')}
+  show(`<div class="panel fitpanel">${header('Join a game')}
     <div class="tabs"><button data-a="tab" data-t="server" class="${tab === 'server' ? 'on' : ''}">Server</button><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button></div>
     ${body}</div>`, {
     back: title,

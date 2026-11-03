@@ -645,6 +645,8 @@ public final class NRender {
 
     private void collect() {
         nOpaque = nTransparent = 0;
+        // How far the picture reaches (see render.js): what lies wholly beyond that is not drawn at all.
+        float see = env[27];
         for (int k = 0, n = objs.size(); k < n; k++) {
             Obj o = objs.get(k);
             if (!o.vis) continue;
@@ -653,6 +655,7 @@ public final class NRender {
             if (o.kind != 2 && (o.g >= geos.length || geos[o.g] == null)) continue;
             float[] mw = o.mw;
             float cx = mw[12], cy = mw[13], cz = mw[14];
+            float reach = o.kind == 2 ? 3f : -1f;
             if (o.bs != null && o.kind != 2) {
                 float x = o.bs[0], y = o.bs[1], z = o.bs[2];
                 cx = mw[0] * x + mw[4] * y + mw[8] * z + mw[12];
@@ -667,9 +670,12 @@ public final class NRender {
                         if (p[0] * cx + p[1] * cy + p[2] * cz + p[3] < -r) { in = false; break; }
                     }
                     if (!in) continue;
+                    reach = r;
                 }
             }
             o.dist = (cx - cam[0]) * (cx - cam[0]) + (cy - cam[1]) * (cy - cam[1]) + (cz - cam[2]) * (cz - cam[2]);
+            // Things that don't fade in fog (sky, lightning, beams) and never-culled things stay.
+            if (see > 0 && reach >= 0 && m.fog && o.dist > (see + reach) * (see + reach)) continue;
             if (m.tr) transparent[nTransparent++] = o;
             else opaque[nOpaque++] = o;
         }
@@ -1531,12 +1537,12 @@ public final class NRender {
     }
 
     /**
-     * Every eighth frame, waits for the GPU to catch up and notes how long the frame has taken so far. That is the
+     * Every twelfth frame, waits for the GPU to catch up and notes how long the frame has taken so far. That is the
      * true load, on any phone, and it shows trouble coming before frames actually drop. The wait costs nothing:
      * the screen's picture is only started afterwards, and the GPU would be busy until then anyway.
      */
     private void measureGpu() {
-        if (++gpuEvery < 8) return;
+        if (++gpuEvery < 12) return;
         gpuEvery = 0;
         long f = gl.fenceSync();
         if (f == 0) return;

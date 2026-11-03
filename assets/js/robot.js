@@ -121,6 +121,7 @@ export class RopeMesh {
     g.setAttribute('aT', new THREE.BufferAttribute(at, 1));
     g.setIndex(idx);
     this.u = { uA: { value: new THREE.Color(colA) }, uB: { value: new THREE.Color(colB) }, uTen: { value: 0 }, uTime: { value: 0 } };
+    g.userData.live = true;
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
       uniforms: this.u,
       vertexShader: 'attribute float aT; varying float vT; void main(){ vT = aT; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

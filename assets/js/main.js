@@ -5,7 +5,7 @@ import { Renderer } from './render.js';
 import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
 import { EMOTES } from './emotes.js';
 import { World } from './physics.js';
-import { WorldView, setSimple } from './worldview.js';
+import { WorldView, setSimple, setThin } from './worldview.js';
 import { setDetail } from './scenery.js';
 import { AutoQ, STEPS } from './autoq.js';
 import { PadNav } from './padnav.js';
@@ -103,11 +103,25 @@ for (const lvl of ['error', 'warn']) {
 if (location.hostname !== 'appassets.androidplatform.net') window.SMU = app;
 
 // ---------- small UI helpers ----------
+// The HUD gets written ten times a second, mostly with what it already shows. Every real write makes the phone redraw
+// that part of the screen, so these remember what they last wrote and leave the page alone when nothing changed.
+const hudEls = new Map();
+const hudEl = (s) => { let e = hudEls.get(s); if (!e || !e.isConnected) { e = $(s); hudEls.set(s, e); } return e; };
+const putText = (el, s) => { if (el.__txt !== s) { el.__txt = s; el.textContent = s; } };
+const putHtml = (el, s) => { if (el.__htm !== s) { el.__htm = s; el.innerHTML = s; } };
+const putVar = (el, k, s) => { const c = el.__var || (el.__var = {}); if (c[k] !== s) { c[k] = s; el.style.setProperty(k, s); } };
+// Moving a marker: half a pixel steps, and no write at all when it stayed put.
+const putXY = (el, x, y) => {
+  const a = Math.round(x * 2) / 2, b = Math.round(y * 2) / 2;
+  if (el.__x !== a) { el.__x = a; el.style.left = a + 'px'; }
+  if (el.__y !== b) { el.__y = b; el.style.top = b + 'px'; }
+};
+
 const ui = (app.ui = {
   coins(n, pop) {
-    const el = $('#hCoins');
-    el.innerHTML = `<i class="coin"></i>${n}`;
-    if (pop) { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+    const el = hudEl('#hCoins');
+    putHtml(el, `<i class="coin"></i>${n}`);
+    if (pop && el.animate) el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: 0.4 }, { transform: 'scale(1)' }], { duration: 220, easing: 'ease-out' });
   },
   // A big message in the middle, like the zone titles.
   banner(small, big, sub, color) {
@@ -159,10 +173,12 @@ const ui = (app.ui = {
     $('#tags').innerHTML = '';
   },
   hud(g, { T, zone, gust, thunder }) {
+    // A phone short of time gets half as many of these.
+    if (auto && auto.thin && (this.hudSkip = !this.hudSkip)) return;
     const me = g.me, L = app.level, Z = L.zones[zone];
-    $('#hZone b').textContent = Z.name;
-    $('#hZone span').textContent = `${Math.max(0, Math.round(me.y - PR - 2))} m of ${Math.round(L.top - 2)} m · ${DIFFS[g.diff].name}`;
-    $('#hTime').innerHTML = fmtTime(T) + (g.falls ? `<small>${g.falls} fall${g.falls > 1 ? 's' : ''}</small>` : '');
+    putText(hudEl('#hZone b'), Z.name);
+    putText(hudEl('#hZone span'), `${Math.max(0, Math.round(me.y - PR - 2))} m of ${Math.round(L.top - 2)} m · ${DIFFS[g.diff].name}`);
+    putHtml(hudEl('#hTime'), fmtTime(T) + (g.falls ? `<small>${g.falls} fall${g.falls > 1 ? 's' : ''}</small>` : ''));
     let warn = '', cls = '';
     if (thunder && thunder.warn > 0 && !(me.flags & 128)) { warn = 'LIGHTNING! SHIELD!'; cls = 'g'; }
     else if (gust && gust.on) { warn = 'GUST! GRAB ON'; cls = 'g'; }
@@ -173,40 +189,39 @@ const ui = (app.ui = {
         if (g.storm.rodWarn(r, T) > 0) { warn = 'LIGHTNING: GRAB!'; cls = 'w'; break; }
       }
     }
-    const w = $('#hWarn');
-    w.textContent = warn;
-    w.className = warn ? 'on ' + cls : '';
-    const gb = $('#bGrab');
-    gb.style.setProperty('--v', me.grip.toFixed(3));
+    const w = hudEl('#hWarn'), wc = warn ? 'on ' + cls : '';
+    putText(w, warn);
+    if (w.className !== wc) w.className = wc;
+    const gb = hudEl('#bGrab');
+    putVar(gb, '--v', me.grip.toFixed(2));
     gb.classList.toggle('low', me.grip < 0.3);
-    $('#bAct').classList.toggle('off', !g.action);
+    hudEl('#bAct').classList.toggle('off', !g.action);
     // Without the cord there's nothing to reel.
-    const rb0 = $('#bReel');
+    const rb0 = hudEl('#bReel');
     if (rb0.classList.contains('nocord') !== g.noCord) rb0.classList.toggle('nocord', g.noCord);
-    const rl = $('#bReel span'), mode = g.reelMode || 'REEL';
+    const rl = hudEl('#bReel span'), mode = g.reelMode || 'REEL';
     const modeText = tr(mode);
     if (rl.textContent !== modeText) rl.textContent = modeText;
-    $('#bReel').classList.toggle('help', mode !== 'REEL');
-    const db = $('#bDash');
-    db.style.setProperty('--v', (me.dashReady ? 1 - me.dashCd / PC.DASH_CD : 0).toFixed(3));
+    rb0.classList.toggle('help', mode !== 'REEL');
+    const db = hudEl('#bDash');
+    putVar(db, '--v', (me.dashReady ? 1 - me.dashCd / PC.DASH_CD : 0).toFixed(2));
     db.classList.toggle('used', !me.dashReady);
-    const sb = $('#bShield'), stormy = L.mapKey === 'storm';
+    const sb = hudEl('#bShield'), stormy = L.mapKey === 'storm';
     sb.classList.toggle('on', stormy);
     if (stormy) {
-      sb.style.setProperty('--v', (1 - me.shieldCd / 2.2).toFixed(3));
+      putVar(sb, '--v', (1 - me.shieldCd / 2.2).toFixed(2));
       sb.classList.toggle('ready', me.shieldCd <= 0);
       sb.classList.toggle('alert', !!thunder && thunder.warn > 0 && me.shieldCd <= 0);
     }
-    const rb = $('#bReel');
-    rb.style.setProperty('--v', me.charge.toFixed(3));
-    rb.style.setProperty('--o', me.charge > 0 ? 1 : 0);
+    putVar(rb0, '--v', me.charge.toFixed(2));
+    putVar(rb0, '--o', me.charge > 0 ? '1' : '0');
     for (const el of document.querySelectorAll('#hAlt .marks i[data-s]')) {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s);
-      if (p) el.style.bottom = clamp(p.y / L.top, 0, 1) * 100 + '%';
+      if (p) { const b = (clamp(p.y / L.top, 0, 1) * 100).toFixed(1) + '%'; if (el.__b !== b) { el.__b = b; el.style.bottom = b; } }
     }
     for (const el of document.querySelectorAll('#hPlayers div')) {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s), pl = g.s.players.get(s);
-      el.querySelector('small').textContent = (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : '');
+      putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
     }
   },
   // Tips: a small "!" floats over each tip spot; tap it to read the tip. Each tip also pops up by
@@ -222,9 +237,10 @@ const ui = (app.ui = {
       const s = L.signs[i], key = L.map + ':' + i, d = Math.hypot(s.x - me.x, s.y - me.y, s.z - me.z);
       let el = this.tipEls.get(i);
       if (d < 7 && !seen.has(key)) { seen.add(key); store.set('tipsSeen', [...seen]); this.tip(s.text); }
+      // Out of reach (nearly all of them, nearly always): no need to work out where on the screen it is.
+      if (d >= 24) { if (el && !el.__off) { el.__off = true; el.style.display = 'none'; } continue; }
       v.set(s.x, s.y - 0.7, s.z).project(cam);
-      const show = d < 24 && v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
-      if (!show) { if (el) el.style.display = 'none'; continue; }
+      if (!(v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05)) { if (el && !el.__off) { el.__off = true; el.style.display = 'none'; } continue; }
       if (d < nearD) { nearD = d; this.nearTip = s.text; } // the direction pad reads this one, there is no finger to tap it
       if (!el) {
         el = document.createElement('button');
@@ -233,10 +249,9 @@ const ui = (app.ui = {
         box.appendChild(el);
         this.tipEls.set(i, el);
       }
-      el.style.display = '';
+      if (el.__off !== false) { el.__off = false; el.style.display = ''; }
       el.classList.toggle('seen', seen.has(key));
-      el.style.left = ((v.x + 1) / 2) * W + 'px';
-      el.style.top = ((1 - v.y) / 2) * H + 'px';
+      putXY(el, ((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H);
     }
   },
   tip(text) {
@@ -279,8 +294,7 @@ const ui = (app.ui = {
       const x = ((v.x + 1) / 2) * W, y = ((1 - v.y) / 2) * H;
       const cx = clamp(x, 50, W - 50), cy = clamp(y, 70, H - 20);
       el.classList.toggle('edge', cx !== x || cy !== y);
-      el.style.left = cx + 'px';
-      el.style.top = cy + 'px';
+      putXY(el, cx, cy);
     }
     // Emoji floating over whoever just did an emote.
     const B = this.bubbles;
@@ -291,8 +305,7 @@ const ui = (app.ui = {
         if (now > b.until || !o || !b.el.isConnected) { b.el.remove(); B.delete(slot); continue; }
         v.set(o.x, o.y + 1.6, o.z).project(cam);
         b.el.style.display = v.z > 1 ? 'none' : '';
-        b.el.style.left = ((v.x + 1) / 2) * W + 'px';
-        b.el.style.top = ((1 - v.y) / 2) * H + 'px';
+        putXY(b.el, ((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H);
       }
     }
   },
@@ -371,6 +384,7 @@ function loadMap(id) {
   if (!w) {
     const level = generateLevel(id);
     w = { level, world: new World(level.cols), view: null };
+    applyDetail(getSafe());
     w.view = new WorldView(R.scene, level);
     worlds.set(id, w);
   } else R.scene.add(w.view.root);
@@ -1032,6 +1046,8 @@ function settingsScreen(back) {
       if (k === 'quality') {
         if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics...'); }
         Object.assign(settings, PRESETS[v]);
+        // The player chose: whatever automatic graphics learned about detail starts over.
+        settings.autoLow = false;
         restartAuto();
         saveSettings();
         applyGraphics();
@@ -1087,12 +1103,18 @@ function applyLook() {
   const R = app.renderer;
   if (!R || !R.native) return;
   const s = settings.autoRes && auto ? auto.step : STEPS[0];
+  // Short of CPU time: less to keep up to date, a little less to draw, the extras turned down.
+  const thin = !!(settings.autoRes && auto && auto.thin), far = s.far || (thin ? 200 : 0);
+  setThin(thin);
+  if (app.sound) app.sound.thin = thin;
+  R.look.far = far;
+  R.mirror.setFar(far);
   R.look.scale = s.res;
   R.look.sharp = settings.sharp * s.sharp;
   R.look.aa = !!settings.aa && !!s.aa;
   R.look.glow = settings.glow * s.glow;
   R.q.bloom = R.look.glow > 0.01;
-  R.setLite(!!settings.lite || !!s.lite);
+  R.setLite(!!settings.lite || !!s.lite, s.far && s.far <= 130 ? 0.2 : 0.35);
 }
 
 // Automatic graphics starts over (settings or frame rate changed) from the best look.
@@ -1103,7 +1125,48 @@ function restartAuto() {
 
 function makeAuto() {
   const cap = settings.cap || 60;
-  return new AutoQ({ budget: 1000 / cap, start: settings.autoLvl || 0, last: cap > 60 ? 3 : STEPS.length - 1 });
+  return new AutoQ({ budget: 1000 / cap, start: settings.autoLvl || 0, last: cap > 60 ? 3 : STEPS.length - 1, thin: settings.weak > 0 });
+}
+
+// Automatic graphics may also decide that this phone gets the simple scenery (fewer parts in the world, simpler sea).
+const lowNow = () => !!(settings.autoRes && settings.autoLow);
+function applyDetail(safe) {
+  setDetail(safe >= 3 || lowNow() || settings.quality === 'low' ? 0 : settings.quality === 'ultra' ? 2 : 1);
+}
+
+// The check below takes about 2 ms on a current top phone. These are about 2.5 and 4.5 times slower than that.
+const CPU_SLOW = 5, CPU_VERY_SLOW = 9;
+
+// How long a slice of the kind of work the game does takes on this phone's CPU, in ms. The best of a few tries, so a
+// moment when something else was running doesn't count against it.
+function cpuSpeed() {
+  const a = new Float32Array(4096);
+  const run = () => {
+    let s = 0.5;
+    for (let i = 0; i < 150000; i++) { const k = i & 4095; s = Math.sqrt(s * s + a[k]) * 0.999 + 0.25; a[k] = s * 0.5; }
+    return s;
+  };
+  let best = 1e9, keep = 0;
+  for (let r = 0; r < 8; r++) {
+    const t = performance.now();
+    keep += run();
+    best = Math.min(best, performance.now() - t);
+  }
+  return keep > 0 ? best : 0;
+}
+
+// Once on each phone: is this a slow one? Then it starts on a lighter picture and simple scenery right away, instead of
+// stuttering through the first seconds until automatic graphics finds out. If there turns out to be room, it climbs back.
+function checkPhone() {
+  if (settings.weak !== undefined || !N) return;
+  const ms = cpuSpeed(), ram = navigator.deviceMemory || 8;
+  settings.weak = ms > CPU_VERY_SLOW || ram <= 1 ? 2 : ms > CPU_SLOW || ram <= 2 ? 1 : 0;
+  report('stage', { s: 'phone', ms: +ms.toFixed(2), ram, cores: navigator.hardwareConcurrency, weak: settings.weak });
+  if (settings.weak && settings.autoRes) {
+    settings.autoLow = true;
+    settings.autoLvl = Math.max(settings.autoLvl || 0, settings.weak > 1 ? 6 : 4);
+  }
+  saveSettings();
 }
 
 // The stick test in Settings: where each stick really is, and its dead zone as a ring.
@@ -1127,14 +1190,20 @@ function autoTick(now) {
   if (now - autoAt < 1000 || !(N && N.glPerf)) return;
   autoAt = now;
   const [frames, late, gpu, gpuMax, slow] = N.glPerf().split(',').map(Number);
+  const js = autoN ? autoMs / autoN : 0;
+  autoMs = 0;
+  autoN = 0;
   perf.gpu = gpu;
   if (!settings.autoRes || !auto) return;
-  const was = auto.level;
-  auto.tick(gpu, gpuMax, late + slow, frames);
+  const was = auto.level, wasThin = auto.thin;
+  auto.tick(gpu, gpuMax, late + slow, frames, js);
   perf.level = auto.level;
-  if (auto.level !== was) applyLook();
+  if (auto.level !== was || auto.thin !== wasThin) applyLook();
   // Remembered for the next launch, so a weak phone starts where it left off instead of finding out again.
   if (auto.level !== settings.autoLvl && auto.stable()) { settings.autoLvl = auto.level; saveSettings(); }
+  // Settled low: the next map and the next launch get the simple scenery. Settled with lots of room: the normal one again.
+  const low = auto.stable() && (auto.level >= 6 || auto.thin) ? true : auto.roomy() ? false : !!settings.autoLow;
+  if (low !== !!settings.autoLow) { settings.autoLow = low; saveSettings(); }
 }
 
 // Touch buttons: centres measured from the bottom-right corner (bottom-left for left-handed), scaled by size.
@@ -1460,7 +1529,8 @@ function boot() {
   const safe = getSafe();
   report('stage', { s: 'boot', safe, quality: settings.quality });
   setSimple(safe >= 3);
-  setDetail(safe >= 3 || settings.quality === 'low' ? 0 : settings.quality === 'ultra' ? 2 : 1);
+  checkPhone();
+  applyDetail(safe);
   // On Android the 3D world is drawn by the app's own OpenGL renderer (never WebGL in the WebView).
   // ?native=rec in a desktop browser records the same stream for the desktop test of that renderer.
   const rec = new URLSearchParams(location.search).get('native') === 'rec';
@@ -1472,7 +1542,7 @@ function boot() {
     window.REC = { defs: [], frame: null };
     send = (k, d) => (k === 'def' ? window.REC.defs.push(d) : (window.REC.frame = d));
   }
-  app.renderer = new Renderer($('#c'), settings.quality, safe, send);
+  app.renderer = new Renderer($('#c'), lowNow() ? 'low' : settings.quality, safe, send);
   app.renderer.onLost = () => gfxTrouble('webgl context lost');
   if (settings.lite === undefined) settings.lite = settings.quality === 'low';
   auto = makeAuto();
@@ -1538,6 +1608,7 @@ let last = performance.now(), titleT = 0, bolt = 2, fpsN = 0, fpsT = 0, then = 0
 let rafLast = 0, rafN = 0, rafPeriod = 0, rafCount = 0;
 const rafGaps = new Float32Array(32);
 const perf = { ms: 0, max: 0, n: 0, show: '', gap: 0, gpu: 0, level: 0 };
+let autoMs = 0, autoN = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   // How fast the screen ticks: the middle of the last 32 gaps, so a hiccup doesn't count.
@@ -1579,6 +1650,8 @@ function frame(now) {
   app.renderer.render();
   app.pool.tick();
   const work = performance.now() - w0;
+  autoMs += work;
+  autoN++;
   perf.ms += work;
   perf.n++;
   if (work > perf.max) perf.max = work;

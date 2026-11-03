@@ -104,7 +104,7 @@ export class Renderer {
     this.eye = 0;
     this.theme = THEMES.storm;
     // Player picture settings: sharpening 0..1, edge anti-aliasing on/off, glow strength multiplier.
-    this.look = { sharp: 0.35, aa: true, glow: 1, scale: 1, lite: 0 };
+    this.look = { sharp: 0.35, aa: true, glow: 1, scale: 1, lite: 0, far: 0 };
 
     this.hemi = new THREE.HemisphereLight(0x8a98c8, 0x141824, 0.6);
     this.moon = new THREE.DirectionalLight(0xb8c4ff, 1.15);
@@ -432,6 +432,7 @@ export class Renderer {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P * RS * 3), 3));
       g.setIndex(idx);
+      g.userData.live = true;
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 3.6, 5.0), fog: false, transparent: true, opacity: 0, depthWrite: false }));
       m.material.userData.live = true;
       m.frustumCulled = false;
@@ -511,12 +512,12 @@ export class Renderer {
   }
 
   // The cheapest picture for weak phones: lit per corner (native side), plain sky and sea, a third of the rain.
-  setLite(on) {
+  setLite(on, rain = 0.35) {
     const v = on ? 1 : 0;
     this.look.lite = v;
     this.skyU.uLite.value = v;
     this.oceanU.uLite.value = v;
-    this.rain.geometry.setDrawRange(0, Math.round(this.q.rain * (on ? 0.35 : 1)) * 2);
+    this.rain.geometry.setDrawRange(0, Math.round(this.q.rain * (on ? rain : 1)) * 2);
   }
 
   // Per-frame storm animation. zone carries fog and accent colours, eye opens toward the summit.
@@ -579,17 +580,21 @@ export class Renderer {
 
   // Lights, fog and post settings for the native renderer (layout matches NRender.env).
   env() {
-    const e = this.envA || (this.envA = new Array(27).fill(0));
+    const e = this.envA || (this.envA = new Array(28).fill(0));
     const f = this.scene.fog, hs = this.hemi.color, hg = this.hemi.groundColor, mc = this.moon.color, mp = this.moon.position, mt = this.moon.target.position, T = this.theme, L = this.look;
     let dx = mp.x - mt.x, dy = mp.y - mt.y, dz = mp.z - mt.z;
     const dl = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
     dx /= dl; dy /= dl; dz /= dl;
-    e[0] = f.color.r; e[1] = f.color.g; e[2] = f.color.b; e[3] = f.density;
+    e[0] = f.color.r; e[1] = f.color.g; e[2] = f.color.b;
+    // A shorter view on weak phones: the fog closes in, so that what is left out melts away instead of popping off.
+    e[3] = L.far ? Math.max(f.density, 2.3 / L.far) : f.density;
     e[4] = hs.r; e[5] = hs.g; e[6] = hs.b; e[7] = hg.r; e[8] = hg.g; e[9] = hg.b; e[10] = this.hemi.intensity;
     e[11] = mc.r; e[12] = mc.g; e[13] = mc.b; e[14] = this.moon.intensity; e[15] = dx; e[16] = dy; e[17] = dz;
     e[18] = T.exposure; e[19] = this.q.bloom && L.glow > 0.01 ? 1 : 0;
     e[20] = T.bloom[0] * L.glow; e[21] = T.bloom[1]; e[22] = T.bloom[2]; e[23] = L.sharp; e[24] = L.aa ? 1 : 0;
     e[25] = L.scale; e[26] = L.lite;
+    // Where the native side stops drawing. Past this the fog has already swallowed everything.
+    e[27] = L.far || (f.density > 0 ? 3 / f.density : 0);
     return e;
   }
 }

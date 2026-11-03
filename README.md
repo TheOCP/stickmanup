@@ -208,8 +208,14 @@ into view. Every picture is handed to the display with the exact screen refresh 
 drawn between physics steps, so movement stays even.
 
 Auto graphics measures how long the GPU really needs for each frame. When a phone gets near its limit it lowers the
-resolution, then the edge smoothing, then switches to simple lighting, and it takes those back when there is room
-again. The scene is scaled inside a fixed size picture, so the screen never resizes during play.
+resolution, then the edge smoothing, then switches to simple lighting and a shorter view with the fog closing in, and it
+takes those back when there is room again. The scene is scaled inside a fixed size picture, so the screen never resizes
+during play.
+
+It watches the game's own code too. A smaller picture can't help a slow CPU, so there it turns the extras down instead:
+small animations every second frame, fewer music notes, fewer HUD updates. Slow phones are recognised once by a short CPU
+check on launch and start on the lighter picture and simple scenery right away. Whatever the fog has fully hidden is never
+drawn, on any phone.
 
 Graphics settings: resolution, sharpness, smooth edges (anti aliasing), glow, simple lighting, 30, 60 or 120 fps, and
 auto graphics on or off.

@@ -1,7 +1,7 @@
 // Automatic graphics against simulated phones. Usage: node dev/autoqtest.js
 import { AutoQ, STEPS } from '../assets/js/autoq.js';
 // Roughly what each step costs against step 0: less resolution, no edge smoothing, then per corner lighting.
-const COST = [1, 0.84, 0.62, 0.48, 0.3, 0.22, 0.14, 0.1];
+const COST = [1, 0.84, 0.62, 0.48, 0.3, 0.22, 0.14, 0.1, 0.08];
 if (COST.length !== STEPS.length) throw new Error('cost table out of date');
 let fails = 0;
 const check = (name, ok, info) => { console.log((ok ? 'ok   ' : 'FAIL ') + name + (info ? '  ' + info : '')); if (!ok) fails++; };

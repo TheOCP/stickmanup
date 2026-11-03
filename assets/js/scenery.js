@@ -12,6 +12,7 @@ import { panelMat, HDR, mat4, canvasTex } from './worldview.js';
 // ledge plants), 1 high, 2 ultra (more birds and butterflies).
 let DETAIL = 1;
 export function setDetail(d) { DETAIL = d; }
+export const detail = () => DETAIL;
 
 // ---------------------------------------------------------------- palette
 // Each colour gets a 16 px swatch in a 256 px texture; model parts point their uvs at their swatch.

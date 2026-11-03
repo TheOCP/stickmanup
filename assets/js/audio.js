@@ -232,13 +232,15 @@ export class Sound {
     const drums = sec !== 3, full = sec === 2 || (sec === 1 && I > 0.55);
     if (drums && i % 4 === 0) this.kick(t);
     if (drums && sec > 0 && (i === 4 || i === 12)) this.clap(t, 0.32);
-    if (drums && S.hat[i] && (sec > 0 || i % 2 === 0)) this.hat(t, 0.045, S.hat[i] * (0.05 + I * 0.07));
-    if (drums && full && i % 4 === 2) this.hat(t, 0.2, 0.06 + I * 0.05);
-    if (S.perc && drums && S.perc[i] && I > 0.35) this.tom(t, S.perc[i]);
+    // A phone short of CPU time plays the same song with fewer notes on top: each note is work for it.
+    const thin = !!this.thin;
+    if (drums && S.hat[i] && (thin ? i % 2 === 0 : sec > 0 || i % 2 === 0)) this.hat(t, 0.045, S.hat[i] * (0.05 + I * 0.07));
+    if (drums && full && !thin && i % 4 === 2) this.hat(t, 0.2, 0.06 + I * 0.05);
+    if (S.perc && drums && !thin && S.perc[i] && I > 0.35) this.tom(t, S.perc[i]);
     // Bass: from the groove section on, following the chord root.
     if (sec >= 1 && sec !== 3 && S.bass[i]) this.bass(t, chord[0] - 24 + S.bass[i] - 1, six * 0.9);
     // Arp: chord tones going up and down, busier with height; in the breakdown it carries the tune.
-    if ((sec >= 2 || sec === 3 || I > 0.7) && S.arp[i] >= 0 && (sec === 3 || i % (I > 0.5 ? 1 : 2) === 0)) {
+    if ((sec >= 2 || sec === 3 || I > 0.7) && S.arp[i] >= 0 && (thin ? sec === 3 && i % 2 === 0 : sec === 3 || i % (I > 0.5 ? 1 : 2) === 0)) {
       const n = chord[S.arp[i] % chord.length] + 12 * (1 + Math.floor(S.arp[i] / chord.length));
       this.pluck(t, n, six * 1.6, 0.05 + I * 0.03);
     }

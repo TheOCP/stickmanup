@@ -18,7 +18,9 @@ const f32 = (a) => (a instanceof Float32Array ? a : new Float32Array(a));
 const n4 = (v) => Math.round(v * 1e4) / 1e4;
 const n3 = (v) => Math.round(v * 1e3) / 1e3;
 // Objects farther than this from the camera are lost in the storm fog; their updates wait until they're near.
-const FAR = 125, FAR2 = FAR * FAR;
+const FAR = 125;
+// A still object this far from the camera is only looked at one frame in eight. Most of the scene is like that.
+const NAP2 = 40 * 40;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
 export class Mirror {
@@ -44,6 +46,18 @@ export class Mirror {
     this.camLast = new Float64Array(35).fill(NaN);
     this.camOut = new Array(35);
     this.envOut = [];
+    this.far = FAR;
+    this.far2 = FAR * FAR;
+    this.nodeN = 0;
+    this.awake = true;
+    this.geoHot = []; // geometries whose buffers really get rewritten
+    this.geoAt = 0;
+  }
+
+  // How far the picture reaches right now (0: as far as the fog allows). Nothing past that needs updates.
+  setFar(d) {
+    this.far = d > 0 ? Math.min(FAR, d + 15) : FAR;
+    this.far2 = this.far * this.far;
   }
 
   // Forget what the native side has, so the next frame resends every object and material state.
@@ -91,9 +105,10 @@ export class Mirror {
     d.bs = [s.center.x, s.center.y, s.center.z, s.radius];
     const cnt = geo.drawRange.count;
     d.dr = [geo.drawRange.start, isFinite(cnt) ? cnt : -1];
-    const e = { id, geo, attrs: watch, ds: geo.drawRange.start, dc: cnt };
+    const e = { id, geo, attrs: watch, ds: geo.drawRange.start, dc: cnt, hot: !!geo.userData.live };
     this.geos.set(id, e);
     this.geoList.push(e);
+    if (e.hot) this.geoHot.push(e);
     this.defs().g.push(d);
     return id;
   }
@@ -205,11 +220,14 @@ export class Mirror {
     return id;
   }
 
-  // What the walk remembers about a scene node between frames: the transform it last composed.
+  // What the walk remembers about a scene node between frames: the transform it last composed, and its parts. Scene
+  // objects come in many shapes (meshes, groups, sprites...), which makes every field read on them slow. These records all
+  // have the same shape, so the walk reads from here wherever it can.
   node(o) {
     const n = {
+      o, ch: o.children, kids: [], p: o.position, q: o.quaternion, s: o.scale, mat: o.matrix, mw: o.matrixWorld,
       px: NaN, py: 0, pz: 0, qx: 0, qy: 0, qz: 0, qw: 0, sx: 0, sy: 0, sz: 0,
-      par: o.parent, hid: false, fresh: true, e: null,
+      par: o.parent, hid: false, fresh: true, e: null, rest: 0, nap: false, slot: this.nodeN++ & 7,
       rend: !!((o.isMesh || o.isSprite || o.isLineSegments) && o.material && !Array.isArray(o.material)),
     };
     o.__mn = n;
@@ -217,29 +235,29 @@ export class Mirror {
   }
 
   // One node: update its world matrix if it (or a parent) moved, send what changed, then its children.
-  walk(o, parentVis, parentMoved) {
-    let n = o.__mn;
-    if (n === undefined) n = this.node(o);
-    const vis = parentVis && o.visible, all = this.all;
+  walk(n, parentVis, parentMoved) {
+    const o = n.o, vis = parentVis && o.visible, all = this.all;
     // A branch that was already fully hidden last frame has nothing to do.
     if (!vis && n.hid && !all) return;
     let moved = parentMoved || n.hid || n.fresh;
     n.fresh = false;
-    if (o.parent !== n.par) { n.par = o.parent; moved = true; }
+    const par = o.parent;
+    if (par !== n.par) { n.par = par; moved = true; }
     if (o.matrixAutoUpdate) {
-      const p = o.position, q = o.quaternion, s = o.scale;
+      const p = n.p, q = n.q, s = n.s;
       if (p.x !== n.px || p.y !== n.py || p.z !== n.pz || q._x !== n.qx || q._y !== n.qy || q._z !== n.qz || q._w !== n.qw || s.x !== n.sx || s.y !== n.sy || s.z !== n.sz) {
         n.px = p.x; n.py = p.y; n.pz = p.z; n.qx = q._x; n.qy = q._y; n.qz = q._z; n.qw = q._w; n.sx = s.x; n.sy = s.y; n.sz = s.z;
-        o.matrix.compose(p, q, s);
+        n.mat.compose(p, q, s);
         moved = true;
       }
     }
     if (o.matrixWorldNeedsUpdate) moved = true;
     if (moved) {
-      if (o.parent === null) o.matrixWorld.copy(o.matrix);
-      else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
+      if (par === null) n.mw.copy(n.mat);
+      else n.mw.multiplyMatrices(par.matrixWorld, n.mat);
       o.matrixWorldNeedsUpdate = false;
     }
+    const seen = this.seen;
     if (n.rend) {
       let e = n.e;
       if (e === null) {
@@ -247,19 +265,33 @@ export class Mirror {
         if (!id || !this.objs.has(id)) id = this.defineObject(o);
         e = n.e = this.objs.get(id);
       }
-      e.stamp = this.seen;
-      if (moved) e.dirty = true;
-      const m = o.matrixWorld.elements;
+      e.stamp = seen;
+      if (moved) { e.dirty = true; n.rest = 0; n.nap = false; } else if (n.rest < 60) n.rest++;
       let near = all || e.always;
       if (!near) {
-        const dx = m[12] - this.cx, dy = m[13] - this.cy, dz = m[14] - this.cz;
-        near = dx * dx + dy * dy + dz * dz <= FAR2;
+        const m = n.mw.elements, dx = m[12] - this.cx, dy = m[13] - this.cy, dz = m[14] - this.cz, d2 = dx * dx + dy * dy + dz * dz;
+        near = d2 <= this.far2;
+        n.nap = n.rest >= 60 && d2 > NAP2 && n.ch.length === 0;
       }
       if (near || (!vis && e.vis !== 0)) this.report(o, e, vis, all);
     }
-    const ch = o.children;
-    for (let i = 0; i < ch.length; i++) this.walk(ch[i], vis, moved);
+    const ch = n.ch, kids = n.kids, awake = this.awake;
+    if (kids.length > ch.length) kids.length = ch.length;
+    for (let i = 0; i < ch.length; i++) {
+      const c = ch[i];
+      let k = kids[i];
+      if (k === undefined || k.o !== c) {
+        k = c.__mn;
+        if (k === undefined) k = this.node(c);
+        kids[i] = k;
+      }
+      // Still for a while and far from the camera: nothing to do on most frames. Moving what it hangs on counts at once;
+      // moving or hiding by itself can be noticed a few frames late, out there.
+      if (k.nap && vis && !moved && !awake && ((seen + k.slot) & 7) !== 0) { k.e.stamp = seen; continue; }
+      this.walk(k, vis, moved);
+    }
     n.hid = !vis;
+    if (!vis) n.nap = false; // hidden things must show up the moment they come back
   }
 
   // An object near the camera (or one just hidden): material swaps, visibility, transform, instance buffer.
@@ -293,7 +325,7 @@ export class Mirror {
     // Instance buffers (drifting debris) only need ~15 updates a second.
     // Flagged ones (spinning coins) get every second frame.
     if (o.isInstancedMesh && o.instanceMatrix.version !== e.imv && (all || (v === 1 && (shown || this.seen % (o.userData.fastIM ? 2 : 4) === 0)))) {
-      const b = e.bs, far = b && Math.hypot(b[0] - this.cx, b[1] - this.cy, b[2] - this.cz) - b[3] > FAR;
+      const b = e.bs, far = b && Math.hypot(b[0] - this.cx, b[1] - this.cy, b[2] - this.cz) - b[3] > this.far;
       if (all || !far) { e.imv = o.instanceMatrix.version; this.au.push('o,' + e.id + ',im,' + b64(o.instanceMatrix.array)); }
     }
   }
@@ -319,6 +351,23 @@ export class Mirror {
     }
   }
 
+  // A geometry's buffers and draw range, if they changed since they were last sent.
+  checkGeo(e, au) {
+    const g = e.geo, as = e.attrs, dr = g.drawRange;
+    let ch = false;
+    for (let j = 0; j < as.length; j++) {
+      const w = as[j], a = g.attributes[w.name];
+      if (a.version !== w.ver) { w.ver = a.version; au.push('g,' + e.id + ',' + w.name + ',' + b64(f32(a.array))); ch = true; }
+    }
+    if (dr.start !== e.ds || dr.count !== e.dc) {
+      e.ds = dr.start; e.dc = dr.count;
+      au.push('r,' + e.id + ',' + dr.start + ',' + (isFinite(dr.count) ? dr.count : -1));
+      ch = true;
+    }
+    // Seen changing: from now on it is looked at every frame.
+    if (ch && !e.hot) { e.hot = true; this.geoHot.push(e); }
+  }
+
   // One frame: update what moved, find what changed nearby, send definitions first, then the frame.
   // Frame text (one section per line, parsed in place by NRender without allocating; a section with nothing
   // new is left out and the native side keeps what it has):
@@ -329,34 +378,36 @@ export class Mirror {
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, all = !!this.forceAll;
     this.forceAll = false;
     this.all = all;
+    // A sudden jump (respawn, teleport): everything gets looked at, so nothing near the new spot shows up late.
+    this.awake = all || Math.abs(cx - this.cx) + Math.abs(cy - this.cy) + Math.abs(cz - this.cz) > 6;
     this.cx = cx; this.cy = cy; this.cz = cz;
     const om = this.om, ou = this.ou, au = this.au;
     om.length = 0; ou.length = 0; au.length = 0;
     const stamp = ++this.seen;
-    this.walk(scene, true, false);
+    this.walk(scene.__mn || this.node(scene), true, false);
     // Objects removed from the scene since last frame are hidden on the native side.
-    const list = this.list;
-    for (let i = 0; i < list.length; i++) {
-      const e = list[i];
-      if (e.stamp !== stamp && e.vis !== 0) { om.push(e.id, 0); e.vis = 0; }
+    if (all || (stamp & 3) === 0) {
+      const list = this.list;
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (e.stamp !== stamp && e.vis !== 0) { om.push(e.id, 0); e.vis = 0; }
+      }
     }
     // Animated materials: those in use near the camera every frame, the others a few times a second.
     const mats = all ? this.matList : this.live;
     for (let i = 0; i < mats.length; i++) {
       const e = mats[i];
-      if (all || e.used === stamp || ((stamp + i) & 7) === 0) this.sendMat(e);
+      if (all || stamp - e.used < 8 || ((stamp + i) & 7) === 0) this.sendMat(e);
     }
-    const geos = this.geoList;
-    for (let i = 0; i < geos.length; i++) {
-      const e = geos[i], g = e.geo, as = e.attrs, dr = g.drawRange;
-      for (let j = 0; j < as.length; j++) {
-        const w = as[j], a = g.attributes[w.name];
-        if (a.version !== w.ver) { w.ver = a.version; au.push('g,' + e.id + ',' + w.name + ',' + b64(f32(a.array))); }
-      }
-      if (dr.start !== e.ds || dr.count !== e.dc) {
-        e.ds = dr.start; e.dc = dr.count;
-        au.push('r,' + e.id + ',' + dr.start + ',' + (isFinite(dr.count) ? dr.count : -1));
-      }
+    // Buffers: hardly any ever change after they're built. The ones that do every frame, a few of the others.
+    const geos = this.geoList, hot = this.geoHot;
+    for (let i = 0; i < hot.length; i++) this.checkGeo(hot[i], au);
+    if (all) {
+      for (let i = 0; i < geos.length; i++) this.checkGeo(geos[i], au);
+    } else {
+      let i = this.geoAt >= geos.length ? 0 : this.geoAt;
+      for (let c = (geos.length >> 5) + 1; c > 0 && i < geos.length; c--) this.checkGeo(geos[i++], au);
+      this.geoAt = i;
     }
     if (this.def) { this.send('def', JSON.stringify(this.def)); this.def = null; }
     let msg = '';

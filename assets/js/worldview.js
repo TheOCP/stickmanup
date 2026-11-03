@@ -5,7 +5,7 @@ import { BOX } from './physics.js';
 import { CORE_R, coreFlare, cpEnabled } from './level.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
-import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist } from './scenery.js';
+import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail } from './scenery.js';
 
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -16,6 +16,9 @@ let SIMPLE = false, PATTERN = 1;
 export function setSimple(v) {
   SIMPLE = v;
 }
+// A phone short of CPU time: the small animations run every second frame.
+let THIN = false;
+export function setThin(v) { THIN = v; }
 
 // Standard material with world-space panel lines and an optional per-vertex glow attribute.
 export function panelMat(color, o = {}) {
@@ -297,23 +300,34 @@ export class WorldView {
       this.band(y).far.push(im);
     }
 
-    const sm = new THREE.InstancedMesh(BOXG, new THREE.MeshBasicMaterial({ color: HDR(0xffffff, this.glowK) }), strips.length * 4);
-    let k = 0;
-    const base = new THREE.Matrix4();
+    // The glowing edges are thousands of little boxes. On the simple scenery they are only drawn near the camera's height.
+    const low = detail() === 0, stripGlow = new THREE.MeshBasicMaterial({ color: HDR(0xffffff, this.glowK) }), stripSets = new Map();
     for (const c of strips) {
-      base.copy(colMatrix(c));
-      const glowCol = new THREE.Color(L.zones[c.zone].color);
-      for (const p of trimParts(c.hx, c.hy, c.hz, null, c.kind !== 'beam')) {
-        sm.setMatrixAt(k, _m2.multiplyMatrices(base, p.m));
-        sm.setColorAt(k++, glowCol);
-      }
+      const b = low ? Math.floor(c.y / 50) : 0;
+      if (!stripSets.has(b)) stripSets.set(b, []);
+      stripSets.get(b).push(c);
     }
-    sm.count = k;
-    this.add(sm, false);
+    const base = new THREE.Matrix4();
+    for (const list of stripSets.values()) {
+      const sm = new THREE.InstancedMesh(BOXG, stripGlow, list.length * 4);
+      let k = 0;
+      for (const c of list) {
+        base.copy(colMatrix(c));
+        const glowCol = new THREE.Color(L.zones[c.zone].color);
+        for (const p of trimParts(c.hx, c.hy, c.hz, null, c.kind !== 'beam')) {
+          sm.setMatrixAt(k, _m2.multiplyMatrices(base, p.m));
+          sm.setColorAt(k++, glowCol);
+        }
+      }
+      sm.count = k;
+      this.add(sm, false);
+      if (low) this.band(list[0].y).near.push(sm);
+    }
 
-    const cg = new THREE.CylinderGeometry(1, 1, 1, 28);
+    // Pillars and the thin ring on top of each: there are over a hundred of them, so their corners add up.
+    const cg = new THREE.CylinderGeometry(1, 1, 1, low ? 12 : 28);
     const cm = new THREE.InstancedMesh(cg, mat, cyls.length);
-    const rg = new THREE.TorusGeometry(1, 0.035, 6, 36).rotateX(Math.PI / 2);
+    const rg = new THREE.TorusGeometry(1, 0.035, low ? 3 : 4, low ? 16 : 28).rotateX(Math.PI / 2);
     const rm = new THREE.InstancedMesh(rg, new THREE.MeshBasicMaterial({ color: HDR(0xffffff, this.glowK) }), cyls.length);
     cyls.forEach((c, i) => {
       cm.setMatrixAt(i, colMatrix(c, c.r, c.hh * 2, c.r));
@@ -1756,23 +1770,30 @@ export class WorldView {
   // Animate everything that moves. t is shared game time, warn(r) returns rod warning 0..1.
   // Before each physics step: where the moving platforms are now, so they can be drawn between two steps.
   snapDyn() {
-    for (const d of this.dyn) { const c = d.c; d.ox = c.x; d.oy = c.y; d.oz = c.z; d.ory = c.ry; }
+    for (const d of this.dyn) { if (d.far) continue; const c = d.c; d.ox = c.x; d.oy = c.y; d.oz = c.z; d.ory = c.ry; }
   }
 
   update(t, dt, storm, alpha = 1) {
     // The clock the water and glow shaders see. It restarts every hour, so it stays small on long or resumed
     // climbs: phone GPUs lose precision on big numbers, and the moving water went flat and faded out.
     const wt = t % 3600;
-    for (const d of this.dyn) {
-      const c = d.c, m = d.mesh;
-      if (d.ox === undefined) {
+    const tick = (this.tick = (this.tick || 0) + 1), eye = this.camPos, dyn = this.dyn;
+    for (let i = 0; i < dyn.length; i++) {
+      const d = dyn[i], c = d.c, m = d.mesh;
+      // Far above or below the camera a quarter of the updates is plenty: nobody can tell from there.
+      const far = !!eye && Math.abs(c.y - eye.y) > 70;
+      if (far && d.far && ((i + tick) & 3) !== 0) continue;
+      if (d.far && !far) { d.ox = c.x; d.oy = c.y; d.oz = c.z; d.ory = c.ry; }
+      d.far = far;
+      if (d.ox === undefined || far) {
         m.position.set(c.x, c.y, c.z);
-        m.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+        if (d.lrx !== c.rx || d.lry !== c.ry || d.lrz !== c.rz) { d.lrx = c.rx; d.lry = c.ry; d.lrz = c.rz; m.rotation.set(c.rx, c.ry, c.rz, 'YXZ'); }
       } else {
         // The same moment the climber is drawn at, so standing on one stays exact.
         m.position.set(d.ox + (c.x - d.ox) * alpha, d.oy + (c.y - d.oy) * alpha, d.oz + (c.z - d.oz) * alpha);
-        const dr = c.ry - d.ory;
-        m.rotation.set(c.rx, Math.abs(dr) < 1 ? d.ory + dr * alpha : c.ry, c.rz, 'YXZ');
+        // Setting a rotation is slow, even to the same value, and most of these never turn.
+        const dr = c.ry - d.ory, ry = Math.abs(dr) < 1 ? d.ory + dr * alpha : c.ry;
+        if (d.lrx !== c.rx || d.lry !== ry || d.lrz !== c.rz) { d.lrx = c.rx; d.lry = ry; d.lrz = c.rz; m.rotation.set(c.rx, ry, c.rz, 'YXZ'); }
       }
       if (c.blink) {
         const st = storm.on(c.blink) ? storm.blink(c.blink, t) : { on: true, warn: 0 };
@@ -1786,10 +1807,12 @@ export class WorldView {
       if (c.crumble) {
         const s = c.crumble.st;
         if (s === 1) m.position.x += (Math.random() - 0.5) * 0.08, m.position.z += (Math.random() - 0.5) * 0.08;
-        if (s === 2) { d.fall += dt; m.position.y -= d.fall * d.fall * 9; m.visible = d.fall < 1.4; }
+        if (s === 2) { d.fall += far ? dt * 4 : dt; m.position.y -= d.fall * d.fall * 9; m.visible = d.fall < 1.4; }
         else { d.fall = 0; m.visible = true; }
       }
     }
+    if (!THIN || (tick & 1) === 0) {
+    const adt = THIN ? dt * 2 : dt;
     for (const c of this.pads) {
       const k = 1 + 0.12 * Math.sin(t * 6);
       c.fx.scale.set(k, 1, k);
@@ -1803,22 +1826,24 @@ export class WorldView {
     }
     for (const f of this.fans) {
       const on = storm.fanOn(f.f, t);
-      f.spin += dt * (on ? 28 : 2.5);
+      f.spin += adt * (on ? 28 : 2.5);
       f.rotor.rotation.z = f.spin;
       f.sm.uniforms.uT.value = wt;
-      f.sm.uniforms.uOn.value += ((on ? 1 : 0) - f.sm.uniforms.uOn.value) * Math.min(1, dt * 8);
+      f.sm.uniforms.uOn.value += ((on ? 1 : 0) - f.sm.uniforms.uOn.value) * Math.min(1, adt * 8);
     }
-    for (const s of this.spin) s.o.rotation[s.axis] += s.sp * dt;
+    for (const s of this.spin) s.o.rotation[s.axis] += s.sp * adt;
     for (const b of this.blink) {
       const k = b.sq ? (Math.sin(t * b.sp) > 0.6 ? 1 : 0.15) : 0.7 + 0.3 * Math.sin(t * b.sp);
       b.m.color.setHex(b.hex).multiplyScalar(b.base * k);
     }
-    const rd = this.rockData;
-    for (let i = 0; i < rd.length; i++) {
+    }
+    // The drifting rocks are slow and the native side only takes them 15 times a second anyway.
+    const rd = (tick & 3) === 0 ? this.rockData : null;
+    if (rd) for (let i = 0; i < rd.length; i++) {
       const d = rd[i];
       this.rocks.setMatrixAt(i, mat4(d.x, d.y + Math.sin(t * 0.3 + i) * 1.5, d.z, d.s, d.s * 0.8, d.s, d.rx + t * d.sp, d.ry + t * d.sp * 0.7, 0));
     }
-    this.rocks.instanceMatrix.needsUpdate = true;
+    if (rd) this.rocks.instanceMatrix.needsUpdate = true;
     this.beam.material.uniforms.uT.value = wt;
     this.summitOrb.scale.setScalar(1 + 0.1 * Math.sin(t * 2));
     if (this.foam) this.foam.material.opacity = 0.4 + 0.2 * Math.sin(t * 1.3);

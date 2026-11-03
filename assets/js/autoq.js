@@ -7,14 +7,15 @@
 // resolution setting, the others multiply or switch the player's own settings. Step 4 changes to per corner
 // lighting, which is so much cheaper that the resolution can go back up.
 export const STEPS = [
-  { res: 1, aa: 1, sharp: 1, glow: 1, lite: 0 },
-  { res: 0.9, aa: 1, sharp: 1, glow: 1, lite: 0 },
-  { res: 0.8, aa: 0, sharp: 1, glow: 1, lite: 0 },
-  { res: 0.7, aa: 0, sharp: 1, glow: 1, lite: 0 },
-  { res: 0.85, aa: 0, sharp: 0.7, glow: 1, lite: 1 },
-  { res: 0.7, aa: 0, sharp: 0.7, glow: 1, lite: 1 },
-  { res: 0.6, aa: 0, sharp: 0.5, glow: 0, lite: 1 },
-  { res: 0.5, aa: 0, sharp: 0.5, glow: 0, lite: 1 },
+  { res: 1, aa: 1, sharp: 1, glow: 1, lite: 0, far: 0 },
+  { res: 0.9, aa: 1, sharp: 1, glow: 1, lite: 0, far: 0 },
+  { res: 0.8, aa: 0, sharp: 1, glow: 1, lite: 0, far: 0 },
+  { res: 0.7, aa: 0, sharp: 1, glow: 1, lite: 0, far: 0 },
+  { res: 0.85, aa: 0, sharp: 0.7, glow: 1, lite: 1, far: 240 },
+  { res: 0.7, aa: 0, sharp: 0.7, glow: 1, lite: 1, far: 180 },
+  { res: 0.6, aa: 0, sharp: 0.5, glow: 0, lite: 1, far: 130 },
+  { res: 0.5, aa: 0, sharp: 0, glow: 0, lite: 1, far: 100 },
+  { res: 0.45, aa: 0, sharp: 0, glow: 0, lite: 1, far: 75 },
 ];
 
 const HOT = 0.8, COOL = 0.5, FITS = 0.72;
@@ -22,8 +23,11 @@ const HOT = 0.8, COOL = 0.5, FITS = 0.72;
 export class AutoQ {
   // budget: ms per frame at the chosen frame rate. start: the step remembered from last time. last: the lowest
   // step allowed (above 60 fps it never trades the look away just for the extra frames).
-  constructor({ budget = 1000 / 60, start = 0, last = STEPS.length - 1 } = {}) {
+  constructor({ budget = 1000 / 60, start = 0, last = STEPS.length - 1, thin = false } = {}) {
     this.budget = budget;
+    this.thin = thin; // the game's own code is what's short of time: the extras are turned down (main.js)
+    this.cpuHot = 0;
+    this.cpuCalm = 0;
     this.last = last;
     this.level = Math.min(Math.max(0, start), last);
     this.t = 0; // seconds running
@@ -42,6 +46,25 @@ export class AutoQ {
   // Settled for a while: worth remembering for the next launch.
   stable() { return this.t - this.since >= 20; }
 
+  // Plenty of room on the best picture for a good while: this phone is no weak phone.
+  roomy() {
+    const s = this.seen[0];
+    return this.level === 0 && !this.thin && this.stable() && !!s && s.load < this.budget * 0.4;
+  }
+
+  // The game's own code, on the CPU. A smaller picture can't help with that, so this leaves the picture steps alone.
+  tickCpu(js) {
+    const B = this.budget;
+    if (js > B * 0.65) {
+      this.cpuCalm = 0;
+      if (++this.cpuHot >= 3) this.thin = true;
+      return;
+    }
+    this.cpuHot = 0;
+    this.cpuCalm = js < B * 0.35 ? this.cpuCalm + 1 : 0;
+    if (this.cpuCalm >= 30) this.thin = false;
+  }
+
   // Something big just happened (a map loading): what the next few seconds look like doesn't count.
   settle(secs = 3) {
     this.wait = Math.max(this.wait, secs);
@@ -57,9 +80,11 @@ export class AutoQ {
     this.wait = 2;
   }
 
-  // Once a second. gpu, gpuMax: ms for a frame (0 when nothing was measured), slow: frames that came late.
-  tick(gpu, gpuMax, slow, frames) {
+  // Once a second. gpu, gpuMax: ms for a frame (0 when nothing was measured), slow: frames that came late,
+  // js: ms of the game's own code per frame.
+  tick(gpu, gpuMax, slow, frames, js = 0) {
     this.t++;
+    if (js > 0 && this.wait <= 0) this.tickCpu(js);
     if (!(gpu > 0)) return this.level;
     // gpu is the middle frame of the second. The worst one counts a little too, but never for much on its own.
     const B = this.budget, load = Math.max(gpu, Math.min(gpuMax, gpu * 1.4) * 0.85);

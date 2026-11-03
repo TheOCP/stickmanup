@@ -94,6 +94,7 @@ const app = { settings, game: null, paused: false, screen: '', back: null, room:
 // Diagnostics: JS errors and boot stages go to the Android side (and on to a developer receiver if one runs).
 const errs = [];
 function report(k, o = {}) {
+  if (k === 'stage') window.SMU_stage = o.s; // js/compat.js shows it if the game never gets going
   if (N && N.report) N.report(JSON.stringify(Object.assign({ k, t: Math.round(performance.now()) }, o)));
 }
 function noteErr(msg) {
@@ -1645,6 +1646,8 @@ function boot() {
   startLive();
   title();
   requestAnimationFrame(frame);
+  window.SMU_booted = true;
+  if (N && N.booted) N.booted();
   setTimeout(() => $('#loading').classList.add('gone'), 300);
 }
 

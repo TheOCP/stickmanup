@@ -74,6 +74,7 @@ export class Renderer {
       this.powervr = false;
       canvas.style.display = 'none';
       document.body.classList.add('native');
+      document.documentElement.classList.add('native');
     } else {
       // An alpha canvas with a hair of CSS transparency is composited normally instead of being promoted
       // to a hardware overlay plane, which some phones show as a blank white layer.
@@ -504,7 +505,8 @@ export class Renderer {
     this.scene.fog.density = T.fog;
     this.rain.visible = T.rain > 0 && this.safe < 3;
     if (this.r) this.r.toneMappingExposure = T.exposure;
-    if (this.bloom) { this.bloom.strength = T.bloom[0]; this.bloom.radius = T.bloom[1]; this.bloom.threshold = T.bloom[2]; }
+    // Only what really shines should glow: at full strength these wash out the whole picture.
+    if (this.bloom) { this.bloom.strength = T.bloom[0] * 0.45; this.bloom.radius = T.bloom[1] * 0.8; this.bloom.threshold = Math.max(T.bloom[2], 0.9); }
   }
 
   flash(v) {

@@ -1,6 +1,8 @@
 package io.stickmanup;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -34,6 +36,7 @@ import io.stickmanup.gl.GLView;
 import io.stickmanup.gl.NRender;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
@@ -51,7 +54,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.10.0";
+    static final String VERSION = "4.10.1";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final StringBuilder jsQueue = new StringBuilder();
     private boolean jsPosted;
@@ -64,6 +67,8 @@ public class MainActivity extends Activity {
     private volatile String lastState = "{}";
     private boolean resumed;
     private GLView glView;
+    private int webMajor;
+    private volatile boolean booted;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -107,6 +112,7 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(glView, new FrameLayout.LayoutParams(-1, -1));
+        webMajor = majorOf(webViewVersion());
         web = new WebView(this);
         web.setBackgroundColor(Color.TRANSPARENT);
         root.addView(web, new FrameLayout.LayoutParams(-1, -1));
@@ -139,6 +145,17 @@ public class MainActivity extends Activity {
             // Handle it instead of letting Android kill the app, and come back one graphics level safer.
             public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
                 Diag.send("renderGone", "crash", detail.didCrash());
+                if (!booted) {
+                    // Died while still starting, usually out of memory. The next try builds the simple world, and a
+                    // phone that can't manage even that gets told so, instead of restarting for ever.
+                    int tries = prefs.getInt("bootCrashes", 0) + 1;
+                    prefs.edit().putInt("bootCrashes", tries).putInt("safe", Math.max(prefs.getInt("safe", 0), 3)).commit();
+                    if (tries >= 3) {
+                        prefs.edit().putInt("bootCrashes", 0).commit();
+                        tooLittleMemory();
+                        return true;
+                    }
+                }
                 restartApp();
                 return true;
             }
@@ -196,10 +213,54 @@ public class MainActivity extends Activity {
         if (path == null || path.equals("/")) path = "/index.html";
         try {
             InputStream in = getAssets().open(path.substring(1));
+            if (webMajor > 0 && webMajor < 89 && path.endsWith(".js") && !path.endsWith("three.module.js")) in = forOldWebView(path, in);
             return new WebResourceResponse(mime(path), "UTF-8", in);
         } catch (IOException e) {
             return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
         }
+    }
+
+    /**
+     * A WebView older than Chrome 89 doesn't know import maps, so "three" means nothing to it: say where it is. The game's
+     * files stay as they are, because the server reruns climbs with the same code.
+     */
+    private InputStream forOldWebView(String path, InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[16384];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        in.close();
+        String s = out.toString("UTF-8").replace("from 'three'", "from '/lib/three.module.js'").replace("'three/addons/", "'/lib/addons/");
+        // The one use of ||=, which only arrived in Chrome 85.
+        if (path.endsWith("/js/game.js")) s = s.replace("(this.coinB[Math.floor(c.y / 8)] ||= [])", "(this.coinB[Math.floor(c.y / 8)] = this.coinB[Math.floor(c.y / 8)] || [])");
+        return new ByteArrayInputStream(s.getBytes("UTF-8"));
+    }
+
+    private static int majorOf(String webView) {
+        try {
+            String v = webView.substring(webView.lastIndexOf(' ') + 1);
+            return Integer.parseInt(v.substring(0, v.indexOf('.')));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** Started again and again and each time the phone ran out of memory before the game got going. */
+    private void tooLittleMemory() {
+        String l = Locale.getDefault().getLanguage(), text;
+        if ("de".equals(l)) text = "Diesem Handy geht beim Start des Spiels der Speicher aus. Schließe andere Apps und versuche es noch einmal.";
+        else if ("es".equals(l)) text = "Este teléfono se queda sin memoria al iniciar el juego. Cierra otras aplicaciones y vuelve a intentarlo.";
+        else if ("pt".equals(l)) text = "Este celular fica sem memória ao iniciar o jogo. Feche outros aplicativos e tente de novo.";
+        else if ("fr".equals(l)) text = "Ce téléphone manque de mémoire au démarrage du jeu. Ferme les autres applications et réessaie.";
+        else if ("ru".equals(l)) text = "Этому телефону не хватает памяти для запуска игры. Закрой другие приложения и попробуй снова.";
+        else if ("tr".equals(l)) text = "Bu telefonun belleği oyun başlarken yetmiyor. Diğer uygulamaları kapat ve tekrar dene.";
+        else text = "This phone runs out of memory while the game starts. Close other apps and try again.";
+        new AlertDialog.Builder(this).setMessage(text).setCancelable(false).setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface d, int which) {
+                finish();
+            }
+        }).show();
     }
 
     private static String mime(String p) {
@@ -359,6 +420,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() {
             return VERSION;
+        }
+
+        /** The game got as far as its first screen. */
+        @JavascriptInterface
+        public void booted() {
+            booted = true;
+            if (prefs.getInt("bootCrashes", 0) != 0) prefs.edit().putInt("bootCrashes", 0).apply();
         }
 
         @JavascriptInterface

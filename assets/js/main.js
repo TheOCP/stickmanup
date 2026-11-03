@@ -14,6 +14,7 @@ import { Sound } from './audio.js';
 import { Storm } from './storm.js';
 import * as cloud from './cloud.js';
 import { Session, PROTO, makeLink, MAX_PLAYERS } from './net.js';
+import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keepAwake } from './platform.js';
 import * as live from './live.js';
 import { initFriends, openFriends, friendBadge, endSpectate } from './friends.js';
 import { Game } from './game.js';
@@ -31,12 +32,21 @@ import { store, fmtTime, clamp } from './util.js';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const N = window.Native;
-const VERSION = N && N.version ? N.version() : 'dev';
-const shareText = (t) => N.share(tr(t));
+const VERSION = N && N.version ? N.version() : APP_VERSION;
+// Without the phone's own share menu: the browser's, or else the clipboard.
+const canShare = () => !!((N && N.share) || navigator.share || navigator.clipboard);
+function shareText(t) {
+  const text = tr(t);
+  if (N && N.share) N.share(text);
+  else if (navigator.share) navigator.share({ text }).catch(() => {});
+  else if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => ui.toast('Copied', 'good'), () => {});
+}
+// A web page can only be sent back from a sign in by a server that knows how.
+const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
-const settings = Object.assign({ quality: 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
+const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 if (![30, 60, 90, 120].includes(settings.cap)) settings.cap = 60;
@@ -328,6 +338,7 @@ function closeEmotes() {
   $('#emoteMenu').className = '';
   $('#emoteMenu').innerHTML = '';
   app.input.lockPad(false);
+  app.input.freeMouse(false);
 }
 function openEmotes(viaPad) {
   if (app.screen !== 'game' || !app.game) return;
@@ -337,6 +348,7 @@ function openEmotes(viaPad) {
   $('#emoteMenu').className = 'on';
   app.sound.ui();
   if (viaPad) { app.input.lockPad(true); nav.setUsing(true); }
+  else app.input.freeMouse(true);
 }
 function toggleEmotes(viaPad) {
   if (emoteOpen()) closeEmotes();
@@ -456,6 +468,7 @@ function title() {
       <div class="row"><button class="btn sm frbtn" data-a="friends"${off}><span>Friends</span><span id="frCount">${friendBadge()}</span></button><button class="btn sm" data-a="browser"${off}>Server browser</button></div>
       <div class="row"><button class="btn sm acctbtn" data-a="account"><span>${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</span>${roleChip(myRole())}</button><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button></div>
       <div class="row three"><button class="btn sm" data-a="records"${off}>Records</button><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
+      ${DESK ? '<button class="btn sm" data-a="quit">Quit game</button>' : ''}
     </div></div>`, lockedIf(ban, {
     shop: () => { app.screen = 'shop'; openShop(shopCtx, title); },
     records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
@@ -470,6 +483,7 @@ function title() {
     settings: () => settingsScreen(title),
     how: () => howTo(title),
     back: () => { if (N && N.exit) N.exit(); },
+    quit: () => { if (DESK) DESK.quit(); },
   }), false);
 }
 
@@ -572,7 +586,7 @@ function lobby(s) {
   let info;
   if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '...'} ms</p>`;
   else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p><p>${room.pub ? 'It shows in the server browser. Friends can also tap <b>Join a game</b> and type this code.' : 'Not in the server browser. Friends tap <b>Join a game</b> and type this code.'}${room.locked ? ' They also need your password.' : ''}</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
-  else info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
+  else info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${canShare() ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
@@ -787,7 +801,7 @@ async function accountScreen(back = title) {
     return;
   }
   if (a && cloud.isGuest()) {
-    const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info ? info.providers.filter((p) => names[p]) : [];
+    const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info ? signInWith(info).filter((p) => names[p]) : [];
     show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
       <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>Player #${a.user.num}</small></div>
       <p class="sub" style="margin-top:10px">Your coins and items are safe on the server, but only this phone can reach them. Sign in to keep them on an account: they move there, and work on any phone.</p>
@@ -843,7 +857,7 @@ async function accountScreen(back = title) {
     });
     return;
   }
-  const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info.providers.filter((p) => names[p]);
+  const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = signInWith(info).filter((p) => names[p]);
   show(`<div class="panel">${header('Sign in')}<div class="acct"><div class="terms">${esc(info.terms)}</div><div>${made}
     <p class="sub">Coins and items are kept on the server, so nobody can lose or fake them. Sign in to have them on any phone, or play as a guest on this one.</p>
     <label class="toggle"><input type="checkbox" id="tos" data-a="tos"> I accept these terms</label>
@@ -994,6 +1008,7 @@ function settingsScreen(back) {
   show(`<div class="panel">${header('Settings')}<div class="set">
     <h3>Graphics</h3>
     <label class="full">Preset${seg('quality', [['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']])}</label>
+    ${canFullscreen() ? '<button class="btn sm" data-a="full">Fullscreen</button>' : ''}
     ${nat ? `<label>Resolution ${val('res', '%')}${range('res', 0.5, 1, 0.05, '%')}</label>
     <label>Sharpness ${val('sharp', '%')}${range('sharp', 0, 1, 0.05, '%')}</label>
     <label>Glow ${val('glow', '%')}${range('glow', 0, 1.5, 0.05, '%')}</label>
@@ -1004,12 +1019,12 @@ function settingsScreen(back) {
     ${chk('lite', 'Simple lighting (the fastest look, for older phones)')}
     <p class="sub full" style="margin:0">Pixelated? Turn up Resolution and Sharpness and switch on Smooth edges. If it still looks soft with Auto graphics on, your phone is holding the frame rate that way; a lower frame rate gives it more room.</p>` : ''}
     <h3>Controls</h3>
-    <label>Button size ${val('btnSize', '%')}${range('btnSize', 0.7, 1.5, 0.05, '%')}</label>
-    <label>Button opacity ${val('btnAlpha', '%')}${range('btnAlpha', 0.3, 1, 0.05, '%')}</label>
+    ${ON_PC ? '' : `<label>Button size ${val('btnSize', '%')}${range('btnSize', 0.7, 1.5, 0.05, '%')}</label>
+    <label>Button opacity ${val('btnAlpha', '%')}${range('btnAlpha', 0.3, 1, 0.05, '%')}</label>`}
     <label>Camera speed ${val('sens', '%')}${range('sens', 0.4, 4, 0.05, '%')}</label>
     <label>Aim sensitivity ${val('aimSens', '%')}${range('aimSens', 0.3, 4, 0.05, '%')}</label>
-    <label>Buttons on the${seg('lefty', [[false, 'Right'], [true, 'Left']])}</label>
-    <button class="btn sm" data-a="layout">Move buttons...</button>
+    ${ON_PC ? '' : `<label>Buttons on the${seg('lefty', [[false, 'Right'], [true, 'Left']])}</label>
+    <button class="btn sm" data-a="layout">Move buttons...</button>`}
     ${chk('invert', 'Invert camera up and down')}
     <label>Camera follow ${val('camFollow', '%')}${range('camFollow', 0, 2, 0.05, '%')}</label>
     <label>Aim assist ${val('aimHelp', '%')}${range('aimHelp', 0, 1, 0.05, '%')}</label>
@@ -1031,13 +1046,14 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
     ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
-    <div class="chks full">${chk('haptics', 'Vibration')}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
+    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
     ${getSafe() ? '<button class="btn sm full" data-a="unsafe">Try full graphics again</button>' : ''}
   </div></div>`, {
     unsafe: () => { setSafe(0); restartApp('Restarting with full graphics...'); },
+    full: toggleFullscreen,
     back: () => { saveSettings(); back(); },
     account: () => { saveSettings(); accountScreen(() => settingsScreen(back)); },
     donate: openDonate,
@@ -1216,7 +1232,8 @@ function autoTick(now) {
 // Touch buttons: centres measured from the bottom-right corner (bottom-left for left-handed), scaled by size.
 const BTN = { bJump: [66, 64, 96], bGrab: [163, 59, 74], bReel: [77, 165, 74], bAct: [167, 149, 74], bShoot: [252, 160, 74], bDash: [252, 72, 74], bShield: [340, 112, 74] };
 function applyLayout() {
-  const k = settings.btnSize, pos = settings.btnPos || {}, side = settings.lefty ? 'left' : 'right', other = settings.lefty ? 'right' : 'left';
+  // On a PC nothing presses them: they are small, and show the keys, the grip and what is ready.
+  const k = ON_PC ? 0.68 : settings.btnSize, pos = ON_PC ? {} : settings.btnPos || {}, lefty = !ON_PC && settings.lefty, side = lefty ? 'left' : 'right', other = lefty ? 'right' : 'left';
   for (const id in BTN) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -1228,7 +1245,7 @@ function applyLayout() {
     el.style.bottom = `calc(${c[1] - sz / 2}px + var(--ib))`;
   }
   $('#btns').style.setProperty('--ba', settings.btnAlpha);
-  if (app.input) app.input.lefty = !!settings.lefty;
+  if (app.input) app.input.lefty = !!lefty;
 }
 
 // Drag-to-place editor for the touch buttons.
@@ -1352,7 +1369,9 @@ function applySettings() {
 function howTo(back) {
   app.screen = 'how';
   show(`<div class="panel">${header('How to play')}<div class="how">
-    <div><b>Move and look</b>Touch the left side to get a stick under your thumb. Drag the right side to turn the camera.</div>
+    ${ON_PC
+    ? '<div><b>Mouse and keyboard</b>W A S D moves and the mouse turns the camera. Space jumps, Shift grabs, E reels, C dashes, F is the action button and Q the shield. Left click shoots, hold right click to aim. T opens emotes, H reads a tip and Esc pauses. A controller works too.</div>'
+    : '<div><b>Move and look</b>Touch the left side to get a stick under your thumb. Drag the right side to turn the camera.</div>'}
     <div><b>JUMP</b>Tap for a hop, hold for full height. You can still jump for a split second after running off an edge.</div>
     <div><b>GRAB (hold)</b>Clamps you to whatever you're touching, even walls. The ring shows your grip, which drains faster on walls.</div>
     <div><b>REEL (hold)</b>Pulls the cord in to haul a dangling partner up. Let go and it slowly lets out again.</div>
@@ -1396,15 +1415,15 @@ function beginGame(s, g) {
   app.screen = 'game';
   app.paused = false;
   app.input.reset();
-  app.input.enabled = true;
   $('#touch').classList.add('on');
   $('#hud').classList.add('on');
+  app.input.enabled = true;
   loadMap(g.map || 0);
   for (const r of app.pool.robots) { r.hide(); r.flip = 0; }
   for (const r of app.pool.jumpers || []) r.hide();
   for (const l of app.pool.ropes) l.mesh.visible = false;
   app.game = new Game(app, s, g);
-  if (N && N.keepAwake) N.keepAwake(true);
+  keepAwake(true);
 }
 
 function endGame() {
@@ -1422,7 +1441,7 @@ function endGame() {
   $('#tags').innerHTML = '';
   ui.clearTips();
   ui.cross(false);
-  if (N && N.keepAwake) N.keepAwake(false);
+  keepAwake(false);
 }
 
 function pause() {
@@ -1496,6 +1515,11 @@ window.SMU_vis = (v) => {
   app.sound.suspend(!v);
   if (!v && app.game && app.game.solo && !app.paused) pause();
 };
+// The page or window is closing: keep the climb, and send what the server hasn't got yet.
+window.SMU_leave = () => {
+  try { if (app.game && app.game.s.isHost && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ }
+  return cloud.flush();
+};
 window.SMU_insets = (l, t, r, b) => {
   const s = document.documentElement.style;
   s.setProperty('--il', l + 'px'); s.setProperty('--it', t + 'px'); s.setProperty('--ir', r + 'px'); s.setProperty('--ib', b + 'px');
@@ -1560,7 +1584,13 @@ function boot() {
   app.pool = makePool(app.renderer.scene);
   app.fx = new Fx(app.renderer.scene);
   app.input = new Input($('#touch'));
-  app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); };
+  app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
+  app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };
+  if (ON_PC) for (const [id, key] of [['bJump', 'Space'], ['bGrab', 'Shift'], ['bReel', 'E'], ['bAct', 'F'], ['bShoot', 'Click'], ['bShield', 'Q'], ['bDash', 'C']]) {
+    const k = document.createElement('kbd');
+    k.textContent = key;
+    $('#' + id).append(k);
+  }
   app.sound = new Sound();
   applySettings();
   $('#hPause').addEventListener('click', () => { app.sound.ui(); pause(); });
@@ -1599,12 +1629,19 @@ function boot() {
     gameUp: () => { if (ui.nearTip) ui.tip(ui.nearTip); },
     gameDown: () => openEmotes(true),
   });
-  document.addEventListener('pointerdown', () => app.sound.init(), { capture: true });
+  // Which of these lets sound start depends on the browser (an iPhone wants the end of a touch).
+  for (const k of ['pointerdown', 'touchend', 'click', 'keydown']) document.addEventListener(k, () => app.sound.init(), { capture: true });
   window.addEventListener('resize', () => app.renderer.resize());
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
   cloud.setTestServer(settings.server);
   cloud.start();
-  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, canShare: () => !!(N && N.share), share: shareText });
+  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, canShare, share: shareText });
+  if (!N) {
+    // What the Android app tells the game itself.
+    document.addEventListener('visibilitychange', () => window.SMU_vis(!document.hidden));
+    window.addEventListener('pagehide', () => window.SMU_leave());
+  }
+  if (DESK) DESK.onUpdate(() => ui.toast('Update ready. It installs when you close the game.', 'good'));
   startLive();
   title();
   requestAnimationFrame(frame);

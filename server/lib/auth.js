@@ -12,6 +12,9 @@ const STATE_TTL = 10 * 60000;
 const CODE_TTL = 5 * 60000;
 const MAX_PENDING = 20000;
 const APP_RETURN = 'stickmanup://auth';
+// The game as a web page signs in the same way, in its own tab. Only this one address can be asked for: the code is no use
+// to anyone else anyway (see above), but it should not go anywhere else either.
+const WEB_RETURN = 'https://theocp.github.io/stickmanup/';
 
 const URLS = {
   discordAuth: 'https://discord.com/oauth2/authorize',
@@ -41,6 +44,7 @@ class Auth {
     this.admin = admin;
     this.termsVersion = termsVersion;
     this.urls = Object.assign({}, URLS, cfg.devUrls || {});
+    this.webReturn = cfg.webReturn || WEB_RETURN;
     this.states = new Map();
     this.codes = new Map();
     this.sweep = setInterval(() => this.clean(), 60000);
@@ -64,14 +68,14 @@ class Auth {
   callback(provider) { return `${this.cfg.publicUrl}/auth/${provider}/callback`; }
 
   // Where to send the browser. Null with a reason if it can't start.
-  start(provider, challenge, tos) {
+  start(provider, challenge, tos, ret) {
     if (!this.providers().includes(provider)) return { err: 'That sign in is not set up on this server.' };
     if (!CHALLENGE.test(challenge || '')) return { err: 'Please start signing in from the game.' };
     if (tos !== this.termsVersion) return { err: 'The terms have changed. Please accept them in the game and try again.' };
     if (this.states.size >= MAX_PENDING) this.clean();
     if (this.states.size >= MAX_PENDING) return { err: 'Too many people are signing in right now. Try again in a minute.' };
     const state = token();
-    this.states.set(state, { provider, challenge, exp: Date.now() + STATE_TTL });
+    this.states.set(state, { provider, challenge, web: ret === 'web', exp: Date.now() + STATE_TTL });
     if (provider === 'discord') {
       const q = new URLSearchParams({ client_id: this.cfg.discord.id, redirect_uri: this.callback('discord'), response_type: 'code', scope: 'identify', state });
       return { url: `${this.urls.discordAuth}?${q}` };
@@ -118,7 +122,7 @@ class Auth {
     if (this.codes.size >= MAX_PENDING) this.clean();
     const code = token();
     this.codes.set(code, { userId, challenge: pending.challenge, exp: Date.now() + CODE_TTL });
-    return { code, name, link: `${APP_RETURN}?code=${encodeURIComponent(code)}` };
+    return { code, name, link: `${pending.web ? this.webReturn : APP_RETURN}?code=${encodeURIComponent(code)}` };
   }
 
   async oauthUser(provider, query) {

@@ -6,6 +6,15 @@
 <!-- Only the game's own scripts ever run, whatever a stranger manages to get onto the page. The hash is the import map below: change it with that. -->
 <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'sha256-h3X2WaB2J+hFSH2sz6AdmmoW4he9GKva9VKrMRwkO4s='; object-src 'none'; base-uri 'none'">
 <title>StickManUp</title>
+<meta name="description" content="A co op climbing game: stickmen tied together by a glowing cord.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="StickManUp">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#03060a">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/addons/" } }</script>
 <script src="lib/peerjs.min.js"></script>
@@ -25,6 +34,7 @@
     <button class="tb" id="bShield"><i class="ring"></i><span>SHIELD</span></button>
     <button class="tb" id="bDash"><i class="ring"></i><span>DASH</span></button>
   </div>
+  <div id="mouseHint">Click to use the mouse</div>
   <div id="editBar"><b>Drag the buttons where you want them</b><button data-e="reset">Reset</button><button data-e="done" class="pri">Done</button></div>
 </div>
 
@@ -49,6 +59,7 @@
 <div id="toasts"></div>
 <div id="menu"></div>
 <div id="padHint"></div>
+<div id="rotate"><b>Turn your phone sideways to play</b></div>
 <div id="loading"><div class="logo">STICKMAN<span>UP</span></div><p>Building the world...</p></div>
 <script type="module" src="js/main.js"></script>
 </body>

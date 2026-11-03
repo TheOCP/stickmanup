@@ -665,3 +665,17 @@ body.pad .set { grid-template-columns: 1fr; }
 .fitpanel .card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: start; gap: 6px 10px; padding: 11px 12px; }
 .fitpanel .card .ic { align-self: center; }
 .fitpanel .card small { grid-column: 1 / -1; }
+
+/* On a PC: the touch buttons only show keys and what is ready, the mouse does the rest. */
+body.pc .tb { pointer-events: none; }
+.tb kbd { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); z-index: 2; padding: 1px 6px; border-radius: 6px; font: 700 10px/1.35 system-ui, sans-serif; color: #fff; background: rgba(8, 14, 24, 0.9); border: 1px solid rgba(255, 255, 255, 0.28); white-space: nowrap; }
+#mouseHint { display: none; position: absolute; left: 50%; top: 58%; transform: translateX(-50%); padding: 9px 18px; border-radius: 999px; font-weight: 750; color: #fff; background: rgba(8, 14, 24, 0.82); border: 1px solid rgba(255, 255, 255, 0.22); pointer-events: none; white-space: nowrap; }
+body.needclick #mouseHint { display: block; }
+body.pc #menu { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
+body.pc .btn:hover:not(:disabled), body.pc .seg button:hover { filter: brightness(1.18); cursor: pointer; }
+
+/* A phone's browser can't be held sideways by the game. */
+#rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate { display: grid; place-content: center; position: fixed; inset: 0; z-index: 100; padding: 24px; text-align: center; font-size: 20px; color: #fff; background: #03060a; }
+}

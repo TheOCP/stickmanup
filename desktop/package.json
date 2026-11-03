@@ -1,0 +1,38 @@
+{
+  "name": "stickmanup",
+  "productName": "StickManUp",
+  "version": "4.10.0",
+  "private": true,
+  "description": "A co op climbing game: stickmen tied together by a glowing cord.",
+  "author": "TheOCProductions and ShortGG",
+  "homepage": "https://github.com/TheOCP/stickmanup",
+  "main": "main.js",
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "io.stickmanup.desktop",
+    "productName": "StickManUp",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "icon.png", "game/**/*"],
+    "electronLanguages": ["en-US", "es", "es-419", "pt-BR", "pt-PT", "fr", "de", "ru", "tr"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "icon.png",
+      "artifactName": "StickManUp-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "StickManUp"
+    },
+    "publish": [{ "provider": "github", "owner": "TheOCP", "repo": "stickmanup", "releaseType": "release" }]
+  }
+}

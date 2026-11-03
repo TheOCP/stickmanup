@@ -14,6 +14,7 @@ import { SIM_BUILD } from './simbuild.js';
 // The one game server this game talks to. Using another means changing this and building the game again.
 export const SERVER = 'https://pointdesk.net:47810';
 const N = window.Native;
+import { DESK, IS_WEB } from './platform.js';
 const PUSH_AFTER = 30000;
 const REPORT_AFTER = 12000;
 const RUN_MAX_AGE = 24 * 3600000;
@@ -117,6 +118,8 @@ export async function startLogin(provider, termsVersion) {
   store.set('auth.pending', { verifier, server: serverUrl(), t: Date.now() });
   const url = `${serverUrl()}/auth/${encodeURIComponent(provider)}/start?challenge=${challenge}&tos=${encodeURIComponent(termsVersion)}`;
   if (N && N.openUrl) N.openUrl(url);
+  // A web page goes there itself and gets sent back. The PC app opens the real browser, which comes back through a link.
+  else if (IS_WEB) location.href = url + '&ret=web';
   else window.open(url, '_blank');
 }
 export const cancelLogin = () => store.del('auth.pending');
@@ -185,6 +188,15 @@ export async function start() {
   if (N && N.authPending) {
     const c = N.authPending();
     if (c) await finishLogin(c);
+  }
+  if (DESK) DESK.onAuth((c) => { finishLogin(c); });
+  if (IS_WEB) {
+    const c = new URLSearchParams(location.search).get('code');
+    if (c) {
+      // It works only once, but still has no business staying in the address bar.
+      history.replaceState(null, '', location.pathname);
+      await finishLogin(c);
+    }
   }
   checkNews();
   watchStanding();

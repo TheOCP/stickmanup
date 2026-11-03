@@ -1,4 +1,12 @@
-// Touch (floating stick + buttons + camera drag), keyboard and gamepad, merged into one state.
+// Touch (floating stick + buttons + camera drag), mouse, keyboard and gamepad, merged into one state.
+import { ON_PC, IS_WEB } from './platform.js';
+
+// A mouse moves many more pixels than a finger for the same turn.
+const MOUSE_LOOK = 0.4, MOUSE_JUMP = 250;
+const clampMove = (d) => Math.max(-MOUSE_JUMP, Math.min(MOUSE_JUMP, d));
+// Keys light up the button they stand for.
+const KEY_BTN = { Space: 'bJump', ShiftLeft: 'bGrab', ShiftRight: 'bGrab', KeyJ: 'bGrab', KeyE: 'bReel', KeyK: 'bReel', KeyF: 'bAct', KeyQ: 'bShield', KeyC: 'bDash', KeyR: 'bShoot' };
+
 export class Input {
   constructor(layer) {
     this.sx = 0; this.sy = 0;
@@ -17,7 +25,9 @@ export class Input {
     this.deadL = 0.16; // how far a controller stick must move before it counts (stick drift stays below this)
     this.deadR = 0.16;
     this.padMask = [];
-    this.enabled = false;
+    this.on_ = false;
+    this.menuOpen = false; // a menu that needs the cursor sits over the running game
+    this.lockLost = -1000;
     this.stick = null;
     this.cam = null;
     this.onPause = null;
@@ -26,12 +36,67 @@ export class Input {
     this.knobEl = layer.querySelector('#knob');
     this.bindTouch();
     this.bindKeys();
+    this.bindMouse();
+  }
+
+  get enabled() { return this.on_; }
+  set enabled(v) {
+    this.on_ = v;
+    if (!ON_PC) return;
+    if (v) this.grabMouse();
+    else {
+      this.menuOpen = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+    this.mouseHint();
+  }
+
+  // On a PC the mouse turns the camera. Clicking takes it, Esc or leaving the window gives it back and pauses.
+  bindMouse() {
+    if (!ON_PC) return;
+    const L = this.layer;
+    document.body.classList.add('pc');
+    L.addEventListener('mousedown', (e) => {
+      if (!this.enabled) return;
+      e.preventDefault();
+      if (document.pointerLockElement !== L) { this.grabMouse(); return; }
+      if (e.button === 0) this.edge.fire = true;
+      if (e.button === 2) this.btn.aim = true;
+    });
+    window.addEventListener('mouseup', (e) => { if (e.button === 2 && this.enabled) this.btn.aim = false; });
+    window.addEventListener('contextmenu', (e) => { if (e.target.tagName !== 'INPUT') e.preventDefault(); });
+    document.addEventListener('pointerlockchange', () => {
+      this.mouseHint();
+      if (document.pointerLockElement === L) return;
+      this.lockLost = performance.now();
+      if (this.enabled && !this.menuOpen && this.onPause) this.onPause();
+    });
+  }
+
+  grabMouse() {
+    if (!ON_PC || !this.on_ || this.menuOpen || document.pointerLockElement === this.layer) return;
+    try {
+      const p = this.layer.requestPointerLock();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* the hint stays up, and the next click tries again */ }
+  }
+
+  freeMouse(on) {
+    if (!ON_PC) return;
+    this.menuOpen = on;
+    if (!on) this.grabMouse();
+    else if (document.pointerLockElement) document.exitPointerLock();
+    this.mouseHint();
+  }
+
+  mouseHint() {
+    document.body.classList.toggle('needclick', this.on_ && !this.menuOpen && document.pointerLockElement !== this.layer);
   }
 
   bindTouch() {
     const L = this.layer, R = 58;
     L.addEventListener('pointerdown', (e) => {
-      if (!this.enabled || e.target.closest('.tb, .hb')) return;
+      if (!this.enabled || e.target.closest('.tb, .hb') || (ON_PC && e.pointerType === 'mouse')) return;
       const W = window.innerWidth, left = (this.lefty ? e.clientX > W * 0.58 : e.clientX < W * 0.42) && e.pointerType !== 'mouse';
       if (left && !this.stick) {
         this.stick = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -144,22 +209,32 @@ export class Input {
   bindKeys() {
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
+      if (this.enabled && (e.code === 'Space' || e.code === 'Tab' || e.code.startsWith('Arrow'))) e.preventDefault();
+      if (this.enabled && KEY_BTN[e.code]) { const b = document.getElementById(KEY_BTN[e.code]); if (b) b.classList.add('down'); }
       if (e.code === 'Space' && !this.keys.has('Space')) this.jumpEdge = true;
       if (e.code === 'KeyF' && !this.keys.has('KeyF')) this.edge.act = true;
       if (e.code === 'KeyQ' && !this.keys.has('KeyQ')) this.edge.shield = true;
-      if ((e.code === 'KeyC' || e.code === 'ControlLeft') && !this.keys.has(e.code)) this.edge.dash = true;
+      // In a browser Ctrl is out: with W held down, as it always is while running, it would close the tab.
+      if ((e.code === 'KeyC' || (e.code === 'ControlLeft' && !IS_WEB)) && !this.keys.has(e.code)) this.edge.dash = true;
+      if (e.code === 'KeyH' && !this.keys.has('KeyH') && this.onTip) this.onTip();
       if (e.code === 'KeyT' && !this.keys.has('KeyT') && this.onEmote) this.onEmote();
       if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.btn.aim = true;
-      if (e.code === 'Escape' && this.onPause) this.onPause();
+      // The same Esc that gave the mouse back already paused.
+      if (e.code === 'Escape' && this.onPause && performance.now() - this.lockLost > 300) this.onPause();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'KeyR' && this.keys.has('KeyR')) { this.btn.aim = false; this.edge.fire = true; }
+      if (KEY_BTN[e.code]) { const b = document.getElementById(KEY_BTN[e.code]); if (b) b.classList.remove('down'); }
       this.keys.delete(e.code);
     });
     window.addEventListener('blur', () => this.keys.clear());
     window.addEventListener('mousemove', (e) => {
-      if (this.enabled && e.buttons === 1 && e.target === this.layer) { this.camDX += e.movementX; this.camDY += e.movementY; }
+      if (!this.enabled) return;
+      if (ON_PC && document.pointerLockElement === this.layer) {
+        this.camDX += clampMove(e.movementX) * MOUSE_LOOK;
+        this.camDY += clampMove(e.movementY) * MOUSE_LOOK;
+      } else if (e.buttons === 1 && e.target === this.layer) { this.camDX += e.movementX; this.camDY += e.movementY; }
     });
   }
 

@@ -1,0 +1,68 @@
+name: Windows app
+
+# Each published release gets the Windows installer. Run by hand with no tag, it only builds and checks, for trying things out.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to add the installer to (empty only builds)
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Put the game in and set the version
+        run: |
+          cp -r assets desktop/game
+          cd desktop
+          if [ -n "$TAG" ]; then npm version "${TAG#v}" --no-git-tag-version --allow-same-version; fi
+
+      - name: Build the installer
+        working-directory: desktop
+        run: |
+          npm ci
+          npx electron-builder --win --publish never
+
+      - name: Start the app once
+        working-directory: desktop
+        env:
+          SMU_SMOKE: smoke
+        run: |
+          timeout 280 dist/win-unpacked/StickManUp.exe --no-sandbox --disable-gpu-sandbox || echo "the app ended with an error"
+          cat smoke.json
+          grep -q '"ok": true' smoke.json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-app
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            desktop/smoke*
+            desktop/dist/StickManUp-Setup.exe
+
+      - name: Add it to the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" desktop/dist/StickManUp-Setup.exe desktop/dist/StickManUp-Setup.exe.blockmap desktop/dist/latest.yml --clobber

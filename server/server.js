@@ -38,6 +38,7 @@ const cfg = {
   google: { id: env.GOOGLE_CLIENT_ID || '', secret: env.GOOGLE_CLIENT_SECRET || '' },
   steam: { on: env.STEAM_LOGIN === '1', key: env.STEAM_API_KEY || '' },
   devUrls: env.DEV_PROVIDER_URLS ? JSON.parse(env.DEV_PROVIDER_URLS) : null,
+  webReturn: env.DEV_WEB_RETURN || '',
 };
 
 const tls = !!(cfg.tlsCert && cfg.tlsKey);
@@ -214,7 +215,7 @@ async function route(req, res) {
   if (a && method === 'GET') {
     if (!limits.auth.take(ip)) return page(res, 429, 'Slow down', 'Too many tries. Wait a minute and start again from the game.');
     if (a[2] === 'start') {
-      const r = auth.start(a[1], url.searchParams.get('challenge'), url.searchParams.get('tos'));
+      const r = auth.start(a[1], url.searchParams.get('challenge'), url.searchParams.get('tos'), url.searchParams.get('ret'));
       if (r.err) return page(res, 400, 'Could not sign in', r.err);
       return send(res, 302, '', { Location: r.url });
     }
@@ -229,7 +230,7 @@ async function route(req, res) {
   if (!limits.api.take(ip)) return json(res, 429, { err: 'Too many requests' });
 
   if (method === 'GET' && p === '/api/info') {
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined });
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined });
   }
   if (method === 'GET' && p === '/api/rooms') {
     const proto = +url.searchParams.get('proto');

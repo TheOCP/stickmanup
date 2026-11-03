@@ -1,0 +1,38 @@
+name: Web version
+
+# The game's own files plus the bits only a web page needs.
+on:
+  push:
+    branches: [main]
+    paths:
+      - assets/**
+      - web/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          mkdir _site
+          cp -r assets/. _site/
+          cp -r web/. _site/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v5

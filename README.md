@@ -2,10 +2,14 @@
 
 <img src="docs/icon.png" width="128" alt="StickManUp icon">
 
-A co op climbing game for Android. Up to four stickmen are tied together by a glowing cord and climb one of six
-giant maps. If one falls, everyone feels it.
+A co op climbing game. Up to four stickmen are tied together by a glowing cord and climb one of six giant maps. If one
+falls, everyone feels it. Android, PC and browser players can all play together on the game server.
 
-**[Download the latest APK](../../releases/latest)** · Android 8.0 or newer · no root needed · about 600 KB
+* **Android:** [download the APK](../../releases/latest/download/StickManUp.apk) · Android 8.0 or newer · no root needed · about 800 KB
+* **Windows:** [download the installer](../../releases/latest/download/StickManUp-Setup.exe) · 64 bit · updates itself. Windows
+  warns about it because it has no paid signature: choose More info, then Run anyway.
+* **Browser, iPhone and iPad:** [play at theocp.github.io/stickmanup](https://theocp.github.io/stickmanup/). On an iPhone, open it
+  in Safari and choose Add to Home Screen for the full screen version.
 
 ![Title screen](docs/title.png)
 
@@ -147,7 +151,7 @@ saved climb from the lobby.
 * **Emotes**: the smiley at the top right opens the menu during a climb. Everyone climbing with you sees them. Flips
   start with a small jump, and moving ends a pose.
 
-Keyboard: WASD, Space, Shift, E, F grapple, R hold to aim, Q shield, C or left Ctrl dash, T emotes.
+Keyboard and mouse: WASD, Space, Shift, E, F grapple, Q shield, C dash (left Ctrl too, except in a browser), T emotes, H tip. The mouse turns the camera, left click shoots, hold right click (or R) to aim, Esc pauses. In the PC app, F11 or Alt+Enter is fullscreen.
 
 Controller: left stick moves, right stick looks, A jump, B grab, X grapple, Y or pressing in the left stick dash, LT hold
 to aim, RT fire (aimed or from the hip), RB reel, LB shield, direction pad down emotes.

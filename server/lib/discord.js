@@ -9,13 +9,18 @@
 // this is checked here, on every single command and button.
 const { WebSocket } = require('../vendor/ws');
 const crypto = require('node:crypto');
-const { COMMANDS, runCommand, runButton, runModal, suggest, playerLine } = require('./botcommands');
+const { COMMANDS, runCommand, runButton, runModal, suggest, playerLine, parseBang } = require('./botcommands');
 
 const API = 'https://discord.com/api/v10';
 const GATEWAY = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const MAX_QUEUE = 500;
 const EPHEMERAL = 64;
 const NO_RETRY = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
+// Guild messages and their text, for the ! commands. The text needs a switch in Discord's developer portal.
+const MESSAGE_INTENTS = (1 << 9) | (1 << 15);
+const DISALLOWED_INTENTS = 4014;
+const NO_COMMANDS = 'Could not set up the slash commands.';
+const BANG_OFF = 'The ! commands are off, because Discord says the bot may not read messages. To use them: in the Discord developer portal, open your application, then Bot, turn on Message Content Intent, and restart the server. Slash commands, logs and warnings all still work.';
 const COLOR = { info: 0x3ff0d0, good: 0x4cd964, warn: 0xffb020, bad: 0xff3b5c, ban: 0xb0202c };
 
 // Names come from players. They can't be allowed to format messages, ping people or pretend to be something else.
@@ -47,6 +52,11 @@ class Bot {
     this.user = '';
     this.connectedAt = 0;
     this.lastError = '';
+    this.registerEvery = cfg.registerEvery || 60000;
+    this.registerSaid = '';
+    this.noBang = false;
+    this.saidNoBang = false;
+    this.lastNote = new Map();
   }
 
   get on() { return !!this.token; }
@@ -65,6 +75,7 @@ class Bot {
     this.stopped = true;
     clearInterval(this.beat);
     clearTimeout(this.again);
+    clearTimeout(this.registerTimer);
     if (this.ws) { try { this.ws.close(1000); } catch (e) {} }
   }
 
@@ -83,6 +94,18 @@ class Bot {
       clearInterval(this.beat);
       this.ready = false;
       if (this.stopped) return;
+      // The switch for the ! commands is off. That must not cost anyone the slash commands, the logs or the warnings.
+      if (code === DISALLOWED_INTENTS && !this.noBang) {
+        this.noBang = true;
+        this.session = null;
+        this.seq = null;
+        this.resumeUrl = null;
+        this.lastError = BANG_OFF;
+        console.error(`bot: ${BANG_OFF}`);
+        this.again = setTimeout(() => this.connect(), 500);
+        this.again.unref();
+        return;
+      }
       if (NO_RETRY.has(code)) {
         this.lastError = code === 4004 ? 'Discord refused the bot token.' : `Discord refused the bot (code ${code}).`;
         console.error(`bot: ${this.lastError} Fix it with install.sh --bot.`);
@@ -114,7 +137,7 @@ class Bot {
         }, m.d.heartbeat_interval);
         this.beat.unref();
         if (this.session) this.sendGateway({ op: 6, d: { token: this.token, session_id: this.session, seq: this.seq } });
-        else this.sendGateway({ op: 2, d: { token: this.token, intents: 0, properties: { os: 'linux', browser: 'stickmanup', device: 'stickmanup' } } });
+        else this.sendGateway({ op: 2, d: { token: this.token, intents: this.noBang ? 0 : MESSAGE_INTENTS, properties: { os: 'linux', browser: 'stickmanup', device: 'stickmanup' } } });
         break;
       }
       case 11: this.acked = true; break;
@@ -134,27 +157,63 @@ class Bot {
           this.backoff = 2000;
           this.connectedAt = Date.now();
           console.log(`bot: connected as ${this.user}, ${this.admins.size} admin(s) allowed`);
-          this.register().catch((e) => { this.lastError = e.message; console.error('bot: could not set up the commands:', e.message); });
+          this.register();
+          if (this.noBang && !this.saidNoBang) {
+            this.saidNoBang = true;
+            this.log('! commands are off', BANG_OFF, COLOR.warn);
+          }
         } else if (m.t === 'RESUMED') {
           this.ready = true;
           this.backoff = 2000;
         } else if (m.t === 'INTERACTION_CREATE') {
           this.onInteraction(m.d).catch((e) => console.error('bot: command failed:', e.message));
+        } else if (m.t === 'MESSAGE_CREATE') {
+          this.onMessage(m.d).catch((e) => console.error('bot: command failed:', e.message));
         }
         break;
     }
   }
 
-  // The commands only change with a new version of the server, and Discord doesn't like being told again and again.
+  // A bot that isn't on the server yet can't have commands there, and nothing tells it when it gets invited. So it keeps trying.
   async register() {
-    if (!this.appId || !this.guild) return;
-    const text = JSON.stringify(COMMANDS), h = crypto.createHash('sha256').update(text + this.guild + this.appId).digest('hex').slice(0, 16);
-    if (this.s.db.setting('botCommands') === h) return;
-    const r = await this.rest('PUT', `/applications/${this.appId}/guilds/${this.guild}/commands`, COMMANDS);
+    clearTimeout(this.registerTimer);
+    if (!this.appId || !this.guild || this.stopped) return;
+    try {
+      await this.setCommands();
+      this.registerSaid = '';
+      if (this.lastError.startsWith(NO_COMMANDS)) this.lastError = '';
+    } catch (e) {
+      this.lastError = `${NO_COMMANDS} ${e.message}`;
+      // Once for each new reason, not once a minute for ever.
+      if (this.registerSaid !== e.message) console.error(`bot: ${this.lastError} Trying again every minute.`);
+      this.registerSaid = e.message;
+      this.registerTimer = setTimeout(() => this.register(), this.registerEvery);
+      if (this.registerTimer.unref) this.registerTimer.unref();
+    }
+  }
+  // Discord doesn't like being told again and again, so it hears them only when they aren't there or have changed.
+  async setCommands() {
+    const url = `/applications/${this.appId}/guilds/${this.guild}/commands`;
+    const h = crypto.createHash('sha256').update(JSON.stringify(COMMANDS) + this.guild + this.appId).digest('hex').slice(0, 16);
+    if (this.s.db.setting('botCommands') === h) {
+      // Throwing the bot off a server takes its commands along, so look rather than remember.
+      const now = await this.rest('GET', url);
+      if (now && now.ok) {
+        const list = await now.json();
+        if (Array.isArray(list) && list.length === COMMANDS.length) return;
+      }
+    }
+    const r = await this.rest('PUT', url, COMMANDS);
     if (r && r.ok) {
       this.s.db.setSetting('botCommands', h);
       console.log(`bot: ${COMMANDS.length} commands set up`);
-    } else throw new Error(`Discord answered ${r ? r.status : 'nothing'}. Is the bot invited to that server, and is the server ID right?`);
+      return;
+    }
+    if (!r) throw new Error('Discord did not answer.');
+    if (r.status === 403 || r.status === 404) throw new Error(`Discord answered ${r.status}: the bot is not on that server yet, or the server ID is wrong. Invite it with the link install.sh --bot shows.`);
+    let why = '';
+    try { why = (await r.text()).slice(0, 300); } catch (e) {}
+    throw new Error(`Discord answered ${r.status}. ${why}`);
   }
 
   // ---------------------------------------------------------------- saying things
@@ -265,9 +324,60 @@ class Bot {
     return undefined;
   }
 
+  // ---------------------------------------------------------------- the commands typed with a !
+  // Only the people on the list, only on our server, and only in the bot's own channels: an answer here is for everyone in the
+  // channel to read, and answers can show IP addresses. Anyone else talking to some other bot with a ! gets no answer from this one.
+  async onMessage(m) {
+    if (!m || typeof m.content !== 'string' || m.content[0] !== '!') return;
+    if ((m.author && m.author.bot) || m.webhook_id || !m.author) return;
+    if (!this.guild || String(m.guild_id) !== String(this.guild)) return;
+    const b = parseBang(m.content);
+    if (!b) return;
+    const channel = String(m.channel_id), own = channel === String(this.logChannel) || channel === String(this.warnChannel);
+    const who = m.author, allowed = this.admins.has(String(who.id)), whoName = `${who.username || 'someone'} (${who.id})`;
+    const reply = (text, o = {}) => {
+      const msg = { embeds: [{ description: String(text).slice(0, 4000), color: COLOR[o.color || 'info'] }] };
+      if (o.components) msg.components = o.components;
+      this.post(channel, msg);
+    };
+    if (!own) {
+      if (allowed && this.notedLately(who.id)) reply(`The ! commands only work in <#${this.logChannel}>, because their answers can show IP addresses and everyone in the channel can read them. Slash commands work anywhere: only you see their answers.`, { color: 'warn' });
+      return;
+    }
+    if (!allowed) {
+      if (b.unknown || !this.notedLately(who.id)) return;
+      console.log(`bot: refused ${whoName}`);
+      this.log('Refused', `${esc(whoName)} tried to use the bot and is not on the list.`, COLOR.warn);
+      reply(this.admins.size ? 'You are not allowed to use this.' : 'Nobody is allowed to use the bot yet. Add Discord user IDs with: install.sh --bot', { color: 'bad' });
+      return;
+    }
+    if (b.unknown) return reply(`There is no \`!${esc(b.unknown).slice(0, 40)}\`. \`!help\` lists them all.`, { color: 'warn' });
+    if (b.err) return reply(`${esc(b.err)}\nHow to use it: \`${b.usage}\``, { color: 'warn' });
+    const ctx = {
+      s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id), bang: true,
+      reply,
+      modal: () => reply('That only works from a button.', { color: 'warn' }),
+      slow: async (fn) => reply(await fn()),
+    };
+    try {
+      await runCommand(ctx, b.data);
+    } catch (e) {
+      console.error(`bot: !${b.data.name} failed:`, e.message);
+      reply('That went wrong on the server. The server log has the details.', { color: 'bad' });
+    }
+  }
+  // One word about it a minute per person, however much they type.
+  notedLately(id) {
+    const now = Date.now(), last = this.lastNote.get(id) || 0;
+    if (now - last < 60000) return false;
+    if (this.lastNote.size > 1000) this.lastNote.clear();
+    this.lastNote.set(id, now);
+    return true;
+  }
+
   status() {
     if (!this.on) return { on: false };
-    return { on: true, ready: this.ready, user: this.user, since: this.connectedAt, admins: this.admins.size, commands: COMMANDS.length, queue: this.queue.length, error: this.lastError };
+    return { on: true, bang: !this.noBang, ready: this.ready, user: this.user, since: this.connectedAt, admins: this.admins.size, commands: COMMANDS.length, queue: this.queue.length, error: this.lastError };
   }
 }
 

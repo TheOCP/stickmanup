@@ -77,7 +77,7 @@ admin.onBan = ({ userId, ip, reason }) => {
 };
 const bot = new Bot({
   token: env.DISCORD_BOT_TOKEN || '', guild: env.DISCORD_BOT_GUILD || '', logChannel: env.DISCORD_BOT_LOG_CHANNEL || '', warnChannel: env.DISCORD_BOT_WARN_CHANNEL || '', admins: env.DISCORD_BOT_ADMINS || '',
-  api: cfg.devUrls && cfg.devUrls.botApi, gateway: cfg.devUrls && cfg.devUrls.botGateway,
+  api: cfg.devUrls && cfg.devUrls.botApi, gateway: cfg.devUrls && cfg.devUrls.botGateway, registerEvery: +env.DISCORD_BOT_REGISTER_EVERY || 0,
 }, { db, wallet, admin, verifier, rooms, version: VERSION });
 
 const limits = {

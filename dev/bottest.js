@@ -28,7 +28,7 @@ const ADMIN = '444444444444444444', ADMIN2 = '444444444444444445', STRANGER = '5
 const TOKEN = 'test.bot.token', APP = '999999999999999999';
 
 // ---------------------------------------------------------------- pretend Discord
-const d = { socket: null, identifies: 0, resumes: 0, commands: null, puts: 0, posts: [], answers: new Map(), rateLimit: 0, badAuth: 0, patches: [], closeNext: 0 };
+const d = { notInvited: false, contentSwitchOff: false, socket: null, identifies: 0, resumes: 0, commands: null, puts: 0, posts: [], answers: new Map(), rateLimit: 0, badAuth: 0, patches: [], closeNext: 0 };
 const web = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
@@ -39,7 +39,11 @@ const web = http.createServer((req, res) => {
     if (it) { d.answers.set(it[1], j); return send(204); }
     if (req.headers.authorization !== 'Bot ' + TOKEN) { d.badAuth++; return send(401, { message: 'unauthorized' }); }
     if (d.rateLimit > 0) { d.rateLimit--; return send(429, { retry_after: 0.05 }); }
-    if (req.method === 'PUT' && url === `/applications/${APP}/guilds/${GUILD}/commands`) { d.commands = j; d.puts++; return send(200, j); }
+    if (url === `/applications/${APP}/guilds/${GUILD}/commands`) {
+      if (d.notInvited) return send(403, { message: 'Missing Access', code: 50001 });
+      if (req.method === 'GET') return send(200, d.commands || []);
+      if (req.method === 'PUT') { d.commands = j; d.puts++; return send(200, j); }
+    }
     const m = /^\/channels\/(\d+)\/messages$/.exec(url);
     if (m) { d.posts.push({ channel: m[1], msg: j }); return send(200, { id: '1' }); }
     if (req.method === 'PATCH' && url.startsWith('/webhooks/')) { d.patches.push(j); return send(200, {}); }
@@ -57,6 +61,7 @@ gw.on('connection', (ws) => {
       d.identifies++;
       d.lastIdentify = m.d;
       if (m.d.token !== TOKEN) return ws.close(4004);
+      if (d.contentSwitchOff && (m.d.intents & (1 << 15))) return ws.close(4014);
       ws.send(JSON.stringify({ op: 0, t: 'READY', s: 1, d: { session_id: 'sess', resume_gateway_url: `ws://127.0.0.1:${web.address().port}`, application: { id: APP }, user: { username: 'TestBot' } } }));
     }
     if (m.op === 6) {
@@ -74,6 +79,13 @@ function interact(type, data, who = ADMIN, guild = GUILD) {
   return until(() => d.answers.get(id)).then((a) => a);
 }
 const text = (a) => (a && a.data && a.data.embeds && a.data.embeds[0] ? a.data.embeds[0].description : '');
+// Typing in a channel. Answers what the bot wrote back there.
+async function bang(content, o = {}) {
+  const channel = o.channel || LOG, before = d.posts.length;
+  d.socket.send(JSON.stringify({ op: 0, t: 'MESSAGE_CREATE', s: ++seq, d: { id: String(++nextId), channel_id: channel, guild_id: o.guild === undefined ? GUILD : o.guild, content, webhook_id: o.webhook, author: { id: o.who || ADMIN, username: (o.who || ADMIN) === ADMIN ? 'owner' : 'someone', bot: !!o.bot } } }));
+  await wait(o.wait || 200);
+  return d.posts.slice(before).filter((p) => p.channel === channel).map((p) => (p.msg.embeds && p.msg.embeds[0] ? p.msg.embeds[0].description : '')).join('\n');
+}
 function slash(name, options = {}, who) {
   return interact(2, { name, options: Object.entries(options).map(([k, value]) => ({ name: k, value })) }, who);
 }
@@ -470,6 +482,87 @@ async function main() {
   check('told its session is no good: it signs in anew', d.identifies === i0 + 1);
   await wait(50);
 
+  // ---------------- the same commands with a !
+  {
+  check('the bot asks to read messages', (d.lastIdentify.intents & (1 << 15)) !== 0 && (d.lastIdentify.intents & (1 << 9)) !== 0, d.lastIdentify.intents);
+  const pal = await guest('Pal'), odd = await guest('Cool Guy');
+  const palCoins = async () => (await api('/api/wallet', undefined, pal.token)).coins;
+  const palStart = await palCoins();
+  check('!help lists them with a !', /`!ban`/.test(await bang('!help')));
+  check('!help ban shows how to use it', /!ban player reason \[days\] \[ip\] \[phone\]/.test(await bang('!help ban')));
+  check('!status answers in the channel', /Server /.test(await bang('!status')) );
+  check('capitals are fine', /Server /.test(await bang('!STATUS')));
+  check('!players lists players', /Pal/.test(await bang('!players')));
+  check('!player finds one by number', /Pal/.test(await bang(`!player #${pal.user.num}`)));
+  check('a player can go by ID too', /Pal/.test(await bang(`!coins ${pal.user.id}`)));
+  await bang(`!givecoins #${pal.user.num} 50 a nice gift`);
+  check('!givecoins gives', (await palCoins()) === palStart + 50, await palCoins());
+  await bang(`!takecoins #${pal.user.num} 20 too much`);
+  check('!takecoins takes', (await palCoins()) === palStart + 30, await palCoins());
+  check('the admin and the reason are written down', /owner[\s\S]*(gift|much)/.test(await bang('!audit')) || /gift|much/.test(await bang('!history #' + pal.user.num)));
+  // What Discord checks for slash commands.
+  const coinsNow = await palCoins();
+  for (const [what, line, why] of [
+    ['a negative amount', `!givecoins #${pal.user.num} -5 x`, /below/],
+    ['zero', `!takecoins #${pal.user.num} 0 x`, /below/],
+    ['too many coins', `!givecoins #${pal.user.num} 999999999999 x`, /above/],
+    ['not a number', `!givecoins #${pal.user.num} lots x`, /whole number/],
+    ['half a coin', `!givecoins #${pal.user.num} 1.5 x`, /whole number/],
+    ['a number too big to hold', `!setcoins #${pal.user.num} 99999999999999999999 x`, /whole number/],
+  ]) check(`${what} is refused`, why.test(await bang(line)), line);
+  check('and none of that changed anything', (await palCoins()) === coinsNow, await palCoins());
+  check('something missing shows how to use it', /Missing: player, amount[\s\S]*!givecoins player amount \[reason\]/.test(await bang('!givecoins')));
+  check('a reason is required for a ban', /Missing: reason/.test(await bang(`!ban #${pal.user.num}`)));
+  check('too long a reason is refused', /300 letters/.test(await bang(`!ban #${pal.user.num} ${'x'.repeat(301)}`)));
+  check('a bad choice lists the good ones', /watch, enforce|enforce, watch/.test(await bang('!anticheat sometimes')));
+  check('a confirmation has to be yes or no', /yes or no/.test(await bang(`!deleteplayer #${pal.user.num} maybe`)));
+  check('leaving a confirmation out deletes nothing', /Missing: confirm/.test(await bang(`!deleteplayer #${pal.user.num}`)) && (await api('/api/wallet', undefined, pal.token))._s === 200);
+  check('too many words are refused', /Too many words/.test(await bang('!stats and more')));
+  // Bans.
+  const b1 = await bang(`!ban #${pal.user.num} flying around the map days=3`);
+  check('!ban takes a reason of many words and a named option', /flying around the map/.test(b1), b1);
+  let row = await api('/api/wallet', undefined, pal.token);
+  check('and the ban is real', row._s === 403 && /flying around the map/.test(JSON.stringify(row)), row);
+  check('it shows in !baninfo', /flying around the map/.test(await bang(`!baninfo #${pal.user.num}`)));
+  await bang(`!unban #${pal.user.num} sorry`);
+  check('!unban lifts it', (await api('/api/wallet', undefined, pal.token))._s === 200);
+  await bang('!ban "Cool Guy" a name in quotes');
+  check('a name with spaces works in quotes', (await api('/api/wallet', undefined, odd.token))._s === 403);
+  await bang('!unban \u201cCool Guy\u201d');
+  check('curly phone quotes work too', (await api('/api/wallet', undefined, odd.token))._s === 200);
+  // Who, and where.
+  const c0 = await palCoins();
+  const before2 = d.posts.length;
+  check('in the log channel, a stranger is refused', /not allowed/.test(await bang(`!givecoins #${pal.user.num} 500 x`, { who: STRANGER })));
+  check('and it gets logged', d.posts.slice(before2).some((p) => /is not on the list/.test(JSON.stringify(p.msg))));
+  check('a stranger repeating it gets no more answers', (await bang(`!givecoins #${pal.user.num} 500 x`, { who: STRANGER })) === '');
+  check('and nothing was given', (await palCoins()) === c0);
+  const PUBLIC = '777777777777777777';
+  check('elsewhere a stranger gets no answer, they may mean some other bot', (await bang('!help', { who: ADMIN2 + '9', channel: PUBLIC })) === '');
+  const away = await bang(`!givecoins #${pal.user.num} 500 x`, { channel: PUBLIC, who: ADMIN2 });
+  check('an admin in a public channel is pointed to the log channel', away.includes(`<#${LOG}>`), away);
+  check('and it does not run there', (await palCoins()) === c0);
+  check('and an IP lookup says nothing there', !/\d+\.\d+\.\d+\.\d+/.test(await bang('!ips #1', { channel: PUBLIC })));
+  check('the warning channel works too', /Server /.test(await bang('!status', { channel: WARN })));
+  await bang(`!givecoins #${pal.user.num} 500 x`, { bot: true });
+  await bang(`!givecoins #${pal.user.num} 500 x`, { webhook: '123' });
+  await bang(`!givecoins #${pal.user.num} 500 x`, { guild: '999' });
+  await bang(`!givecoins #${pal.user.num} 500 x`, { guild: null });
+  check('bots, webhooks, other servers and private messages are ignored', (await palCoins()) === c0, await palCoins());
+  check('an unknown command gets a pointer', /!help/.test(await bang('!nonsense')));
+  check('ordinary chat gets no answer', (await bang('! wow')) === '' && (await bang('hello !status')) === '' && (await bang('!!!')) === '' && (await bang('!')) === '');
+  check('nothing typed can mention everyone', (await bang('!search @everyone')).length >= 0 && d.posts.slice(-1)[0].msg.allowed_mentions.parse.length === 0);
+  // Every command can be written down.
+  const { parseBang, usage, COMMANDS } = require(path.join(ROOT, 'server/lib/botcommands.js'));
+  const sample = { 3: 'word', 4: '5', 5: 'yes' };
+  const notParsed = COMMANDS.filter((c) => {
+    const words = c.options.filter((o) => o.required).map((o) => (o.choices ? o.choices[0].value : sample[o.type]));
+    const r = parseBang(`!${c.name} ${words.join(' ')}`);
+    return !(r && r.data && r.data.name === c.name) || !usage(c).startsWith('!');
+  }).map((c) => c.name);
+  check(`all ${COMMANDS.length} commands can be typed`, notParsed.length === 0, notParsed);
+  }
+
   // Discord silent, game still fine.
   const puts = d.puts;
   await stopServer();
@@ -483,6 +576,48 @@ async function main() {
   a = await slash('dailycap');
   check('so are the settings', /12,345/.test(text(a)), text(a));
   await stopServer();
+
+  // The switch for reading messages is off: only the ! commands go.
+  await stopServer();
+  d.contentSwitchOff = true;
+  const before3 = d.posts.length;
+  await start();
+  const onlySlash = await until(() => d.lastIdentify && d.lastIdentify.intents === 0 && d.socket && d.socket.readyState === 1);
+  await wait(800);
+  check('without the switch the bot reconnects without asking to read messages', !!onlySlash, d.lastIdentify);
+  check('the log channel is told what to do', d.posts.slice(before3).some((p) => /Message Content Intent/.test(JSON.stringify(p.msg))));
+  check('slash commands still work', /Server /.test(text(await slash('status'))));
+  check('and /status says the ! commands are off', /! commands off/.test(text(await slash('status'))));
+  check('it says so in the server log too', /Message Content Intent/.test(srv.log));
+  check('no crash', !/TypeError|ReferenceError|Unhandled/.test(srv.log), srv.log);
+  d.contentSwitchOff = false;
+
+  // Invited late, the usual order of things: the commands have to appear by themselves.
+  await stopServer();
+  d.notInvited = true;
+  d.commands = null;
+  const puts0 = d.puts;
+  await start({ DISCORD_BOT_REGISTER_EVERY: '300' });
+  await until(() => /Could not set up the slash commands/.test(srv.log));
+  check('not on the server yet: it says why', /not on that server yet/.test(srv.log), srv.log);
+  await wait(900);
+  check('it says so once, not over and over', (srv.log.match(/Could not set up/g) || []).length === 1, srv.log);
+  check('/status tells the trouble', /Could not set up the slash commands/.test(text(await slash('status'))));
+  d.notInvited = false;
+  await until(() => d.commands, 3000);
+  check('invited later: the commands appear without a restart', Array.isArray(d.commands) && d.commands.length >= 40 && d.puts === puts0 + 1, d.puts);
+  await wait(500);
+  check('and then it stops trying', d.puts === puts0 + 1, d.puts);
+  // Thrown off the server and invited back: Discord has forgotten them.
+  await stopServer();
+  d.commands = [];
+  await start();
+  await until(() => d.commands && d.commands.length);
+  check('commands Discord has forgotten are set up again', d.commands.length >= 40);
+  await stopServer();
+  await start();
+  await wait(600);
+  check('and still not sent when they are there', d.puts === puts0 + 2, d.puts);
 
   // A bad token: the bot stops, the game does not.
   await start({ DISCORD_BOT_TOKEN: 'wrong' });

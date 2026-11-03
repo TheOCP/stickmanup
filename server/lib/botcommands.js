@@ -129,9 +129,10 @@ const RUN = {
     if (c) {
       const f = COMMANDS.find((x) => x.name === String(c).replace(/^\//, ''));
       if (!f) return ctx.reply('No such command.', { color: 'warn' });
-      return ctx.reply(`**/${f.name}**: ${f.description}\n${f.options.map((o) => `\`${o.name}\`${o.required ? '' : ' (optional)'}: ${o.description}`).join('\n')}`);
+      return ctx.reply(`**${ctx.bang ? '!' : '/'}${f.name}**: ${f.description}\n${ctx.bang ? `\`${usage(f)}\`\n` : ''}${f.options.map((o) => `\`${o.name}\`${o.required ? '' : ' (optional)'}: ${o.description}`).join('\n')}`);
     }
-    return ctx.reply(`A player can always be given by name, by number (#12) or by ID, and the list suggests them as you type.\n${COMMANDS.map((x) => `\`/${x.name}\` ${x.description}`).join('\n')}`.slice(0, 3900));
+    if (ctx.bang) return ctx.reply(`A player can be given by name, by number (#12) or by ID. A name with spaces goes in quotes, and optional parts go by name: \`!ban "Cool Guy" flying around days=3\`\n${COMMANDS.map((x) => `\`!${x.name}\` ${x.description}`).join('\n')}`.slice(0, 3900));
+    return ctx.reply(`A player can always be given by name, by number (#12) or by ID, and the list suggests them as you type. Everything also works with a ! in the log channel, like \`!ban #12 flying around\`.\n${COMMANDS.map((x) => `\`/${x.name}\` ${x.description}`).join('\n')}`.slice(0, 3900));
   },
   player(ctx, d) { const u = target(ctx, d); if (u) return ctx.reply(playerText(ctx, u)); },
   players(ctx, d) {
@@ -431,7 +432,7 @@ const RUN = {
   },
   status(ctx) {
     const s = ctx.s, m = process.memoryUsage(), b = ctx.bot.status(), v = s.verifier.stats, a = s.admin;
-    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
+    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting, ! commands ${b.bang ? 'on' : 'off'}${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
   },
   announce(ctx, d) {
     const text = opt(d, 'text');
@@ -484,6 +485,85 @@ function guardText(g) {
 }
 
 // ---------------------------------------------------------------- how a command gets run
+// ---------------------------------------------------------------- the same commands, typed with a !
+// Discord checks numbers, lengths and lists before a slash command gets here, and the commands count on that. So it all gets
+// checked here too: this is what stops a "!givecoins Ana -5".
+const usage = (f, mark = '!') => `${mark}${f.name} ${f.options.map((o) => (o.required ? o.name : `[${o.name}]`)).join(' ')}`.trim();
+// These take all the words that are left.
+const MANY_WORDS = new Set(['reason', 'text', 'message', 'name', 'search']);
+const YES = new Set(['true', 'yes', 'y', 'on', '1']), NO = new Set(['false', 'no', 'n', 'off', '0']);
+
+function splitWords(line) {
+  const out = [], re = /(?:([a-z]+)[=:])?"([^"]*)"|(\S+)/gi;
+  // Phones like to turn quotes into curly ones.
+  const text = String(line).replace(/[\u201c\u201d\u201e]/g, '"');
+  for (let m; (m = re.exec(text));) {
+    if (m[2] !== undefined) out.push({ key: m[1] ? m[1].toLowerCase() : '', value: m[2], whole: m[1] ? `${m[1]}:${m[2]}` : m[2] });
+    else {
+      const k = /^([a-z]+)[=:](.+)$/i.exec(m[3]);
+      out.push({ key: k ? k[1].toLowerCase() : '', value: k ? k[2] : m[3], whole: m[3] });
+    }
+  }
+  return out;
+}
+function checkValue(o, text) {
+  if (o.type === 5) {
+    const v = text.toLowerCase();
+    if (YES.has(v)) return { value: true };
+    if (NO.has(v)) return { value: false };
+    return { err: `\`${o.name}\` has to be yes or no.` };
+  }
+  if (o.type === 4) {
+    const v = /^-?\d{1,16}$/.test(text) ? Number(text) : NaN;
+    if (!Number.isSafeInteger(v)) return { err: `\`${o.name}\` has to be a whole number.` };
+    if (o.min_value !== undefined && v < o.min_value) return { err: `\`${o.name}\` can't be below ${o.min_value}.` };
+    if (o.max_value !== undefined && v > o.max_value) return { err: `\`${o.name}\` can't be above ${o.max_value}.` };
+    return { value: v };
+  }
+  if (o.choices) {
+    const low = text.toLowerCase(), c = o.choices.find((x) => String(x.value).toLowerCase() === low || x.name.toLowerCase() === low);
+    if (!c) return { err: `\`${o.name}\` has to be one of: ${o.choices.map((x) => x.value).join(', ')}.` };
+    return { value: c.value };
+  }
+  if (o.max_length !== undefined && text.length > o.max_length) return { err: `\`${o.name}\` can be ${o.max_length} letters at most.` };
+  if (o.min_length !== undefined && text.length < o.min_length) return { err: `\`${o.name}\` needs ${o.min_length} letters at least.` };
+  return { value: text };
+}
+// Answers null when this isn't a command at all, { unknown } for a name we don't have, { err, usage } when it can't run, and otherwise { data } just as a slash command would give it.
+function parseBang(content) {
+  const m = /^!([a-z]+)(?:\s+([\s\S]*))?$/i.exec(String(content).trim());
+  if (!m) return null;
+  const f = COMMANDS.find((c) => c.name === m[1].toLowerCase());
+  if (!f) return { unknown: m[1] };
+  const got = new Map(), free = [];
+  for (const w of splitWords(m[2] || '')) {
+    const o = w.key ? f.options.find((x) => x.name === w.key) : null;
+    if (o && !got.has(o.name)) got.set(o.name, w.value);
+    else free.push(w.whole);
+  }
+  const open = f.options.filter((o) => !got.has(o.name));
+  for (let k = 0; k < open.length && free.length; k++) {
+    const o = open[k];
+    if (o.type === 3 && MANY_WORDS.has(o.name)) {
+      // What is needed after this comes off the end: "!giveall 5 a nice gift yes".
+      const later = open.slice(k + 1).filter((x) => x.required).length;
+      got.set(o.name, free.splice(0, Math.max(1, free.length - later)).join(' '));
+    } else got.set(o.name, free.shift());
+  }
+  const use = usage(f);
+  if (free.length) return { name: f.name, err: `Too many words: "${free.join(' ').slice(0, 100)}". A name with spaces goes in quotes.`, usage: use };
+  const missing = f.options.filter((o) => o.required && !got.has(o.name));
+  if (missing.length) return { name: f.name, err: `Missing: ${missing.map((o) => o.name).join(', ')}.`, usage: use };
+  const options = [];
+  for (const o of f.options) {
+    if (!got.has(o.name)) continue;
+    const r = checkValue(o, got.get(o.name));
+    if (r.err) return { name: f.name, err: r.err, usage: use };
+    options.push({ name: o.name, type: o.type, value: r.value });
+  }
+  return { data: { name: f.name, options } };
+}
+
 function runCommand(ctx, data) {
   const f = Object.hasOwn(RUN, data.name) ? RUN[data.name] : null;
   if (!f) return ctx.reply('This server does not know that command.', { color: 'warn' });
@@ -538,4 +618,4 @@ function suggest(s, data) {
   return [];
 }
 
-module.exports = { COMMANDS, RUN, runCommand, runButton, runModal, suggest, playerLine, guardText };
+module.exports = { COMMANDS, RUN, runCommand, runButton, runModal, suggest, playerLine, guardText, parseBang, usage };

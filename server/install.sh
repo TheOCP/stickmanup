@@ -516,6 +516,7 @@ setup_bot() {
 
   1. https://discord.com/developers/applications
      New Application, then Bot. Press Reset Token and copy the token.
+     On the same page turn on Message Content Intent, for the ! commands.
   2. In Discord: User Settings, Advanced, turn on Developer Mode.
      Now a right click on a server, a channel or a person gives you Copy ID.
   3. Make a PRIVATE channel for the logs. They contain players' IP addresses.

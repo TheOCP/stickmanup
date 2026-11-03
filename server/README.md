@@ -151,6 +151,7 @@ a token it stays off, and everything else works the same.
 Setting it up:
 
 1. Go to https://discord.com/developers/applications, press New Application, then Bot, then Reset Token, and copy the token.
+   On the same page turn on Message Content Intent, or the `!` commands stay off. Everything else works without it.
 2. In Discord: User Settings, Advanced, turn on Developer Mode. Now a right click gives you Copy ID on servers, channels and people.
 3. Make a **private** channel for the logs, because they contain players' IP addresses.
 4. Run the installer with `--bot`. It asks for the token, the server, the channels, and the Discord user IDs of the people
@@ -161,6 +162,12 @@ running `--bot` again. Answers are only visible to the person asking, and everyt
 in `/audit` and the log channel.
 
 A player can be given by name, by number (`#12`) or by ID, and Discord suggests them as you type.
+
+Every command also works with a `!` in the log and warning channels, like `!ban #12 flying around` or `!givecoins Ana 100 a gift`.
+A name with spaces goes in quotes, and optional parts go by name: `!ban "Cool Guy" flying around days=3`. `!help ban` shows how
+to use one. They work only in those channels because everyone there can read the answers, which can show IP addresses, so keep
+those channels private. The bot gets every message in the channels it can see, but it only looks at the ones starting with `!`,
+and it stores none of them.
 
 * **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer`
 * **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap`

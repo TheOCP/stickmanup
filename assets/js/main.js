@@ -28,6 +28,7 @@ import { openShop, openRecords } from './shop.js';
 import { TitleShow } from './titleshow.js';
 import { startLang, tr, LANG_NAMES } from './i18n.js';
 import { Fx } from './fx.js';
+import { ViewGun } from './viewgun.js';
 import { PR, PC, F } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
 
@@ -1708,6 +1709,7 @@ function boot() {
   report('stage', { s: 'world' });
   app.pool = makePool(app.renderer.scene);
   app.fx = new Fx(app.renderer.scene);
+  app.viewGun = new ViewGun(app.renderer.scene);
   app.input = new Input($('#touch'));
   app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
   app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };
@@ -1821,9 +1823,15 @@ function frame(now) {
   if (app.screen === 'settings') padTester();
   const w0 = performance.now();
   heartbeat(now);
-  if (app.game) app.game.update(dt, app.paused);
-  else if (app.spec) app.spec.update(dt);
-  else titleScene(dt);
+  if (app.game) {
+    const g = app.game, me = g.me;
+    g.update(dt, app.paused);
+    // Through your eyes in a maze garden: the gun in your hands (not with a scope up, that has its own view).
+    app.viewGun.update(dt, app.renderer.camera, (g.fpK || 0) * (1 - (g.scopeK || 0)), { weapon: g.gun, aim: g.aiming, speed: Math.hypot(me.vx, me.vz), ground: me.grounded, shot: g.time - (g.lastShot ?? -9), world: g.W, rig: g.robots.get(g.slot) });
+  } else if (app.spec) {
+    app.spec.update(dt);
+    app.viewGun.update(dt, app.renderer.camera, app.spec.view ? app.spec.fpK || 0 : 0, app.spec.view);
+  } else { titleScene(dt); app.viewGun.update(dt, app.renderer.camera, 0, null); }
   live.tick(dt);
   if (app.renderer.lost) return;
   app.renderer.render();

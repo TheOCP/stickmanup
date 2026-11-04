@@ -267,6 +267,7 @@ export class Spectator {
   update(dt) {
     if (!this.ready) return;
     const app = this.app, R = this.R, W = this.W, L = this.L, now = performance.now() / 1000;
+    this.view = null;
     const T = this.clock === null ? 0 : this.held ? this.lastT : now + this.clock - DELAY;
     // This is what reads the controller's sticks. What it says about moving is for playing, so it goes nowhere.
     app.input.read(0);
@@ -333,6 +334,8 @@ export class Spectator {
       cam.lookAt(cam.position.x - ox * 6, cam.position.y - oy * 6, cam.position.z - oz * 6);
     }
     if (rig && fk >= 0.72) rig.g.visible = false;
+    // Their gun, as they see it (main.js draws it with viewgun.js).
+    if (rig) this.view = { weapon: rig.weapon, aim: !!(me.flags & F.AIM), speed: Math.hypot(me.vx, me.vz), ground: !!(me.flags & F.GROUND), shot: T - (this.shotAt.get(this.focus) ?? -9), world: W, rig };
     const fov = 66 + clamp(-me.vy - 12, 0, 20) * 0.5 + (74 - 66) * fk;
     if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4, dt); cam.updateProjectionMatrix(); }
 

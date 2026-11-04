@@ -61,7 +61,8 @@ windows and steel fins, the lighthouse real stonework, and the waterfall's rock 
 the city) is a closed garden with a maze in it, built in the map's style: metal walls with glowing trims in the storm,
 sandstone on the beach, clipped hedges in the forest, basalt columns with lava between them in the volcano, neon and
 concrete in the city and mossy ruins by the waterfall. It has a roof with lamps under it, so nobody can look over the
-walls to find the way, and the only ways in and out are the two doorways. Inside, the camera goes to first person. The
+walls to find the way, and the only ways in and out are the two doorways. Inside, the camera goes to first person, with
+your arms and your weapon in view: it sways as you run, comes up when you aim and kicks when it fires. The
 roof is a garden: trees and plants of the zone, a pond (lava in the volcano) with stones round it, and small animals
 walking and flying about, behind a raised edge too high to get onto. A creature prowls the corridors: a storm crab, a
 scorpion, a wild boar, a fire imp, a robot dog or a crocodile. If it reaches you it throws you, and a shot paralyses it
@@ -336,6 +337,7 @@ To play or debug in a desktop browser, serve the `assets` folder with any static
   * `replay.js`: writes down each climb as it is played, for the server to play again
   * `detmath.js`: maths that comes out exactly the same on a phone and on a server
   * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen with their emotes
+  * `viewgun.js`: your arms and weapon in front of the camera when the view goes to first person in a maze
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray
   * `mirror.js` streams the scene to the native renderer

@@ -334,7 +334,8 @@ export class WorldView {
   buildStatic() {
     const L = this.level, R = rng(99);
     // The maze gardens are drawn by mazeview.js.
-    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret' && c.kind !== 'mfloor' && c.kind !== 'mwall' && c.kind !== 'mouter');
+    // The city's skyscrapers are drawn by buildCity: a second box in the very same place made their windows flicker.
+    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret' && c.kind !== 'mfloor' && c.kind !== 'mwall' && c.kind !== 'mouter' && c.kind !== 'tower');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
     const col = new THREE.Color();
@@ -1834,20 +1835,28 @@ export class WorldView {
         for (const t of [map, glow]) t.repeat.set((L.towers[0] ? L.towers[0].half * 2 : 8.4) / 12.57, H / 42);
         return panelMat(0xffffff, { map, metalness: 0.55, roughness: 0.4, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 1.0, pattern: 0 });
       });
+      // The walls stop a little under the top, where a flat roof with a lip a hand wider takes over: the window texture
+      // would be squashed into stripes up there, and no two faces share a plane (they would flicker).
+      const ROOF = 0.3, roof = panelMat(0x2a2836, { metalness: 0.5, roughness: 0.6, pattern: 0 });
       for (const [ti, t] of L.towers.entries()) {
         const m = new THREE.Mesh(BOXG, looks[ti % 2]);
-        m.scale.set(t.half * 2, H, t.half * 2);
-        m.position.set(t.x, H / 2 - 20, t.z);
+        m.scale.set(t.half * 2, H - ROOF, t.half * 2);
+        m.position.set(t.x, (H - ROOF) / 2 - 20, t.z);
         m.rotation.y = -t.a;
         this.add(m);
+        const r = new THREE.Mesh(BOXG, roof);
+        r.scale.set(t.half * 2 + 0.2, ROOF, t.half * 2 + 0.2);
+        r.position.set(t.x, H - 20 - ROOF / 2, t.z);
+        r.rotation.y = -t.a;
+        this.add(r);
         const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.3, 14, 8), panelMat(0x3a3f4c, { metalness: 0.8, pattern: 0 }));
         ant.position.set(t.x, H - 20 + 7, t.z);
         this.add(ant);
-        const tipM = new THREE.MeshBasicMaterial({ color: HDR(0xff3040, 3) });
+        const tipM = new THREE.MeshBasicMaterial({ color: HDR(0xff3040, 1.6) });
         const tip = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), tipM);
         tip.position.set(t.x, H - 20 + 14.3, t.z);
+        // A steady light: blinking red over the whole city was hard on the eyes.
         this.add(tip, false);
-        this.blink.push({ m: tipM, base: 3, hex: 0xff3040, sp: 2.1, sq: true });
       }
     }
     // Conveyor belts: chevrons scrolling the way the belt moves.

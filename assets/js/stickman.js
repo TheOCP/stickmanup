@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { F } from './player.js';
 import { EMOTE } from './emotes.js';
 import { COLORS } from './colors.js';
-import { COL_W, COL_BACK, COL_ARMS, ARM_W, TEX, FIG_TOP, FIG_H, BODY_W, ARM_SPAN, FACE_W, FACE_H, drawFace, paintSuit, paintCape, suitIsDark } from './skins.js';
+import { COL_W, COL_BACK, COL_ARMS, ARM_W, TEX, FIG_TOP, FIG_H, BODY_W, ARM_SPAN, FACE_W, FACE_H, drawFace, paintSuit, paintLit, LIT_K, paintCape, suitIsDark } from './skins.js';
 import { gearGeo, gearGeoMirror, gearMat, gunInfo, GEAR_AT, GEAR_ANIM } from './gear.js';
 import { BEAMS } from './weapons.js';
 
@@ -148,8 +148,10 @@ function suitMat(suit) {
   else {
     // Every suit tried on stays in memory for good, so they aren't painted any bigger than they're seen.
     const t = texOf(paintSuit(suit, 360));
-    // The suit's own picture also glows a little, so it reads in the dark maps like the plain colours do.
-    m = new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: suit.glow ?? 0.42, roughness: suit.rough ?? 0.5, metalness: suit.metal ?? 0.05 });
+    // The suit's own picture also glows a little, so it reads in the dark maps like the plain colours do; a suit with lit parts
+    // glows from its own picture of them instead.
+    const lit = suit.lit ? texOf(paintLit(suit, 360)) : null;
+    m = new THREE.MeshStandardMaterial({ map: t, emissiveMap: lit || t, emissive: 0xffffff, emissiveIntensity: lit ? LIT_K : suit.glow ?? 0.42, roughness: suit.rough ?? 0.5, metalness: suit.metal ?? 0.05 });
   }
   SUIT_MATS.set(suit.id, m);
   return m;
@@ -512,7 +514,7 @@ export class Stickman {
         m = new THREE.Mesh(gearGeo(id), gearMat());
         m.castShadow = true;
         if (GEAR_ANIM[id]) m.userData.anim = GEAR_ANIM[id];
-        (at === 'hips' ? this.hips : at === 'back' ? this.spine : this.head).add(m);
+        (at === 'hips' || at === 'tail' ? this.hips : at === 'back' || at === 'chest' ? this.spine : this.head).add(m);
       }
       this.gear.set(id, m);
     }

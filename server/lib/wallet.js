@@ -71,6 +71,22 @@ class Wallet {
       extraRuns: q('DELETE FROM runs WHERE user_id = ? AND id NOT IN (SELECT id FROM runs WHERE user_id = ? ORDER BY started DESC, rowid DESC LIMIT ?)'),
       oldLedger: q('DELETE FROM ledger WHERE at < ?'),
     };
+    // Once, when finding a relic stopped giving its suit (1.6.5): whoever had found one keeps that suit for free.
+    this.d.exec('CREATE TABLE IF NOT EXISTS wallet_meta (k TEXT PRIMARY KEY, v TEXT)');
+    if (!this.d.prepare("SELECT v FROM wallet_meta WHERE k = 'relic_suits'").get()) {
+      this.tx(() => {
+        const put = this.d.prepare('UPDATE wallets SET own = ? WHERE user_id = ?');
+        let n = 0;
+        for (const w of this.d.prepare('SELECT user_id, own, relics FROM wallets').all()) {
+          const own = JSON.parse(w.own), relics = JSON.parse(w.relics);
+          let changed = false;
+          for (const [relic, key] of Object.entries(catalog.relicSuits || {})) if (relics.includes(relic) && !own.includes(key)) { own.push(key); changed = true; }
+          if (changed) { put.run(JSON.stringify(own), w.user_id); n++; }
+        }
+        this.d.prepare("INSERT INTO wallet_meta (k, v) VALUES ('relic_suits', ?)").run(String(Date.now()));
+        if (n) console.log(`wallets: ${n} kept the legendary suits they had found`);
+      });
+    }
   }
 
   tx(fn) {
@@ -191,8 +207,10 @@ class Wallet {
     return n;
   }
   // All that can be given, as [key, name, price], with what is not for sale first. A price of 0 means it can't be bought.
+  // Each also says what it is (suit, legend, face, hat, emote or weapon, with ':epic' on the epic ones).
   catalogList() {
-    return Object.entries(catalog.names).map(([k, name]) => [k, name, catalog.items[k] || 0]).sort((a, b) => (a[2] ? 1 : 0) - (b[2] ? 1 : 0) || a[1].localeCompare(b[1]));
+    const kinds = catalog.kinds || {};
+    return Object.entries(catalog.names).map(([k, name]) => [k, name, catalog.items[k] || 0, kinds[k] || '']).sort((a, b) => (a[2] ? 1 : 0) - (b[2] ? 1 : 0) || a[1].localeCompare(b[1]));
   }
   itemName(item) { return Object.hasOwn(catalog.names, item) ? catalog.names[item] : item; }
   // By its key or by its name. Some names are shared, like a suit and a face both called Ninja.
@@ -223,6 +241,9 @@ class Wallet {
       const w = this.load(id);
       // Pressing twice must not pay twice.
       if (w.own.includes(item)) return { status: 200, wallet: this.show(w) };
+      // Epic and legendary things only once their relic is found.
+      const need = catalog.need && catalog.need[item];
+      if (need && !need.every((r) => w.relics.includes(r))) return { status: 409, err: 'Find it first.', wallet: this.show(w) };
       if (w.coins < price) return { status: 402, err: 'Not enough coins.', wallet: this.show(w) };
       w.coins -= price;
       w.own.push(item);
@@ -278,13 +299,16 @@ class Wallet {
       for (const i of out.accepted) taken.add(i);
       if (allow) payDay(allow * D.coin, 'coins');
 
-      // Relics: on real Hardcore or Insane, only the ones that exist on this map.
-      if (r.diff >= 2 && !r.custom) {
-        for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x))) {
+      // Relics: only the ones that exist on this map, never with custom rules. The epic vaults on every difficulty, the rest on
+      // real Hardcore or Insane.
+      if (!r.custom) {
+        const open = M.open || [];
+        for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x) && (r.diff >= 2 || open.includes(x)))) {
           out.relics.push(relic);
           if (!w.relics.includes(relic)) w.relics.push(relic);
         }
-        if (w.relics.length >= catalog.relicCount && !w.ach.includes('hunter')) w.ach.push('hunter');
+        const suits = catalog.suitRelics || [];
+        if (suits.length && suits.every((x) => w.relics.includes(x)) && !w.ach.includes('hunter')) w.ach.push('hunter');
       }
 
       // The top: once per climb, and only after a climb's worth of time.

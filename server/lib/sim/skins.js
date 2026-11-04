@@ -250,6 +250,35 @@ const FLAGS = [
 ];
 
 // ---------------------------------------------------------------- suits
+// Snowflakes: three crossing strokes with little branches.
+// The pumpkin suit's striped stockings, shared with the faint glow it has in the dark.
+const pumpkinStripes = (p, c) => { for (let fy = 0.2; fy > -0.3; fy -= 0.1) p.rect(c, -0.21, fy, 0.21, fy - 0.045); };
+function flakes(p, c, n, seed) {
+  const R = rng(seed), g = p.g;
+  g.strokeStyle = c; g.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const x = R() * TEX, y = R() * TEX, r = 7 + R() * 9, a0 = R();
+    g.lineWidth = 1.6 + R();
+    for (let k = 0; k < 3; k++) {
+      const a = a0 + (k * Math.PI) / 3, cx = Math.cos(a) * r, cy = Math.sin(a) * r;
+      g.beginPath(); g.moveTo(x - cx, y - cy); g.lineTo(x + cx, y + cy); g.stroke();
+      for (const e of [-1, 1]) for (const b of [-0.6, 0.6]) {
+        const bx = x + e * cx * 0.6, by = y + e * cy * 0.6, ba = a + (e < 0 ? Math.PI : 0) + b;
+        g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + Math.cos(ba) * r * 0.35, by + Math.sin(ba) * r * 0.35); g.stroke();
+      }
+    }
+  }
+}
+// Four pointed twinkles.
+function sparkles(p, c, n, seed) {
+  const R = rng(seed), g = p.g;
+  g.fillStyle = c;
+  for (let i = 0; i < n; i++) {
+    const x = R() * TEX, y = R() * TEX, r = 6 + R() * 8, w = r * 0.22;
+    g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + w, y - w); g.lineTo(x + r, y); g.lineTo(x + w, y + w); g.lineTo(x, y + r); g.lineTo(x - w, y + w); g.lineTo(x - r, y); g.lineTo(x - w, y - w); g.closePath(); g.fill();
+  }
+}
+
 const paintFn = {
   ref: (p) => { p.vStripes('#111111', '#f0f0f0', 8); p.head(SKIN); p.legs('#111111'); },
   prisoner: (p) => { p.hStripes('#f0f0f0', '#222222', 20); p.head(SKIN); },
@@ -268,12 +297,12 @@ const paintFn = {
   ninja: (p) => {
     p.all('#14161c');
     p.lines('#22252e', 300, 3, 4);
-    p.rect('#b02020', -0.21, 0.36, 0.21, 0.3);
+    p.both(() => p.rect('#b02020', -0.21, 0.36, 0.21, 0.3));
     p.head('#14161c');
     p.both((s) => { if (!s) p.rect(SKIN, -0.21, 1.1, 0.21, 0.98); });
     p.armBand('#b02020', 0.26, 0.2);
   },
-  pirate: (p) => { p.hStripes('#f0f0f0', '#1a2a5a', 26); p.head(SKIN); p.legs('#3a2614'); p.feet('#14100c'); p.hands(SKIN); p.rect('#6a4a22', -0.21, 0.36, 0.21, 0.3); },
+  pirate: (p) => { p.hStripes('#f0f0f0', '#1a2a5a', 26); p.head(SKIN); p.legs('#3a2614'); p.feet('#14100c'); p.hands(SKIN); p.both(() => p.rect('#6a4a22', -0.21, 0.36, 0.21, 0.3)); },
   skeleton: (p) => {
     p.all('#0e0e12');
     const g = p.g; g.strokeStyle = '#efece0'; g.lineCap = 'round';
@@ -288,7 +317,7 @@ const paintFn = {
   robot: (p) => {
     p.all('#8a96a8'); p.head('#a8b4c6');
     p.both(() => { p.g.fillStyle = '#2a3442'; p.g.fillRect(40, HEAD_Y + 30, 112, 70); p.g.fillStyle = '#40e8ff'; for (let i = 0; i < 3; i++) p.g.fillRect(52 + i * 32, HEAD_Y + 44, 22, 40); });
-    for (const y of [0.05, -0.2]) p.rect('#4a5462', -0.21, y, 0.21, y - 0.04);
+    p.both(() => { for (const y of [0.05, -0.2]) p.rect('#4a5462', -0.21, y, 0.21, y - 0.04); });
     p.armBand('#4a5462', 0.5, 0.45);
   },
   knight: (p) => { p.all('#b8c0cc'); p.lines('#e4e8f0', 120, 3, 12); p.head('#9aa4b2'); p.rect('#c02a2a', -0.05, 0.82, 0.05, 0.28); p.rect('#c02a2a', -0.21, 0.66, 0.21, 0.58); },
@@ -296,31 +325,42 @@ const paintFn = {
   zombie: (p) => { p.all('#3f6a3a'); p.lines('#2a4626', 120, 7, 2); p.head('#7fae6a'); p.hands('#7fae6a'); p.torso('#5a4a3a'); p.lines('#2a2018', 50, 5, 14); p.legs('#2c2c3a'); p.blobs(['#6a1a1a'], 8, 5, 12, 9); },
   mummy: (p) => { p.all('#d8cca8'); for (let i = 0; i < 40; i++) { p.g.fillStyle = i % 2 ? '#bcae88' : '#e8dec0'; p.g.save(); p.g.translate(0, i * 14); p.g.rotate(-0.06 + (i % 3) * 0.04); p.g.fillRect(-20, 0, 560, 9); p.g.restore(); } p.both((s) => { if (!s) { p.g.fillStyle = '#17120c'; p.g.fillRect(30, Y(1.1), 132, 24); } }); },
   clown: (p) => { p.checks('#ff3040', '#ffe040', 8); p.dots('#3060ff', 30, 8, 16, 2); p.head('#fafafa'); p.hands('#fafafa'); p.feet('#e02030'); },
-  santa: (p) => { p.all('#c81e1e'); p.head(SKIN); p.rect('#f4f4f4', -0.21, 0.5, 0.21, 0.42); p.rect('#141414', -0.21, 0.34, 0.21, 0.28); p.feet('#141414'); p.hands('#f4f4f4'); },
+  santa: (p) => { p.all('#c81e1e'); p.head(SKIN); p.both(() => { p.rect('#f4f4f4', -0.21, 0.5, 0.21, 0.42); p.rect('#141414', -0.21, 0.34, 0.21, 0.28); }); p.feet('#141414'); p.hands('#f4f4f4'); },
   tux: (p) => {
     p.all('#14161c'); p.head(SKIN); p.hands(SKIN);
     p.front(() => { const g = p.g; g.fillStyle = '#f6f6f6'; g.beginPath(); g.moveTo(40, HEAD_Y); g.lineTo(152, HEAD_Y); g.lineTo(96, WAIST_Y - 30); g.closePath(); g.fill(); g.fillStyle = '#c01a2a'; g.fillRect(74, HEAD_Y + 6, 44, 18); });
   },
   cowboy: (p) => { p.all('#8a5a2a'); p.head(SKIN); p.hands(SKIN); p.legs('#2a4a78'); p.feet('#3a2412'); p.both((s) => { if (!s) { p.g.fillStyle = '#d8c090'; p.g.beginPath(); p.g.moveTo(50, HEAD_Y); p.g.lineTo(142, HEAD_Y); p.g.lineTo(96, HEAD_Y + 70); p.g.fill(); } }); p.rect('#f0d040', -0.05, 0.36, 0.05, 0.3); },
-  fire: (p) => { p.all('#2a2a2e'); p.head(SKIN); for (const y of [0.74, 0.5, 0.05, -0.2]) p.rect('#f0d020', -0.21, y, 0.21, y - 0.05); p.armBand('#f0d020', 0.65, 0.6); p.armBand('#f0d020', 0.4, 0.35); p.hands('#111111'); },
+  fire: (p) => { p.all('#2a2a2e'); p.head(SKIN); p.both(() => { for (const y of [0.74, 0.5, 0.05, -0.2]) p.rect('#f0d020', -0.21, y, 0.21, y - 0.05); }); p.armBand('#f0d020', 0.65, 0.6); p.armBand('#f0d020', 0.4, 0.35); p.hands('#111111'); },
   doctor: (p) => { p.all('#f4f6f8'); p.head(SKIN); p.hands(SKIN); p.legs('#2a7a9a'); p.both((s) => { if (!s) { p.g.fillStyle = '#e02a2a'; p.g.fillRect(60, HEAD_Y + 44, 36, 12); p.g.fillRect(72, HEAD_Y + 32, 12, 36); } }); },
-  hero: (p) => { p.all('#1f50d8'); p.head('#1f50d8'); p.legs('#1f50d8'); p.rect('#e01a2a', -0.21, 0.3, 0.21, 0.1); p.feet('#e01a2a'); p.hands('#e01a2a'); p.both(() => { p.g.fillStyle = '#ffd820'; p.g.beginPath(); p.g.moveTo(96, HEAD_Y + 18); p.g.lineTo(150, HEAD_Y + 60); p.g.lineTo(96, HEAD_Y + 110); p.g.lineTo(42, HEAD_Y + 60); p.g.fill(); p.g.fillStyle = '#e01a2a'; p.g.font = 'bold 56px sans-serif'; p.g.textAlign = 'center'; p.g.fillText('S', 96, HEAD_Y + 82); }); },
+  hero: (p) => { p.all('#1f50d8'); p.head('#1f50d8'); p.legs('#1f50d8'); p.both(() => p.rect('#e01a2a', -0.21, 0.3, 0.21, 0.1)); p.feet('#e01a2a'); p.hands('#e01a2a'); p.both(() => { p.g.fillStyle = '#ffd820'; p.g.beginPath(); p.g.moveTo(96, HEAD_Y + 18); p.g.lineTo(150, HEAD_Y + 60); p.g.lineTo(96, HEAD_Y + 110); p.g.lineTo(42, HEAD_Y + 60); p.g.fill(); p.g.fillStyle = '#e01a2a'; p.g.font = 'bold 56px sans-serif'; p.g.textAlign = 'center'; p.g.fillText('S', 96, HEAD_Y + 82); }); },
   tiger: (p) => { p.all('#f08a1e'); const R = rng(17); p.g.fillStyle = '#17120a'; for (let i = 0; i < 90; i++) { const x = R() * TEX, y = R() * TEX; p.g.beginPath(); p.g.moveTo(x, y); p.g.quadraticCurveTo(x + 30, y + 8, x + 60, y - 4); p.g.quadraticCurveTo(x + 30, y + 22, x, y); p.g.fill(); } },
   zebra: (p) => { p.all('#f4f4f4'); const R = rng(23); p.g.fillStyle = '#121212'; for (let i = 0; i < 100; i++) { const x = R() * TEX, y = R() * TEX; p.g.beginPath(); p.g.moveTo(x, y); p.g.quadraticCurveTo(x + 40, y + 10, x + 80, y - 6); p.g.quadraticCurveTo(x + 40, y + 24, x, y); p.g.fill(); } },
   camo: (p) => { p.all('#5a6a3a'); p.blobs(['#3a4a26', '#7a7a4a', '#2a2a1c', '#6a7a46'], 150, 14, 34, 31); },
   snowcamo: (p) => { p.all('#e8ecf0'); p.blobs(['#b0b8c2', '#8a94a0', '#d0d6dc'], 130, 14, 32, 33); },
   galaxy: (p) => { p.all('#0c0830'); p.blobs(['#30107a', '#6a1a8a', '#1a2a8a', '#8a2a7a'], 60, 30, 70, 37); p.dots('#ffffff', 220, 0.8, 2.6, 41); },
   lava: (p) => { p.all('#1a0c08'); p.blobs(['#ff4a10', '#ffa020', '#c02008'], 70, 8, 26, 43); p.blobs(['#1a0c08'], 70, 8, 24, 47); },
-  frost: (p) => { p.vgrad('#e8f8ff', '#5ab0e8'); p.lines('#ffffff', 160, 2.5, 51); },
+  frost: (p) => { p.vgrad('#e8f8ff', '#5ab0e8'); p.lines('#ffffff', 160, 2.5, 51); flakes(p, '#ffffff', 30, 71); },
   gold: (p) => { p.vgrad('#ffe88a', '#b8860b'); p.lines('#fff4c0', 60, 3, 53); },
-  chrome: (p) => { p.vgrad('#f4f8ff', '#6a7482'); p.lines('#ffffff', 50, 3, 57); },
-  wizard: (p) => { p.all('#2a1a7a'); p.dots('#ffe060', 50, 2, 5, 59); p.head(SKIN); p.hands(SKIN); },
+  chrome: (p) => { p.vgrad('#f4f8ff', '#6a7482'); p.lines('#ffffff', 50, 3, 57); p.both(() => { for (const y of [0.62, 0.3, 0.02]) p.rect('#4a5462', -0.21, y, 0.21, y - 0.012); }); p.armBand('#4a5462', 0.5, 0.488); },
+  wizard: (p) => { p.all('#2a1a7a'); p.dots('#ffe060', 50, 2, 5, 59); sparkles(p, '#ffe060', 16, 73); p.head(SKIN); p.hands(SKIN); p.both(() => p.rect('#d8b040', -0.21, 0.33, 0.21, 0.29)); },
   vampire: (p) => { p.all('#16101a'); p.head('#e8e4e8'); p.hands('#e8e4e8'); p.front(() => { p.g.fillStyle = '#f2f2f2'; p.g.beginPath(); p.g.moveTo(52, HEAD_Y); p.g.lineTo(140, HEAD_Y); p.g.lineTo(96, HEAD_Y + 80); p.g.fill(); }); },
   toxic: (p) => { p.all('#1a1f12'); p.blobs(['#9cff2a', '#5ae02a'], 60, 6, 22, 61); p.dots('#e8ff70', 50, 2, 5, 63); },
   rainbow: (p) => { const c = ['#ff3040', '#ff8a20', '#ffe030', '#40d850', '#30a0ff', '#8050f0']; c.forEach((k, i) => { p.g.fillStyle = k; p.g.fillRect(0, (i / 6) * TEX, TEX, TEX / 6 + 1); }); },
   grid: (p) => { p.all('#0a0a20'); p.g.strokeStyle = '#ff2ad8'; p.g.lineWidth = 3; for (let i = 0; i < 20; i++) { p.g.beginPath(); p.g.moveTo(i * 26, 0); p.g.lineTo(i * 26, TEX); p.g.moveTo(0, i * 26); p.g.lineTo(TEX, i * 26); p.g.stroke(); } },
-  pumpkin: (p) => { p.all('#17120e'); p.head('#ee7a14'); p.torso('#3a2a18'); p.lines('#5a3a18', 60, 6, 67); },
-  samurai: (p) => { p.all('#7a1420'); p.head(SKIN); p.hands(SKIN); p.legs('#17141c'); for (const y of [0.75, 0.65, 0.55, 0.45]) p.rect('#d8b040', -0.21, y, 0.21, y - 0.02); p.armBand('#17141c', 0.7, 0.4); },
+  pumpkin: (p) => {
+    // Trick or treat: a purple coat with a leafy green collar and an orange belt, over striped stockings.
+    p.all('#36204c'); p.head('#ee7a14'); p.legs('#1a1410'); p.hands('#1a1410');
+    p.both(() => {
+      pumpkinStripes(p, '#e8701a');
+      p.rect('#e8701a', -0.21, 0.34, 0.21, 0.3);
+      p.rect('#3c8a2a', -0.21, 0.82, 0.21, 0.77);
+      p.g.fillStyle = '#4aa632';
+      for (let x = 8; x < COL_W; x += 22) { p.g.beginPath(); p.g.ellipse(x, Y(0.77) + 5, 9, 6, 0.5, 0, 7); p.g.fill(); }
+    });
+    p.armBand('#3c8a2a', 0.82, 0.76); p.armBand('#e8701a', 0.27, 0.22);
+  },
+  samurai: (p) => { p.all('#7a1420'); p.head(SKIN); p.hands(SKIN); p.legs('#17141c'); p.both(() => { for (const y of [0.75, 0.65, 0.55, 0.45]) p.rect('#d8b040', -0.21, y, 0.21, y - 0.02); }); p.armBand('#17141c', 0.7, 0.4); },
   // Owner suits.
   fengish: (p) => {
     // A gamer girl's outfit: pink and white jacket over dark leggings.
@@ -408,6 +448,33 @@ export const SUITS = [
   pt('samurai', 'Samurai', 2, 1600, 0x7a1420, 'angry', 'samurai'),
 ];
 
+// Epic costumes each carry something of their own (gear.js), and in some the parts that should shine are painted again (lit)
+// and glow for real: neon lines, slime, lava, stars, reflective stripes.
+const EPIC_GEAR = {
+  ninja: ['ninjato'], pirate: ['parrot'], skeleton: ['bones_x'], robot: ['jetpack'], knight: ['shield_back'], astro: ['lifepack'], zombie: ['arrows'],
+  mummy: ['scarab', 'wraps'], clown: ['balloons'], santa: ['sack'], tux: ['coattails', 'rose'], cowboy: ['lasso'], fire: ['airtank'], doctor: ['stetho'],
+  hero: ['belt_hero'], tiger: ['tail_tiger'], zebra: ['tail_zebra'], camo: ['rucksack'], snowcamo: ['skis_back'], galaxy: ['planets'], lava: ['magma'],
+  frost: ['ice_spikes'], gold: ['bling'], chrome: ['fins'], wizard: ['spellbook'], vampire: ['collar'], toxic: ['canister'], rainbow: ['rainbow_arc'],
+  grid: ['disc_back'], pumpkin: ['candy_bucket'], samurai: ['sashimono'],
+};
+const faint = (k, fn) => (p) => { p.g.globalAlpha = k; fn(p); p.g.globalAlpha = 1; };
+const LIT = {
+  grid: (p) => paintFn.grid(p),
+  toxic: (p) => { p.blobs(['#9cff2a', '#5ae02a'], 60, 6, 22, 61); p.dots('#e8ff70', 50, 2, 5, 63); },
+  lava: (p) => { p.blobs(['#ff4a10', '#ffa020', '#c02008'], 70, 8, 26, 43); p.blobs(['#000000'], 70, 8, 24, 47); },
+  galaxy: (p) => { p.dots('#ffffff', 220, 0.8, 2.6, 41); },
+  frost: (p) => flakes(p, '#e8fcff', 30, 71),
+  wizard: (p) => { p.dots('#ffe060', 50, 2, 5, 59); sparkles(p, '#ffe060', 16, 73); },
+  fire: (p) => { p.both(() => { for (const y of [0.74, 0.5, 0.05, -0.2]) p.rect('#f0f060', -0.21, y, 0.21, y - 0.05); }); p.armBand('#f0f060', 0.65, 0.6); p.armBand('#f0f060', 0.4, 0.35); },
+  robot: (p) => p.both(() => { p.g.fillStyle = '#40e8ff'; for (let i = 0; i < 3; i++) p.g.fillRect(52 + i * 32, HEAD_Y + 44, 22, 40); }),
+  skeleton: faint(0.5, (p) => paintFn.skeleton(p)),
+  pumpkin: faint(0.45, (p) => { p.head('#ff9a30'); p.both(() => pumpkinStripes(p, '#ff8a2a')); }),
+};
+for (const x of SUITS) {
+  if (EPIC_GEAR[x.id]) x.gear = EPIC_GEAR[x.id];
+  if (LIT[x.id]) x.lit = LIT[x.id];
+}
+
 // Legendary suits are alive: they run on a shader (mode, three colours) and leave a trail. Twelve hide in the hidden places on
 // Hardcore, three are earned by what you do on Hardcore, and the rest cost a fortune. Many have wings, things on their back, or
 // a cape made of the suit itself (cape: 'shader').
@@ -418,18 +485,18 @@ const LOW = 'somewhere between 150 and 300 m', HIGH = 'somewhere between 550 and
 const low = (map) => `Hardcore on ${map}, ${LOW}. Stop staring at the tower and turn round.`;
 const high = (map) => `Hardcore on ${map}, ${HIGH}. Only the brave step off the edge.`;
 export const LEGENDS = [
-  L('l_storm0', 'Stormcaller', 1, 0x0a1428, 0x2040a0, 0x7fd8ff, { relic: 'storm:0', hint: low('Storm Tower'), face: 'hollow', hat: 'bolt' }),
-  L('l_storm1', 'Thunder God', 1, 0x180a30, 0x6030c0, 0xffe870, { relic: 'storm:1', hint: high('Storm Tower'), face: 'cool', hat: 'l_crown', cape: 'shader' }),
-  L('l_sunny0', 'Golden Hour', 4, 0xffb030, 0xff7030, 0xfff0a0, { relic: 'sunny:0', hint: low('Sunny Isles'), face: 'cool', hat: 'sunrays' }),
-  L('l_sunny1', 'Deep Sea King', 0, 0x02203a, 0x0a90a8, 0x70ffe0, { relic: 'sunny:1', hint: high('Sunny Isles'), face: 'hollow', hat: 'l_crown' }),
-  L('l_forest0', 'Forest Spirit', 0, 0x0a2810, 0x30a040, 0xc0ff70, { relic: 'forest:0', hint: low('Wild Forest'), face: 'hollow', hat: 'antlers' }),
-  L('l_forest1', 'Monster King', 3, 0x0a1a10, 0x503090, 0x9cff5a, { relic: 'forest:1', hint: high('Wild Forest'), face: 'monster', hat: 'devil', cape: 'shader' }),
-  L('l_volcano0', 'Magma Lord', 0, 0x1a0604, 0xd02a08, 0xffb030, { relic: 'volcano:0', hint: low('Magma Chimney') + ' Here, the middle is the way.', face: 'angry', hat: 'flames' }),
-  L('l_volcano1', 'Ash Phoenix', 0, 0x401008, 0xff6a10, 0xfff060, { relic: 'volcano:1', hint: high('Magma Chimney') + ' Here, the middle is the way.', face: 'cool', hat: 'flames', gear: ['wings_fire'] }),
-  L('l_city0', 'Neon Ronin', 10, 0x07040f, 0x6a1a9a, 0xff40e0, { relic: 'city:0', hint: low('Neon Skyline'), face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
-  L('l_city1', 'Chrome Phantom', 4, 0x8090a8, 0x303848, 0x60e0ff, { relic: 'city:1', hint: high('Neon Skyline'), face: 'visor', hat: 'antenna' }),
-  L('l_waterfall0', 'River Spirit', 0, 0x08305a, 0x20a0e0, 0xd0ffff, { relic: 'waterfall:0', hint: low('Waterfall'), face: 'hollow', hat: 'halo' }),
-  L('l_waterfall1', 'Rainbow Dragon', 11, 0x14082a, 0x1a6ac0, 0xffffff, { relic: 'waterfall:1', hint: high('Waterfall'), face: 'cool', gear: ['wings_dragon_sky', 'horns_sky'], trail: 0xff70c0 }),
+  L('l_storm0', 'Stormcaller', 1, 0x0a1428, 0x2040a0, 0x7fd8ff, { relic: 'storm:0', price: 12000, hint: low('Storm Tower'), face: 'hollow', hat: 'bolt' }),
+  L('l_storm1', 'Thunder God', 1, 0x180a30, 0x6030c0, 0xffe870, { relic: 'storm:1', price: 20000, hint: high('Storm Tower'), face: 'cool', hat: 'l_crown', cape: 'shader' }),
+  L('l_sunny0', 'Golden Hour', 4, 0xffb030, 0xff7030, 0xfff0a0, { relic: 'sunny:0', price: 12000, hint: low('Sunny Isles'), face: 'cool', hat: 'sunrays' }),
+  L('l_sunny1', 'Deep Sea King', 0, 0x02203a, 0x0a90a8, 0x70ffe0, { relic: 'sunny:1', price: 20000, hint: high('Sunny Isles'), face: 'hollow', hat: 'l_crown' }),
+  L('l_forest0', 'Forest Spirit', 0, 0x0a2810, 0x30a040, 0xc0ff70, { relic: 'forest:0', price: 12000, hint: low('Wild Forest'), face: 'hollow', hat: 'antlers' }),
+  L('l_forest1', 'Monster King', 3, 0x0a1a10, 0x503090, 0x9cff5a, { relic: 'forest:1', price: 20000, hint: high('Wild Forest'), face: 'monster', hat: 'devil', cape: 'shader' }),
+  L('l_volcano0', 'Magma Lord', 0, 0x1a0604, 0xd02a08, 0xffb030, { relic: 'volcano:0', price: 12000, hint: low('Magma Chimney') + ' Here, the middle is the way.', face: 'angry', hat: 'flames' }),
+  L('l_volcano1', 'Ash Phoenix', 0, 0x401008, 0xff6a10, 0xfff060, { relic: 'volcano:1', price: 20000, hint: high('Magma Chimney') + ' Here, the middle is the way.', face: 'cool', hat: 'flames', gear: ['wings_fire'] }),
+  L('l_city0', 'Neon Ronin', 10, 0x07040f, 0x6a1a9a, 0xff40e0, { relic: 'city:0', price: 12000, hint: low('Neon Skyline'), face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
+  L('l_city1', 'Chrome Phantom', 4, 0x8090a8, 0x303848, 0x60e0ff, { relic: 'city:1', price: 20000, hint: high('Neon Skyline'), face: 'visor', hat: 'antenna' }),
+  L('l_waterfall0', 'River Spirit', 0, 0x08305a, 0x20a0e0, 0xd0ffff, { relic: 'waterfall:0', price: 12000, hint: low('Waterfall'), face: 'hollow', hat: 'halo' }),
+  L('l_waterfall1', 'Rainbow Dragon', 11, 0x14082a, 0x1a6ac0, 0xffffff, { relic: 'waterfall:1', price: 20000, hint: high('Waterfall'), face: 'cool', gear: ['wings_dragon_sky', 'horns_sky'], trail: 0xff70c0 }),
   L('l_summit', 'Summit King', 4, 0xffd24a, 0xb8860b, 0xfff4b0, { ach: 'summit', hint: 'Reach the top of any map on Hardcore.', face: 'cool', hat: 'l_crown', cape: 'shader' }),
   L('l_flawless', 'Flawless', 3, 0x101840, 0x20a0ff, 0xffffff, { ach: 'flawless', hint: 'Reach the top of any map on Hardcore without a single fall.', face: 'cool', hat: 'halo', gear: ['wings_energy'] }),
   L('l_hunter', 'Relic Hunter', 14, 0x3a2a10, 0x806020, 0xffc040, { ach: 'hunter', hint: 'Find all twelve hidden relics.', face: 'hollow', hat: 'l_crown', gear: ['orbs_gold'], trail: 0xffc040 }),
@@ -547,6 +614,18 @@ export function paintSuit(suit, size = TEX) {
     const cc = (x) => '#' + x.toString(16).padStart(6, '0'), S = suit.shader, p = P(g);
     legendStill(p, g, S, cc(S.a), cc(S.b), cc(S.c));
   } else { g.fillStyle = '#' + suit.c.toString(16).padStart(6, '0'); g.fillRect(0, 0, TEX, TEX); }
+  return c;
+}
+
+// What of a suit shines when it has a lit painter: the suit itself, dimmed, with the lit parts on top at full strength. The
+// material multiplies this by LIT_K, so the dimmed rest glows as much as any other suit and the lit parts far more.
+export const LIT_K = 2.2;
+export function paintLit(suit, size = TEX) {
+  const c = canvas(size, size), g = c.getContext('2d');
+  g.fillStyle = '#000000'; g.fillRect(0, 0, size, size);
+  g.globalAlpha = 0.42 / LIT_K; g.drawImage(paintSuit(suit, size), 0, 0); g.globalAlpha = 1;
+  g.scale(size / TEX, size / TEX);
+  suit.lit(P(g));
   return c;
 }
 

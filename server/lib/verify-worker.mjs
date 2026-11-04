@@ -5,7 +5,7 @@
 import './sim/env.js';
 import zlib from 'node:zlib';
 import { parentPort } from 'node:worker_threads';
-import { generateLevel, MAPS } from './sim/level.js';
+import { generateLevel, MAPS, secretOn } from './sim/level.js';
 import { World } from './sim/physics.js';
 import { Game } from './sim/game.js';
 import * as cloud from './sim/cloud.js';
@@ -72,7 +72,7 @@ function makeGame(run, head) {
   const app = {
     level: L, world: W, renderer: nothing, ui: nothing, sound: nothing, fx: nothing, input: nothing, settings: {}, finish: () => {},
     pool: { robots: [nothing, nothing, nothing, nothing], ropes: [nothing, nothing, nothing], jumpers: [] },
-    view: new Proxy({ setSecrets(on) { for (const c of secrets) c.on = !!on; } }, { get: (t, k) => t[k] || nothing }),
+    view: new Proxy({ setSecrets(sec) { for (const c of secrets) c.on = secretOn(c, sec); } }, { get: (t, k) => t[k] || nothing }),
   };
   const roster = Array.isArray(head.roster) && head.mode !== 'solo' ? head.roster.filter((s) => Number.isInteger(s) && s >= 0 && s < 8).slice(0, 8) : [0];
   const s = new FakeSession(head.mode === 'solo' ? 'solo' : 'replay', head.mode === 'solo' ? 0 : head.slot | 0, roster);
@@ -144,7 +144,7 @@ function swapIn(live) {
     c.crumble.t = s ? s[1] : 0;
     c.on = s ? s[2] : true;
   });
-  for (const c of L.cols) if (c.kind === 'secret') c.on = g.hardcore;
+  for (const c of L.cols) if (c.kind === 'secret') c.on = secretOn(c, g.storm.sec);
   g.W.setTime(live.lastT);
   profile.sink.relics = live.relics;
   cloud.sink.coin = (i) => { live.coins.push(i); };

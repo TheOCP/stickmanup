@@ -5,7 +5,7 @@
 A co op climbing game. Up to four stickmen are tied together by a glowing cord and climb one of six giant maps. If one
 falls, everyone feels it. Android, PC and browser players can all play together on the game server.
 
-* **Android:** [download the APK](../../releases/latest/download/StickManUp.apk) · Android 8.0 or newer · no root needed · about 800 KB
+* **Android:** [download the APK](../../releases/latest/download/StickManUp.apk) · Android 8.0 or newer · no root needed · about 850 KB
 * **Windows:** [download the installer](../../releases/latest/download/StickManUp-Setup.exe) · 64 bit · updates itself. Windows
   warns about it because it has no paid signature: choose More info, then Run anyway.
 * **Browser, iPhone and iPad:** [play at theocp.github.io/stickmanup](https://theocp.github.io/stickmanup/). On an iPhone, open it
@@ -46,15 +46,18 @@ smaller platforms, more obstacles, and everything moves faster.
   fish leaping across the bridges, ride fountains up and keep your footing on lazy rivers.
 
 Every map also has grapple hooks over wide gaps and doors that open when you shoot their target. The route
-does not just circle: it now and then rides a lift up and turns back the other way, or detours out to floating
-platforms away from the tower before heading back in.
+does not just circle: it rides lifts up and turns back the other way, and takes long detours out to floating
+platforms far from the tower, sometimes going round the other way before it heads back in. In the volcano it now and
+then crosses the crater to the far side. Storm Tower, Wild Forest and Waterfall have side pillars the route climbs
+round on its way: lightning pylons with glowing bands, smaller trees, and mossy rock stacks with a little fall of
+their own. The wall of the middle tower is solid all the way round, on every map: nothing sinks into it.
 
 Two kinds of section need the new moves. Gaps too wide to jump have glowing arrows in the air: jump, then DASH across.
 Shafts between two high walls have orange rungs up the walls: bounce up with wall jumps and out over the lower wall.
 
 **Obstacles**
 
-Each map has 36 obstacles of its own, built to fit it. The higher zones bring in the harder ones, and from about
+Each map has more than 70 obstacles of its own, built to fit it. The higher zones bring in the harder ones, and from about
 650 m up come six endgame obstacles: twin pendulums over a long bridge, spike grids that pop up two squares at a
 time, things rolling along narrow bridges, rows of presses slamming in turn, crossfire jets with one safe spot,
 and turntables with bars spinning over them.
@@ -64,6 +67,21 @@ rising in a wave, rows of presses over gaps, ladders of jets, stones that flicke
 trapdoors, twin sweeps, a dash gap with something swinging through it and a wall jump shaft with jets firing across.
 They have their own look on each map, like Twin saw rails and Arc shaft on Storm Tower, or Thorn wave and Spore shaft
 in Wild Forest.
+
+On top of those, every map has forty more that only it has, made from its own world: thirty along the climb (six of
+them endgame and six of the hardest) and five very hard ones that only come in from 800 m. They mix the old tricks
+together: presses over stairs and turntables, saws and spikes on conveyor belts, swings over fading platforms, rams in
+a row, things rolling down ramps. And there are ziplines: jump up into the cable to grab it, ride it across a wide gap,
+and tap JUMP to let go. In the forest they are vines (with vine swings too), on Sunny Isles ship's rigging, in the city
+rooftop cables and cranes, over the waterfall ropes, in the volcano chains over the forge. Some have weights swinging
+across the ride.
+
+* **Storm Tower**: cargo belts, assembly lines with presses, Tesla crossings, plasma gaps, shredder belts, Meltdown line
+* **Sunny Isles**: rigging ziplines, hammock swings, crab claws, cannon gaps, walk the plank, the Kraken slide
+* **Wild Forest**: vine ziplines and swings, boar stampedes, beehive ziplines, log avalanches, the Tarzan run
+* **Magma Chimney**: ore belts, forge presses, chain slides, slag belts, lava rams, Pyroclastic stairs
+* **Neon Skyline**: baggage belts, rooftop cables, window cleaner swings, compactor lines, Rush hour, Drone swarm
+* **Waterfall**: the rope over the falls, bucket swings, water wheels, tube rushes, Floodgate, Tsunami rams
 
 * **Storm Tower**: turbine sweeps, Tesla pendulums, piston rams, hydraulic presses, arc spikes, plasma jets, phase
   platforms, a saw track, a wrecking ball, grease pits and more
@@ -98,16 +116,27 @@ Spend them in the shop:
 
 * **Common (green):** colours, simple faces and caps
 * **Rare (blue):** 41 country flags with a matching cape, patterns, funny faces and hats
-* **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat
+* **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat,
+  and each with something of its own: a jetpack, a parrot on the shoulder, a samurai banner, a tail, a sack of
+  presents, balloons, a rainbow over the shoulders. Neon lines, slime, lava and stars on them really glow. They wait
+  in each map's epic vault first (see below).
 * **Legendary (orange):** living suits that move and leave a trail: aurora curtains, molten rock, cut crystal, deep
   space, circuits, dragon scales, spirit smoke, a neon grid and holograms, many with wings, horns, crowns, orbs or a
-  blade on the back. Eleven are for sale from 25000 to 60000 coins. The others can't be bought: they only come from
-  Hardcore and Insane, where a few are earned by what you do up there and the rest are hidden. Those who know, know.
+  blade on the back. Eleven are for sale from 25000 to 60000 coins. Twelve are hidden on Hardcore and Insane, two on
+  each map: find one and it can be bought. Three are earned by what you do up there.
 * **Weapons:** 30 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
   scope, machine guns and launchers. Each is held its own way, and the shop shows how long it paralyses, how fast it
   fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
+  Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest path, and the Void
+  Cannon opens once all six are found.
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
   the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
+
+**Hidden vaults.** Finding something only opens it in the shop: it still costs coins. Every map has an epic vault on
+every difficulty, Easy and Normal too, at the end of a side path that leaves the route behind a sign saying EPIC and
+THIS WAY: small stones over wide gaps, with swinging weights and spikes on the way. On Hardcore and Insane a harder
+path behind a LEGENDARY sign, with smaller stones, wider gaps and presses too, leads to the map's legendary weapon.
+Legendary suits found before this update stay yours.
 
 Your other climbers see what you wear. The records keep your best climbs on every map: how high you got, on which
 difficulty, how many falls, how long and how many coins.
@@ -197,7 +226,8 @@ Every player has a player ID, shown on the Friends screen with a button to share
 send a request. Once it is accepted you can see which friends are online and, while they climb, the map, difficulty,
 height, time, falls and who they climb with. Tap Watch to follow their climb live (it works for solo climbs too), or Join
 if their room has a free spot. Anyone who would rather not be watched can turn that off on the same screen, and a climber is
-told who is watching. Both people need the game server.
+told who is watching. Watching shows the climb as it is: the shots flying, the coins still hanging, and climbers riding
+lifts and ziplines without sinking into the floor. Both people need the game server.
 
 Friends can join a climb that is already running.
 

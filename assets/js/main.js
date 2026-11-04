@@ -71,7 +71,8 @@ const RULES = [
 ];
 const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Friendly fire<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="ff" data-v="0" class="${r.ff === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="ff" data-v="1" class="${r.ff === 1 ? 'on' : ''}">On</button></div></label></div>
     <p class="sub" style="margin:4px 0 0">On: your shots throw your friends off the climb, and theirs throw you.</p>`;
-const cleanRules = (r = {}) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; return o; };
+// Friendly fire is kept only for a game started from the lobby, and only when the host switched it on there.
+const cleanRules = (r = {}, ff = false) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; if (ff && r.ff === 1) o.ff = 1; return o; };
 function rulesHtml(r, editable, solo) {
   return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
@@ -645,7 +646,7 @@ function lobby(s) {
       const save = s.lobby.resume && mp;
       const pos = {};
       if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0,
+      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0,
         doors: save ? save.doors : null, pos: save ? pos : null });
     },
   });

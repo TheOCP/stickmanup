@@ -5,7 +5,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt } from './level.js';
+import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -91,6 +91,8 @@ export class Game {
     this.scopeK = 0;
     this.aimElev = 0;
     this.shotAt = new Map();
+    // Shots, kept for a friend watching this climb (spectate.js). Only the last few: nobody may be watching at all.
+    this.feedShots = [];
     this.gun = weaponOf(myLook().w);
     this.action = null;
     this.zaps = new Map(); // slot -> { k, x, y, z, struck } lightning aimed at each climber (storm map)
@@ -105,13 +107,15 @@ export class Game {
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
     const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === LEVEL_VERSION ? sf : null;
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
-    // Real Hardcore or harder only: the hidden places don't exist with easier custom rules.
+    // Real Hardcore or harder only: the hidden places don't exist with easier custom rules. The epic paths are there on every
+    // difficulty (level.js, pathOn).
     this.hardcore = this.diff >= 2 && !this.custom;
+    this.storm.sec = pathsOf(this.diff, this.custom);
     // Coins only count where the server can see the climb: alone, or in a room on the game server.
     this.earning = this.solo || !!(session.link && session.link.isServer);
     this.rec = null;
     cloud.runStart({ map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: g.base > 0 && !!sv, run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
-    app.view.setSecrets(this.hardcore);
+    app.view.setSecrets(this.storm.sec);
     this.coinTaken = new Set((sv && sv.coins) || []);
     this.coinB = this.L.coinB || (this.L.coinB = {});
     if (!this.L.coinBuilt) { this.L.coinBuilt = true; for (const c of this.L.coins) (this.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
@@ -124,7 +128,7 @@ export class Game {
     if (!sv) addTotals(0, 1);
     app.ui.coins(this.run.coins);
     // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
-    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, coyote: this.D.coyote, maxReel: this.rope - 1.2, wind: null };
+    this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, coyote: this.D.coyote, maxReel: this.rope - 1.2, wind: null, zips: this.L.zips || [] };
     const th = Math.atan2(this.me.z, this.me.x);
     this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
@@ -388,15 +392,14 @@ export class Game {
         if (dx * dx + dz * dz < 1.1 && Math.abs(c.y - me.y) < 1.3) this.takeCoin(c);
       }
     }
-    if (!this.hardcore) return;
     for (const r of this.L.relics) {
-      if (hasRelic(r.id)) continue;
+      if (hasRelic(r.id) || !pathOn(r.kind, this.diff, this.custom)) continue;
       const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
       if (d < 1.9) this.takeRelic(r);
       else if (d < 25 && !this.relicNear.has(r.id)) {
         this.relicNear.add(r.id);
         this.app.sound.relicHum();
-        this.app.ui.toast('Something is humming nearby...', 'gold');
+        this.app.ui.toast(r.kind === 'suit' ? 'Something is humming nearby...' : r.kind === 'epic' ? 'The epic vault is close' : 'The legendary vault is close', 'gold');
       }
     }
   }
@@ -419,7 +422,7 @@ export class Game {
     cloud.runRelic(r.id);
     S.relic();
     this.app.ui.haptic('heavy');
-    if (got[0]) this.app.ui.banner('Legendary found', got[0].name, got[1] ? `That was the last one. ${got[1].name} is yours too.` : 'Wear it from the shop', '#ff9a2e');
+    if (got && got.name) this.app.ui.banner(got.title, got.name, got.sub, r.kind === 'epic' ? '#c070ff' : '#ff9a2e');
     this.nearRelic = null;
   }
 
@@ -804,6 +807,7 @@ export class Game {
     this.app.fx.tracer(this.slot, a, to, !!h.kind, gun);
     this.app.sound.shoot(gun.snd);
     this.lastShot = T;
+    this.noteShot(this.slot, a, to, !!h.kind, gun.id, T);
     this.s.toHost({ k: 'shot', s: this.slot, a, b: to, h: h.kind ? 1 : 0, w: gun.id });
     if (h.kind === 'door') this.shootDoor(h.i, gun);
     else if (h.kind === 'player') this.shootFriend(h.i, h, gun);
@@ -819,6 +823,13 @@ export class Game {
       if (this.friendlyFire) for (const q of this.others) if (!(h.kind === 'player' && h.i === q.slot) && inside(q.x, q.y, q.z)) this.shootFriend(q.slot, h, gun);
     }
     if (h.kind) this.app.ui.haptic('tick');
+  }
+
+  noteShot(slot, a, b, hit, w, T) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return;
+    const f = this.feedShots;
+    f.push([slot, +a[0], +a[1], +a[2], +b[0], +b[1], +b[2], hit ? 1 : 0, String(w || ''), r3(T)]);
+    if (f.length > 16) f.shift();
   }
 
   shootDoor(i, gun) {
@@ -1077,6 +1088,7 @@ export class Game {
         if (e.s !== this.slot) {
           const shotBy = WEAPON[e.w];
           this.shotAt.set(e.s, this.time);
+          this.noteShot(e.s, e.a, e.b, !!e.h, e.w, this.time);
           this.app.fx.tracer(e.s, e.a, e.b, !!e.h, shotBy);
           if (shotBy) {
             this.app.sound.shoot(shotBy.snd, 0.5);
@@ -1242,7 +1254,7 @@ export class Game {
       this.action = this.findAction(T);
       this.reelMode = this.cordMode();
       this.nearRelic = null;
-      if (this.hardcore) for (const r of this.L.relics) if (!hasRelic(r.id) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
+      for (const r of this.L.relics) if (!hasRelic(r.id) && pathOn(r.kind, this.diff, this.custom) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
       app.ui.hud(this, { T, zone: zi, gust, thunder: this.storm.thunder(T, this.slot) });
     }
     // Crosshair turns red over a target (checked ~12 times a second while aiming).

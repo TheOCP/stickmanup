@@ -38,6 +38,9 @@ export function makeCyl(x, y, z, r, hh, props) {
   return c;
 }
 
+// A cylinder can widen toward its foot (r1 at the bottom, r at the top), like the giant tree and the lighthouse.
+export const cylR = (c, y) => (c.r1 ? c.r + (c.r1 - c.r) * clamp((c.y + c.hh - y) / (2 * c.hh), 0, 1) : c.r);
+
 export function setRot(c, rx, ry, rz) {
   c.rx = rx; c.ry = ry; c.rz = rz;
   rotMatrix(rx, ry, rz, c.m);
@@ -52,7 +55,7 @@ export function aabb(c) {
     ey = Math.abs(m[1]) * c.hx + Math.abs(m[4]) * c.hy + Math.abs(m[7]) * c.hz;
     ez = Math.abs(m[2]) * c.hx + Math.abs(m[5]) * c.hy + Math.abs(m[8]) * c.hz;
   } else {
-    ex = ez = c.r; ey = c.hh;
+    ex = ez = Math.max(c.r, c.r1 || 0); ey = c.hh;
   }
   c.minx = c.x - ex; c.maxx = c.x + ex;
   c.miny = c.y - ey; c.maxy = c.y + ey;
@@ -117,7 +120,7 @@ export function collideSphere(c, px, py, pz, r, o) {
     o.nz = nx * m[2] + ny * m[5] + nz * m[8];
     return true;
   }
-  const dx = px - c.x, dy = py - c.y, dz = pz - c.z, R = c.r, hh = c.hh;
+  const dx = px - c.x, dy = py - c.y, dz = pz - c.z, R = cylR(c, py), hh = c.hh;
   const rad = Math.sqrt(dx * dx + dz * dz);
   if (rad < R && Math.abs(dy) < hh) {
     const side = R - rad, top = hh - dy, bot = hh + dy;
@@ -176,7 +179,7 @@ function rayBox(c, ox, oy, oz, dx, dy, dz) {
 }
 
 function rayCyl(c, ox, oy, oz, dx, dy, dz) {
-  const px = ox - c.x, py = oy - c.y, pz = oz - c.z, R = c.r, hh = c.hh;
+  const px = ox - c.x, py = oy - c.y, pz = oz - c.z, R = cylR(c, oy), hh = c.hh;
   let best = -1;
   const a = dx * dx + dz * dz;
   if (a > 1e-12) {

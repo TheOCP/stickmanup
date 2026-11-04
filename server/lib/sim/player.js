@@ -20,6 +20,9 @@ export function invMass(flags) {
   return 1;
 }
 
+// How far below the zipline cable the body hangs.
+export const RIDE_HANG = 1.15;
+
 const tmp = { x: 0, y: 0, z: 0 }, loc = { x: 0, y: 0, z: 0 }, hit = { nx: 0, ny: 0, nz: 0, d: 0 }, wind = { x: 0, y: 0, z: 0 };
 
 // The cord between two climbers, applied by each phone to its own climber (me) against where it sees
@@ -82,6 +85,7 @@ export class Body {
     this.peakY = this.y; this.impact = 0;
     this.drag = { x: 0, z: 0, on: false };
     this.shield = 0; this.shieldCd = 0; this.thrown = 0; this.hook = null; this.hookT = 0; this.hanging = false; this.airT = 0;
+    this.ride = null; this.rideS = 0; this.rideV = 0; this.rideT = 0; this.noRide = 0;
     this.wallT = -1; this.wallNx = 0; this.wallNz = 0; this.kickNx = 0; this.kickNz = 0; this.kicked = false; this.sliding = false; this.noGrab = 0;
     this.dashT = 0; this.dashCd = 0; this.dashBuf = 0; this.dashReady = true; this.dashX = 0; this.dashZ = 0;
   }
@@ -94,7 +98,7 @@ export class Body {
   get flags() {
     return (this.grounded ? F.GROUND : 0) | (this.anchored ? F.ANCHOR : 0) | (this.onIce ? F.ICE : 0) |
       (this.stun > 0 ? F.STUN : 0) | (this.charge > 0 ? F.CHARGE : 0) | (this.reel > 0.05 ? F.REEL : 0) | (this.moving ? F.MOVE : 0) |
-      (this.shield > 0 ? F.SHIELD : 0) | (this.hook ? F.GRAPPLE : 0) | (this.hanging ? F.HANG : 0) | (this.aim ? F.AIM : 0) | (this.dashT > 0 ? F.DASH : 0) | (this.sliding ? F.WALL : 0);
+      (this.shield > 0 ? F.SHIELD : 0) | (this.hook ? F.GRAPPLE : 0) | (this.hanging || this.ride ? F.HANG : 0) | (this.aim ? F.AIM : 0) | (this.dashT > 0 ? F.DASH : 0) | (this.sliding ? F.WALL : 0);
   }
 
   invMass() {
@@ -144,6 +148,10 @@ export class Body {
     } else if (this.grounded) this.grip = Math.min(1, this.grip + PC.REGEN * dt);
 
     if (this.hook) { this.zip(dt, env); return; }
+    // Ziplines: jump up into the cable and you grab it on your own, then ride it down.
+    this.noRide = Math.max(0, this.noRide - dt);
+    if (!this.ride && !this.grounded && !this.noRide && this.stun <= 0 && env.zips && env.zips.length) this.tryRide(env.zips);
+    if (this.ride) { this.rideStep(dt); return; }
 
     // Ride moving platforms.
     let pvx = 0, pvy = 0, pvz = 0;
@@ -466,8 +474,50 @@ export class Body {
     this.peakY = Math.max(this.peakY, this.y);
   }
 
+  // Hands on a zipline cable (a: start, high; b: end, low): grab it when they come within reach in the air.
+  tryRide(zips) {
+    const hx0 = this.x, hy0 = this.y + RIDE_HANG, hz0 = this.z;
+    for (const z of zips) {
+      if (hy0 > z.ay + 1 || hy0 < z.by - 1 || hx0 < z.minx || hx0 > z.maxx || hz0 < z.minz || hz0 > z.maxz) continue;
+      // Up to 1 m behind where the cable starts still grabs it (at its start).
+      const hx = hx0 - z.ax, hy = hy0 - z.ay, hz = hz0 - z.az, s0 = hx * z.ux + hy * z.uy + hz * z.uz;
+      if (s0 < -1 || s0 > z.len - 1.5) continue;
+      const s = Math.max(0, s0), ex = hx - z.ux * s, ey = hy - z.uy * s, ez = hz - z.uz * s;
+      if (ex * ex + ey * ey + ez * ez > 0.8 * 0.8) continue;
+      this.ride = z; this.rideS = s; this.rideT = 0;
+      this.rideV = Math.max(4, this.vx * z.ux + this.vy * z.uy + this.vz * z.uz);
+      this.dashT = 0; this.dashReady = true; this.buffer = 0;
+      this.events.push({ k: 'grab' });
+      return;
+    }
+  }
+
+  // Riding: gravity along the cable speeds you up (never slower than a walk, never faster than z.max). JUMP lets go
+  // early; at the end you are thrown off forward onto the landing.
+  rideStep(dt) {
+    const z = this.ride;
+    this.rideT += dt;
+    this.rideV = Math.min(z.max, Math.max(4, this.rideV - PC.G * -z.uy * dt * 0.55 - 0.3 * dt));
+    this.rideS += this.rideV * dt;
+    const end = this.rideS >= z.len - 0.35, let_go = this.buffer > 0 && this.rideT > 0.3;
+    this.grounded = false; this.ground = null; this.coyote = 0;
+    if (end || let_go) {
+      const v = this.rideV;
+      this.vx = z.ux * v; this.vz = z.uz * v; this.vy = z.uy * v + (end ? 3.2 : 2.4);
+      this.ride = null; this.noRide = 0.6; this.thrown = 0.3; this.buffer = 0;
+      this.events.push({ k: 'release' });
+      return;
+    }
+    const s = this.rideS;
+    this.x = z.ax + z.ux * s; this.y = z.ay + z.uy * s - RIDE_HANG; this.z = z.az + z.uz * s;
+    this.vx = z.ux * this.rideV; this.vy = z.uy * this.rideV; this.vz = z.uz * this.rideV;
+    this.peakY = this.y;
+  }
+
   knock(vx, vy, vz, stun) {
     if (this.shield > 0) { this.events.push({ k: 'blocked' }); return false; }
+    // Knocked off a zipline too.
+    if (this.ride) { this.ride = null; this.noRide = 0.8; }
     // Holding on is no protection: a hit tears you loose. Stunned, you can't grab again straight away.
     this.release();
     this.vx = vx; this.vy = vy; this.vz = vz;

@@ -2,7 +2,8 @@
 // (body + glowing edge trim) so the phone draws the whole tower in few draw calls.
 import * as THREE from 'three';
 import { BOX } from './physics.js';
-import { CORE_R, coreFlare, cpEnabled } from './level.js';
+import { CORE_R, coreFlare, cpEnabled, secretOn } from './level.js';
+import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
 import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail } from './scenery.js';
@@ -173,6 +174,7 @@ export class WorldView {
     this.buildVentsRocks();
     this.buildCity();
     this.buildObstacles();
+    this.buildZips();
     this.buildFlows();
     this.buildKickers();
     this.buildWaterPark();
@@ -188,23 +190,94 @@ export class WorldView {
     this.scene.remove(this.root);
   }
 
-  // The stones to the hidden relics: one instanced mesh, only shown on Hardcore.
+  // The hidden paths (level.js, buildSecrets): their stones, the vaults at the end of the epic and legendary ones, and the
+  // signs where those leave the route. Each kind only shows on the difficulties that have it (setSecrets).
   buildSecrets() {
-    const list = this.level.cols.filter((c) => c.kind === 'secret');
-    this.secretMesh = null;
+    const L = this.level, list = L.cols.filter((c) => c.kind === 'secret');
+    this.secretParts = [];
     if (!list.length) return;
     const pat = { storm: 8, sunny: 6, forest: 13, volcano: 7, city: 12, waterfall: 14 }[this.key] ?? 8;
-    const im = new THREE.InstancedMesh(shapeGeo(this.key === 'city' ? 'chamfer' : 'rock1'), patMat(pat), list.length);
-    const col = new THREE.Color();
-    list.forEach((c, i) => { im.setMatrixAt(i, colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2)); im.setColorAt(i, col.setHex(this.key === 'city' ? 0x8a90a8 : 0xffffff)); });
-    this.add(im);
-    im.visible = false;
-    this.secretMesh = im;
+    const col = new THREE.Color(), geo = shapeGeo(this.key === 'city' ? 'chamfer' : 'rock1'), mat = patMat(pat);
+    for (const sec of ['hard', 'open']) {
+      const mine = list.filter((c) => (c.rk === 'epic' ? 'open' : 'hard') === sec);
+      if (!mine.length) continue;
+      const im = new THREE.InstancedMesh(geo, mat, mine.length);
+      mine.forEach((c, i) => { im.setMatrixAt(i, colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2)); im.setColorAt(i, col.setHex(this.key === 'city' ? 0x8a90a8 : 0xffffff)); });
+      this.add(im);
+      im.visible = false;
+      this.secretParts.push({ sec, o: im });
+    }
+    const tint = (kind) => (kind === 'epic' ? 0xc070ff : 0xffa030);
+    const stone = new THREE.MeshStandardMaterial({ color: 0x3a3440, roughness: 0.6, metalness: 0.35, emissive: 0x241a30, emissiveIntensity: 0.4 });
+    // The vaults: four pillars with fire on top, a glowing ring on the floor and a pedestal under the relic.
+    for (const r of L.relics || []) {
+      const v = r.vault;
+      if (!v) continue;
+      const g = new THREE.Group(), glow = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 3) }), h = v.s / 2 - 0.35;
+      g.position.set(v.x, v.y, v.z);
+      g.rotation.y = v.ry;
+      for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.6, 8), stone);
+        p.position.set(a * h, 1.3, b * h);
+        const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), glow);
+        cap.position.set(a * h, 2.8, b * h);
+        g.add(p, cap);
+      }
+      for (const [a, b] of [[0, -1], [0, 1]]) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(v.s - 0.4, 0.16, 0.16), stone);
+        beam.position.set(0, 2.62, b * h);
+        g.add(beam);
+      }
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.05, 6, 40), glow);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.04;
+      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.46, 0.42, 10), stone);
+      ped.position.y = 0.21;
+      g.add(ring, ped);
+      this.add(g, false);
+      g.visible = false;
+      this.secretParts.push({ sec: r.kind === 'epic' ? 'open' : 'hard', o: g });
+    }
+    // The signs: a post with a board, readable from both sides, the arrow pointing along the path.
+    for (const sg of L.signs || []) {
+      const legend = sg.kind !== 'epic', c = tint(sg.kind);
+      const face = (dir) => canvasTex(512, 256, (x, w, hh) => {
+        x.fillStyle = '#16121c'; x.fillRect(0, 0, w, hh);
+        x.strokeStyle = '#' + c.toString(16).padStart(6, '0'); x.lineWidth = 14; x.strokeRect(10, 10, w - 20, hh - 20);
+        x.fillStyle = x.strokeStyle; x.textAlign = 'center'; x.textBaseline = 'middle';
+        x.font = 'bold 64px sans-serif';
+        x.fillText(tr(legend ? 'LEGENDARY' : 'EPIC'), w / 2 - dir * 50, 92, 380);
+        x.font = 'bold 40px sans-serif';
+        x.fillText(tr('THIS WAY'), w / 2 - dir * 50, 170, 380);
+        // The arrow, a shape and not a letter.
+        const ax = dir > 0 ? w - 70 : 70;
+        x.beginPath();
+        x.moveTo(ax + dir * 40, 128); x.lineTo(ax - dir * 20, 78); x.lineTo(ax - dir * 20, 108); x.lineTo(ax - dir * 50, 108);
+        x.lineTo(ax - dir * 50, 148); x.lineTo(ax - dir * 20, 148); x.lineTo(ax - dir * 20, 178); x.closePath();
+        x.fill();
+      });
+      const g = new THREE.Group();
+      g.position.set(sg.x, sg.y, sg.z);
+      g.rotation.y = sg.ry;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), stone);
+      post.position.y = 1.15;
+      const board = (dir, turn) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.95), new THREE.MeshBasicMaterial({ map: face(dir), color: HDR(0xffffff, 1.4) }));
+        m.position.set(0, 1.85, turn ? -0.03 : 0.03);
+        m.rotation.y = turn ? Math.PI : 0;
+        return m;
+      };
+      g.add(post, board(1, false), board(-1, true));
+      this.add(g, false);
+      g.visible = false;
+      this.secretParts.push({ sec: sg.sec, o: g });
+    }
   }
 
-  setSecrets(on) {
-    if (this.secretMesh) this.secretMesh.visible = !!on;
-    for (const c of this.level.cols) if (c.kind === 'secret') c.on = !!on;
+  // sec: which hidden paths this climb has ({ hard, open } from level.js pathsOf), or nothing for none.
+  setSecrets(sec) {
+    for (const p of this.secretParts || []) p.o.visible = !!sec && !!sec[p.sec];
+    for (const c of this.level.cols) if (c.kind === 'secret') c.on = secretOn(c, sec);
   }
 
   // Performance: only animated things recompute transforms each frame, and only animated materials are
@@ -433,6 +506,12 @@ export class WorldView {
     }
   }
 
+  // How wide the drawn core is at height y (it widens toward the foot on some maps), as the solid wall in level.js.
+  coreAt(y) {
+    const top = this.level.top - 1.2, H = top + 40;
+    return CORE_R * (1 + (coreFlare(this.key) - 1) * Math.min(1, Math.max(0, (top - y) / H)));
+  }
+
   // Sunny: a white lighthouse with red bands and warm windows. Forest: a giant bark trunk.
   buildCoreAlt() {
     const L = this.level, R = rng(6), H = L.top - 1.2 + 40, sunny = this.key === 'sunny';
@@ -472,7 +551,8 @@ export class WorldView {
     this.add(core);
     const accent = new THREE.MeshBasicMaterial({ color: HDR(sunny ? 0xffffff : 0x9be564, sunny ? 1.0 : 1.3) });
     for (const z of L.zones) {
-      const t = new THREE.Mesh(new THREE.TorusGeometry(CORE_R + 0.08, sunny ? 0.22 : 0.12, 8, 96).rotateX(Math.PI / 2), accent);
+      // Hugging the wall where it is at that height (it widens toward the foot), never sticking out past its solid skin.
+      const t = new THREE.Mesh(new THREE.TorusGeometry(this.coreAt(z.y0 - 1.4) + 0.07, sunny ? 0.14 : 0.12, 8, 96).rotateX(Math.PI / 2), accent);
       t.position.y = z.y0 - 1.4;
       this.add(t, false);
     }
@@ -1063,15 +1143,18 @@ export class WorldView {
     const ropeGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6);
     const ropeMat = new THREE.MeshStandardMaterial({ color: this.key === 'storm' ? 0x5a6070 : 0x8a7050, roughness: 0.8, metalness: this.key === 'storm' ? 0.7 : 0 });
     const barMat = panelMat(this.key === 'storm' ? 0x3a3f4c : 0x6a4a2c, { pattern: this.key === 'storm' ? 1 : 3 });
+    // A themed swing (vines in the forest, a hammock, a bucket, a window cleaner's cradle) brings its own colours.
+    const vineMat = new THREE.MeshStandardMaterial({ color: 0x4f7a2a, roughness: 0.9 }), lookRope = new Map();
     for (const sw of L.swings) {
       const d = sw.col.dyn, nx = -d.uz, nz = d.ux;
+      const rm = !sw.look ? ropeMat : this.key === 'forest' ? vineMat : lookRope.get(sw.look.c) || lookRope.set(sw.look.c, new THREE.MeshStandardMaterial({ color: sw.look.c, roughness: 0.6, metalness: this.key === 'city' ? 0.6 : 0 })).get(sw.look.c);
       const bar = new THREE.Mesh(BOXG, barMat);
       bar.scale.set(2.8, 0.22, 0.22);
       bar.position.set(d.px, d.py + 0.1, d.pz);
       bar.rotation.y = Math.atan2(-nz, nx);
       this.add(bar);
       const ropes = [-1, 1].map((s2) => {
-        const r = new THREE.Mesh(ropeGeo, ropeMat);
+        const r = new THREE.Mesh(ropeGeo, rm);
         this.root.add(r);
         this.anim.push(r);
         return { r, s: s2 };
@@ -1080,32 +1163,73 @@ export class WorldView {
     }
   }
 
-  // Forest side trees: a bark trunk (same look as the giant tree) with a leafy crown on top.
+  // Side pillars the route climbs round, away from the core: forest trees (bark with a leafy crown), storm lightning
+  // pylons (steel with glowing bands and a beacon), waterfall rock stacks (mossy, with a little fall down one side).
+  // A trunk is straight, with a wider foot over the lowest 6 m when it stands on the ground: the same as its solid
+  // shape in level.js, so nothing sinks into it.
   buildSideTrees() {
     const T = this.level.trees;
     if (!T.length) return;
-    const R = rng(91);
-    const bark = this.barkMat || new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 });
-    const leaf = new THREE.MeshStandardMaterial({ color: 0x3f7a30, roughness: 0.85, flatShading: true });
+    const R = rng(91), kind = T[0].kind || 'tree';
+    const bark = kind === 'pylon' ? new THREE.MeshStandardMaterial({ color: 0x3a404c, roughness: 0.4, metalness: 0.7 })
+      : kind === 'stack' ? (this.rockMat || new THREE.MeshStandardMaterial({ color: 0x6a6a64, roughness: 0.95 }))
+      : (this.barkMat || new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }));
+    this.sideMat = bark;
+    const leaf = new THREE.MeshStandardMaterial({ color: kind === 'stack' ? 0x4f8a3a : 0x3f7a30, roughness: 0.85, flatShading: true });
+    const glow = new THREE.MeshBasicMaterial({ color: HDR(0x3ff0d0, 2.2) }), beacon = new THREE.MeshBasicMaterial({ color: HDR(0x9b7bff, 3) });
     const blob = new THREE.IcosahedronGeometry(1, 1), knots = [], roots = [];
     for (const t of T) {
-      // From the ground, or floating on a knot of roots above older route (level.js decides).
+      // From the ground, or floating on a knot of roots (or rock, or a steel cone) above older route (level.js decides).
       const floating = t.base > 0, low = floating ? t.base + 3 : t.base, h = t.top - low;
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r * (floating ? 1.08 : 1.35), h, 28, 1, !floating), bark);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r, h, 28, 1, !floating), bark);
       trunk.position.set(t.x, low + h / 2, t.z);
       this.add(trunk);
-      if (floating) {
+      if (!floating) {
+        const foot = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r * 1.35, 6, 28, 1, true), bark);
+        foot.position.set(t.x, t.base + 3, t.z);
+        this.add(foot);
+      } else {
         knots.push(mat4(t.x, t.base + 1.5, t.z, t.r * 1.08, 3, t.r * 1.08));
-        for (let i = 0; i < 7; i++) {
+        for (let i = 0; i < (kind === 'pylon' ? 0 : 7); i++) {
           const b = (i / 7) * TAU + R(), k = 0.7 + R() * 0.6;
           roots.push(mat4(t.x + Math.cos(b) * t.r * 0.72, t.base + 2 - 1.2 * k, t.z + Math.sin(b) * t.r * 0.72, k, k, k, Math.sin(b) * 0.45, 0, Math.PI - Math.cos(b) * 0.45));
         }
       }
-      for (let i = 0; i < 6; i++) {
-        const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 2.5 + R() * 2.5 : 0;
-        c.position.set(t.x + Math.cos(a) * rr2, t.top + 2.5 + R() * 2.5, t.z + Math.sin(a) * rr2);
-        c.scale.set(3.4 + R() * 1.6, 2.2 + R(), 3.4 + R() * 1.6);
-        this.add(c);
+      if (kind === 'pylon') {
+        // Glowing bands flush with the steel every 8 m, a cap and a lightning rod with a beacon on top.
+        for (let y = low + 4; y < t.top - 1; y += 8) {
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(t.r + 0.02, t.r + 0.02, 0.18, 28, 1, true), glow);
+          band.position.set(t.x, y, t.z);
+          this.add(band, false);
+        }
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(t.r * 0.7, t.r, 1.2, 28), bark);
+        cap.position.set(t.x, t.top + 0.6, t.z);
+        const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.2, 5, 8), bark);
+        rod.position.set(t.x, t.top + 3.7, t.z);
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), beacon);
+        orb.position.set(t.x, t.top + 6.4, t.z);
+        this.add(cap); this.add(rod); this.add(orb, false);
+      } else if (kind === 'stack') {
+        // A mossy top and a thin fall pouring down one side of the rock.
+        for (let i = 0; i < 4; i++) {
+          const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 1.2 + R() * 1.2 : 0;
+          c.position.set(t.x + Math.cos(a) * rr2, t.top + 0.4 + R() * 0.6, t.z + Math.sin(a) * rr2);
+          c.scale.set(2.0 + R() * 0.8, 0.7 + R() * 0.4, 2.0 + R() * 0.8);
+          this.add(c);
+        }
+        const th = R() * TAU, fg = new THREE.CylinderGeometry(t.r + 0.08, t.r + 0.08, h, 10, 1, true, th, 0.5);
+        fg.userData.len = 0.5;
+        this.flowUV(fg, 'sheet', th);
+        const fall = new THREE.Mesh(fg, this.sideFall || (this.sideFall = fallMat(this, { speed: 0.5 })));
+        fall.position.set(t.x, low + h / 2, t.z);
+        this.add(fall, false);
+      } else {
+        for (let i = 0; i < 6; i++) {
+          const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 2.5 + R() * 2.5 : 0;
+          c.position.set(t.x + Math.cos(a) * rr2, t.top + 2.5 + R() * 2.5, t.z + Math.sin(a) * rr2);
+          c.scale.set(3.4 + R() * 1.6, 2.2 + R(), 3.4 + R() * 1.6);
+          this.add(c);
+        }
       }
     }
     // All the root knots of the map in two draws, however many trees float.
@@ -1148,6 +1272,46 @@ export class WorldView {
   }
 
   // The themed obstacles (obstacles.js). Each gets its meshes here and an update for its animation.
+  // Ziplines: a cable from post to post, a glowing grip ring where it can be grabbed, and in the forest a vine with
+  // leaves along it. The posts themselves are colliders, drawn with the other posts.
+  buildZips() {
+    const Z = this.level.zips || [];
+    if (!Z.length) return;
+    const vine = this.key === 'forest', rope = this.key === 'sunny' || this.key === 'waterfall', R = rng(57);
+    const cyl = new THREE.CylinderGeometry(1, 1, 1, 8), leaves = [], cables = [], rings = [], caps = [];
+    for (const z of Z) {
+      const len = Math.hypot(z.px1 - z.px0, z.py1 - z.py0, z.pz1 - z.pz0), th = vine ? 0.07 : rope ? 0.055 : 0.035;
+      const m = new THREE.Object3D();
+      stretchTo(m, z.px0, z.py0, z.pz0, z.px1, z.py1, z.pz1);
+      m.scale.set(th, len, th);
+      m.updateMatrix();
+      cables.push(m.matrix.clone());
+      // Where your hands go on: a glowing ring round the cable just past the start post.
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(z.ux, z.uy, z.uz));
+      for (const f of [0.2, 0.35, 0.5]) rings.push(new THREE.Matrix4().compose(new THREE.Vector3(z.ax + z.ux * f, z.ay + z.uy * f, z.az + z.uz * f), q, new THREE.Vector3(1, 1, 1)));
+      for (const [x, y, zz] of [[z.px0, z.py0, z.pz0], [z.px1, z.py1, z.pz1]]) caps.push(mat4(x, y + 0.1, zz, 1, 1, 1));
+      // Small leaves sprouting along the vine, never big enough to block the view of whoever rides it.
+      if (vine) for (let d = 0.5; d < len - 0.4; d += 0.35 + R() * 0.4) {
+        const f = d / len, s = 0.09 + R() * 0.06, a = R() * TAU;
+        leaves.push(mat4(z.px0 + (z.px1 - z.px0) * f + Math.cos(a) * 0.08, z.py0 + (z.py1 - z.py0) * f + Math.sin(a) * 0.08, z.pz0 + (z.pz1 - z.pz0) * f, s * 1.9, s * 0.3, s, R() * 1.2, R() * TAU, R() * 1.2));
+      }
+    }
+    const look = Z[0].look || { c: 0x555555, g: 0xffffff };
+    const batch = (geo, mat, list, shadow) => {
+      if (!list.length) return;
+      const im = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach((q, i) => im.setMatrixAt(i, q));
+      im.frustumCulled = false;
+      this.add(im, shadow);
+    };
+    // Steel cables glow a little, or they vanish against the dark maps.
+    batch(cyl, new THREE.MeshStandardMaterial({ color: vine ? 0x4f7a2a : rope ? 0xc8a46a : 0x9aa4b4, roughness: vine || rope ? 0.9 : 0.35, metalness: vine || rope ? 0 : 0.8,
+      emissive: vine || rope ? 0x000000 : 0x8aa6c8, emissiveIntensity: 0.55 }), cables, true);
+    batch(new THREE.TorusGeometry(0.14, 0.035, 6, 14), new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.4) }), rings, false);
+    batch(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshStandardMaterial({ color: look.c, roughness: 0.6 }), caps, true);
+    batch(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x5aa83a, roughness: 0.8, flatShading: true }), leaves, false);
+  }
+
   buildObstacles() {
     const L = this.level, glowM = (look, k = 3) => new THREE.MeshBasicMaterial({ color: HDR(look.g, k) });
     const add = (o, obj, upd) => { this.root.add(obj); this.anim.push(obj); this.obsFx.push({ o, obj, upd }); obj.traverse((q) => { if (q !== obj) q.userData.anim = true; }); };
@@ -1213,6 +1377,8 @@ export class WorldView {
           else if (o.shape === 'tube') { g.rotation.y = o.ry; m.rotation.set(0, 0, -p.roll); g.visible = !p.hide; }
           else if (o.shape === 'log') { g.rotation.y = o.ry; m.rotation.set(Math.PI / 2, 0, 0); m.rotateY(p.roll); }
           else if (o.shape === 'disc') { g.rotation.y = o.ry; m.rotation.set(0, 0, t * 12); }
+          // One way down a ramp: gone while it goes back up to the top.
+          if (o.one) g.visible = !p.hide;
           if (p.warn > 0) g.position.x += Math.sin(t * 50) * 0.04;
         });
       } else if (o.prim === 'crusher') {
@@ -1412,7 +1578,7 @@ export class WorldView {
     const fallM = fallMat(this, { speed: 0.42 }), fallM2 = fallMat(this, { speed: 0.6, alpha: 0.55, color: 0xffffff, deep: 0x8ad0e8 });
     const mistM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, depthWrite: false });
     for (let i = 0; i < 5; i++) {
-      const th = (i / 5) * TAU + R() * 0.5, len = 0.32 + R() * 0.22, r = CORE_R + 0.3;
+      const th = (i / 5) * TAU + R() * 0.5, len = 0.32 + R() * 0.22, r = CORE_R + 0.18;
       const g = new THREE.CylinderGeometry(r, r * 1.18, H, 12, 1, true, th, len);
       g.userData.len = len;
       this.flowUV(g, 'sheet', th);
@@ -1420,7 +1586,7 @@ export class WorldView {
       sheet.position.y = y0;
       this.add(sheet, false);
       // A thinner, faster layer in front for depth.
-      const g2 = new THREE.CylinderGeometry(r + 0.25, r * 1.18 + 0.35, H, 12, 1, true, th + len * 0.1, len * 0.8);
+      const g2 = new THREE.CylinderGeometry(r + 0.03, r * 1.18, H, 12, 1, true, th + len * 0.1, len * 0.8);
       g2.userData.len = len * 0.8;
       this.flowUV(g2, 'sheet', th + len * 0.1);
       const s2 = new THREE.Mesh(g2, fallM2);
@@ -1441,12 +1607,12 @@ export class WorldView {
     // Flower garlands at each zone gate.
     const leaf = new THREE.MeshStandardMaterial({ color: 0x4f9a40, roughness: 0.8 }), bloom = new THREE.MeshBasicMaterial({ color: HDR(0xff9ad8, 1.2) });
     for (const z of L.zones) {
-      const t = new THREE.Mesh(new THREE.TorusGeometry(CORE_R + 0.1, 0.22, 8, 96).rotateX(Math.PI / 2), leaf);
+      const cr = this.coreAt(z.y0 - 1.4), t = new THREE.Mesh(new THREE.TorusGeometry(cr + 0.06, 0.14, 8, 96).rotateX(Math.PI / 2), leaf);
       t.position.y = z.y0 - 1.4;
       this.add(t, false);
       for (let k = 0; k < 14; k++) {
-        const a = (k / 14) * TAU, f = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), bloom);
-        f.position.set(Math.sin(a) * (CORE_R + 0.3), z.y0 - 1.25, Math.cos(a) * (CORE_R + 0.3));
+        const a = (k / 14) * TAU, f = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), bloom);
+        f.position.set(Math.sin(a) * (cr + 0.1), z.y0 - 1.25, Math.cos(a) * (cr + 0.1));
         this.add(f, false);
       }
     }

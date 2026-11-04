@@ -59,7 +59,8 @@ export class Storm {
     this.hs = [0.8, 1.0, 1.22, 1.38][h];
     this.th = THUNDER[h] || THUNDER[1];
   }
-  on(o) { return o.lvl === undefined || o.lvl <= this.haz; }
+  // The traps on a hidden path (o.sec) only exist while that path does: game.js sets which ones are there.
+  on(o) { return (o.sec === undefined || !!(this.sec && this.sec[o.sec])) && (o.lvl === undefined || o.lvl <= this.haz); }
 
   // Spinning bars (lasers, fire bars, branches...): angle of bar k at time t.
   laserAngle(l, t, k = 0) {

@@ -1,7 +1,8 @@
 // What this phone remembers about you: coins, what you own and wear, relics found and the record of your climbs.
 import { store } from './util.js';
 import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
-import { WEAPON, FREE_WEAPON } from './weapons.js';
+import { WEAPON, FREE_WEAPON, WEAPONS } from './weapons.js';
+import { needOf, SUIT_RELICS, WEAPON_RELICS, VOID_WEAPON, opensOf } from './relics.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
@@ -17,7 +18,7 @@ const saveNow = () => { clearTimeout(timer); timer = 0; store.set('profile', P);
 const saveSoon = () => { if (!timer) timer = setTimeout(saveNow, 900); };
 export const flushProfile = saveNow;
 
-export const RELIC_COUNT = LEGENDS.filter((l) => l.relic).length;
+export const RELIC_COUNT = SUIT_RELICS.length;
 
 // First run on this version: what you had picked in Settings becomes your suit.
 export function initProfile(oldColor) {
@@ -103,15 +104,17 @@ export function addCoins(n) { P.coins += n; P.earned += n; saveSoon(); return P.
 export const myRole = () => cleanRole(P.role);
 
 // Do you have this thing? The team suits only with a flag from the server; whatever you bought or an admin gave you, yes;
-// free things yes; legendaries by finding or earning them.
+// free things yes; the few legendaries that are earned by doing something, once earned. Finding a relic only opens
+// something for buying (unlocked).
 export function owned(item) {
   if (item.team) return item.team.includes(myRole());
   if (P.own.includes(itemKey(item))) return true;
-  if (item.price === 0) return true;
-  if (item.relic) return P.relics.includes(item.relic);
   if (item.ach) return P.ach.includes(item.ach);
-  return false;
+  if (item.relic) return false;
+  return item.price === 0;
 }
+// Can it be bought yet? Epic and legendary things need their relic found first (relics.js).
+export const unlocked = (item) => { const n = needOf(item); return !n || n.every((r) => P.relics.includes(r)); };
 
 export function buy(item) {
   if (item.price <= 0 || P.coins < item.price || P.own.includes(itemKey(item))) return false;
@@ -135,15 +138,31 @@ export function myLook() {
 
 
 export const hasRelic = (id) => P.relics.includes(id);
-export const relicsFound = () => P.relics.length;
-// Returns the legendary it unlocks, plus another if that was the last relic.
+export const relicsFound = () => P.relics.filter((r) => SUIT_RELICS.includes(r)).length;
+// How many of each kind of hidden place you found: [found, how many there are].
+export const relicCounts = () => {
+  const n = (sfx) => P.relics.filter((r) => r.endsWith(sfx)).length;
+  return { suit: [relicsFound(), RELIC_COUNT], epic: [n(':e'), 6], weapon: [n(':w'), WEAPON_RELICS.length] };
+};
+// A relic picked up: what to tell the climber, or null if it was found before.
 export function foundRelic(id) {
-  if (P.relics.includes(id)) return [];
+  if (P.relics.includes(id)) return null;
   P.relics.push(id);
-  const out = [LEGENDS.find((l) => l.relic === id)];
-  if (P.relics.length >= RELIC_COUNT) { const h = award('hunter'); if (h) out.push(h); }
+  let out = null;
+  if (id.endsWith(':e')) {
+    const n = opensOf(id, [...Object.values(SUIT), ...Object.values(FACE), ...Object.values(HAT), ...WEAPONS]).length;
+    out = { title: 'Epic vault opened', name: `${n} epic things`, sub: 'They can be bought in the shop now' };
+  } else if (id.endsWith(':w')) {
+    const w = WEAPONS.find((x) => { const need = needOf(x); return x.id !== VOID_WEAPON && need && need[0] === id; });
+    out = { title: 'Legendary weapon found', name: w ? w.name : '', sub: 'It can be bought in the shop now' };
+    if (WEAPON_RELICS.every((r) => P.relics.includes(r))) out.sub = `All six found: the ${WEAPON[VOID_WEAPON].name} can be bought too`;
+  } else {
+    const l = LEGENDS.find((x) => x.relic === id);
+    out = { title: 'Legendary found', name: l ? l.name : '', sub: 'It can be bought in the shop now' };
+    if (SUIT_RELICS.every((r) => P.relics.includes(r))) { const h = award('hunter'); if (h) out.sub = `That was the last one. ${h.name} is yours.`; }
+  }
   saveNow();
-  return out.filter(Boolean);
+  return out;
 }
 export function award(ach) {
   if (P.ach.includes(ach)) return null;

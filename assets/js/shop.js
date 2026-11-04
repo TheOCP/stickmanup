@@ -1,8 +1,9 @@
 // The shop (and wardrobe) and the records screen. A real climber stands in the world on the left, wearing what you
 // tap, while the cards are on the right.
 import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
-import { gearTris, gunInfo, GEAR_AT } from './gear.js';
-import { coins, owned, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
+import { gearTris, gunInfo, GEAR_AT, GEAR_TALL } from './gear.js';
+import { coins, owned, unlocked, equip, worn, myLook, relicCounts, runsOf, totals } from './profile.js';
+import { whereOf } from './relics.js';
 import { buyItem } from './cloud.js';
 import { DIFFS, MAPS } from './level.js';
 import { EMOTES } from './emotes.js';
@@ -28,7 +29,7 @@ function armPath(g, X, Y, s) {
 function drawHat(g, id, X, Y, s) {
   const at = GEAR_AT[id];
   if (at === 'wings') { drawTris(g, gearTris(id, 'front'), X + 0.03 * s, Y, s, 0.7, 1); drawTris(g, gearTris(id, 'front'), X - 0.03 * s, Y, s, 0.7, -1); }
-  else if (at === 'back' || at === 'hips') drawTris(g, gearTris(id, 'front'), X, Y, s, 0.3, 1);
+  else if (at === 'back' || at === 'chest' || at === 'hips' || at === 'tail') drawTris(g, gearTris(id, 'front'), X, Y, s, 0.3, 1);
   else drawTris(g, gearTris(id), X, Y, s, 1.02, 1);
 }
 function drawTris(g, tris, X, Y, s, base, flip) {
@@ -89,9 +90,9 @@ function thumbFor(item) {
     g.textBaseline = 'middle';
     g.fillText(item.icon, W / 2, H / 2);
   } else if (item.kind === 'suit') {
-    const behind = (item.gear || []).filter((id) => GEAR_AT[id] === 'wings' || GEAR_AT[id] === 'back');
-    // With wings the climber is drawn smaller, so they fit on the card.
-    const s = H / (behind.some((id) => GEAR_AT[id] === 'wings') ? 2.5 : 2.05), X = W / 2, Y = (fy) => H - 6 - (fy + 0.44) * s, k = 128 / TEX, tex = paintSuit(item, 128);
+    const behind = (item.gear || []).filter((id) => GEAR_AT[id] === 'wings' || GEAR_AT[id] === 'back' || GEAR_AT[id] === 'tail');
+    // With wings (or anything tall) the climber is drawn smaller, so they fit on the card.
+    const s = H / (behind.some((id) => GEAR_AT[id] === 'wings' || GEAR_TALL.has(id)) ? 2.5 : 2.05), X = W / 2, Y = (fy) => H - 6 - (fy + 0.44) * s, k = 128 / TEX, tex = paintSuit(item, 128);
     for (const id of behind) drawHat(g, id, X, Y, s);
     g.save(); armPath(g, X, Y, s); g.clip();
     g.drawImage(tex, COL_ARMS * k, 0, ARM_W * k, TEX * k, X - 0.24 * s, Y(1.24), 0.48 * s, 1.68 * s);
@@ -121,6 +122,16 @@ function thumbFor(item) {
 const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['weapons', 'Weapons'], ['legend', 'Legendary']];
 const HOLD_NAME = { pistol: 'Sidearm', smg: 'Submachine gun', shotgun: 'Shotgun', rifle: 'Rifle', sniper: 'Sniper rifle', heavy: 'Machine gun', launcher: 'Launcher' };
 // Bars that compare weapons at a glance.
+// Where something that isn't open yet is found.
+function whereText(it) {
+  const w = whereOf(it);
+  if (!w) return '';
+  if (w.kind === 'void') return 'Find all six legendary weapons first: each waits at the end of the hardest path of its map.';
+  const m = MAPS.find((x) => x.key === w.map), name = m ? m.name : w.map;
+  if (w.kind === 'epic') return `Find the epic vault on ${name} first. Its path is there on every difficulty: look for the EPIC sign.`;
+  if (w.kind === 'weapon') return `Find the legendary vault on ${name} first, on Hardcore or Insane. Look for the LEGENDARY sign.`;
+  return it.hint || '';
+}
 function weaponStats(w) {
   const bar = (name, k, val, c) => `<div>${name}<i style="--v:${Math.round(Math.max(0.04, Math.min(1, k)) * 100)}%${c ? ';--c:' + c : ''}"></i><b>${val}</b></div>`;
   const rate = 1 / w.rate;
@@ -154,7 +165,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
 
   function card(it) {
     const have = owned(it), on = have && worn(it);
-    const tag = it.kind === 'emote' && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : it.price > 0 ? `<em class="price">${COIN}${it.price}</em>` : '<em class="lock">Locked</em>';
+    const tag = it.kind === 'emote' && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : !unlocked(it) || !(it.price > 0) ? `<em class="lock">${whereOf(it) ? 'Hidden' : 'Locked'}</em>` : `<em class="price">${COIN}${it.price}</em>`;
     return `<button class="skin r${it.r} ${sel === it ? 'sel' : ''} ${have ? '' : 'no'}" data-a="pick" data-id="${it.id}"><img data-th="${it.id}" alt=""><b>${esc(it.name)}</b>${tag}</button>`;
   }
 
@@ -169,17 +180,22 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   function sideHtml() {
     const it = sel;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
-      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own.</p>`
-      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth.</p>`;
-    const r = RARITY[it.r], have = owned(it), on = have && worn(it);
+      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest paths on Hardcore and Insane: find them, then buy them.</p>`
+      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Epic things are in the epic vaults first: every map has one, behind the EPIC sign.</p>`;
+    const r = RARITY[it.r], have = owned(it), on = have && worn(it), open = unlocked(it), where = whereOf(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
     else if (on) act = `<button class="btn sm" disabled>${it.kind === 'weapon' ? 'Carrying it' : 'Wearing it'}</button>`;
     else if (have) act = `<button class="btn sm primary" data-a="equip">${it.kind === 'weapon' ? 'Carry it' : 'Wear it'}</button>`;
-    else if (it.price > 0) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
+    else if (it.price > 0 && open) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
     else act = '';
-    const need = !have && it.price > 0 && coins() < it.price ? `<p class="need">${it.price - coins()} more coins needed</p>` : '';
-    const hint = it.hint && !(have && !it.team) ? `<p class="hint">${esc(it.hint)}</p>` : it.hint && have ? `<p class="hint">Found it. Well done.</p>` : '';
+    const need = !have && open && it.price > 0 && coins() < it.price ? `<p class="need">${it.price - coins()} more coins needed</p>` : '';
+    let hint = '';
+    if (!have && !open) hint = whereText(it);
+    else if (!have && where) hint = 'Found. Now it can be bought.';
+    else if (it.hint && !have) hint = it.hint;
+    else if (it.hint && have && !it.team) hint = 'Found it. Well done.';
+    hint = hint ? `<p class="hint">${esc(hint)}</p>` : '';
     return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${it.kind === 'weapon' ? weaponStats(it) : ''}${hint}${need}${act}`;
   }
 
@@ -207,7 +223,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       </div>
       <div class="shopmain">
         <div class="tabs">${TABS.map(([k, n]) => `<button data-a="tab" data-t="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        ${tab === 'legend' ? `<p class="sub lg">The ones with a price are for the richest climbers. The others can't be bought: find the hidden places on Hardcore or Insane (${relicsFound()} of ${RELIC_COUNT} relics found) or do something nobody else would.</p>` : ''}
+        ${tab === 'legend' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found on Hardcore or Insane first and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}
         <div class="shopgrid">${sections(list)}</div>
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },

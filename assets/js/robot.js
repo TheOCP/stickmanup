@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { COLORS } from './colors.js';
 import { Stickman } from './stickman.js';
 import { panelMat } from './worldview.js';
+import { gearGeo, gearMat } from './gear.js';
+import { VAULT_WEAPON } from './relics.js';
 export { COLORS, COLOR_CSS } from './colors.js';
 
 const S = 48, RS = 6, RAD = 0.05;
@@ -86,21 +88,49 @@ export class CoinPool {
 export class RelicMark {
   constructor(scene) {
     this.g = new THREE.Group();
-    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0xff8a10, emissiveIntensity: 2.6, roughness: 0.2, metalness: 0.4 }));
+    this.gemMat = new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0xff8a10, emissiveIntensity: 2.6, roughness: 0.2, metalness: 0.4 });
+    this.gemMat.userData.live = true;
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), this.gemMat);
     gem.scale.y = 1.5;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.028, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc060).multiplyScalar(3) }));
-    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.018, 6, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a30).multiplyScalar(2.4) }));
+    this.ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc060).multiplyScalar(3) });
+    this.ring2Mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a30).multiplyScalar(2.4) });
+    this.ringMat.userData.live = this.ring2Mat.userData.live = true;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.028, 6, 32), this.ringMat);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.018, 6, 32), this.ring2Mat);
     this.gem = gem; this.ring = ring; this.ring2 = ring2;
     this.g.add(gem, ring, ring2);
+    this.guns = new Map();
+    this.kind = 'suit';
     this.g.visible = false;
     scene.add(this.g);
+  }
+
+  // A suit relic is an orange gem, the epic vault's a purple one, and a legendary vault shows the weapon itself.
+  setKind(r) {
+    const key = r.kind === 'weapon' ? VAULT_WEAPON[r.id.split(':')[0]] || '' : r.kind;
+    if (key === this.kind) return;
+    this.kind = key;
+    const epic = r.kind === 'epic';
+    this.gemMat.color.setHex(epic ? 0xb060ff : 0xffa030);
+    this.gemMat.emissive.setHex(epic ? 0x9030ff : 0xff8a10);
+    this.ringMat.color.setHex(epic ? 0xd090ff : 0xffc060).multiplyScalar(3);
+    this.ring2Mat.color.setHex(epic ? 0x8040ff : 0xff8a30).multiplyScalar(2.4);
+    for (const m of this.guns.values()) m.visible = false;
+    this.gem.visible = r.kind !== 'weapon';
+    if (r.kind === 'weapon' && key) {
+      let m = this.guns.get(key);
+      if (!m) { m = new THREE.Mesh(gearGeo(key), gearMat()); m.scale.setScalar(1.6); this.guns.set(key, m); this.g.add(m); }
+      m.visible = true;
+    }
   }
 
   show(r, t) {
     this.g.visible = !!r;
     if (!r) return;
+    this.setKind(r);
     this.g.position.set(r.x, r.y + Math.sin(t * 1.6) * 0.1, r.z);
     this.gem.rotation.y = t * 1.2;
+    for (const m of this.guns.values()) if (m.visible) m.rotation.y = t * 0.9;
     this.ring.rotation.set(t * 1.1, t * 0.7, 0);
     this.ring2.rotation.set(-t * 0.8, 0, t * 0.9);
   }

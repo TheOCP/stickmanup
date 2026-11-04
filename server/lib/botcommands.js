@@ -46,7 +46,8 @@ const COMMANDS = [
   cmd('items', 'What a player owns', PLAYER),
   cmd('giveitem', 'Give an item to a player', PLAYER, ITEM, REASON(false)),
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
-  cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 }),
+  cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 },
+    { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }] }, PAGE),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),
   // Climbs
   cmd('climbs', 'A player\'s last climbs and what the rerun found', PLAYER, COUNT),
@@ -335,8 +336,12 @@ const RUN = {
     return done(ctx, 'takeitem', `${item} from ${playerLine(u)}: ${why}`, `Took ${esc(name)} from ${line(u)}.${withWhy(said)}`);
   },
   catalog(ctx, d) {
-    const q = String(opt(d, 'search') || '').toLowerCase(), all = ctx.s.wallet.catalogList().filter(([k, name]) => k.toLowerCase().includes(q) || name.toLowerCase().includes(q));
-    return ctx.reply(`${all.length} items\n${all.slice(0, 60).map(([k, name, price]) => `${esc(name)} \`${esc(k)}\` ${price ? n0(price) : 'not for sale'}`).join(', ')}${all.length > 60 ? '\nAnd more: search for part of a name.' : ''}`);
+    const q = String(opt(d, 'search') || '').toLowerCase(), kind = opt(d, 'kind') || '', per = 60;
+    const all = ctx.s.wallet.catalogList().filter(([k, name, , kd]) => (k.toLowerCase().includes(q) || name.toLowerCase().includes(q)) &&
+      (!kind || (kind === 'epic' ? kd.endsWith(':epic') : kd.split(':')[0] === kind)));
+    const pages = Math.max(1, Math.ceil(all.length / per)), page = Math.min(pages, opt(d, 'page') || 1), shown = all.slice((page - 1) * per, page * per);
+    const more = pages > 1 ? `\nPage ${page} of ${pages}.${page < pages ? ' Add page: ' + (page + 1) + ' for the next, or search for part of a name.' : ''}` : '';
+    return ctx.reply(`${all.length} items\n${shown.map(([k, name, price]) => `${esc(name)} \`${esc(k)}\` ${price ? n0(price) : 'not for sale'}`).join(', ')}${more}`);
   },
   dailycap(ctx, d) {
     const a = opt(d, 'amount');

@@ -2,7 +2,7 @@
 export const sink = { relics: new Set() };
 export const addCoins = () => {};
 export const firstWin = () => 0;
-export const foundRelic = (id) => { sink.relics.add(id); return [null, null]; };
+export const foundRelic = (id) => { sink.relics.add(id); return null; };
 export const hasRelic = (id) => sink.relics.has(id);
 export const award = () => null;
 export const recordRun = () => {};

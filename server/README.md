@@ -103,13 +103,20 @@ The limits, on top of the anticheat:
 
 * Each coin counts once per climb, and only if the map really has it, at the value of the difficulty
 * The first win bonus once per difficulty per account, never with custom rules
-* Relics only on real Hardcore or Insane, and only ones on that map
+* Relics only ones on that map: the epic vault on any difficulty, the hidden suits and the legendary weapon only on real
+  Hardcore or Insane
+* Epic and legendary things that wait in a vault can only be bought once their relic is found ("Find it first.");
+  finding it never gives the thing itself
 * At most 20000 coins a day, not counting first win bonuses
 
 Everything that changes a balance is written to a log table called `ledger`, kept for 180 days. You can change the limit in
 `/etc/stickmanup/server.env`, then restart the server: `WALLET_DAILY_CAP`, or with the bot's `/dailycap`.
 
-Prices and coin counts come from `lib/catalog.json`. If the game's prices change, update the server too with `--update`.
+Prices and coin counts come from `lib/catalog.json`, and so does which relic each thing needs. If the game's prices
+change, update the server too with `--update`.
+
+Before 1.6.5, finding a hidden relic gave its legendary suit straight away. The first time 1.6.5 starts it gives that suit
+to everyone who had found the relic, so nobody loses one, and notes that it has done so.
 
 ## The anticheat
 
@@ -180,7 +187,7 @@ those channels private. The bot gets every message in the channels it can see, b
 and it stores none of them.
 
 * **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer`
-* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`.
+* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits, and without its relic. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`. `/catalog` lists it all, 60 to a page (`page`), and can search by name or show one kind only (`kind`: suit, epic, legend, face, hat, emote or weapon).
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
 * **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`

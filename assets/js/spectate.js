@@ -4,10 +4,11 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, MAPS, zoneAt } from './level.js';
+import { DIFFS, MAPS, zoneAt, pathsOf } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
+import { weaponOf } from './weapons.js';
 
 const STEP = 1 / 60, DELAY = 0.25, KEEP = 48;
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 };
@@ -17,17 +18,38 @@ const hit = { nx: 0, ny: 0, nz: 0, d: 0 };
 export function feedGame(g) {
   const players = [];
   for (const [s, p] of g.s.players) players.push({ s, name: String(p.name || ''), color: g.colorOf(s), look: p.look || null, role: p.role || '' });
-  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], me: g.slot, players };
+  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], me: g.slot, players, ct: coinBits(g) };
+}
+
+// The coins already taken, one bit each: a few hundred letters even for a whole climb.
+function coinBits(g) {
+  const n = g.L.coins.length, b = new Uint8Array((n + 7) >> 3);
+  for (const i of g.coinTaken) if (Number.isInteger(i) && i >= 0 && i < n) b[i >> 3] |= 1 << (i & 7);
+  let s = '';
+  for (const x of b) s += String.fromCharCode(x);
+  return btoa(s);
+}
+function coinSet(text, n) {
+  const out = new Set();
+  if (typeof text !== 'string' || text.length > 4096) return out;
+  let s;
+  try { s = atob(text); } catch (e) { return out; }
+  for (let k = 0; k < s.length; k++) {
+    const x = s.charCodeAt(k);
+    if (x) for (let j = 0; j < 8; j++) if (x & (1 << j) && k * 8 + j < n) out.add(k * 8 + j);
+  }
+  return out;
 }
 
 // Where everyone is right now.
 export function feedState(g, paused) {
   const me = g.me, rob = g.robots, emote = (s) => { const r = rob.get(s); return r && r.emote ? r.emote.id : 0; };
-  const self = rob.get(g.slot), p = [[g.slot, r3(me.x), r3(me.y), r3(me.z), r3(me.vx), r3(me.vy), r3(me.vz), r3(self ? self.yaw : 0), me.flags, r3(me.reel), r3(me.charge), emote(g.slot)]];
+  const self = rob.get(g.slot), p = [[g.slot, r3(me.x), r3(me.y), r3(me.z), r3(me.vx), r3(me.vy), r3(me.vz), r3(self ? self.yaw : 0), me.flags, r3(me.reel), r3(me.charge), emote(g.slot), r3(g.aimElev || 0)]];
   for (const [s, v] of g.vis || []) {
-    if (s !== g.slot && g.s.players.has(s)) p.push([s, r3(v.x), r3(v.y), r3(v.z), r3(v.vx), r3(v.vy), r3(v.vz), r3(v.yaw || 0), v.flags | 0, r3(v.reel || 0), r3(v.charge || 0), emote(s)]);
+    if (s !== g.slot && g.s.players.has(s)) p.push([s, r3(v.x), r3(v.y), r3(v.z), r3(v.vx), r3(v.vy), r3(v.vz), r3(v.yaw || 0), v.flags | 0, r3(v.reel || 0), r3(v.charge || 0), emote(s), r3(v.elev || 0)]);
   }
   const m = { t: 's', T: r3(g.time), f: g.falls, p };
+  if (g.feedShots && g.feedShots.length) m.sh = g.feedShots.splice(0).map((a) => a.map((v) => (typeof v === 'number' ? r3(v) : v)));
   const j = g.jumpPack();
   if (j.length) m.j = j;
   if (paused) m.z = 1;
@@ -38,6 +60,7 @@ export function feedState(g, paused) {
 // ---------- what the watching phone does with it ----------
 const inList = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
 const rule = (v, d) => (Number.isInteger(v) && v >= 0 && v < DIFFS.length ? v : d);
+const goodShot = (a) => Array.isArray(a) && a.length >= 10 && Number.isInteger(a[0]) && a[0] >= 0 && a[0] < 4 && [1, 2, 3, 4, 5, 6, 9].every((i) => Number.isFinite(a[i]) && Math.abs(a[i]) < 1e5) && typeof a[8] === 'string' && a[8].length < 24;
 const goodRow = (a) => Array.isArray(a) && a.length >= 11 && Number.isInteger(a[0]) && a[0] >= 0 && a[0] < 4 && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every((i) => Number.isFinite(a[i]) && Math.abs(a[i]) < 1e6);
 
 export class Spectator {
@@ -63,6 +86,9 @@ export class Spectator {
     this.jump = [];
     this.jrigs = new Map();
     this.doors = new Set();
+    this.coinTaken = new Set();
+    this.shots = [];
+    this.shotAt = new Map();
     this.focus = 0;
     this.touched = -9;
     this.snap = true;
@@ -118,9 +144,15 @@ export class Spectator {
       app.view.resetDoors();
       this.doors = new Set();
       const custom = ['cps', 'haz', 'rope'].some((k) => rules[k] !== undefined && rules[k] !== diff);
-      app.view.setSecrets(diff >= 2 && !custom);
+      this.storm.sec = pathsOf(diff, custom);
+      app.view.setSecrets(this.storm.sec);
       app.pool.coins.clear();
       app.pool.relic.show(null);
+      // Coins sorted into 8 m slices of height, the same as a climb does it.
+      if (!this.L.coinBuilt) { this.L.coinBuilt = true; this.L.coinB = this.L.coinB || {}; for (const c of this.L.coins) (this.L.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
+      this.coinTaken = new Set();
+      this.shots = [];
+      this.shotAt.clear();
       this.frames.length = 0;
       this.clock = null;
       this.snap = true;
@@ -133,6 +165,7 @@ export class Spectator {
         app.view.openDoor(i);
       }
     }
+    if (g.ct !== undefined) this.coinTaken = coinSet(g.ct, this.L.coins.length);
     const noCord = !!g.noCord, seen = new Map();
     for (const p of Array.isArray(g.players) ? g.players.slice(0, 4) : []) {
       if (!p || !Number.isInteger(p.s) || p.s < 0 || p.s > 3) continue;
@@ -178,6 +211,8 @@ export class Spectator {
     this.held = !!m.z;
     this.won = !!m.w;
     if (Array.isArray(m.j)) this.jump = m.j.slice(0, 80); else this.jump = [];
+    // Shots wait until the moment they were fired comes round, like everything else here.
+    if (Array.isArray(m.sh)) for (const a of m.sh.slice(0, 16)) if (goodShot(a) && this.shots.length < 48) this.shots.push(a);
     if (T <= this.lastT && this.frames.length) return;
     this.lastT = T;
     const p = new Map();
@@ -207,6 +242,7 @@ export class Spectator {
       o.x = s[1] + s[4] * e; o.y = s[2] + s[5] * e; o.z = s[3] + s[6] * e;
     }
     o.vx = s[4]; o.vy = s[5]; o.vz = s[6]; o.yaw = s[7]; o.flags = s[8] | 0; o.reel = s[9]; o.charge = s[10];
+    o.elev = Number.isFinite(s[12]) ? clamp(s[12], -1.6, 1.6) : 0;
     return o;
   }
 
@@ -224,15 +260,22 @@ export class Spectator {
     const T = this.clock === null ? 0 : this.held ? this.lastT : now + this.clock - DELAY;
     // This is what reads the controller's sticks. What it says about moving is for playing, so it goes nowhere.
     app.input.read(0);
+    // Lifts and other moving platforms to where they are at this moment. Without this they stood still while the climber
+    // rode them, and the climber seemed to sink into them.
+    W.setTime(T - STEP);
     for (const [slot, r] of this.robots) {
       const o = this.vis.get(slot) || {}, got = this.sample(slot, T, o);
       r.g.visible = !!got;
       if (!got) { this.vis.delete(slot); r.hide(); continue; }
+      // Standing on something: exactly on top of it, whatever the timing of the updates did in between.
+      const fl = W.floorBelow(o.x, o.y + 0.3, o.z, 30);
+      if (o.flags & F.GROUND && fl > -50 && Math.abs(fl + PR - o.y) < 0.5) o.y = fl + PR;
       this.vis.set(slot, o);
       const e = this.emoteOf(slot);
       if (e !== (this.emotes.get(slot) || 0)) { this.emotes.set(slot, e); if (e) r.playEmote(e); }
-      r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(o.x, o.y, o.z, 30), o.yaw, 9);
+      r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, fl, o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
     }
+    this.playShots(T);
     for (const lk of this.links) {
       const A = this.vis.get(lk.a), B = this.vis.get(lk.b);
       if (!A || !B) { lk.mesh.mesh.visible = false; continue; }
@@ -289,6 +332,7 @@ export class Spectator {
     app.sound.ambient(0.2 + (me.y / L.top) * 0.6 + (gust && gust.on ? 0.8 : 0), false, 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     app.view.update(T - STEP, dt, this.storm, 1);
+    app.pool.coins.update(dt, T, L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, L.coinB);
     app.sound.setStyle(L.mapKey);
     app.sound.setIntensity(0.3 + clamp(me.y / L.top, 0, 1) * 0.7);
     app.ui.tags(this.tagsView || (this.tagsView = { vis: this.vis, s: { players: this.players } }));
@@ -300,6 +344,24 @@ export class Spectator {
       const p = this.players.get(this.focus), marks = [];
       for (const [s, v] of this.vis) marks.push([s, clamp(v.y / L.top, 0, 1) * 100]);
       this.hooks.info({ name: p ? p.name : '', map: MAPS[this.map].name, diff: DIFFS[this.diff].name, T: Math.max(0, T), h: Math.max(0, Math.round(me.y - PR - 2)), top: Math.round(L.top - 2), falls: this.falls, held: this.held, won: this.won, marks });
+    }
+  }
+
+  // Every shot whose moment has come: the streak of light, its sound and its blast.
+  playShots(T) {
+    const app = this.app, cam = this.R.camera.position;
+    for (let i = 0; i < this.shots.length; ) {
+      const a = this.shots[i];
+      // Ones from long ago (a climb picked up again) are dropped.
+      if (a[9] > T && a[9] < T + 5) { i++; continue; }
+      this.shots.splice(i, 1);
+      if (a[9] < T - 2 || a[9] > T + 5) continue;
+      const gun = weaponOf(a[8]), from = [a[1], a[2], a[3]], to = [a[4], a[5], a[6]];
+      this.shotAt.set(a[0], a[9]);
+      app.fx.tracer(a[0], from, to, !!a[7], gun);
+      if (gun.blast && a[7]) app.fx.blast(a[0], to[0], to[1], to[2], gun);
+      const d = Math.hypot(from[0] - cam.x, from[1] - cam.y, from[2] - cam.z);
+      if (d < 70) app.sound.shoot(gun.snd, clamp(1 - d / 70, 0.15, 0.8));
     }
   }
 

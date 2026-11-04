@@ -12,27 +12,37 @@ const { generateLevel, MAPS, DIFFS } = await import('../assets/js/level.js');
 const { SUITS, FACES, HATS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
 const { WEAPONS } = await import('../assets/js/weapons.js');
+const { needOf, SUIT_RELICS } = await import('../assets/js/relics.js');
 
-const items = {}, names = {};
+const items = {}, names = {}, need = {}, relicSuits = {}, kinds = {};
+// What each thing is, for the bot's /catalog to list by kind: suit, legendary, face, hat, emote or weapon (and epic for
+// the epic suits, faces and hats).
+const KIND = new Map();
+for (const [list, k] of [[SUITS, 'suit'], [LEGENDS, 'legend'], [FACES, 'face'], [HATS, 'hat'], [EMOTES, 'emote'], [WEAPONS, 'weapon']]) for (const it of list) KIND.set(it, k);
 for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...EMOTES, ...WEAPONS]) {
   // Free things everybody has already. All the rest can be given by the bot, except the team suits: those go with a flag.
   if (it.price === 0) continue;
   const key = itemKey(it);
   if (names[key] !== undefined) throw new Error(`${key} is in the game twice`);
   names[key] = it.name;
-  // Only what the shop sells has a price: legendaries can't be bought.
-  if (it.price > 0 && !it.relic && !it.ach) items[key] = it.price;
+  kinds[key] = KIND.get(it) + (it.r === 2 && KIND.get(it) !== 'legend' ? ':epic' : '');
+  // Only what the shop sells has a price. Some of it can only be bought once its relic is found (relics.js).
+  if (it.price > 0 && !it.ach) items[key] = it.price;
+  const n = needOf(it);
+  if (n) need[key] = n;
+  if (it.relic) relicSuits[it.relic] = key;
 }
 const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
 const maps = MAPS.map((M) => {
   const L = generateLevel(M.id);
   L.coins.forEach((c, i) => { if (c.i !== i) throw new Error(`coin numbers on ${M.key} have holes`); });
-  return { key: M.key, coins: L.coins.length, relics: L.relics.map((r) => r.id) };
+  // open: the relics that are there on every difficulty (the epic vaults). The others only on real Hardcore and Insane.
+  return { key: M.key, coins: L.coins.length, relics: L.relics.map((r) => r.id), open: L.relics.filter((r) => r.kind === 'epic').map((r) => r.id) };
 });
-const relicCount = LEGENDS.filter((l) => l.relic).length;
+const relicCount = SUIT_RELICS.length;
 // Which flags may wear the team suits.
 const team = Object.fromEntries(OWNERS.map((o) => [o.id, o.team]));
-const catalog = { team, items: sorted(items), names: sorted(names), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount };
+const catalog = { team, items: sorted(items), names: sorted(names), kinds: sorted(kinds), need: sorted(need), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount, suitRelics: SUIT_RELICS, relicSuits };
 
 const file = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server/lib/catalog.json');
 const text = JSON.stringify(catalog) + '\n';

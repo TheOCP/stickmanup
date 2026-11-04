@@ -85,8 +85,8 @@ export const GEAR = {
   ],
   hemgg: () => [cyl(0.13, 0.2, 0.22, 0, 0.03, 0, 0xff6aa8), tor(0.2, 0.012, 0, -0.08, 0, 0xffffff)],
 };
-// Where each attaches when it isn't on the head: the hips, the back (in the torso's own space, from the hips up) or a pair of
-// wings on the shoulder blades. Some move by themselves.
+// Where each attaches when it isn't on the head: the hips, the back or the chest (both in the torso's own space, from the hips
+// up), a tail (on the hips, behind) or a pair of wings on the shoulder blades. Some move by themselves.
 export const GEAR_AT = { hemgg: 'hips' };
 export const GEAR_ANIM = {};
 
@@ -256,6 +256,235 @@ for (const id of ['wings_angel', 'wings_fire', 'wings_energy', 'wings_ice', 'win
 for (const id of ['katana_back', 'scythe_back', 'orbs_void', 'orbs_gold', 'ring_diamond', 'ring_prism', 'ring_synth']) GEAR_AT[id] = 'back';
 for (const id of ['orbs_void', 'orbs_gold', 'ring_diamond', 'ring_prism', 'ring_synth']) GEAR_ANIM[id] = 'spin';
 
+// ---------------------------------------------------------------- epic extras: one thing each costume carries
+// 'back' and 'chest' sit on the torso (its own space: the hips at 0, the shoulders at y 0.46, the back at z -0.105 and the chest
+// at +0.105, the head's centre at y 0.72 with radius 0.2), 'hips' and 'tail' on the hips. On the shop's cards things on the back
+// and tails are drawn behind the climber, the rest in front.
+// A bent tube through points, thinner towards the end; col is a colour or gives one for each piece.
+const tube = (pts, r0, r1, col, glow, gk, n = 8) => {
+  const out = [], up = new THREE.Vector3(0, 1, 0), last = pts.length - 1;
+  for (let k = 0; k < last; k++) {
+    const a = pts[k], b = pts[k + 1], d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length();
+    const q = new THREE.Quaternion().setFromUnitVectors(up, d.normalize());
+    out.push(part(new THREE.CylinderGeometry(r0 + ((r1 - r0) * (k + 1)) / last, r0 + ((r1 - r0) * k) / last, L * 1.06, n),
+      new THREE.Matrix4().compose(new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), q, new THREE.Vector3(1, 1, 1)),
+      typeof col === 'function' ? col(k) : col, glow, gk));
+  }
+  return out;
+};
+// Parts built round their own origin, moved and turned as one.
+const place = (parts, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = M(x, y, z, 1, 1, 1, rx, ry, rz); return parts.map((p) => Object.assign({}, p, { m: m.clone().multiply(p.m) })); };
+const rock = (r, x, y, z, c, t = 0, glow, gk) => part(new THREE.IcosahedronGeometry(r, 0), M(x, y, z, 1, 0.85, 1, t, t * 2, 0), c, glow, gk);
+// Half a ring standing up, its ends at the sides.
+const arch = (R, r, x, y, z, c, glow, gk) => part(new THREE.TorusGeometry(R, r, 5, 22, Math.PI), M(x, y, z), c, glow, gk);
+
+Object.assign(GEAR, {
+  // Ninja: a plain blade in a black scabbard, the grip bound in red.
+  ninjato: () => {
+    const A = [-0.2, 0.76], B = [0.2, -0.02], at = (k) => [A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k], z = -0.15;
+    return [stick(at(0), at(0.24), 0.02, 0.02, 0xb01a24, 0, 0, z), ...[0.03, 0.08, 0.13, 0.18].map((k) => stick(at(k), at(k + 0.025), 0.022, 0.022, 0x14161c, 0, 0, z)),
+      stick(at(0.245), at(0.265), 0.052, 0.052, 0xc8a040, 0, 0, z), stick(at(0.27), at(1), 0.024, 0.02, 0x101216, 0, 0, z),
+      stick(at(0.45), at(0.48), 0.028, 0.028, 0xb01a24, 0, 0, z), stick(at(0.96), at(1), 0.025, 0.022, 0xc8a040, 0, 0, z)];
+  },
+  // Pirate: a parrot on the left shoulder.
+  // Out past the edge of the head: the head is wide, and the shoulders are under it.
+  parrot: () => {
+    const x = 0.24, y = 0.58, z = -0.02, hx = x + 0.02;
+    return [sph(0.055, x, y, z, 0xe0302a, 1, 1.35, 1.1), sph(0.046, hx, y + 0.085, z + 0.025, 0xe0302a),
+      cone(0.017, 0.05, hx, y + 0.072, z + 0.085, 0xffc830, Math.PI / 2 + 0.5), sph(0.014, hx, y + 0.06, z + 0.062, 0x2a2a2a),
+      ...[1, -1].flatMap((s) => [sph(0.012, hx + s * 0.03, y + 0.095, z + 0.05, 0xffffff), sph(0.006, hx + s * 0.034, y + 0.097, z + 0.059, 0x101010),
+        sph(0.032, x + s * 0.046, y - 0.01, z - 0.01, 0x2a6ad8, 0.45, 1.4, 1.15), sph(0.02, x + s * 0.05, y - 0.05, z - 0.03, 0xffc830, 0.4, 1, 0.8),
+        box(0.012, 0.03, 0.012, x + s * 0.016, y - 0.078, z + 0.012, 0x3a3a3a)]),
+      box(0.04, 0.17, 0.012, x, y - 0.12, z - 0.07, 0x2a6ad8, 0.5), box(0.026, 0.13, 0.012, x, y - 0.1, z - 0.058, 0x30b040, 0.45)];
+  },
+  // Skeleton: two big crossed bones.
+  bones_x: () => {
+    const out = [];
+    for (const s of [-1, 1]) {
+      const a = [-0.16 * s, 0.5], b = [0.16 * s, 0.06], z = s > 0 ? -0.165 : -0.135, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), px = -dy / L, py = dx / L;
+      out.push(stick(a, b, 0.022, 0.022, 0xefe8d4, 0, 0, z));
+      for (const p of [a, b]) for (const k of [-1, 1]) out.push(sph(0.033, p[0] + px * k * 0.026, p[1] + py * k * 0.026, z, 0xefe8d4));
+    }
+    return out;
+  },
+  // Robot: twin jets with blue flames.
+  jetpack: () => {
+    const z = -0.2, out = [box(0.1, 0.26, 0.07, 0, 0.3, -0.14, 0x4a5464), box(0.24, 0.03, 0.08, 0, 0.42, -0.15, 0x363c48)];
+    for (const s of [-1, 1]) {
+      const x = s * 0.075;
+      out.push(cyl(0.05, 0.05, 0.28, x, 0.3, z, 0xa8b2c0), sph(0.05, x, 0.44, z, 0xa8b2c0, 1, 0.7, 1), tor(0.051, 0.009, x, 0.36, z, 0xff4a3a),
+        cyl(0.03, 0.044, 0.06, x, 0.135, z, 0x363c48), tor(0.03, 0.007, x, 0.104, z, 0x40e8ff, Math.PI / 2, 0, 0x40e8ff, 2.6),
+        cyl(0.028, 0.002, 0.12, x, 0.04, z, 0xc8f8ff, 0, 0, 0x40e8ff, 3));
+    }
+    return out;
+  },
+  // Knight: a white shield with a red cross.
+  shield_back: () => {
+    const z = -0.16, y = 0.27;
+    return [box(0.03, 0.2, 0.04, 0, y, -0.125, 0x5a4028), cyl(0.19, 0.19, 0.026, 0, y, z, 0xf0f0f0, Math.PI / 2), tor(0.19, 0.016, 0, y, z, 0xb8c0cc, 0),
+      box(0.05, 0.3, 0.01, 0, y, z - 0.016, 0xc02a2a), box(0.3, 0.05, 0.01, 0, y + 0.03, z - 0.016, 0xc02a2a), sph(0.03, 0, y + 0.03, z - 0.02, 0xd8b040, 1, 1, 0.6)];
+  },
+  // Astronaut: the life support pack, its lights and the hose to the helmet.
+  lifepack: () => {
+    const z = -0.18;
+    return [box(0.24, 0.34, 0.13, 0, 0.3, z, 0xeef0f4), box(0.25, 0.07, 0.136, 0, 0.43, z, 0xc8ccd4), box(0.25, 0.03, 0.136, 0, 0.16, z, 0xc8ccd4),
+      box(0.13, 0.1, 0.01, 0.04, 0.27, z - 0.066, 0x2a3040), ...[0xff4040, 0x40ff70, 0x40c0ff].map((c, i) => sph(0.012, i * 0.03, 0.295, z - 0.072, c, 1, 1, 0.5, c, 3)),
+      box(0.06, 0.035, 0.01, 0.05, 0.25, z - 0.072, 0x40c0ff, 0, 0, 0, 0x40c0ff, 0.8), ...[0, 1, 2].map((i) => box(0.07, 0.008, 0.01, -0.07, 0.22 + i * 0.03, z - 0.066, 0x8a96a8)),
+      ...tube([[0.1, 0.44, -0.12], [0.15, 0.52, -0.06], [0.14, 0.58, 0.04]], 0.014, 0.014, 0x9aa2b0)];
+  },
+  // Zombie: somebody already tried.
+  arrows: () => {
+    const one = [cyl(0.008, 0.008, 0.34, 0, 0, -0.15, 0x8a6a40, Math.PI / 2), box(0.004, 0.05, 0.08, 0, 0, -0.29, 0xe8e0d0), box(0.05, 0.004, 0.08, 0, 0, -0.29, 0xd82a2a),
+      cyl(0.011, 0.011, 0.012, 0, 0, -0.325, 0x2a2a2a, Math.PI / 2)];
+    return [...place(one, 0.05, 0.36, -0.08, 0.5, 0.35), ...place(one, -0.06, 0.16, -0.08, -0.2, -0.3)];
+  },
+  // Mummy: a scarab on the chest, and loose ends of bandage at the back.
+  scarab: () => [sph(0.032, 0, 0.36, 0.108, 0x2a6ad8, 1, 1.25, 0.45, 0x2a6ad8, 0.5), sph(0.016, 0, 0.405, 0.108, 0xd8b040, 1, 1, 0.5),
+    ...[1, -1].map((s) => box(0.05, 0.022, 0.008, s * 0.042, 0.365, 0.106, 0xd8b040, 0, 0, s * 0.35)), ...tube([[-0.07, 0.47, 0.085], [0, 0.4, 0.112], [0.07, 0.47, 0.085]], 0.005, 0.005, 0xd8b040)],
+  wraps: () => [[0.06, -0.02, 0.12, 0xd8cca8], [-0.045, -0.05, -0.1, 0xc8bc98], [0.01, 0.3, 0.2, 0xe0d6b4]].map(([x, y, rz, c], i) => box(0.04, 0.26, 0.006, x, y - 0.1, -0.11 - i * 0.004, c, 0.12, 0, rz)),
+  // Clown: three balloons on strings.
+  balloons: () => {
+    const knot = [0, 0.4, -0.12], out = [];
+    for (const [x, y, z, c] of [[0.02, 1.36, -0.46, 0xff3040], [0.2, 1.24, -0.42, 0xffd030], [-0.17, 1.26, -0.4, 0x3a8aff]]) {
+      out.push(sph(0.12, x, y, z, c, 1, 1.18, 1, c, 0.3), cone(0.022, 0.035, x, y - 0.15, z, c, Math.PI),
+        ...tube([knot, [x * 0.45, (knot[1] + y) / 2, (knot[2] + z) / 2 - 0.08], [x, y - 0.16, z]], 0.004, 0.004, 0xf4f4f4, 0, 0, 4));
+    }
+    return out;
+  },
+  // Santa: the sack, full of presents.
+  sack: () => [sph(0.17, 0.02, 0.33, -0.25, 0x7a4a24, 1.05, 1.2, 0.82), tor(0.1, 0.02, 0.02, 0.53, -0.25, 0x5a3418, Math.PI / 2 + 0.2),
+    box(0.11, 0.11, 0.11, -0.03, 0.57, -0.25, 0x2a9a4a, 0.3, 0.5), box(0.113, 0.022, 0.113, -0.03, 0.57, -0.25, 0xffd24a, 0.3, 0.5), box(0.022, 0.113, 0.113, -0.03, 0.57, -0.25, 0xffd24a, 0.3, 0.5),
+    box(0.09, 0.09, 0.09, 0.08, 0.56, -0.29, 0x3a6ad8, -0.2, 0.3), box(0.092, 0.018, 0.092, 0.08, 0.56, -0.29, 0xffffff, -0.2, 0.3),
+    cyl(0.028, 0.028, 0.14, 0.05, 0.6, -0.2, 0xe02030, 0.4, -0.3)],
+  // Tuxedo: tails, and a rose.
+  coattails: () => [1, -1].map((s) => box(0.085, 0.34, 0.014, s * 0.048, -0.1, -0.106, 0x14161c, 0.1, 0, s * 0.05)),
+  rose: () => [sph(0.026, 0.072, 0.42, 0.085, 0xc01a2a, 1, 1, 0.7), tor(0.016, 0.007, 0.072, 0.42, 0.1, 0x8a0a1a, 0), box(0.03, 0.012, 0.006, 0.05, 0.4, 0.088, 0x2a8a3a, 0, 0, 0.6)],
+  // Cowboy: a coiled lasso at the hip.
+  lasso: () => [...[0, 1, 2].map((i) => tor(0.085 + i * 0.008, 0.01, -0.19 - i * 0.006, -0.03 + i * 0.01, 0, 0xc8a060, 0, Math.PI / 2)), box(0.012, 0.06, 0.03, -0.19, 0.06, 0, 0x6a4a22)],
+  // Firefighter: the air tank and its hose.
+  airtank: () => {
+    const z = -0.19;
+    return [cyl(0.075, 0.075, 0.34, 0, 0.27, z, 0xd8dce4), sph(0.075, 0, 0.44, z, 0xd8dce4, 1, 0.6, 1), sph(0.075, 0, 0.1, z, 0xd8dce4, 1, 0.5, 1),
+      tor(0.077, 0.012, 0, 0.18, z, 0xf0e020, Math.PI / 2, 0, 0xf0ff60, 0.9), tor(0.077, 0.012, 0, 0.36, z, 0xf0e020, Math.PI / 2, 0, 0xf0ff60, 0.9),
+      cyl(0.018, 0.018, 0.05, 0, 0.5, z, 0x2a2a2e), cyl(0.032, 0.032, 0.014, 0, 0.53, z, 0xd82a2a), box(0.2, 0.04, 0.05, 0, 0.3, -0.125, 0x2a2a2e),
+      ...tube([[0, 0.53, z], [-0.08, 0.57, -0.17], [-0.15, 0.5, -0.05], [-0.14, 0.38, 0.09]], 0.012, 0.012, 0x2a2a2e)];
+  },
+  // Doctor: a stethoscope round the neck.
+  stetho: () => {
+    const c = 0x2a2e36;
+    return [...tube([[0.1, 0.5, 0.05], [0.08, 0.53, -0.07], [0, 0.545, -0.115], [-0.08, 0.53, -0.07], [-0.1, 0.5, 0.05]], 0.008, 0.008, c),
+      ...[1, -1].flatMap((s) => tube([[s * 0.1, 0.5, 0.05], [s * 0.075, 0.44, 0.1], [s * 0.03, 0.36, 0.112], [0, 0.34, 0.112]], 0.008, 0.008, c)),
+      ...tube([[0, 0.34, 0.112], [0.02, 0.28, 0.114], [0.025, 0.24, 0.116]], 0.009, 0.009, c),
+      cyl(0.03, 0.03, 0.014, 0.025, 0.225, 0.118, 0xc8d0dc, Math.PI / 2), cyl(0.02, 0.02, 0.016, 0.025, 0.225, 0.121, 0x9aa4b2, Math.PI / 2)];
+  },
+  // Super Stick: a golden belt with a shining buckle.
+  belt_hero: () => [tor(0.1, 0.016, 0, 0.04, 0, 0xffd24a, Math.PI / 2, 0, 0xffb020, 0.4), box(0.07, 0.05, 0.02, 0, 0.04, 0.1, 0xffe070, 0, 0, 0, 0xffc040, 1.6)],
+  // Tiger and zebra: tails.
+  tail_tiger: () => [...tube([[0, 0.03, -0.09], [0, -0.02, -0.19], [0, -0.09, -0.29], [0.02, -0.13, -0.4], [0.04, -0.11, -0.51], [0.05, -0.04, -0.6], [0.05, 0.05, -0.65], [0.04, 0.13, -0.66]],
+    0.036, 0.024, (k) => (k % 2 ? 0x17120a : 0xf08a1e)), sph(0.026, 0.04, 0.14, -0.66, 0x17120a)],
+  tail_zebra: () => [...tube([[0, 0.03, -0.09], [0, -0.03, -0.17], [0, -0.13, -0.22], [0, -0.25, -0.24]], 0.022, 0.016, (k) => (k % 2 ? 0x121212 : 0xf4f4f4)), sph(0.05, 0, -0.34, -0.245, 0x121212, 0.7, 1.7, 0.7)],
+  // Camouflage: an army rucksack with a bedroll.
+  rucksack: () => {
+    const z = -0.18;
+    return [box(0.24, 0.3, 0.14, 0, 0.27, z, 0x4a5a30), box(0.245, 0.08, 0.15, 0, 0.4, z - 0.004, 0x3a4a26, -0.08), box(0.13, 0.1, 0.03, 0, 0.2, z - 0.08, 0x56663a),
+      ...[1, -1].map((s) => box(0.05, 0.14, 0.1, s * 0.14, 0.22, z + 0.01, 0x56663a)),
+      cyl(0.05, 0.05, 0.3, 0, 0.47, z, 0x2e3a22, 0, Math.PI / 2), ...[1, -1].map((s) => tor(0.052, 0.008, s * 0.08, 0.47, z, 0x1a1e12, 0, Math.PI / 2)),
+      ...[1, -1].map((s) => box(0.03, 0.2, 0.012, s * 0.07, 0.29, -0.11, 0x2a3220))];
+  },
+  // Snow camo: skis and poles.
+  skis_back: () => {
+    const z = -0.21, out = [];
+    for (const s of [-1, 1]) {
+      out.push(box(0.05, 0.9, 0.014, s * 0.034, 0.28, z, 0xe8303a), box(0.012, 0.88, 0.016, s * 0.034, 0.28, z, 0xf4f4f4),
+        box(0.05, 0.08, 0.014, s * 0.034, 0.75, z - 0.022, 0xe8303a, -0.7),
+        cyl(0.007, 0.007, 0.86, s * 0.11, 0.26, -0.24, 0x3a424c, 0, s * 0.1), tor(0.03, 0.005, s * 0.153, -0.12, -0.24, 0x1a1a1a), cyl(0.012, 0.012, 0.08, s * 0.072, 0.64, -0.24, 0x1a1a1a, 0, s * 0.1));
+    }
+    out.push(...[0.12, 0.38].map((y) => box(0.16, 0.025, 0.12, 0, y, -0.165, 0x2a2f38)));
+    return out;
+  },
+  // Galaxy: a ringed planet and a moon going round.
+  planets: () => [sph(0.07, 0.46, 0.62, 0, 0xc890ff, 1, 1, 1, 0x8a40ff, 0.7), tor(0.12, 0.01, 0.46, 0.62, 0, 0xffe0a0, Math.PI / 2 + 0.45, 0, 0xffc060, 1.2),
+    sph(0.04, -0.44, 0.78, 0.12, 0x9ff0ff, 1, 1, 1, 0x60d0ff, 1.4), sph(0.025, -0.1, 0.95, -0.42, 0xfff4b0, 1, 1, 1, 0xffe080, 2.4)],
+  // Lava rock: smouldering stones on the shoulders.
+  magma: () => {
+    const out = [];
+    for (const s of [-1, 1]) out.push(rock(0.075, s * 0.19, 0.5, -0.01, 0x2a120a, 0.3 * s), rock(0.05, s * 0.23, 0.47, 0.05, 0x3a1a0e, 0.7 * s), rock(0.045, s * 0.16, 0.52, -0.09, 0x2a120a, 1.1 * s),
+      shard(0.02, 2.2, s * 0.2, 0.58, 0, 0xffa030, 0.3, 0, -s * 0.5, 0xff5a10, 3), shard(0.016, 2, s * 0.25, 0.52, -0.04, 0xffa030, -0.3, 0, -s * 0.8, 0xff5a10, 3),
+      shard(0.014, 1.8, s * 0.17, 0.47, 0.06, 0xffa030, 0.4, 0, -s * 0.3, 0xff5a10, 2.6));
+    return out;
+  },
+  // Frostbite: ice growing out of the shoulders.
+  ice_spikes: () => {
+    const out = [];
+    for (const s of [-1, 1]) out.push(shard(0.03, 4, s * 0.2, 0.58, -0.02, 0xd8f6ff, 0, 0, -s * 0.6, 0x60c8ff, 1.3), shard(0.024, 3.4, s * 0.23, 0.53, 0.04, 0xd8f6ff, 0.3, 0, -s * 1, 0x60c8ff, 1.3),
+      shard(0.022, 3, s * 0.17, 0.57, -0.08, 0xd8f6ff, -0.4, 0, -s * 0.3, 0x80d8ff, 1.6));
+    return out;
+  },
+  // Solid gold: a thick chain and a medallion.
+  bling: () => [tor(0.135, 0.013, 0, 0.47, 0, 0xffd24a, Math.PI / 2 + 0.55, 0, 0xffb020, 0.5),
+    cyl(0.046, 0.046, 0.014, 0, 0.36, 0.115, 0xffd24a, Math.PI / 2, 0, 0xffb020, 0.6), tor(0.046, 0.008, 0, 0.36, 0.123, 0xfff0a0, 0, 0, 0xffc040, 1), sph(0.018, 0, 0.36, 0.123, 0xff2040, 1, 1, 0.6, 0xff2040, 2.4)],
+  // Chrome: swept fins with glowing edges.
+  fins: () => [[0, 0.36, 0.22, 0.15, 0], [0.09, 0.3, 0.16, 0.11, -0.35], [-0.09, 0.3, 0.16, 0.11, 0.35]].flatMap(([x, y, h, d, rz]) =>
+    place([box(0.014, h, d, 0, 0, 0, 0xc8d0dc), box(0.018, h * 0.92, 0.012, 0, 0, -d / 2, 0x60e0ff, 0, 0, 0, 0x60e0ff, 2.2)], x, y, -0.1 - d / 2, -0.55, 0, rz)),
+  // Wizard: a spellbook on the belt.
+  spellbook: () => [tor(0.104, 0.009, 0, 0.03, 0, 0x5a3a1e), box(0.012, 0.06, 0.012, 0.2, 0.02, 0, 0x5a3a1e),
+    ...place([box(0.05, 0.17, 0.13, 0, 0, 0, 0x4a1a7a), box(0.04, 0.16, 0.012, 0, 0, 0.06, 0xf0e6c8), box(0.006, 0.06, 0.06, 0.026, 0, 0, 0xffd24a, 0, 0, 0, 0xffc040, 2.2),
+      ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([a, b]) => box(0.054, 0.025, 0.025, 0, a * 0.075, b * 0.055, 0xd8b040))], 0.215, -0.08, 0, 0, 0, 0.12)],
+  // Vampire: a high collar, red inside, and a ruby brooch.
+  collar: () => [part(new THREE.CylinderGeometry(0.24, 0.13, 0.22, 20, 1, true, Math.PI / 2 + 0.3, Math.PI - 0.6), M(0, 0.61, 0), 0x16101a),
+    part(new THREE.CylinderGeometry(0.234, 0.124, 0.215, 20, 1, true, Math.PI / 2 + 0.32, Math.PI - 0.64), M(0, 0.61, 0), 0xa01020),
+    sph(0.022, 0, 0.47, 0.104, 0xe01a2a, 1, 1, 0.5, 0xff2030, 1.6), tor(0.026, 0.006, 0, 0.47, 0.108, 0xd8b040, 0)],
+  // Toxic: a glowing canister, piped round to the front.
+  canister: () => {
+    const z = -0.19;
+    return [cyl(0.068, 0.068, 0.28, 0, 0.28, z, 0x9cff2a, 0, 0, 0x7aff20, 1.5), cyl(0.078, 0.078, 0.045, 0, 0.44, z, 0x2a2f38), cyl(0.078, 0.078, 0.045, 0, 0.12, z, 0x2a2f38),
+      cyl(0.03, 0.03, 0.04, 0, 0.48, z, 0x3a404c), ...[0.2, 0.36].map((y) => tor(0.07, 0.01, 0, y, z, 0xffd030)),
+      ...[[0.02, 0.22], [-0.03, 0.3], [0.025, 0.37]].map(([x, y]) => sph(0.016, x, y, z - 0.062, 0xf0ffb0, 1, 1, 1, 0xd0ff60, 2.6)),
+      box(0.16, 0.04, 0.06, 0, 0.3, -0.13, 0x2a2f38), ...tube([[0, 0.5, z], [-0.1, 0.52, -0.16], [-0.17, 0.4, -0.03], [-0.17, 0.25, 0.05]], 0.011, 0.011, 0x2a2f38)];
+  },
+  // Rainbow: a rainbow over the shoulders, from cloud to cloud.
+  rainbow_arc: () => [...[0xff3040, 0xff8a20, 0xffe030, 0x40d850, 0x30a0ff, 0x8050f0].map((c, i) => arch(0.33 - i * 0.022, 0.012, 0, 0.42, -0.24, c, c, 0.7)),
+    ...[1, -1].flatMap((s) => [sph(0.06, s * 0.28, 0.42, -0.24, 0xffffff, 1.2, 0.8, 0.8), sph(0.045, s * 0.33, 0.44, -0.23, 0xffffff), sph(0.045, s * 0.23, 0.45, -0.25, 0xffffff)])],
+  // Neon grid: a light disc on the back.
+  disc_back: () => {
+    const z = -0.15, y = 0.32;
+    return [box(0.04, 0.12, 0.04, 0, y, -0.12, 0x14081c), cyl(0.125, 0.125, 0.02, 0, y, z, 0x14081c, Math.PI / 2), tor(0.125, 0.014, 0, y, z, 0xff2ad8, 0, 0, 0xff2ad8, 2.6),
+      tor(0.07, 0.008, 0, y, z - 0.012, 0x30f0ff, 0, 0, 0x30f0ff, 2.4), sph(0.022, 0, y, z - 0.012, 0xffffff, 1, 1, 0.5, 0xff80f0, 2.6)];
+  },
+  // Pumpkin head: a pumpkin pail of sweets on the belt.
+  candy_bucket: () => {
+    const x = 0.26, y = -0.12, z = 0.02;
+    return [tor(0.104, 0.009, 0, 0.03, 0, 0x2a1a0e), box(0.012, 0.09, 0.012, 0.21, 0.0, z, 0x2a1a0e, 0, 0, 0.4),
+      sph(0.075, x, y, z, 0xee7a14, 1, 0.82, 1), tor(0.05, 0.01, x, y + 0.058, z, 0x2a1a0e), arch(0.06, 0.006, x, y + 0.06, z, 0x17120e),
+      ...[1, -1].map((s) => cone(0.014, 0.022, x + s * 0.025, y + 0.01, z + 0.073, 0xffd040, Math.PI / 2, 0, 0xffa020, 2.6)), box(0.04, 0.012, 0.01, x, y - 0.025, z + 0.072, 0xffd040, 0, 0, 0, 0xffa020, 2.6),
+      sph(0.016, x + 0.015, y + 0.07, z, 0xff3a6a), sph(0.014, x - 0.02, y + 0.068, z + 0.01, 0x40c0ff), sph(0.013, x, y + 0.072, z - 0.02, 0xffe040)];
+  },
+  // Samurai: a banner on a pole, high over the helmet.
+  sashimono: () => {
+    const z = -0.22, px = -0.07;
+    return [cyl(0.01, 0.01, 1.08, px, 0.66, z, 0x2a1a10), cyl(0.008, 0.008, 0.27, px + 0.13, 1.19, z, 0x2a1a10, 0, Math.PI / 2),
+      box(0.24, 0.48, 0.008, px + 0.13, 0.94, z, 0xc01a2a), cyl(0.07, 0.07, 0.012, px + 0.13, 0.95, z, 0xffd24a, Math.PI / 2, 0, 0xffb020, 0.4),
+      ...[0.2, 0.42].map((y) => box(0.1, 0.03, 0.12, px, y, -0.16, 0x17141c))];
+  },
+});
+const EPIC_AT = {
+  back: ['ninjato', 'bones_x', 'jetpack', 'shield_back', 'lifepack', 'arrows', 'wraps', 'balloons', 'sack', 'airtank', 'rucksack', 'skis_back', 'planets', 'fins', 'canister', 'rainbow_arc', 'disc_back', 'sashimono'],
+  chest: ['parrot', 'scarab', 'rose', 'stetho', 'magma', 'ice_spikes', 'bling', 'collar'],
+  hips: ['lasso', 'belt_hero', 'spellbook', 'candy_bucket'],
+  tail: ['coattails', 'tail_tiger', 'tail_zebra'],
+};
+for (const [at, ids] of Object.entries(EPIC_AT)) {
+  for (const id of ids) {
+    GEAR_AT[id] = at;
+    // Like the suits they come with, these shine faintly in their own colours, so they read in the dark maps.
+    const make = GEAR[id];
+    GEAR[id] = () => make().map((q) => (q.glow ? q : Object.assign({}, q, { glow: q.c, gk: 0.38, soft: true })));
+  }
+}
+GEAR_ANIM.planets = 'spin';
+// Taller than a hat: the shop draws the climber smaller so they fit on the card.
+export const GEAR_TALL = new Set(['balloons', 'sashimono']);
+
 // ---------------------------------------------------------------- palette and building
 const PAL = [], PAL_W = 32;
 function swatch(hex) {
@@ -338,7 +567,7 @@ export function gearTris(id, view = 'head') {
       const l = Math.hypot(nx, ny, nz) || 1;
       nx /= l; ny /= l; nz /= l;
       if (nz < 0) continue; // faces away
-      const lit = p.glow ? 1.15 : 0.55 + 0.45 * Math.max(0, nx * -0.3 + ny * 0.6 + nz * 0.74), bright = gun && !p.glow ? 1.5 : 1;
+      const lit = p.glow && !p.soft ? 1.15 : 0.55 + 0.45 * Math.max(0, nx * -0.3 + ny * 0.6 + nz * 0.74), bright = gun && !p.glow ? 1.5 : 1;
       out.push([t[0], t[1], t[3], t[4], t[6], t[7], (t[2] + t[5] + t[8]) / 3, Math.min(255, (p.c >> 16 & 255) * lit * bright + (gun ? 18 : 0)), Math.min(255, (p.c >> 8 & 255) * lit * bright + (gun ? 18 : 0)), Math.min(255, (p.c & 255) * lit * bright + (gun ? 18 : 0))]);
     }
     g.dispose();

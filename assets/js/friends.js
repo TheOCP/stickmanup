@@ -48,8 +48,17 @@ function status(f) {
   return { dot: 'off', a: 'Offline', b: agoText(f.ago || 0) };
 }
 const ORDER = { climb: 0, lobby: 1, watch: 2, menu: 2, off: 3 };
-const canJoin = (f) => !!f.room && f.n < 4;
-const moreButtons = (f) => (f.canWatch ? `<button class="btn primary sm" data-a="watch" data-n="${f.num}">Watch</button>` : '') + (canJoin(f) ? `<button class="btn sm" data-a="join" data-n="${f.num}">Join</button>` : '');
+// Already in the same room as me: nothing to join, watch or invite.
+const sameRoom = (f) => { const r = ctx.myRoom(); return !!r && !!f.room && f.room.code === r.room.code; };
+const canJoin = (f) => !!f.room && f.n < 4 && !sameRoom(f);
+// Inviting: from a game or lobby with a free spot (main.js myRoom), to a friend who is online.
+function inviteButton(f) {
+  const r = ctx.myRoom();
+  if (!r || r.n >= 4 || f.st === 'off' || sameRoom(f)) return '';
+  const sent = view && view.sent.get(f.num);
+  return sent && Date.now() - sent < 20000 ? '<button class="btn sm" disabled>Invited</button>' : `<button class="btn primary sm" data-a="invite" data-n="${f.num}">Invite</button>`;
+}
+const moreButtons = (f) => inviteButton(f) + (f.canWatch && !sameRoom(f) ? `<button class="btn primary sm" data-a="watch" data-n="${f.num}">Watch</button>` : '') + (canJoin(f) ? `<button class="btn sm" data-a="join" data-n="${f.num}">Join</button>` : '');
 const bar = (s) => (s.pct === undefined ? '' : `<span class="fbar"><i style="width:${s.pct.toFixed(1)}%"></i></span>`);
 const textOf = (f, s) => `<b>${nameOf(f)}<em class="fnum">#${f.num}</em></b><small>${s.a}</small>${s.b ? `<small>${s.b}</small>` : ''}${bar(s)}`;
 
@@ -113,7 +122,9 @@ function paint(v) {
   if (open) { setHtml(main, friendCard(open)); return; }
   v.card = null;
   const sorted = [...friends].sort((x, y) => ORDER[x.st] - ORDER[y.st] || (y.h || 0) - (x.h || 0) || String(x.name).localeCompare(String(y.name)));
-  setHtml(main, sorted.length ? `<div class="list">${sorted.map(friendRow).join('')}</div>` : '<div class="empty">No friends yet. Tap Find players, or share your ID so friends can add you.</div>');
+  // A climb alone has nobody to invite to.
+  const note = ctx.app.game && !ctx.myRoom() ? '<p class="sub fnote">Invites work from a game with others: host one, and friends can join even after the climb has started.</p>' : '';
+  setHtml(main, note + (sorted.length ? `<div class="list">${sorted.map(friendRow).join('')}</div>` : '<div class="empty">No friends yet. Tap Find players, or share your ID so friends can add you.</div>'));
 }
 
 async function refresh(v) {
@@ -180,7 +191,10 @@ export function openFriends(back, tab = 'list') {
       <button class="btn primary sm" data-a="acct">Account</button></div>`, { back, acct: () => ctx.account(() => openFriends(back)) });
     return;
   }
-  const v = view = { tab, card: null, data: known, failed: false, back, query: '', found: null };
+  const v = view = { tab, card: null, data: known, failed: false, back, query: '', found: null, sent: new Map() };
+  // During a climb or in a lobby, joining or watching someone else leaves it first (main.js leaveThen), and afterwards the way
+  // back is the title.
+  const after = () => (app.game || app.lobbyFriends ? ctx.title : back), stay = () => openFriends(back, v.tab === 'find' ? 'list' : v.tab);
   const me = known && known.me;
   show(`<div class="panel frpanel">${header('Friends')}
     <div class="friends">
@@ -206,8 +220,9 @@ export function openFriends(back, tab = 'list') {
     },
     open: (b) => { v.card = +b.dataset.n; $('#fmain').innerHTML = ''; paint(v); },
     closecard: () => { v.card = null; $('#fmain').innerHTML = ''; paint(v); },
-    watch: (b) => watchFriend(+b.dataset.n, back),
-    join: (b) => joinFriend(+b.dataset.n, back),
+    watch: (b) => { const n = +b.dataset.n, to = after(); ctx.leaveThen(() => watchFriend(n, to), stay); },
+    join: (b) => { const n = +b.dataset.n, to = after(); ctx.leaveThen(() => joinFriend(n, to), stay); },
+    invite: (b) => sendInvite(v, +b.dataset.n),
     search: () => search(v),
     add: (b) => act(v, 'add', +b.dataset.n, 'Friend request sent'),
     accept: (b) => act(v, 'accept', +b.dataset.n, 'You are friends now'),
@@ -233,7 +248,15 @@ export function openFriends(back, tab = 'list') {
   const t = setInterval(() => { if (view !== v || app.screen !== 'friends') clearInterval(t); else refresh(v); }, 5000);
 }
 
-// ---------- joining a friend's room ----------
+// ---------- inviting and joining ----------
+function sendInvite(v, num) {
+  const r = ctx.myRoom();
+  if (!r) return;
+  if (!live.invite(num, r.room.locked ? r.pass : '')) return ctx.ui.toast('Could not reach the game server.', 'bad');
+  v.sent.set(num, Date.now());
+  paint(v);
+}
+
 function joinRoom(room, back, after) {
   const { app, joinWith, roomPassword } = ctx, here = after || (() => openFriends(back));
   app.joinBack = here;

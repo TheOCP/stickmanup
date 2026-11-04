@@ -1366,7 +1366,8 @@ export class Game {
     const lookFade = Math.exp(-dt * 3);
     this.lookX = clamp((this.lookX || 0) * lookFade + dx, -0.06, 0.06);
     this.lookY = clamp((this.lookY || 0) * lookFade + dy, -0.06, 0.06);
-    if ((dx || dy) && Math.hypot(this.lookX, this.lookY) > 0.03) this.camTouched = T;
+    // A thumb that has really dragged the camera keeps it until it is lifted, however slowly it moves.
+    if (((dx || dy) && Math.hypot(this.lookX, this.lookY) > 0.03) || app.input.camHeld()) this.camTouched = T;
     this.assistCamera(dt, T, ak);
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
     c.y = damp(c.y, me.y + 0.8, me.vy < -14 || me.hook ? 14 : 7, dt);
@@ -1487,7 +1488,8 @@ export class Game {
     // Follow strength (Settings, 0 off to 2): how fast it turns, and how far behind you it goes.
     const F = S.camFollow ?? 1;
     // Bouncing between walls the speed flips side to side every moment: the camera stays still until you are out.
-    const bouncing = me.kickT !== undefined && me.time - me.kickT < 0.9;
+    // (Only a kick since the last respawn: the climber's clock starts again at 0 then.)
+    const bouncing = me.kickT !== undefined && me.time >= me.kickT && me.time - me.kickT < 0.9;
     // Through the eyes in a maze garden: level, looking a little down at the way ahead.
     const pitchTo = (this.fpK || 0) > 0.5 ? 0.1 : 0.32;
     if (F > 0.01 && !this.aiming && !me.hook && !bouncing && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
@@ -1498,7 +1500,10 @@ export class Game {
         // Running straight at the camera: leave it, so it never whips round. (Checked before the next line, or weak settings
         // would turn it after all, and with the controls following the camera you would run in circles.)
         // How far round it goes: weak settings only turn part of the way.
-        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, 0.35 + F * 0.65) * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
+        // Through the eyes in a maze garden it doesn't turn at all: the view is yours there, and turning it after every slide
+        // along a wall made it jerk about while you looked round.
+        const own = Math.max(0, 1 - (this.fpK || 0) * 1.5);
+        if (Math.abs(e) < 2.4 && own > 0) c.yaw += e * own * Math.min(1, 0.35 + F * 0.65) * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
         c.pitch += (pitchTo - c.pitch) * Math.min(1, dt * 0.8 * F);
       }
     }

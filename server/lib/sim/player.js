@@ -88,6 +88,8 @@ export class Body {
     this.ride = null; this.rideS = 0; this.rideV = 0; this.rideT = 0; this.noRide = 0;
     this.wallT = -1; this.wallNx = 0; this.wallNz = 0; this.kickNx = 0; this.kickNz = 0; this.kicked = false; this.sliding = false; this.noGrab = 0;
     this.dashT = 0; this.dashCd = 0; this.dashBuf = 0; this.dashReady = true; this.dashX = 0; this.dashZ = 0;
+    // The clock above starts again at 0, so a wall kick from before would look like one still going on (the camera waits for those).
+    this.kickT = undefined;
   }
 
   spawn(x, y, z) {

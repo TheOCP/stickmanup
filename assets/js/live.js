@@ -83,6 +83,9 @@ function heardFrom(text) {
     case 'req': emit('req', m); break;
     case 'friend': emit('friend', m); break;
     case 'cpreset': emit('cpreset', m); break;
+    case 'invite': emit('invite', m); break;
+    case 'invited': emit('invited', m); break;
+    case 'inviteErr': emit('inviteErr', m); break;
     // Another phone is playing on this account: it keeps the socket, until this one is opened again.
     case 'replaced': replaced = true; break;
     // Banned, or the server is closed for now. The game finds out why from the server's own answer.
@@ -115,6 +118,14 @@ export function command(line) {
   sendObj({ t: 'cmd', id: ++cmdId, line: String(line).slice(0, 1500) });
   return cmdId;
 }
+// Asks a friend along to the room this phone is in. The answer comes back as 'invited' or 'inviteErr'. The password of a
+// locked room goes with it, so the friend gets straight in.
+export function invite(num, pass) {
+  if (!isReady) return false;
+  sendObj({ t: 'invite', num, pass: pass || undefined });
+  return true;
+}
+
 // Everyone in the game now, for the team. Comes back as 'list'.
 export function askList() { if (isReady) sendObj({ t: 'list' }); }
 

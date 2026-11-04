@@ -784,3 +784,14 @@ body.pad .pause .padkeys { display: flex; }
 .termhead .termx { margin-left: 4px; }
 .tbtns .btn { padding: 7px 12px; }
 .spbot .spterm { width: auto; flex: none; align-items: center; padding: 8px 14px; }
+
+/* A friend's invite: a card at the top, over the game and the menus. */
+#invite { position: fixed; left: 50%; top: calc(12px + var(--it)); z-index: 40; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 12px;
+  padding: 10px 12px 10px 16px; border-radius: 14px; background: rgba(10, 18, 30, 0.94); border: 1px solid rgba(111, 242, 161, 0.55); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  max-width: calc(100vw - 32px); width: max-content; transform: translate(-50%, calc(-100% - 40px)); transition: transform 0.3s ease-out; pointer-events: none; }
+#invite.on { transform: translate(-50%, 0); pointer-events: auto; }
+#invite .itext { display: flex; flex-direction: column; min-width: 0; font-size: 14px; line-height: 1.35; }
+#invite .itext b { font-weight: 750; }
+#invite .itext small { opacity: 0.75; font-size: 12px; }
+#invite .ibtns { display: flex; gap: 6px; flex-shrink: 0; }
+.fnote { margin: 0 0 10px; }

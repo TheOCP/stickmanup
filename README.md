@@ -286,6 +286,11 @@ told which friends are watching (the team can watch any climb without showing up
 lifts and ziplines without sinking into the floor. In a maze garden you see through their eyes, looking exactly where they
 look, with their arms and weapon in view. Both people need the game server.
 
+Invite friends from the lobby (Invite friends), or during a climb from the pause menu (Friends, then Invite). An invite
+shows up as a card with a Join button, in the menus or during a climb (on a PC, press Esc to answer it), and the pause menu
+offers it for two minutes. The Friends screen in the pause menu also joins or watches a friend: a climb alone is saved first,
+and leaving a game with others asks first.
+
 Friends can join a climb that is already running.
 
 ## Accounts

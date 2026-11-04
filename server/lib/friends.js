@@ -109,10 +109,11 @@ class Friends {
     this.perIp = new Map();
     this.askLimit = new Limiter(30, 30 / 3600);
     this.findLimit = new Limiter(30, 0.5);
+    this.inviteLimit = new Limiter(12, 12 / 600);
     this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE, perMessageDeflate: false, clientTracking: false });
     this.beat = setInterval(() => this.heartbeat(), 25000);
     this.beat.unref();
-    this.sweep = setInterval(() => { this.askLimit.sweep(); this.findLimit.sweep(); }, 60000);
+    this.sweep = setInterval(() => { this.askLimit.sweep(); this.findLimit.sweep(); this.inviteLimit.sweep(); }, 60000);
     this.sweep.unref();
   }
 
@@ -315,6 +316,7 @@ class Friends {
       if (ws.pres.st !== 'climb') this.endWatchers(ws, 'ended');
     } else if (m.t === 'watch') this.watch(ws, m.num);
     else if (m.t === 'unwatch') this.stopWatching(ws);
+    else if (m.t === 'invite') this.invite(ws, m.num, m.pass);
     else if (m.t === 'cmd' && this.terminal) this.terminal.run(ws, m, (o) => this.send(ws, o)).catch((e) => console.error('terminal:', e.message));
     else if (m.t === 'list') this.staffList(ws);
   }
@@ -412,6 +414,25 @@ class Friends {
   }
 
   // ---------------------------------------------------------------- watching
+  // Asking a friend along: only to the room this phone says it is in, with a free spot, and only a friend who is online. The
+  // password of a locked room comes along when the one asking knows it, so the friend gets straight in.
+  invite(ws, num, pass) {
+    const fail = (why) => this.send(ws, { t: 'inviteErr', why });
+    if (!this.inviteLimit.take(ws.uid)) return fail('Too many invites. Wait a moment and try again.');
+    const u = Number.isInteger(num) ? this.q.byNum.get(num) : null;
+    if (!u || u.id === ws.uid || !this.isFriend(ws.uid, u.id) || this.isBanned(u.id)) return fail('You can only invite your friends.');
+    const p = ws.pres, room = p && (p.st === 'climb' || p.st === 'lobby') && Date.now() - ws.presAt < STALE ? p.room : null;
+    if (!room) return fail('Host or join a game first, then invite your friends to it.');
+    if ((p.n || 1) >= 4) return fail('Your game is full.');
+    const to = this.live.get(u.id), name = shownName(u);
+    if (!to || this.vanished(u.id)) return fail(name ? `${name} is not online.` : 'Your friend is not online.');
+    const me = this.q.me.get(ws.uid);
+    const out = { t: 'invite', num: me.num, name: shownName(me), room: Object.assign({}, room), map: p.map, diff: p.diff, n: p.n || 1 };
+    if (room.locked && room.kind === 'server' && typeof pass === 'string' && pass.length <= 64) out.pass = pass;
+    this.send(to, out);
+    this.send(ws, { t: 'invited', num: u.num, name });
+  }
+
   watch(ws, num) {
     this.stopWatching(ws);
     const fail = (why) => this.send(ws, { t: 'err', why });

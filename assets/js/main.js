@@ -627,6 +627,7 @@ async function hostWith(kind, roomOpts) {
   if (mp) s.lobby.diff = mp.diff;
   app.room = { kind, code: r.code, name: r.name, pub: r.pub, locked: r.locked };
   s.roomInfo = { kind, code: r.code, locked: !!r.locked };
+  s.roomPass = (roomOpts && roomOpts.pass) || '';
   if (kind === 'server') s.sendLobby();
   lobby(s);
 }
@@ -644,7 +645,7 @@ function wireLobby(s) {
     else if (s.isHost && app.room && app.room.kind === 'server') { if (app.game && app.game.s === s) { endGame(); message('Disconnected', e); } else if (app.screen === 'lobby') { s.close(); message('Disconnected', e); } }
   });
   s.on('start', (g) => beginGame(s, g));
-  s.on('closed', (why) => { cloud.checkStanding(); if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } });
+  s.on('closed', (why) => { cloud.checkStanding(); if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } else if (app.screen === 'friends' && app.lobbyFriends === s) { app.lobbyFriends = null; message('Disconnected', why); } });
 }
 
 function lobby(s) {
@@ -665,7 +666,7 @@ function lobby(s) {
   loadMap(resume ? mp.map || 0 : s.lobby.map || 0);
   show(`<div class="panel">${header(host ? 'Your game' : 'Joined game')}
     <div class="lobby">
-      <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div></div>
+      <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div>${cloud.account() && s.players.size < MAX_PLAYERS ? '<button class="btn sm" data-a="invite" style="margin-top:10px">Invite friends</button>' : ''}</div>
       <div>
         <div class="kind" style="margin-bottom:6px">Map</div>
         <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${(resume ? mp.map || 0 : s.lobby.map || 0) === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
@@ -686,6 +687,7 @@ function lobby(s) {
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
     resume: (b) => s.setLobby({ resume: b.checked }),
     nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
+    invite: () => { app.lobbyFriends = s; openFriends(() => { app.lobbyFriends = null; lobby(s); }); },
     rule: (b) => { if (host && !resume) s.setLobby({ rules: Object.assign({}, s.lobby.rules, { [b.dataset.k]: +b.dataset.v }) }); },
     start: () => {
       const save = s.lobby.resume && mp;
@@ -733,6 +735,7 @@ function joinScreen(tab) {
 function joinWith(kind, target) {
   const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken() } : undefined), myColor(), myLook(), myRole());
   s.roomInfo = kind === 'server' ? { kind, code: target.code, locked: !!target.pass } : { kind, code: target, locked: false };
+  s.roomPass = kind === 'server' ? String(target.pass || '') : '';
   const back = app.joinBack;
   busy('Connecting...', () => { s.close(); if (back) back(); else joinScreen(kind); });
   wireLobby(s);
@@ -1528,6 +1531,7 @@ function beginGame(s, g) {
   if (app.game) app.game.destroy();
   endSpectate();
   hideMenu();
+  app.lobbyFriends = null;
   app.screen = 'game';
   app.paused = false;
   app.input.reset();
@@ -1571,9 +1575,10 @@ function pause() {
   const mp = !g.solo;
   show(`<div class="pause"><h2>Paused</h2>
     <button class="btn primary" data-a="back"><b>Resume</b></button>
+    ${inviteNow() ? `<button class="btn primary" data-a="invite"><b>Join ${esc(inviteNow().name)}</b><small>They invited you to their climb</small></button>` : ''}
     ${g.diff < 2 ? `<button class="btn" data-a="respawn"><b>Back to checkpoint</b><small>${mp ? 'Moves the whole team' : 'If you are stuck'}</small></button>`
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
-    <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
+    <div class="row"><button class="btn sm" data-a="friends">Friends</button><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
     <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
     ${padKeys()}</div>`, {
@@ -1581,6 +1586,8 @@ function pause() {
     respawn: () => { g.s.toHost({ k: 'restart' }); resume(); },
     settings: () => settingsScreen(pause),
     how: () => howTo(pause),
+    friends: () => openFriends(pause),
+    invite: () => acceptInvite(pause),
     term: openTerminal,
     quit: () => { if (g.s.isHost) g.save(); endGame(); title(); },
   });
@@ -1603,6 +1610,82 @@ function teamAct(m) {
     const p = termSeen(m.watch), room = p && p.room && p.room.kind === 'server' ? Object.assign({}, p.room, { locked: false }) : null;
     go(() => watchPlayer(m.watch, { num: m.watch, name: String(m.name || (p && p.name) || `#${m.watch}`).slice(0, 20), room, n: p ? p.n : 1 }, title));
   } else if (typeof m.join === 'string' && /^[A-Z0-9]{5}$/.test(m.join)) go(() => joinPlayerRoom(m.join, title));
+}
+
+// ---------- friends: invites, and going over to someone else's climb ----------
+// The room this player is in right now, to invite friends to (friends.js): a game with others or a lobby, not a climb alone.
+function myRoom() {
+  const s = app.game ? (app.game.won ? null : app.game.s) : app.screen === 'lobby' ? app.lobbyS : app.lobbyFriends;
+  return s && s.roomInfo ? { room: s.roomInfo, n: s.players.size, pass: s.roomPass || '' } : null;
+}
+
+// Off to someone else's climb: an invite, or Join or Watch on the Friends screen. A climb alone is saved to carry on later. A
+// game or lobby with others asks first, because when it is mine it ends for everyone in it.
+function leaveThen(go, stay) {
+  const g = app.game, lob = !g && app.lobbyS && (app.screen === 'lobby' || app.lobbyFriends) ? app.lobbyS : null;
+  const away = () => {
+    const h = app.game;
+    if (h) { if (h.s.isHost && !h.won) h.save(); endGame(); } else if (lob) lob.close();
+    app.lobbyFriends = null;
+    if (app.spec || app.screen === 'spec') endSpectate();
+    go();
+  };
+  if (!(g && !g.solo && !g.won) && !lob) return away();
+  const s = g ? g.s : lob, back = stay || (g ? (app.paused ? pause : resume) : () => lobby(lob));
+  app.screen = 'msg';
+  if (g) { app.input.enabled = false; app.input.reset(); }
+  show(`<div class="panel" style="width:min(440px,100%)">${header(g ? 'Leave this game?' : 'Leave this lobby?')}
+    <p class="sub">${s.isHost ? (g ? 'You are the host, so it ends for everyone in it. The climb is saved.' : 'You are the host, so it ends for everyone in it.') : 'The others carry on without you.'}</p>
+    <div class="row"><button class="btn sm" data-a="back">Stay</button><button class="btn primary sm" data-a="go">Leave</button></div></div>`, { back, go: away });
+}
+
+// A friend asked this player along (live.js). A card shows it for half a minute, in the menus or during a climb, and the pause
+// menu offers it for two minutes.
+const INVITE_SHOW = 30000, INVITE_KEEP = 120000;
+let inviteEl = null, inviteT = 0;
+const inviteNow = () => (app.invite && Date.now() - app.invite.at < INVITE_KEEP ? app.invite : null);
+const inviter = (m) => (m && m.name ? String(m.name).slice(0, 20) : `Player #${(m && m.num) | 0}`);
+function hideInvite() {
+  clearTimeout(inviteT);
+  if (inviteEl) inviteEl.classList.remove('on');
+}
+function showInvite(m) {
+  const r = m && m.room;
+  if (cloud.banned() || !r || (r.kind !== 'server' && r.kind !== 'online') || !/^[A-Z0-9]{5}$/.test(String(r.code))) return;
+  const mine = myRoom();
+  if (mine && mine.room.code === r.code) return;
+  app.invite = { num: m.num | 0, name: inviter(m), room: { kind: r.kind, code: String(r.code), locked: !!r.locked }, pass: typeof m.pass === 'string' ? m.pass.slice(0, 64) : '', at: Date.now() };
+  if (!inviteEl) {
+    inviteEl = document.createElement('div');
+    inviteEl.id = 'invite';
+    document.body.appendChild(inviteEl);
+    inviteEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      app.sound.ui();
+      if (b.dataset.i === 'join') acceptInvite();
+      else { hideInvite(); app.invite = null; }
+    });
+  }
+  const where = [MAPS[m.map] ? MAPS[m.map].name : '', DIFFS[m.diff] ? DIFFS[m.diff].name : '', `${Math.min(4, Math.max(1, m.n | 0))}/4 climbers`].filter(Boolean).join(' · ');
+  inviteEl.innerHTML = `<div class="itext"><b class="frname">${esc(app.invite.name)}</b><span>invites you to their climb</span><small>${esc(where)}</small>${ON_PC && app.game ? '<small>Press Esc to answer</small>' : ''}</div>
+    <div class="ibtns"><button class="btn primary sm" data-i="join">Join</button><button class="btn sm" data-i="no">Not now</button></div>`;
+  inviteEl.classList.add('on');
+  ui.haptic('tick');
+  clearTimeout(inviteT);
+  inviteT = setTimeout(hideInvite, INVITE_SHOW);
+}
+function acceptInvite(stay) {
+  const v = inviteNow();
+  hideInvite();
+  app.invite = null;
+  if (!v) return ui.toast('That invite has run out. Ask your friend again.', 'bad');
+  leaveThen(() => {
+    app.joinBack = title;
+    if (v.room.kind === 'online') joinWith('online', v.room.code);
+    else if (v.room.locked && !v.pass) roomPassword(v.room.code, title);
+    else joinWith('server', { code: v.room.code, pass: v.pass });
+  }, stay);
 }
 
 function resume() {
@@ -1665,7 +1748,8 @@ window.SMU_insets = (l, t, r, b) => {
 // ---------- boot & loop ----------
 // What this phone is doing, for friends to see. Only for showing: nothing is paid on it.
 function startLive() {
-  const lobbyNow = () => (app.screen === 'lobby' && app.lobbyS ? app.lobbyS : null);
+  // (Still in the lobby while its Friends screen is open, to invite from.)
+  const lobbyNow = () => (app.screen === 'lobby' ? app.lobbyS || null : app.lobbyFriends || null);
   live.startLive({
     name: () => settings.name,
     climb: () => app.game,
@@ -1685,6 +1769,9 @@ function startLive() {
   // Refused by the server: its own answer says why, and whether that means being banned.
   live.on('off', () => cloud.checkStanding());
   live.on('cpreset', (m) => cloud.checkpointReset(m.at));
+  live.on('invite', showInvite);
+  live.on('invited', (m) => ui.toast(`Invite sent to ${inviter(m)}`, 'good'));
+  live.on('inviteErr', (m) => ui.toast(String((m && m.why) || 'Could not send the invite').slice(0, 140), 'bad'));
   let watchedBy = new Set();
   live.on('watchers', (m) => {
     const names = Array.isArray(m.names) ? m.names.map((x) => String(x).slice(0, 20)) : [], el = $('#hWatch');
@@ -1776,7 +1863,7 @@ function boot() {
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
   cloud.setTestServer(settings.server);
   cloud.start();
-  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, canShare, share: shareText, team: live.staff, openTerminal });
+  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, title, leaveThen, myRoom, canShare, share: shareText, team: live.staff, openTerminal });
   initTerminal({
     esc,
     act: teamAct,

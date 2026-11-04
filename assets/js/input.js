@@ -106,7 +106,7 @@ export class Input {
         this.stickEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
         this.stickEl.classList.add('on');
         this.knobEl.style.transform = 'translate(0px, 0px)';
-      } else if (!this.cam) this.cam = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      } else if (!this.cam) this.cam = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0 };
       else return;
       L.setPointerCapture(e.pointerId);
       e.preventDefault();
@@ -127,7 +127,9 @@ export class Input {
         this.sx = (dx / R) * s;
         this.sy = (-dy / R) * s;
       } else if (this.cam && e.pointerId === this.cam.id) {
-        this.camDX += e.clientX - this.cam.x; this.camDY += e.clientY - this.cam.y;
+        const mx = e.clientX - this.cam.x, my = e.clientY - this.cam.y;
+        this.camDX += mx; this.camDY += my;
+        this.cam.moved += Math.abs(mx) + Math.abs(my);
         this.cam.x = e.clientX; this.cam.y = e.clientY;
       }
     });
@@ -140,6 +142,9 @@ export class Input {
     };
     L.addEventListener('pointerup', up);
     L.addEventListener('pointercancel', up);
+    // The phone can take a finger away without saying it was lifted (a system gesture, say). Then the camera finger stayed
+    // held, and a new finger on that side did nothing.
+    L.addEventListener('lostpointercapture', up);
 
     for (const b of L.querySelectorAll('.tb')) this.bindEditDrag(b);
     // SHOOT: hold to aim (drag the finger to steer the crosshair), let go to fire.
@@ -331,6 +336,9 @@ export class Input {
     const aimFlow = !!this.aimP || k.has('KeyR');
     return { mx: fx * sy + rx * sx, mz: fz * sy + rz * sx, fx, fz, jump, jumpPressed, dash, grab, reel, act, shield, aim, fire, fireHold, aimFlow };
   }
+
+  // A thumb that has really dragged the camera is steering it until it is lifted. One that only rests on the screen isn't.
+  camHeld() { return !!this.cam && this.cam.moved > 12; }
 
   // Camera turn since last frame; while aiming the aim sensitivity applies instead of the camera speed.
   takeCam(aiming, zoom = 1) {

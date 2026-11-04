@@ -1,11 +1,12 @@
 // The shop (and wardrobe) and the records screen. A real climber stands in the world on the left, wearing what you
 // tap, while the cards are on the right.
 import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
-import { gearTris } from './gear.js';
+import { gearTris, gunInfo, GEAR_AT } from './gear.js';
 import { coins, owned, equip, worn, myLook, relicsFound, RELIC_COUNT, runsOf, totals } from './profile.js';
 import { buyItem } from './cloud.js';
 import { DIFFS, MAPS } from './level.js';
 import { EMOTES } from './emotes.js';
+import { WEAPONS, STUN_MIN } from './weapons.js';
 import { fmtTime } from './util.js';
 
 const COIN = '<i class="coin"></i>';
@@ -22,15 +23,23 @@ function armPath(g, X, Y, s) {
   g.beginPath();
   for (const k of [-1, 1]) g.roundRect(X + k * 0.15 * s - 0.066 * s, Y(0.8), 0.132 * s, 0.7 * s, 0.06 * s);
 }
+// Hats sit on the head and are seen from a little to the side; what goes on the back is seen from the front, from where it is
+// fixed (the hips, or both shoulder blades for wings).
 function drawHat(g, id, X, Y, s) {
+  const at = GEAR_AT[id];
+  if (at === 'wings') { drawTris(g, gearTris(id, 'front'), X + 0.03 * s, Y, s, 0.7, 1); drawTris(g, gearTris(id, 'front'), X - 0.03 * s, Y, s, 0.7, -1); }
+  else if (at === 'back' || at === 'hips') drawTris(g, gearTris(id, 'front'), X, Y, s, 0.3, 1);
+  else drawTris(g, gearTris(id), X, Y, s, 1.02, 1);
+}
+function drawTris(g, tris, X, Y, s, base, flip) {
   g.lineWidth = 0.6;
-  for (const t of gearTris(id)) {
+  for (const t of tris) {
     const c = `rgb(${t[7] | 0},${t[8] | 0},${t[9] | 0})`;
     g.fillStyle = c; g.strokeStyle = c;
     g.beginPath();
-    g.moveTo(X + t[0] * s, Y(1.02 + t[1]));
-    g.lineTo(X + t[2] * s, Y(1.02 + t[3]));
-    g.lineTo(X + t[4] * s, Y(1.02 + t[5]));
+    g.moveTo(X + t[0] * s * flip, Y(base + t[1]));
+    g.lineTo(X + t[2] * s * flip, Y(base + t[3]));
+    g.lineTo(X + t[4] * s * flip, Y(base + t[5]));
     g.closePath();
     g.fill(); g.stroke();
   }
@@ -45,6 +54,26 @@ function drawFaceOn(g, face, light, X, Y, s) {
   g.drawImage(c, X - 0.15 * s, Y(1.01), 0.3 * s, 0.14 * s);
 }
 
+// A weapon from the side, as big as the card allows.
+function drawGun(g, id, W, H) {
+  const tris = gearTris(id, 'gun'), sp = gunInfo(id).spin;
+  if (sp) { tris.push(...gearTris(sp, 'gun')); tris.sort((a, b) => a[6] - b[6]); }
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const t of tris) for (let i = 0; i < 6; i += 2) { x0 = Math.min(x0, t[i]); x1 = Math.max(x1, t[i]); y0 = Math.min(y0, t[i + 1]); y1 = Math.max(y1, t[i + 1]); }
+  const s = Math.min((W - 10) / (x1 - x0), (H - 16) / (y1 - y0)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  g.lineWidth = 0.6;
+  for (const t of tris) {
+    const c = `rgb(${t[7] | 0},${t[8] | 0},${t[9] | 0})`;
+    g.fillStyle = c; g.strokeStyle = c;
+    g.beginPath();
+    g.moveTo(W / 2 + (t[0] - cx) * s, H / 2 - (t[1] - cy) * s);
+    g.lineTo(W / 2 + (t[2] - cx) * s, H / 2 - (t[3] - cy) * s);
+    g.lineTo(W / 2 + (t[4] - cx) * s, H / 2 - (t[5] - cy) * s);
+    g.closePath();
+    g.fill(); g.stroke();
+  }
+}
+
 function thumbFor(item) {
   // A hat and a suit can share a name (cowboy, santa), so the key has both.
   const key = item.kind + ':' + item.id;
@@ -52,13 +81,18 @@ function thumbFor(item) {
   const W = 120, H = 150, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  if (item.kind === 'emote') {
+  if (item.kind === 'weapon') {
+    drawGun(g, item.id, W, H);
+  } else if (item.kind === 'emote') {
     g.font = '76px system-ui, sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(item.icon, W / 2, H / 2);
   } else if (item.kind === 'suit') {
-    const s = H / 2.05, X = W / 2, Y = (fy) => H - 6 - (fy + 0.44) * s, k = 128 / TEX, tex = paintSuit(item, 128);
+    const behind = (item.gear || []).filter((id) => GEAR_AT[id] === 'wings' || GEAR_AT[id] === 'back');
+    // With wings the climber is drawn smaller, so they fit on the card.
+    const s = H / (behind.some((id) => GEAR_AT[id] === 'wings') ? 2.5 : 2.05), X = W / 2, Y = (fy) => H - 6 - (fy + 0.44) * s, k = 128 / TEX, tex = paintSuit(item, 128);
+    for (const id of behind) drawHat(g, id, X, Y, s);
     g.save(); armPath(g, X, Y, s); g.clip();
     g.drawImage(tex, COL_ARMS * k, 0, ARM_W * k, TEX * k, X - 0.24 * s, Y(1.24), 0.48 * s, 1.68 * s);
     g.restore();
@@ -67,7 +101,7 @@ function thumbFor(item) {
     g.restore();
     const light = suitIsDark(item), face = FACES.find((f) => f.id === (item.face || 'smile'));
     drawFaceOn(g, face, light, X, Y, s);
-    for (const id of [...(item.gear || []), ...(item.hat ? [item.hat] : [])]) drawHat(g, id, X, Y, s);
+    for (const id of [...(item.gear || []).filter((id) => !behind.includes(id)), ...(item.hat ? [item.hat] : [])]) drawHat(g, id, X, Y, s);
   } else {
     // A face or hat on a big plain head.
     const s = H / 0.78, X = W / 2, Y = (fy) => H * (item.kind === 'hat' ? 0.72 : 0.5) - (fy - 1.02) * s;
@@ -84,12 +118,27 @@ function thumbFor(item) {
 }
 
 // ---------------------------------------------------------------- the shop
-const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['legend', 'Legendary']];
+const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['weapons', 'Weapons'], ['legend', 'Legendary']];
+const HOLD_NAME = { pistol: 'Sidearm', smg: 'Submachine gun', shotgun: 'Shotgun', rifle: 'Rifle', sniper: 'Sniper rifle', heavy: 'Machine gun', launcher: 'Launcher' };
+// Bars that compare weapons at a glance.
+function weaponStats(w) {
+  const bar = (name, k, val, c) => `<div>${name}<i style="--v:${Math.round(Math.max(0.04, Math.min(1, k)) * 100)}%${c ? ';--c:' + c : ''}"></i><b>${val}</b></div>`;
+  const rate = 1 / w.rate;
+  return `<p class="wtag">${[HOLD_NAME[w.hold], w.auto && 'automatic', w.scope && 'scope', w.blast && 'blast'].filter(Boolean).join(' · ')}</p><div class="wstats">
+    ${bar('Paralyse', (w.stun - STUN_MIN + 25) / 260, w.stun + ' s', '#7fd8ff')}
+    ${bar('Fire rate', Math.sqrt(rate / 25), rate >= 10 ? Math.round(rate) + '/s' : (Math.round(rate * 10) / 10) + '/s', '#ffb040')}
+    ${bar('Range', w.range / 320, w.range + ' m', '#70ff90')}
+    ${bar('Target size', (w.hit - 0.7) / 1.6, 'x' + w.hit, '#ff70c0')}
+    ${bar('Friend throw', w.knock / 42, w.knock, '#ff6050')}
+    ${w.blast ? bar('Blast', w.blast / 9, w.blast + ' m', '#d080ff') : ''}
+  </div>`;
+}
 const listFor = (tab) => {
   // What's hidden from the shop still shows for someone who was given it.
   if (tab === 'faces') return FACES.filter((f) => !f.hidden || owned(f));
   if (tab === 'hats') return HATS.filter((f) => !f.hidden || owned(f));
   if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
+  if (tab === 'weapons') return WEAPONS;
   if (tab === 'legend') return [...OWNERS.filter((o) => owned(o)), ...LEGENDS];
   return SUITS.filter((s) => s.tab === tab);
 };
@@ -98,9 +147,9 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   const { app, show, esc, ui, lookChanged } = ctx;
   let tab = startTab, sel = null, gridScroll = 0, drawTok = 0;
 
-  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : { ...look, h: item.id });
+  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : item.kind === 'weapon' ? { ...look, w: item.id } : { ...look, h: item.id });
   const preview = () => {
-    app.preview = { look: sel ? sameSlot(sel, myLook()) : myLook(), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null };
+    app.preview = { look: sel ? sameSlot(sel, myLook()) : myLook(), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null, aim: !!sel && sel.kind === 'weapon' };
   };
 
   function card(it) {
@@ -120,17 +169,18 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   function sideHtml() {
     const it = sel;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
+      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own.</p>`
       : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth.</p>`;
     const r = RARITY[it.r], have = owned(it), on = have && worn(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
-    else if (on) act = '<button class="btn sm" disabled>Wearing it</button>';
-    else if (have) act = '<button class="btn sm primary" data-a="equip">Wear it</button>';
+    else if (on) act = `<button class="btn sm" disabled>${it.kind === 'weapon' ? 'Carrying it' : 'Wearing it'}</button>`;
+    else if (have) act = `<button class="btn sm primary" data-a="equip">${it.kind === 'weapon' ? 'Carry it' : 'Wear it'}</button>`;
     else if (it.price > 0) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
     else act = '';
     const need = !have && it.price > 0 && coins() < it.price ? `<p class="need">${it.price - coins()} more coins needed</p>` : '';
     const hint = it.hint && !(have && !it.team) ? `<p class="hint">${esc(it.hint)}</p>` : it.hint && have ? `<p class="hint">Found it. Well done.</p>` : '';
-    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${hint}${need}${act}`;
+    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${it.kind === 'weapon' ? weaponStats(it) : ''}${hint}${need}${act}`;
   }
 
   function loadThumbs() {
@@ -157,12 +207,12 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       </div>
       <div class="shopmain">
         <div class="tabs">${TABS.map(([k, n]) => `<button data-a="tab" data-t="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        ${tab === 'legend' ? `<p class="sub lg">Coins can't buy these. They only come from Hardcore or Insane: find the hidden places (${relicsFound()} of ${RELIC_COUNT} relics found) or do something nobody else would.</p>` : ''}
+        ${tab === 'legend' ? `<p class="sub lg">The ones with a price are for the richest climbers. The others can't be bought: find the hidden places on Hardcore or Insane (${relicsFound()} of ${RELIC_COUNT} relics found) or do something nobody else would.</p>` : ''}
         <div class="shopgrid">${sections(list)}</div>
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },
       tab: (b) => { tab = b.dataset.t; sel = null; gridScroll = 0; preview(); render(); },
-      pick: (b) => { sel = listFor(tab).find((x) => x.id === b.dataset.id); preview(); if (app.preview) app.preview.yaw = sel.flag || sel.cape ? 2.6 : -0.4; render(); },
+      pick: (b) => { sel = listFor(tab).find((x) => x.id === b.dataset.id); preview(); if (app.preview) app.preview.yaw = sel.flag || sel.cape ? 2.6 : sel.kind === 'weapon' ? -1.1 : -0.4; render(); },
       buy: async () => {
         if (!sel || buying) return;
         const item = sel;

@@ -2,6 +2,19 @@
 // screen, A presses it, B goes back, LB and RB switch tabs, the right stick scrolls (and turns the climber in the
 // shop). Text boxes open a letter board, so a whole game can be set up without touching the phone.
 // Works from the layout on screen, not from lists per menu, so a new button anywhere just works.
+// What the buttons are called on the controller in the player's hands.
+const PAD_NAMES = {
+  xbox: { jump: 'A', grab: 'B', act: 'X', dash: 'Y', shield: 'LB', reel: 'RB', aim: 'LT', fire: 'RT', emote: '▼', tip: '▲', pause: 'Start', style: 'xbox' },
+  ps: { jump: '✕', grab: '○', act: '□', dash: '△', shield: 'L1', reel: 'R1', aim: 'L2', fire: 'R2', emote: '▼', tip: '▲', pause: 'Options', style: 'ps' },
+  nin: { jump: 'B', grab: 'A', act: 'Y', dash: 'X', shield: 'L', reel: 'R', aim: 'ZL', fire: 'ZR', emote: '▼', tip: '▲', pause: '+', style: 'nin' },
+};
+export function padNames(id) {
+  const n = String(id || '').toLowerCase();
+  if (/054c|dualsense|dualshock|playstation|sony|wireless controller/.test(n)) return PAD_NAMES.ps;
+  if (/057e|nintendo|switch|pro controller|joy.?con/.test(n)) return PAD_NAMES.nin;
+  return PAD_NAMES.xbox;
+}
+
 const OFF = 0, UP = 1, DOWN = 2, LEFT = 3, RIGHT = 4;
 const DIRS = [null, [0, -1], [0, 1], [-1, 0], [1, 0]];
 const B_A = 1 << 0, B_B = 1 << 1, B_X = 1 << 2, B_Y = 1 << 3, B_LB = 1 << 4, B_RB = 1 << 5, B_SELECT = 1 << 8, B_START = 1 << 9, B_UP = 1 << 12, B_DOWN = 1 << 13, B_LEFT = 1 << 14, B_RIGHT = 1 << 15;
@@ -91,6 +104,7 @@ export class PadNav {
     document.body.classList.toggle('pad', on);
     if (!on) this.set(null);
     this.hint();
+    if (this.o.using) this.o.using(on);
   }
 
   // One frame. Polls even during play, so a button held since then doesn't count as new in the next menu.

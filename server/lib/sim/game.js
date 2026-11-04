@@ -11,11 +11,16 @@ import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
 import * as cloud from './cloud.js';
 import { resolveLook, plainLook } from './skins.js';
+import { WEAPON, weaponOf } from './weapons.js';
+import { myLook } from './profile.js';
 
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
+// Seconds of aiming before a shot can leave: an accidental tap or click fires nothing.
+const AIM_READY = 0.13;
+const muzzleAt = new THREE.Vector3();
 // A coin is worth more the harder the difficulty, and so is reaching the top.
 
 // Distance along a unit ray to a sphere, or -1.
@@ -82,6 +87,11 @@ export class Game {
     this.shotCd = 0;
     this.aimK = 0;
     this.aiming = false;
+    this.aimT = 0;
+    this.scopeK = 0;
+    this.aimElev = 0;
+    this.shotAt = new Map();
+    this.gun = weaponOf(myLook().w);
     this.action = null;
     this.zaps = new Map(); // slot -> { k, x, y, z, struck } lightning aimed at each climber (storm map)
     // Each map's level objects are reused between games: close doors and mend floors from last time.
@@ -214,7 +224,7 @@ export class Game {
       const e = clamp(t - a.t, 0, 0.2);
       out.x = s[0] + s[3] * e; out.y = s[1] + s[4] * e; out.z = s[2] + s[5] * e;
     }
-    out.vx = s[3]; out.vy = s[4]; out.vz = s[5]; out.yaw = s[6]; out.flags = s[7]; out.reel = s[8]; out.charge = s[9];
+    out.vx = s[3]; out.vy = s[4]; out.vz = s[5]; out.yaw = s[6]; out.flags = s[7]; out.reel = s[8]; out.charge = s[9]; out.elev = s[10] || 0;
     return out;
   }
 
@@ -247,11 +257,17 @@ export class Game {
       }
     }
 
-    // Abilities are taps, handled once per frame. SHOOT aims while held and fires on release.
+    // Abilities are taps, handled once per frame. A shot only ever leaves while aiming: hold SHOOT and let go, or hold the aim
+    // button and pull the trigger. Automatic weapons keep firing for as long as it is held.
     if (inp.shield && this.L.mapKey === 'storm' && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
     if (inp.act && this.action) this.perform(this.action, T);
+    const ready = this.aiming && this.aimT >= AIM_READY, gun = (this.gun = weaponOf(myLook().w));
     this.aiming = this.me.aim = !!inp.aim && !this.me.hook;
-    if (inp.fire) this.fire(T);
+    this.aimT = this.aiming ? this.aimT + dt : 0;
+    if (inp.fire) {
+      if (ready) this.fire(T);
+      else if (app.ui.aimFirst) app.ui.aimFirst();
+    } else if (gun.auto && this.aiming && this.aimT >= AIM_READY && (inp.fireHold || (inp.aimFlow && this.aimT >= 0.3))) this.fire(T);
 
     // A jump tap is kept until a physics step uses it: at 120 fps half the frames run no physics step,
     // and a tap read on one of those frames used to be lost.
@@ -270,7 +286,7 @@ export class Game {
     this.sendAcc += dt;
     if (!this.solo && this.sendAcc >= SEND) {
       this.sendAcc = 0;
-      const m = this.me, st = [r3(m.x), r3(m.y), r3(m.z), r3(m.vx), r3(m.vy), r3(m.vz), r3(this.robots.get(this.slot).yaw), m.flags, r3(m.reel), r3(m.charge)];
+      const m = this.me, st = [r3(m.x), r3(m.y), r3(m.z), r3(m.vx), r3(m.vy), r3(m.vz), r3(this.robots.get(this.slot).yaw), m.flags, r3(m.reel), r3(m.charge), r3(this.aimElev)];
       if (this.s.isHost) {
         const ex = this.noCord ? { f: this.falls } : { f: this.falls, cp: this.cp }, jp = this.jumpPack();
         if (jp.length) ex.jp = jp;
@@ -754,14 +770,14 @@ export class Game {
   }
 
   // What is under the crosshair: the first solid surface or target along the camera's centre ray.
-  // { t, x, y, z, kind?, i? }. The ray has to pass through the target; with aim assist on, targets count
-  // as a little bigger, so a shot that only just misses still hits.
+  // { t, x, y, z, kind?, i? }. The ray has to pass through the target; a weapon can count targets as bigger, and with aim assist
+  // on they count as a little bigger still, so a shot that only just misses still hits.
   aimHit(T) {
-    const cam = this.R.camera, o = cam.position, L = this.L, me = this.me;
+    const cam = this.R.camera, o = cam.position, L = this.L, me = this.me, gun = this.gun, reach = gun.range, span = Math.max(40, reach);
     cam.getWorldDirection(fwd);
     const dx = fwd.x, dy = fwd.y, dz = fwd.z;
-    let t = this.W.raycast(o.x, o.y, o.z, dx, dy, dz, RANGE, skipSoft), kind = null, idx = -1;
-    const near = (y) => Math.abs(y - me.y) < 40, grow = 1 + (this.app.settings.aimHelp || 0) * 0.8;
+    let t = this.W.raycast(o.x, o.y, o.z, dx, dy, dz, reach, skipSoft), kind = null, idx = -1;
+    const near = (y) => Math.abs(y - me.y) < span, grow = gun.hit * (1 + (this.app.settings.aimHelp || 0) * 0.8);
     const tryHit = (k, i, x, y, z, r) => {
       const h = raySphere(o.x, o.y, o.z, dx, dy, dz, x, y, z, r * grow);
       if (h >= 0 && h < t) { t = h; kind = k; idx = i; }
@@ -770,28 +786,64 @@ export class Game {
     for (const m of L.monsters) if (near(m.y)) { const p = this.storm.monsterPos(m, T, tmpP); tryHit('monster', m.i, p.x, p.y, p.z, 0.75); }
     for (const b of L.bats) if (near(b.cy)) { const p = this.storm.batPos(b, T, tmpP); tryHit('bat', b.i, p.x, p.y, p.z, 0.55); }
     for (const J of this.jumpers) if (J.active && near(J.y)) tryHit('jumper', J.j.i, J.x, J.y + PR + 0.35, J.z, 0.7);
+    if (this.friendlyFire) for (const q of this.others) tryHit('player', q.slot, q.x, q.y + 0.3, q.z, 0.5);
     return { t, x: o.x + dx * t, y: o.y + dy * t, z: o.z + dz * t, kind, i: idx };
   }
 
+  // Friends can be shot off the climb, if the host of the game said so.
+  get friendlyFire() { return !this.solo && this.rules.ff === 1; }
+
   fire(T) {
+    const gun = this.gun;
     if (this.shotCd > T || this.won) return;
-    this.shotCd = T + 0.3;
-    const me = this.me, h = this.aimHit(T), yaw = this.cam.yaw;
-    // The shot leaves the right hand.
-    const from = [r3(me.x + Math.cos(yaw) * 0.35), r3(me.y + 0.75), r3(me.z - Math.sin(yaw) * 0.35)], to = [r3(h.x), r3(h.y), r3(h.z)];
-    this.app.fx.tracer(this.slot, from, to, !!h.kind);
-    this.app.sound.shoot();
+    this.shotCd = T + gun.rate;
+    const h = this.aimHit(T), rig = this.robots.get(this.slot);
+    // The shot leaves the muzzle of the weapon in the hands.
+    rig.muzzle(muzzleAt);
+    const a = [r3(muzzleAt.x), r3(muzzleAt.y), r3(muzzleAt.z)], to = [r3(h.x), r3(h.y), r3(h.z)];
+    this.app.fx.tracer(this.slot, a, to, !!h.kind, gun);
+    this.app.sound.shoot(gun.snd);
     this.lastShot = T;
-    this.s.toHost({ k: 'shot', s: this.slot, a: from, b: to, h: h.kind ? 1 : 0 });
-    if (h.kind === 'door') {
-      if (this.rec && this.solo) this.rec.act('d', h.i);
-      this.s.toHost({ k: 'door', i: h.i });
-    } else if (h.kind) {
-      const m = (h.kind === 'bat' ? 1000 : h.kind === 'jumper' ? 2000 : 0) + h.i, from = r3(T), until = r3(T + 5);
-      if (this.rec && this.solo) this.rec.act('n', m, from, until);
-      this.s.toHost({ k: 'stun', m, from, until });
+    this.s.toHost({ k: 'shot', s: this.slot, a, b: to, h: h.kind ? 1 : 0, w: gun.id });
+    if (h.kind === 'door') this.shootDoor(h.i, gun);
+    else if (h.kind === 'player') this.shootFriend(h.i, h, gun);
+    else if (h.kind) this.paralyse((h.kind === 'bat' ? 1000 : h.kind === 'jumper' ? 2000 : 0) + h.i, T, gun);
+    // A blast reaches everything round where it landed.
+    if (gun.blast) {
+      const R2 = gun.blast * gun.blast, inside = (x, y, z) => (x - h.x) * (x - h.x) + (y - h.y) * (y - h.y) + (z - h.z) * (z - h.z) < R2, L = this.L;
+      this.app.fx.blast(this.slot, h.x, h.y, h.z, gun);
+      for (const d of L.doors) if (!this.doors.has(d.i) && !(h.kind === 'door' && h.i === d.i) && inside(d.bx, d.by, d.bz)) this.shootDoor(d.i, gun);
+      for (const m of L.monsters) { const p = this.storm.monsterPos(m, T, tmpP); if (inside(p.x, p.y, p.z)) this.paralyse(m.i, T, gun); }
+      for (const b of L.bats) { const p = this.storm.batPos(b, T, tmpP); if (inside(p.x, p.y, p.z)) this.paralyse(1000 + b.i, T, gun); }
+      for (const J of this.jumpers) if (J.active && inside(J.x, J.y + PR, J.z)) this.paralyse(2000 + J.j.i, T, gun);
+      if (this.friendlyFire) for (const q of this.others) if (!(h.kind === 'player' && h.i === q.slot) && inside(q.x, q.y, q.z)) this.shootFriend(q.slot, h, gun);
     }
     if (h.kind) this.app.ui.haptic('tick');
+  }
+
+  shootDoor(i, gun) {
+    if (this.rec && this.solo) this.rec.act('d', i, gun.id);
+    this.s.toHost({ k: 'door', i });
+  }
+
+  // Something already paralysed stays as it is: starting again would make it jump to where it would have been by now.
+  paralyse(m, T, gun) {
+    const was = this.storm.stun.get(m);
+    if (was && T < was.until) return;
+    const from = r3(T), until = r3(T + gun.stun);
+    if (this.rec && this.solo) this.rec.act('n', m, from, until, gun.id);
+    this.s.toHost({ k: 'stun', m, from, until });
+  }
+
+  // Thrown away from the shooter and up, off whatever they stand on or hold on to.
+  shootFriend(slot, h, gun) {
+    const q = this.others.find((o) => o.slot === slot);
+    if (!q) return;
+    let dx = q.x - this.me.x, dz = q.z - this.me.z;
+    const d = Math.hypot(dx, dz) || 1, k = gun.knock;
+    dx /= d; dz /= d;
+    const me = this.s.players.get(this.slot);
+    this.s.toHost({ k: 'ff', to: slot, s: this.slot, v: [r3(dx * k), r3(Math.max(5, k * 0.55)), r3(dz * k)], n: String((me && me.name) || '').slice(0, 14) });
   }
 
   // Line of sight: nothing solid between two points (the target itself excluded).
@@ -906,7 +958,7 @@ export class Game {
         this.app.ui.haptic('heavy');
         this.app.ui.flash('#b07bff');
         this.app.ui.toast('Struck by lightning!', 'bad');
-      } else this.app.ui.toast('Held on through the strike', 'good');
+      } else this.app.ui.toast('Your shield took the strike', 'good');
     }
   }
 
@@ -967,7 +1019,7 @@ export class Game {
       case 'crumble': this.s.toAll(e); break;
       case 'fall': this.falls++; break;
       case 'door': if (!this.doors.has(e.i)) this.s.toAll(e); break;
-      case 'stun': case 'shot': case 'emote': this.s.toAll(e); break;
+      case 'stun': case 'shot': case 'emote': case 'ff': this.s.toAll(e); break;
       case 'win':
         if (!this.won) this.s.toAll({ k: 'win', t: T, falls: this.falls });
         break;
@@ -977,7 +1029,7 @@ export class Game {
   onEvent(e) {
     const ui = this.app.ui;
     // With others, these come from elsewhere, so the rerun can't work them out and they get written down.
-    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win')) this.rec.act('e', e);
+    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff')) this.rec.act('e', e);
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
@@ -1021,7 +1073,20 @@ export class Game {
       case 'crumble': this.crumble(e.i); break;
       case 'door': if (!this.doors.has(e.i)) this.openDoor(e.i); break;
       case 'stun': this.storm.stun.set(e.m, { from: e.from, until: e.until }); this.app.sound.stun(); break;
-      case 'shot': if (e.s !== this.slot) this.app.fx.tracer(e.s, e.a, e.b, !!e.h); break;
+      case 'shot':
+        if (e.s !== this.slot) {
+          const shotBy = WEAPON[e.w];
+          this.shotAt.set(e.s, this.time);
+          this.app.fx.tracer(e.s, e.a, e.b, !!e.h, shotBy);
+          if (shotBy) {
+            this.app.sound.shoot(shotBy.snd, 0.5);
+            if (shotBy.blast) this.app.fx.blast(e.s, e.b[0], e.b[1], e.b[2], shotBy);
+          }
+        }
+        break;
+      case 'ff':
+        if (e.to === this.slot && this.rules.ff === 1 && Array.isArray(e.v)) this.zapKnock(+e.v[0] || 0, +e.v[1] || 0, +e.v[2] || 0, 'shot', `Shot by ${String(e.n || 'a friend').slice(0, 14)}`);
+        break;
       case 'emote':
         if (e.s !== this.slot) {
           const r = this.robots.get(e.s), em = typeof e.e === 'string' && Object.hasOwn(EMOTE, e.e) ? EMOTE[e.e] : null;
@@ -1077,13 +1142,15 @@ export class Game {
     if (!this.robots.has(this.slot)) this.syncRoster();
     const W = this.W;
     const faceYaw = Math.atan2(-Math.sin(this.cam.yaw), -Math.cos(this.cam.yaw));
-    this.robots.get(this.slot).update(dt, me.x, me.y, me.z, me.vx, me.vy, me.vz, me.flags, me.charge, W.floorBelow(me.x, me.y, me.z, 30), faceYaw, T - (this.lastShot || -9));
+    const myRig = this.robots.get(this.slot);
+    this.aimElev = -this.cam.pitch;
+    myRig.update(dt, me.x, me.y, me.z, me.vx, me.vy, me.vz, me.flags, me.charge, W.floorBelow(me.x, me.y, me.z, 30), faceYaw, T - (this.lastShot || -9), this.aimElev);
     for (const [slot, r] of this.robots) {
       if (slot === this.slot) continue;
       const o = this.vis && this.vis.get(slot);
       r.g.visible = !!o;
       if (!o) { r.hide(); continue; }
-      r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(o.x, o.y, o.z, 30), o.yaw, 9);
+      r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(o.x, o.y, o.z, 30), o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
       const th = this.storm.thunder(T, slot);
       if (th) this.zap(slot, th, o, false);
     }
@@ -1110,7 +1177,10 @@ export class Game {
 
     // Camera: orbit with drag, ease toward the climber, pull in when something blocks the view.
     // Aiming moves it in over the right shoulder and narrows the view so the crosshair is precise.
-    const c = this.cam, [dx, dy] = app.input.takeCam(this.aiming), ak = (this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 12, dt));
+    const gunNow = this.gun, zoomed = this.aiming && gunNow.zoom < 48, aimFov = 48 + (gunNow.zoom - 48) * (zoomed ? 1 : 0);
+    // A scoped weapon looks through its sight: the view goes to the eye, narrows, and turns slower to match.
+    const sk = (this.scopeK = damp(this.scopeK, this.aiming && gunNow.scope ? 1 : 0, 13, dt));
+    const c = this.cam, [dx, dy] = app.input.takeCam(this.aiming, zoomed ? gunNow.zoom / 48 : 1), ak = (this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 12, dt));
     c.yaw -= dx;
     c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak), 1.25);
     if (dx || dy) this.camTouched = T;
@@ -1126,8 +1196,14 @@ export class Game {
     const cam = R.camera;
     cam.position.set(px + ox * c.d, Math.max(0.8, py + oy * c.d), pz + oz * c.d);
     cam.lookAt(px, py, pz);
-    const fov = (66 + clamp(-me.vy - 12, 0, 20) * 0.5) * (1 - ak) + 48 * ak;
-    if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4, dt); cam.updateProjectionMatrix(); }
+    if (sk > 0.01) {
+      const ex = me.x - ox * 0.18, ey = me.y + 1.02 - oy * 0.18, ez = me.z - oz * 0.18;
+      cam.position.set(cam.position.x + (ex - cam.position.x) * sk, cam.position.y + (ey - cam.position.y) * sk, cam.position.z + (ez - cam.position.z) * sk);
+      cam.lookAt(cam.position.x - ox * 6, cam.position.y - oy * 6, cam.position.z - oz * 6);
+    }
+    if (sk >= 0.72) { myRig.g.visible = false; this.hidMe = true; } else if (this.hidMe) { myRig.g.visible = true; this.hidMe = false; }
+    const fov = (66 + clamp(-me.vy - 12, 0, 20) * 0.5) * (1 - ak) + aimFov * ak;
+    if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4 + (zoomed ? 12 : 0), dt); cam.updateProjectionMatrix(); }
 
     // Weather, sky and sound.
     const zi = zoneAt(this.L, me.y), zone = this.L.zones[zi];
@@ -1172,9 +1248,10 @@ export class Game {
     // Crosshair turns red over a target (checked ~12 times a second while aiming).
     if (this.aiming) {
       this.aimAcc = (this.aimAcc || 0) + dt;
-      if (this.aimAcc > 0.08) { this.aimAcc = 0; this.aimHot = !!this.aimHit(T).kind; }
+      if (this.aimAcc > 0.08) { this.aimAcc = 0; const seen = this.aimHit(T); this.aimHot = !!seen.kind; this.aimDist = seen.t; }
     } else this.aimHot = false;
-    app.ui.cross(this.aiming && ak > 0.5, this.aimHot);
+    app.ui.cross(this.aiming && ak > 0.5 && !gunNow.scope, this.aimHot);
+    if (app.ui.scope) app.ui.scope(sk > 0.7, this.aimHot, this.aimDist);
     app.ui.tags(this);
     app.ui.tips(this);
   }
@@ -1206,7 +1283,7 @@ export class Game {
     let best = null, bestA = 0.05 + A * 0.12;
     const consider = (x, y, z) => {
       const vx = x - o.x, vy = y - o.y, vz = z - o.z, d = Math.hypot(vx, vy, vz);
-      if (d < 1 || d > RANGE) return;
+      if (d < 1 || d > Math.max(RANGE, this.gun.range)) return;
       const a = Math.acos(clamp((vx * fwd.x + vy * fwd.y + vz * fwd.z) / d, -1, 1));
       if (a < bestA && this.W.raycast(o.x, o.y, o.z, vx / d, vy / d, vz / d, d, skipSoft) > d - 0.9) { bestA = a; best = { vx, vy, vz, d }; }
     };

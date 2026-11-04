@@ -6,11 +6,58 @@ import { F } from './player.js';
 import { EMOTE } from './emotes.js';
 import { COLORS } from './colors.js';
 import { COL_W, COL_BACK, COL_ARMS, ARM_W, TEX, FIG_TOP, FIG_H, BODY_W, ARM_SPAN, FACE_W, FACE_H, drawFace, paintSuit, paintCape, suitIsDark } from './skins.js';
-import { gearGeo, gearMat, GEAR_AT } from './gear.js';
+import { gearGeo, gearGeoMirror, gearMat, gunInfo, GEAR_AT, GEAR_ANIM } from './gear.js';
+import { BEAMS } from './weapons.js';
 
 const HDR = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 const WHITE = new THREE.Color(0xffffff);
 const EP = {}, EV = new THREE.Vector3(), EMOTE_PIVOT = 0.35;
+
+// How each kind of weapon is held, in the torso's own space: at is where the gun's grip sits, lean and crouch the body, hx and
+// hz the head (a cheek down on the stock), stance the legs when standing still [legX, legX, knee, knee], and kick the recoil
+// [back, up]. sling is where it rides when not in use.
+// Weapons are drawn a size bigger than life, like everything else on a stickman.
+const GS = 1.3;
+const HOLDS = {
+  pistol: { at: [-0.03, 0.47, 0.44], lean: 0.03, crouch: 0, hx: 0.04, hz: 0, stance: [-0.25, 0.3, 0.25, 0.1], kick: [0.05, 0.16], sling: 'hip' },
+  smg: { at: [-0.075, 0.36, 0.3], lean: 0.08, crouch: 0.03, hx: 0.1, hz: 0.06, stance: [-0.3, 0.3, 0.3, 0.12], kick: [0.022, 0.03], sling: 'back' },
+  shotgun: { at: [-0.1, 0.35, 0.27], lean: 0.08, crouch: 0.04, hx: 0.12, hz: 0.08, stance: [-0.35, 0.32, 0.36, 0.14], kick: [0.08, 0.16], sling: 'back' },
+  rifle: { at: [-0.1, 0.38, 0.25], lean: 0.06, crouch: 0.03, hx: 0.14, hz: 0.12, stance: [-0.34, 0.32, 0.32, 0.12], kick: [0.03, 0.04], sling: 'back' },
+  sniper: { at: [-0.085, 0.4, 0.23], lean: 0.12, crouch: 0.12, hx: 0.24, hz: 0.2, stance: [-0.55, 0.42, 0.75, 0.3], kick: [0.075, 0.14], sling: 'back' },
+  heavy: { at: [-0.15, 0.13, 0.2], lean: -0.07, crouch: 0.07, hx: -0.02, hz: 0, stance: [-0.4, 0.4, 0.45, 0.25], kick: [0.018, 0.018], sling: 'back' },
+  launcher: { at: [-0.19, 0.46, 0.0], lean: 0.1, crouch: 0.05, hx: 0.08, hz: -0.1, stance: [-0.42, 0.34, 0.45, 0.14], kick: [0.1, 0.2], sling: 'back' },
+};
+const qx = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a), qz = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
+const SLUNG = {
+  back: { p: new THREE.Vector3(-0.14, 0.13, -0.165), q: qz(-0.5).multiply(qx(-Math.PI / 2)) },
+  hip: { p: new THREE.Vector3(-0.2, 0.0, 0.015), q: qx(Math.PI / 2) },
+};
+const qHold = new THREE.Quaternion(), vHold = new THREE.Vector3(), eHold = new THREE.Euler(), UPPER_L = 0.29, FORE_L = 0.29;
+const IK = { ax: 0, az: 0, ay: 0, el: 0 };
+// Reaches a hand to (tx, ty, tz), a place relative to the shoulder, with the elbow towards the pole. Rotations are for a
+// shoulder in XZY order: the Y comes first and only turns the arm round itself, which is what points the elbow.
+function reach(tx, ty, tz, px, py, pz) {
+  let d = Math.hypot(tx, ty, tz) || 1e-3;
+  const nx = tx / d, ny = ty / d, nz = tz / d;
+  d = Math.min(d, UPPER_L + FORE_L - 0.002);
+  const along = d * d / (2 * d) + (UPPER_L * UPPER_L - FORE_L * FORE_L) / (2 * d), out = Math.sqrt(Math.max(0, UPPER_L * UPPER_L - along * along));
+  const dot = px * nx + py * ny + pz * nz;
+  let qx0 = px - nx * dot, qy0 = py - ny * dot, qz0 = pz - nz * dot;
+  const ql = Math.hypot(qx0, qy0, qz0) || 1;
+  qx0 /= ql; qy0 /= ql; qz0 /= ql;
+  const ex = nx * along + qx0 * out, ey = ny * along + qy0 * out, ez = nz * along + qz0 * out;
+  const ux = ex / UPPER_L, uy = ey / UPPER_L, uz = ez / UPPER_L;
+  const hx = nx * d, hy = ny * d, hz = nz * d, fx = (hx - ex) / FORE_L, fy = (hy - ey) / FORE_L, fz = (hz - ez) / FORE_L;
+  const az = Math.asin(Math.max(-1, Math.min(1, ux)));
+  const ax = Math.atan2(-uz, -uy);
+  // The forearm as the upper arm sees it, before its own turn.
+  const ca = Math.cos(ax), sa = Math.sin(ax), cz = Math.cos(az), sz = Math.sin(az);
+  const y1 = fy * ca + fz * sa, z1 = -fy * sa + fz * ca, x2 = fx * cz + y1 * sz, y2 = -fx * sz + y1 * cz;
+  IK.ax = ax; IK.az = az;
+  IK.ay = Math.atan2(x2, z1);
+  IK.el = -Math.acos(Math.max(-1, Math.min(1, -y2)));
+  return IK;
+}
 
 // Joins geometries (each already moved into place) into one, so a whole limb is a single draw call.
 function join(...geos) {
@@ -70,9 +117,8 @@ const G = {
   head: figure(new THREE.SphereGeometry(0.2, 22, 16), 0, HEAD_Y),
   eyes: join(new THREE.SphereGeometry(0.036, 10, 8).translate(-0.07, 0, 0), new THREE.SphereGeometry(0.036, 10, 8).translate(0.07, 0, 0)),
   mouth: new THREE.TorusGeometry(0.042, 0.014, 6, 16), shield: new THREE.SphereGeometry(0.95, 28, 20),
-  // Blaster along the forearm's -y axis (forward when the arm points ahead): body, barrel and grip.
-  gun: join(new THREE.BoxGeometry(0.09, 0.26, 0.11).translate(0, -0.08, 0), new THREE.CylinderGeometry(0.03, 0.03, 0.16, 8).translate(0, -0.27, 0.01),
-    new THREE.BoxGeometry(0.06, 0.06, 0.13).translate(0, 0.02, -0.08)),
+  // The flash at the muzzle: a star with a long middle.
+  flash: join(new THREE.OctahedronGeometry(0.075, 0).scale(1, 1, 2.6), new THREE.OctahedronGeometry(0.06, 0).scale(2.2, 0.35, 0.9), new THREE.OctahedronGeometry(0.06, 0).scale(0.35, 2.2, 0.9)),
   blob: new THREE.CircleGeometry(0.55, 28).rotateX(-Math.PI / 2),
   eyesP: facePatch(-0.02, 0.14, 0.95),
   mouthP: facePatch(-0.15, -0.01, 0.85),
@@ -88,7 +134,13 @@ const G = {
 
 // ---------------------------------------------------------------- materials for skins (made once each, when first worn)
 const texOf = (canvas) => { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 2; return t; };
-const SUIT_MATS = new Map(), FACE_MATS = new Map(), CAPE_MATS = new Map();
+const SUIT_MATS = new Map(), FACE_MATS = new Map(), CAPE_MATS = new Map(), LEGEND_CAPES = new Map();
+// A legendary suit's cape is made of the suit itself, seen from both sides.
+function legendCape(suit) {
+  let m = LEGEND_CAPES.get(suit.id);
+  if (!m) { m = legendMat(suit.shader); m.side = THREE.DoubleSide; LEGEND_CAPES.set(suit.id, m); }
+  return m;
+}
 function suitMat(suit) {
   let m = SUIT_MATS.get(suit.id);
   if (m) return m;
@@ -123,6 +175,12 @@ function capeMat(spec) {
 }
 const hexC = (x) => new THREE.Color(x);
 // Legendary suits: alive, unlit and glowing. uv.y runs up the figure. See LEGENDS in skins.js for the modes.
+const VOR = `vec3 vor(vec2 p){ vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0, id = 0.0;
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+          vec2 g = vec2(float(x), float(y)), c = i + g, r = g + vec2(h21(c), h21(c + 37.0)) - f; float d = dot(r, r);
+          if (d < d1) { d2 = d1; d1 = d; id = h21(c + 71.0); } else if (d < d2) d2 = d;
+        }
+        return vec3(sqrt(d1), sqrt(d2), id); }`;
 function legendMat(S) {
   return new THREE.ShaderMaterial({
     fog: true,
@@ -137,8 +195,10 @@ function legendMat(S) {
       ${noiseGlsl()}
       float fbm(vec2 p){ return 0.55 * n21(p) + 0.3 * n21(p * 2.1 + 3.7) + 0.15 * n21(p * 4.3 + 9.1); }
       vec3 hsv(float h){ return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
+      ${VOR}
       void main(){
         vec3 col; vec2 u = vUv;
+        vec3 N0 = normalize(vN) * (gl_FrontFacing ? 1.0 : -1.0), V0 = normalize(vV); float fr = max(dot(N0, V0), 0.0);
         if (uMode < 0.5) {
           float n = fbm(vec2(u.x * 16.0, u.y * 11.0 - uT * 1.1));
           col = mix(uA, uB, smoothstep(0.32, 0.62, n)) + uC * pow(smoothstep(0.52, 0.8, n), 2.0) * 1.1;
@@ -155,15 +215,74 @@ function legendMat(S) {
         } else if (uMode < 4.5) {
           col = mix(uB, uA, 0.5 + 0.5 * sin(u.y * 26.0 + u.x * 9.0)) * 0.7;
           col += uC * pow(max(0.0, sin((u.y * 3.0 + u.x) * 3.2 - uT * 2.2)), 18.0) * 1.6;
-        } else {
+        } else if (uMode < 5.5) {
           // Thin falling code on a black suit; the head stays black inside the hood so only the eyes show.
           float cx = floor(u.x * 92.0), sp = 1.0 + h21(vec2(cx, 1.0)) * 2.0, y = u.y * 74.0 + uT * sp * 5.0, cell = floor(y);
           float tail = fract(-y / 26.0 + h21(vec2(cx, 2.0))), glyph = step(0.4, h21(vec2(cx, cell) + floor(uT * 7.0))) * step(0.5, fract(u.x * 92.0));
           col = uA + (uB * glyph * pow(tail, 5.0) * 0.8 + uC * glyph * step(0.97, tail) * 0.9) * step(u.y, 0.74);
+        } else if (uMode < 6.5) {
+          // Aurora: curtains of light rising and swaying.
+          float w = fbm(vec2(u.x * 5.0 + uT * 0.12, u.y * 1.2 - uT * 0.25));
+          float band = pow(0.5 + 0.5 * sin(u.x * 26.0 + w * 7.0 + uT * 0.9), 3.0), rise = smoothstep(-0.1, 0.9, u.y + w * 0.35);
+          col = uA * (0.55 + 0.4 * w) + mix(uB, uC, rise) * band * rise * 1.7 + uC * pow(band, 10.0) * rise * 0.9;
+          col += vec3(1.0) * step(0.992, h21(floor(u * vec2(120.0, 90.0)))) * (0.5 + 0.5 * sin(uT * 4.0 + u.x * 40.0));
+        } else if (uMode < 7.5) {
+          // Molten rock: dark stone split by glowing cracks that pulse.
+          vec3 v = vor(u * vec2(16.0, 12.0) + vec2(0.0, -uT * 0.04));
+          float e = v.y - v.x, crack = 1.0 - smoothstep(0.0, 0.09, e), core = 1.0 - smoothstep(0.0, 0.03, e);
+          float pulse = 0.65 + 0.35 * sin(uT * 2.2 - u.y * 9.0 + v.z * 6.28), rock = 0.55 + 0.45 * fbm(u * vec2(30.0, 24.0));
+          col = uA * rock * (0.8 + v.z * 0.5) + uB * crack * 1.5 * pulse + uC * core * 1.8 * pulse;
+          col += uB * pow(fbm(vec2(u.x * 8.0, u.y * 6.0 - uT * 0.5)), 3.0) * 0.6;
+        } else if (uMode < 8.5) {
+          // Crystal: cut facets that catch the light as they turn, rainbow fire inside, sparkles.
+          vec3 v = vor(u * vec2(13.0, 10.0));
+          float face = fract(v.z * 7.0 + dot(N0, vec3(0.6, 0.9, 0.3)) * 1.4), sh = pow(0.5 + 0.5 * sin(face * 6.283 + uT * 0.8), 2.0);
+          col = mix(uA, uB, v.z) * (0.45 + 0.8 * sh) + hsv(fract(v.z + fr * 0.6 + uT * 0.04)) * 0.32 * sh;
+          col += uC * (1.0 - smoothstep(0.0, 0.05, v.y - v.x)) * 1.1;
+          col += uC * step(0.988, h21(floor(u * vec2(90.0, 70.0)) + floor(uT * 4.0))) * 3.0;
+        } else if (uMode < 9.5) {
+          // Deep space: clouds of light folding into each other, and stars.
+          vec2 p = u * vec2(7.0, 5.0);
+          float a = fbm(p + vec2(uT * 0.15, -uT * 0.1)), b = fbm(p * 1.8 + a * 3.5 - vec2(0.0, uT * 0.22));
+          col = uA + uB * pow(b, 2.2) * 1.8 + uC * pow(smoothstep(0.5, 0.9, b), 3.0) * 2.4;
+          vec2 g = floor(u * vec2(110.0, 80.0));
+          col += vec3(1.0) * step(0.985, h21(g)) * (0.4 + 0.6 * sin(uT * 3.0 + h21(g + 5.0) * 30.0)) * 1.6;
+        } else if (uMode < 10.5) {
+          // Circuits: traces with pulses running along them and nodes that blink.
+          vec2 g = u * vec2(28.0, 20.0), i = floor(g), f = fract(g);
+          float hx = step(0.42, h21(i)), vy = step(0.58, h21(i + 9.0));
+          float lh = hx * (1.0 - smoothstep(0.035, 0.09, abs(f.y - 0.5))), lv = vy * (1.0 - smoothstep(0.035, 0.09, abs(f.x - 0.5))), line = max(lh, lv);
+          float ph = pow(fract(g.x * 0.12 - uT * 0.6 + h21(vec2(i.y, 3.0))), 8.0) * lh, pv = pow(fract(g.y * 0.12 - uT * 0.6 + h21(vec2(i.x, 5.0))), 8.0) * lv;
+          float node = (1.0 - smoothstep(0.1, 0.17, length(f - 0.5))) * hx * vy;
+          col = uA + uB * line * 1.2 + uC * ((ph + pv) * 2.6 + node * (1.0 + 0.5 * sin(uT * 5.0 + h21(i) * 20.0)) + line * 0.25);
+          col += uB * 0.3 * fbm(u * vec2(10.0, 8.0) + uT * 0.1);
+        } else if (uMode < 11.5) {
+          // Scales that shimmer in every colour as you turn.
+          vec2 p = u * vec2(30.0, 24.0);
+          p.x += 0.5 * mod(floor(p.y), 2.0);
+          vec2 f = fract(p) - vec2(0.5, 0.0);
+          float d = length(f * vec2(1.0, 1.25)), sc = 1.0 - smoothstep(0.5, 0.62, d), rim = smoothstep(0.38, 0.6, d) * sc;
+          col = mix(uA, uB, f.y) * (0.45 + 0.55 * sc) + hsv(fract(fr * 0.9 + u.y * 0.35 + uT * 0.03)) * 0.38 * sc * (0.4 + f.y) + uC * rim * 0.9;
+          col += uC * pow(max(0.0, sin((u.y * 2.0 + u.x) * 4.0 - uT * 1.8)), 16.0) * 0.8;
+        } else if (uMode < 12.5) {
+          // Spirit: smoke and wisps of light drifting up.
+          float w = fbm(vec2(u.x * 9.0, u.y * 5.0 - uT * 0.45)), wisp = smoothstep(0.68, 0.94, fbm(vec2(u.x * 18.0 + w * 2.0, u.y * 3.0 - uT * 1.1)));
+          col = (mix(uA, uB, w * w * w) + uC * wisp * 1.5) * (0.85 + 0.15 * sin(uT * 7.0 + u.y * 30.0));
+        } else if (uMode < 13.5) {
+          // A neon grid rolling up, and a sunset sweeping past.
+          vec2 g = vec2(u.x * 22.0, u.y * 18.0 - uT * 0.9), f = abs(fract(g) - 0.5);
+          float l = smoothstep(0.43, 0.48, max(f.x, f.y));
+          col = mix(uA, uB, u.y) + uC * l * 1.5 + mix(vec3(1.0, 0.45, 0.2), uC, u.y) * pow(max(0.0, sin(u.y * 18.85 - uT * 2.0)), 30.0) * 0.6;
+        } else {
+          // Hologram: a different colour from every angle, with scan lines.
+          col = mix(uA, hsv(fract(fr * 1.4 + u.y * 0.6 + u.x * 0.3 + uT * 0.08)), 0.75) * (0.7 + 0.3 * fbm(u * vec2(20.0, 16.0)));
+          col += vec3(1.0) * 0.12 * step(0.5, fract(u.y * 120.0 - uT * 3.0)) + uC * pow(1.0 - fr, 3.0) * 0.6;
         }
-        vec3 N = normalize(vN);
+        // The newer suits have a wave of light running up them every few seconds.
+        if (uMode > 5.5) col += uC * pow(max(0.0, 1.0 - abs(fract(u.y * 0.7 - uT * 0.3) - 0.5) * 9.0), 3.0) * 0.4;
+        vec3 N = N0;
         col *= 0.72 + 0.34 * max(N.y * 0.5 + 0.5, 0.0);
-        col += uC * pow(1.0 - max(dot(N, normalize(vV)), 0.0), 2.6) * (uMode > 4.5 ? 0.05 : 0.32);
+        col += uC * pow(1.0 - fr, 2.6) * (abs(uMode - 5.0) < 0.5 ? 0.05 : 0.32);
         gl_FragColor = vec4(min(col, vec3(4.0)), 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -200,10 +319,9 @@ export class Stickman {
     const headMat = (this.headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.22), roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.45 }));
     const ink = (this.inkMat = new THREE.MeshBasicMaterial({ color: 0x0a0d14 }));
     ink.userData.live = true;
-    const gunMat = (this.gunMat = new THREE.MeshStandardMaterial({ color: 0x23262e, roughness: 0.35, metalness: 0.7, emissive: color, emissiveIntensity: 0.35 }));
     // These change colour while the game runs (the player's pick), so the native renderer must keep
     // checking them for changes; without this the phone never saw a new colour.
-    for (const m of [limbMat, headMat, this.gunMat]) m.userData.live = true;
+    for (const m of [limbMat, headMat]) m.userData.live = true;
     const mesh = (geo, mat, parent, x = 0, y = 0, z = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
@@ -241,14 +359,10 @@ export class Stickman {
     this.faceStill = false;
     this.arms = SIDES.map((s, i) => {
       const sh = pivot(this.spine, s * SHOULDER_X, 0.46, 0);
+      sh.rotation.order = 'XZY';
       part(G.upper[i], sh);
       const el = pivot(sh, 0, -0.29, 0);
       part(G.fore[i], el);
-      // The right hand (x < 0 when facing +z) holds the blaster while aiming.
-      if (s < 0) {
-        this.gun = mesh(G.gun, gunMat, el, 0, -0.36, 0.02);
-        this.gun.visible = false;
-      }
       return { sh, el, s };
     });
     this.legs = SIDES.map((s, i) => {
@@ -292,12 +406,71 @@ export class Stickman {
     this.shader = null;
     this.trail = null;
     this.lookKey = '';
+    // The weapon: rides on the climber and comes to the hands when aiming. Made when first carried.
+    this.weapon = null;
+    this.gunRoot = null;
+    this.guns = new Map();
+    this.gunK = 0;
+    this.gunInfo = null;
+    this.spinner = null;
+    this.kick = 0;
+    this.lastShotSeen = 9;
+    this.flash = null;
+  }
+
+  setWeapon(w) {
+    if (w === this.weapon) return;
+    this.weapon = w;
+    if (!w) { if (this.gunRoot) this.gunRoot.visible = false; return; }
+    if (!this.gunRoot) {
+      this.gunRoot = new THREE.Group();
+      this.spine.add(this.gunRoot);
+      const fm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, opacity: 0.95 });
+      fm.userData.live = true;
+      this.flash = new THREE.Mesh(G.flash, fm);
+      this.flash.visible = false;
+      this.flash.renderOrder = 4;
+      this.gunRoot.add(this.flash);
+    }
+    this.gunRoot.visible = true;
+    for (const [, m] of this.guns) m.visible = false;
+    let m = this.guns.get(w.id);
+    const info = gunInfo(w.id);
+    if (!m) {
+      m = new THREE.Mesh(gearGeo(w.id), gearMat());
+      m.scale.setScalar(GS);
+      m.castShadow = true;
+      if (info.spin) {
+        const sp = new THREE.Mesh(gearGeo(info.spin), gearMat());
+        sp.position.set(info.spinAt[0], info.spinAt[1], info.spinAt[2]);
+        sp.castShadow = true;
+        m.add(sp);
+        m.userData.spinner = sp;
+      }
+      this.gunRoot.add(m);
+      this.guns.set(w.id, m);
+    }
+    m.visible = true;
+    this.gunInfo = info;
+    this.spinner = m.userData.spinner || null;
+    this.flash.position.set(info.muzzle[0] * GS, info.muzzle[1] * GS, info.muzzle[2] * GS + 0.04);
+    const beam = BEAMS[w.beam];
+    this.flash.material.color.setHex(beam ? beam.c : 0xffd890).multiplyScalar(3.4);
+  }
+
+  // Where a shot leaves, in the world, right now.
+  muzzle(out) {
+    if (!this.gunRoot || !this.gunInfo) return out.set(this.g.position.x, this.g.position.y + 0.75, this.g.position.z);
+    const m = this.gunInfo.muzzle;
+    this.gunRoot.updateWorldMatrix(true, false);
+    return out.set(m[0] * GS, m[1] * GS, m[2] * GS).applyMatrix4(this.gunRoot.matrixWorld);
   }
 
   // Everything a climber wears (a resolved look, see skins.js).
   setLook(L) {
     if (!L || L.key === this.lookKey) return;
     this.lookKey = L.key;
+    this.setWeapon(L.weapon || null);
     const S = L.suit;
     this.setColor(S.c);
     const plain = !S.p && !S.flag && !S.shader;
@@ -323,21 +496,38 @@ export class Stickman {
     for (const [id, m] of this.gear) m.visible = want.has(id);
     for (const id of want) {
       if (this.gear.has(id)) continue;
-      const m = new THREE.Mesh(gearGeo(id), gearMat());
-      m.castShadow = true;
-      (GEAR_AT[id] === 'hips' ? this.hips : this.head).add(m);
+      const at = GEAR_AT[id];
+      let m;
+      if (at === 'wings') {
+        // Two wings on the shoulder blades, each turning on its own root.
+        m = new THREE.Group();
+        m.position.set(0, 0.4, -0.1);
+        const l = new THREE.Mesh(gearGeo(id), gearMat()), r = new THREE.Mesh(gearGeoMirror(id), gearMat());
+        l.position.x = 0.03; r.position.x = -0.03;
+        l.castShadow = r.castShadow = true;
+        m.add(l, r);
+        m.userData.anim = 'flap'; m.userData.l = l; m.userData.r = r;
+        this.spine.add(m);
+      } else {
+        m = new THREE.Mesh(gearGeo(id), gearMat());
+        m.castShadow = true;
+        if (GEAR_ANIM[id]) m.userData.anim = GEAR_ANIM[id];
+        (at === 'hips' ? this.hips : at === 'back' ? this.spine : this.head).add(m);
+      }
       this.gear.set(id, m);
     }
     // Cape: flags always have one, a few costumes too.
     const spec = S.flag || S.cape;
+    this.capeShader = null;
     if (spec) {
+      const mat = spec === 'shader' && S.shader ? (this.capeShader = legendCape(S)) : capeMat(spec);
       if (!this.cape) {
-        this.cape = new THREE.Mesh(G.cape, capeMat(spec));
+        this.cape = new THREE.Mesh(G.cape, mat);
         this.cape.position.set(0, 0.45, -0.13);
         this.cape.castShadow = true;
         this.spine.add(this.cape);
       }
-      this.cape.material = capeMat(spec);
+      this.cape.material = mat;
       this.cape.visible = true;
     } else if (this.cape) this.cape.visible = false;
     // Legendary trail.
@@ -387,7 +577,7 @@ export class Stickman {
     T.was = any;
   }
 
-  // The player's chosen colour (body, head and the blaster's glow).
+  // The player's chosen colour (body and head).
   setColor(hex) {
     if (hex === this.color) return;
     this.color = hex;
@@ -395,7 +585,6 @@ export class Stickman {
     this.limbMat.emissive.setHex(hex);
     this.headMat.color.setHex(hex).lerp(WHITE, 0.22);
     this.headMat.emissive.setHex(hex);
-    this.gunMat.emissive.setHex(hex);
   }
 
   // Arms up and a little happy bounce (checkpoint, summit).
@@ -419,12 +608,13 @@ export class Stickman {
   }
 
   // flags from the physics body (or network); gy = floor height below for the contact shadow;
-  // faceYaw = where the player is aiming (used while F.AIM is set); shot = seconds since the last shot.
-  update(dt, x, y, z, vx, vy, vz, flags, charge, gy, faceYaw, shot = 9) {
+  // faceYaw = where the player is aiming (used while F.AIM is set); shot = seconds since the last shot; elev = how far up
+  // they are aiming, in radians.
+  update(dt, x, y, z, vx, vy, vz, flags, charge, gy, faceYaw, shot = 9, elev = 0) {
     this.t += dt;
     this.g.position.set(x, y, z);
     const sp = Math.hypot(vx, vz), ground = !!(flags & F.GROUND), anchored = !!(flags & F.ANCHOR), aim = !!(flags & F.AIM);
-    if (aim && faceYaw !== undefined) {
+    if ((aim || (shot < 0.45 && this.weapon)) && faceYaw !== undefined) {
       let d = faceYaw - this.yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.yaw += d * Math.min(1, dt * 20);
@@ -443,7 +633,7 @@ export class Stickman {
 
     const A = this.arms, L = this.legs, t = this.t;
     // Pose targets (rotation.x swings forward/back, rotation.z spreads sideways).
-    let lean = 0, crouch = 0, armX = [0, 0], armZ = [0.18, 0.18], elbow = [-0.25, -0.25], legX = [0, 0], knee = [0, 0], headX = 0, mouthO = 0.45;
+    let lean = 0, crouch = 0, armX = [0, 0], armZ = [0.18, 0.18], armY = [0, 0], elbow = [-0.25, -0.25], legX = [0, 0], knee = [0, 0], headX = 0, mouthO = 0.45;
     let headY = Math.max(-0.5, Math.min(0.5, -this.yawVel * 0.06)), headZ = 0, twist = 0, bounce = 0, breathe = 0;
     const idle = ground && sp <= 0.4 && !anchored && !(flags & (F.STUN | F.AIM | F.HANG | F.GRAPPLE));
     if (!idle) { this.idleT = 0; this.idleAct = null; }
@@ -457,8 +647,14 @@ export class Stickman {
       // Flying jump kick: one leg out straight, arms flung back.
       lean = -0.3; legX = [-1.75, 0.55]; knee = [0.05, 1.1]; armX = [0.8, 0.5]; armZ = [1.0, 1.0]; elbow = [-0.3, -0.3]; mouthO = 1.1;
     } else if (flags & F.STUN) {
-      this.spin += dt * 14;
-      armZ = [1.4, 1.4]; legX = [0.5, -0.5]; knee = [0.6, 0.6]; mouthO = 1.2;
+      if (this.stiff) {
+        // Paralysed: rigid, shaking, for a long time. Spinning round for a minute would look silly.
+        const tr = Math.sin(t * 38) * 0.05;
+        armX = [-0.5 + tr, -0.5 - tr]; armZ = [0.7, 0.7]; elbow = [-0.9, -0.9]; legX = [0.1, -0.1]; knee = [0.15, 0.15]; headX = 0.25 + tr; headZ = tr; lean = 0.12; mouthO = 1.4;
+      } else {
+        this.spin += dt * 14;
+        armZ = [1.4, 1.4]; legX = [0.5, -0.5]; knee = [0.6, 0.6]; mouthO = 1.2;
+      }
     } else if (flags & F.GRAPPLE) {
       armX = [-2.9, -0.4]; armZ = [0.1, 0.5]; elbow = [0, -0.6]; legX = [0.3, -0.5]; knee = [0.8, 0.5]; mouthO = 0.9;
     } else if (anchored) {
@@ -541,19 +737,56 @@ export class Stickman {
         if (E.hop && ground) lift += Math.sin(Math.min(1, k) * Math.PI) * 0.7;
       }
     }
-    // Aiming overrides the arms: right arm straight ahead with the blaster, left hand steadying it.
-    if (aim && !(flags & (F.STUN | F.GRAPPLE))) {
-      armX[0] = -1.57 - (shot < 0.12 ? 0.35 * (1 - shot / 0.12) : 0); armZ[0] = 0.05; elbow[0] = 0;
-      armX[1] = -1.25; armZ[1] = -0.45; elbow[1] = -0.5;
-      if (ground && sp < 0.4) { legX = [-0.25, 0.3]; knee = [0.25, 0.1]; }
+    // The weapon comes to the hands while aiming and a moment after a shot, and each kind has its own way of being held: both
+    // hands really reach for the grip and the barrel, wherever the gun is pointing.
+    const W = this.weapon, H = W ? HOLDS[W.hold] : null, holding = !!W && (aim || shot < 0.45) && !(flags & (F.STUN | F.GRAPPLE | F.DASH));
+    if (W) {
+      this.gunK += ((holding ? 1 : 0) - this.gunK) * Math.min(1, dt * (holding ? 15 : 8));
+      if (shot < this.lastShotSeen) this.kick = 1;
+      this.lastShotSeen = shot;
+      this.kick = Math.max(0, this.kick - dt * 9);
+      const up = Math.max(-1.15, Math.min(1.15, elev)), rec = this.kick * this.kick;
+      if (holding) {
+        lean = H.lean - up * 0.32;
+        twist = 0;
+        crouch += H.crouch;
+        headX = H.hx - up * 0.55;
+        headZ = H.hz;
+        headY = 0;
+        mouthO = shot < 0.1 ? 0.9 : 0.4;
+        if (ground && sp < 0.4) { legX = [H.stance[0], H.stance[1]]; knee = [H.stance[2], H.stance[3]]; }
+      }
+      const R0 = this.gunRoot, sl = SLUNG[H.sling], k = this.gunK;
+      eHold.set(-up - lean - H.kick[1] * rec, 0, 0);
+      qHold.setFromEuler(eHold);
+      vHold.set(H.at[0], H.at[1] + H.kick[1] * rec * 0.08, H.at[2] - H.kick[0] * rec);
+      R0.position.lerpVectors(sl.p, vHold, k);
+      R0.quaternion.slerpQuaternions(sl.q, qHold, k);
+      if (holding) {
+        const info = this.gunInfo, G0 = R0.position, q = R0.quaternion;
+        // The right hand on the grip, the left on the barrel. Each elbow out and down.
+        const put = (i, hx, hy, hz, px) => {
+          vHold.set(hx * GS, hy * GS, hz * GS).applyQuaternion(q);
+          const a = reach(G0.x + vHold.x - A[i].s * SHOULDER_X, G0.y + vHold.y - 0.46, G0.z + vHold.z, px, -1, -0.25);
+          armX[i] = a.ax; armZ[i] = A[i].s * a.az; armY[i] = a.ay; elbow[i] = a.el;
+        };
+        put(0, 0, -0.04, -0.01, -0.75);
+        put(1, info.fore[0], info.fore[1] - 0.012, info.fore[2], 0.8);
+      }
+      R0.visible = true;
+      if (this.spinner) this.spinner.rotation.z += dt * (shot < 0.25 ? 34 : 0);
+      const fl = this.flash;
+      fl.visible = holding && shot < 0.05;
+      if (fl.visible) { const s = 0.7 + Math.random() * 0.8; fl.scale.set(s, s, s * (W.scope ? 1.6 : 1)); fl.rotation.z = Math.random() * 6.28; }
     }
-    if (this.gun) this.gun.visible = aim || shot < 0.4;
     if (!(flags & F.STUN)) this.spin *= Math.exp(-dt * 6);
     const ease = Math.min(1, dt * 14), lerp = (o, k, v) => { o[k] += (v - o[k]) * ease; };
+    const handEase = holding ? Math.min(1, dt * 34) : ease, lerpH = (o, k, v) => { o[k] += (v - o[k]) * handEase; };
     for (let i = 0; i < 2; i++) {
-      lerp(A[i].sh.rotation, 'x', armX[i]);
-      lerp(A[i].sh.rotation, 'z', A[i].s * armZ[i]);
-      lerp(A[i].el.rotation, 'x', elbow[i]);
+      lerpH(A[i].sh.rotation, 'x', armX[i]);
+      lerpH(A[i].sh.rotation, 'z', A[i].s * armZ[i]);
+      lerpH(A[i].sh.rotation, 'y', armY[i]);
+      lerpH(A[i].el.rotation, 'x', elbow[i]);
       lerp(L[i].hp.rotation, 'x', legX[i]);
       lerp(L[i].hp.rotation, 'z', L[i].s * legZ[i]);
       lerp(L[i].kn.rotation, 'x', knee[i]);
@@ -593,6 +826,17 @@ export class Stickman {
       this.mouthP.scale.y = Math.min(1.25, 0.8 + this.mouth.scale.y * 0.42);
     }
     if (this.shader) this.shader.uniforms.uT.value = t % 3600;
+    if (this.capeShader) this.capeShader.uniforms.uT.value = t % 3600;
+    // Wings beat slowly on the ground and hard in the air; orbs and rings go round.
+    for (const m of this.gear.values()) {
+      const an = m.userData.anim;
+      if (!an || !m.visible) continue;
+      if (an === 'flap') {
+        const f = Math.sin(t * (ground ? 2.2 : 8)), a = 0.28 + f * (ground ? 0.1 : 0.32);
+        m.userData.l.rotation.set(0, a, f * 0.12);
+        m.userData.r.rotation.set(0, -a, -f * 0.12);
+      } else m.rotation.y = (t * 1.3) % 6.2832;
+    }
     if (this.cape && this.cape.visible) {
       // Streams out behind when running or falling, sways a little when standing.
       const want = 0.08 + Math.min(1, sp / 6) * 0.85 + (ground ? 0 : Math.min(0.5, Math.abs(vy) * 0.05)) + Math.sin(t * (3 + sp)) * (0.04 + sp * 0.012);

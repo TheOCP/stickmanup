@@ -85,15 +85,183 @@ export const GEAR = {
   ],
   hemgg: () => [cyl(0.13, 0.2, 0.22, 0, 0.03, 0, 0xff6aa8), tor(0.2, 0.012, 0, -0.08, 0, 0xffffff)],
 };
-// Where each attaches when it isn't on the head.
+// Where each attaches when it isn't on the head: the hips, the back (in the torso's own space, from the hips up) or a pair of
+// wings on the shoulder blades. Some move by themselves.
 export const GEAR_AT = { hemgg: 'hips' };
+export const GEAR_ANIM = {};
+
+// ---------------------------------------------------------------- the weapons
+// A gun is built with its grip at the origin, its barrel along +z and its top along +y. fore is where the other hand goes,
+// muzzle where the shot leaves, spin a part that turns while firing.
+const HALF = Math.PI / 2;
+const tb = (r, l, x, y, z, c, glow, gk, n = 10) => part(new THREE.CylinderGeometry(r, r, l, n), M(x, y, z, 1, 1, 1, HALF), c, glow, gk);
+const tp = (r0, r1, l, x, y, z, c, glow, gk, n = 10) => part(new THREE.CylinderGeometry(r1, r0, l, n), M(x, y, z, 1, 1, 1, HALF), c, glow, gk);
+const bx = (w, h, d, x, y, z, c, rx = 0, ry = 0, rz = 0, glow, gk) => box(w, h, d, x, y, z, c, rx, ry, rz, glow, gk);
+const lit = (w, h, d, x, y, z, c, gk = 2.4, rx = 0, ry = 0, rz = 0) => box(w, h, d, x, y, z, c, rx, ry, rz, c, gk);
+const ring = (R, r, x, y, z, c, glow, gk) => part(new THREE.TorusGeometry(R, r, 6, 18), M(x, y, z), c, glow, gk);
+const orb = (r, x, y, z, c, gk = 3) => part(new THREE.SphereGeometry(r, 10, 8), M(x, y, z), c, c, gk);
+const shard = (r, l, x, y, z, c, rx = 0, ry = 0, rz = 0, glow, gk) => part(new THREE.OctahedronGeometry(r, 0), M(x, y, z, 1, l, 1, rx, ry, rz), c, glow, gk);
+
+const INK = 0x262a33, DARK = 0x363c48, STEEL = 0x5a6474, MID = 0x8893a3, PALE = 0xb8c2d0, WOOD = 0x6e4324, WOOD2 = 0x915c30, TAN = 0xb39468, OLIVE = 0x5f7048;
+const grip = (c = DARK, t = 0.3) => [bx(0.044, 0.135, 0.06, 0, -0.065, -0.012, c, t), bx(0.012, 0.012, 0.055, 0, -0.012, 0.045, STEEL), bx(0.009, 0.04, 0.012, 0, -0.03, 0.03, STEEL, -0.3)];
+const mag = (z, h, c = INK, t = 0.2, w = 0.038, d = 0.066) => bx(w, h, d, 0, -0.02 - h / 2, z, c, t);
+const rail = (z, l, y = 0.066, c = INK) => [bx(0.026, 0.012, l, 0, y, z, c)];
+const irons = (z0, z1, y = 0.07, c = INK) => [bx(0.022, 0.03, 0.012, 0, y + 0.015, z0, c), bx(0.008, 0.034, 0.012, 0, y + 0.017, z1, c)];
+const brake = (r, z, c = INK) => [tb(r, 0.07, 0, 0.02, z, c), tb(r * 0.62, 0.012, 0, 0.02, z + 0.04, 0x050505)];
+const scope = (l, y, z, c = INK, glass = 0x60d0ff, r = 0.03) => [tb(r * 0.72, l, 0, y, z, c), tp(r * 0.72, r * 1.25, l * 0.24, 0, y, z + l * 0.5, c), tp(r * 1.25, r * 0.72, l * 0.2, 0, y, z - l * 0.5, c),
+  tb(r * 1.15, 0.006, 0, y, z + l * 0.62, glass, glass, 2.2), tb(r * 0.9, 0.006, 0, y, z - l * 0.6, glass, glass, 1.2), bx(0.022, y - 0.06, 0.03, 0, (y + 0.06) / 2, z + l * 0.28, INK), bx(0.022, y - 0.06, 0.03, 0, (y + 0.06) / 2, z - l * 0.28, INK), tb(0.012, 0.03, 0.038, y, z, c, 0, 0, 6)];
+const reddot = (y, z, c = 0xff3040) => [bx(0.036, 0.034, 0.05, 0, y, z, INK), lit(0.024, 0.02, 0.006, 0, y + 0.002, z + 0.026, c, 2.6)];
+
+const GUNS = {
+  // ------------------------------------------- sidearms
+  w_blaster: () => ({ fore: [0.012, -0.075, 0.0], muzzle: [0, 0.03, 0.27], p: [...grip(STEEL), bx(0.05, 0.075, 0.2, 0, 0.03, 0.06, STEEL), bx(0.052, 0.024, 0.2, 0, 0.078, 0.06, DARK), tb(0.021, 0.09, 0, 0.03, 0.2, DARK), ring(0.03, 0.007, 0, 0.03, 0.235, 0x60e0ff, 0x60e0ff, 2.4), lit(0.054, 0.01, 0.14, 0, 0.042, 0.065, 0x60e0ff, 2.2), bx(0.016, 0.02, 0.016, 0, 0.098, 0.135, INK), bx(0.02, 0.018, 0.016, 0, 0.098, -0.02, INK)] }),
+  w_scout: () => ({ fore: [0.012, -0.075, 0.0], muzzle: [0, 0.042, 0.215], p: [...grip(INK), bx(0.042, 0.03, 0.22, 0, 0.012, 0.075, DARK), bx(0.046, 0.042, 0.23, 0, 0.044, 0.08, MID), tb(0.012, 0.02, 0, 0.042, 0.2, INK), ...irons(-0.02, 0.17, 0.062), ...[0, 1, 2, 3].map((i) => bx(0.048, 0.03, 0.005, 0, 0.044, -0.02 + i * 0.012, INK))] }),
+  w_revolver: () => ({ fore: [0.012, -0.08, 0.0], muzzle: [0, 0.052, 0.3], p: [bx(0.044, 0.14, 0.062, 0, -0.065, -0.018, WOOD2, 0.35), bx(0.012, 0.012, 0.055, 0, -0.012, 0.045, STEEL), bx(0.04, 0.078, 0.11, 0, 0.03, 0.03, STEEL), tb(0.047, 0.07, 0, 0.03, 0.05, MID, 0, 0, 7), ...[0, 1, 2, 3, 4, 5].map((i) => tb(0.011, 0.074, Math.cos(i * 1.047) * 0.03, 0.03 + Math.sin(i * 1.047) * 0.03, 0.05, INK, 0, 0, 6)), tb(0.018, 0.22, 0, 0.052, 0.19, STEEL), bx(0.022, 0.014, 0.21, 0, 0.073, 0.19, MID), bx(0.008, 0.026, 0.02, 0, 0.09, 0.285, INK), bx(0.012, 0.034, 0.012, 0, 0.078, -0.03, INK, -0.6)] }),
+  w_handcannon: () => ({ fore: [0.012, -0.08, 0.0], muzzle: [0, 0.052, 0.335], p: [bx(0.05, 0.15, 0.07, 0, -0.07, -0.02, INK, 0.3), bx(0.012, 0.012, 0.06, 0, -0.012, 0.05, STEEL), bx(0.06, 0.09, 0.26, 0, 0.04, 0.1, STEEL), bx(0.064, 0.04, 0.3, 0, 0.082, 0.14, DARK), ...[0, 1, 2, 3, 4].map((i) => bx(0.066, 0.014, 0.022, 0, 0.09, 0.1 + i * 0.05, INK)), tb(0.03, 0.07, 0, 0.052, 0.3, INK), lit(0.066, 0.008, 0.2, 0, 0.056, 0.1, 0xffa030, 2), ...reddot(0.116, 0.02, 0xffa030)] }),
+  w_viper: () => ({ fore: [0.012, -0.09, -0.005], muzzle: [0, 0.035, 0.235], p: [...grip(DARK), mag(-0.012, 0.2, INK, 0.25), bx(0.046, 0.066, 0.2, 0, 0.028, 0.06, 0x234a2e), bx(0.05, 0.024, 0.2, 0, 0.07, 0.06, INK), tb(0.016, 0.05, 0, 0.033, 0.195, INK), bx(0.02, 0.06, 0.03, 0, -0.012, 0.135, INK, 0.3), lit(0.052, 0.008, 0.16, 0, 0.044, 0.06, 0x70ff50, 2.2), ...reddot(0.098, 0.02, 0x70ff50), bx(0.05, 0.03, 0.05, 0, 0.03, -0.07, INK)] }),
+  // ------------------------------------------- submachine guns
+  w_buzz: () => ({ fore: [0.0, -0.05, 0.2], muzzle: [0, 0.03, 0.39], p: [...grip(DARK), mag(0.1, 0.18, INK, -0.1), bx(0.056, 0.08, 0.3, 0, 0.03, 0.11, STEEL), tb(0.017, 0.14, 0, 0.03, 0.31, INK), tb(0.026, 0.09, 0, 0.03, 0.33, DARK), bx(0.05, 0.03, 0.12, 0, -0.024, 0.2, DARK), ...rail(0.1, 0.22), ...irons(0.0, 0.22), bx(0.012, 0.012, 0.26, 0.02, 0.05, -0.16, MID), bx(0.012, 0.012, 0.26, -0.02, 0.05, -0.16, MID), bx(0.056, 0.05, 0.016, 0, 0.05, -0.29, INK)].flat() }),
+  w_stinger: () => ({ fore: [0.0, -0.1, 0.235], muzzle: [0, 0.035, 0.425], p: [...grip(INK), mag(0.02, 0.22, INK, 0.2), bx(0.052, 0.09, 0.26, 0, 0.034, 0.09, 0xd8b030), bx(0.056, 0.03, 0.27, 0, 0.09, 0.09, INK), tb(0.03, 0.13, 0, 0.035, 0.31, INK), ...[0, 1, 2, 3].map((i) => bx(0.062, 0.05, 0.008, 0, 0.035, 0.26 + i * 0.03, DARK)), tb(0.012, 0.05, 0, 0.035, 0.4, INK), bx(0.024, 0.09, 0.03, 0, -0.05, 0.235, INK, 0.25), ...reddot(0.124, 0.08), bx(0.04, 0.06, 0.16, 0, 0.03, -0.1, INK), bx(0.05, 0.08, 0.02, 0, 0.018, -0.18, DARK)] }),
+  w_ghost: () => ({ fore: [0.0, -0.09, 0.24], muzzle: [0, 0.05, 0.53], p: [...grip(INK), bx(0.05, 0.09, 0.3, 0, 0.04, 0.1, 0x232a36), bx(0.056, 0.022, 0.3, 0, 0.094, 0.1, INK), tb(0.034, 0.26, 0, 0.05, 0.4, INK), ...[0, 1, 2, 3, 4].map((i) => ring(0.036, 0.004, 0, 0.05, 0.3 + i * 0.05, 0x60e0ff, 0x60e0ff, 1.8)), mag(0.09, 0.2, INK, 0.05), bx(0.024, 0.09, 0.03, 0, -0.05, 0.24, DARK, 0.25), lit(0.058, 0.008, 0.24, 0, 0.06, 0.1, 0x60e0ff, 2.4), ...reddot(0.128, 0.08, 0x60e0ff), bx(0.012, 0.09, 0.012, 0, 0.0, -0.13, INK, 0.5), bx(0.05, 0.08, 0.02, 0, -0.01, -0.17, DARK)] }),
+  // ------------------------------------------- shotguns
+  w_pump: () => ({ fore: [0.0, -0.035, 0.31], muzzle: [0, 0.045, 0.62], p: [...grip(WOOD2), bx(0.052, 0.085, 0.2, 0, 0.03, 0.09, STEEL), tb(0.024, 0.46, 0, 0.045, 0.39, STEEL), tb(0.019, 0.34, 0, 0.0, 0.33, DARK), bx(0.056, 0.05, 0.13, 0, -0.005, 0.31, WOOD), ...[0, 1, 2, 3].map((i) => bx(0.058, 0.004, 0.008, 0, 0.02, 0.26 + i * 0.033, INK)), bx(0.05, 0.1, 0.27, 0, -0.03, -0.18, WOOD, -0.18), bx(0.056, 0.11, 0.02, 0, -0.058, -0.32, INK, -0.18), tb(0.028, 0.018, 0, 0.045, 0.61, INK), bx(0.012, 0.016, 0.012, 0, 0.076, 0.6, 0xff4030)] }),
+  w_sweeper: () => ({ fore: [0.0, -0.05, 0.3], muzzle: [0, 0.05, 0.585], p: [...grip(INK), bx(0.056, 0.1, 0.3, 0, 0.034, 0.13, DARK), tb(0.092, 0.11, 0, -0.1, 0.11, INK, 0, 0, 12), ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => tb(0.017, 0.114, Math.cos(i * 0.785) * 0.066, -0.1 + Math.sin(i * 0.785) * 0.066, 0.11, MID, 0, 0, 6)), tb(0.027, 0.3, 0, 0.05, 0.43, STEEL), bx(0.05, 0.036, 0.2, 0, 0.006, 0.34, INK), ...[0, 1, 2, 3, 4].map((i) => bx(0.058, 0.014, 0.02, 0, 0.082, 0.3 + i * 0.05, INK)), ...brake(0.035, 0.57), ...rail(0.14, 0.22, 0.09), bx(0.044, 0.1, 0.19, 0, 0.03, -0.14, INK), bx(0.056, 0.12, 0.022, 0, 0.018, -0.24, DARK)] }),
+  w_dragonb: () => ({ fore: [0.0, -0.055, 0.3], muzzle: [0, 0.045, 0.66], p: [...grip(0x281410), bx(0.056, 0.09, 0.22, 0, 0.03, 0.09, 0x3a1a12), tb(0.031, 0.42, 0.031, 0.045, 0.41, 0x3a1a12), tb(0.031, 0.42, -0.031, 0.045, 0.41, 0x3a1a12), tp(0.03, 0.066, 0.1, 0.031, 0.045, 0.655, 0x281410), tp(0.03, 0.066, 0.1, -0.031, 0.045, 0.655, 0x281410), lit(0.012, 0.012, 0.36, 0, 0.082, 0.42, 0xff6a1a, 3), lit(0.012, 0.012, 0.36, 0, 0.008, 0.42, 0xff6a1a, 3), bx(0.09, 0.05, 0.14, 0, -0.01, 0.3, INK), ...[0, 1, 2].map((i) => shard(0.03, 1.8, 0, 0.1, 0.28 + i * 0.12, 0xff4a10, 0.6, 0, 0, 0xff4a10, 1.6)), bx(0.05, 0.1, 0.25, 0, -0.03, -0.17, 0x281410, -0.18), lit(0.052, 0.012, 0.22, 0, -0.02, -0.17, 0xff6a1a, 2.4, -0.18)] }),
+  // ------------------------------------------- rifles
+  w_carbine: () => ({ fore: [0.0, -0.045, 0.29], muzzle: [0, 0.045, 0.655], p: [...grip(DARK), mag(0.12, 0.17, INK, -0.22), bx(0.05, 0.09, 0.3, 0, 0.034, 0.1, OLIVE), bx(0.054, 0.065, 0.24, 0, 0.034, 0.36, OLIVE), ...[0, 1, 2, 3, 4].map((i) => bx(0.057, 0.012, 0.024, 0, 0.038, 0.28 + i * 0.04, INK)), tb(0.013, 0.2, 0, 0.045, 0.55, INK), ...brake(0.021, 0.62), ...rail(0.2, 0.42), ...reddot(0.094, 0.12), bx(0.016, 0.05, 0.016, 0, 0.094, 0.44, INK), tb(0.018, 0.2, 0, 0.042, -0.14, STEEL), bx(0.046, 0.09, 0.14, 0, 0.012, -0.27, OLIVE), bx(0.05, 0.1, 0.018, 0, 0.012, -0.345, INK)] }),
+  w_stormar: () => ({ fore: [0.0, -0.06, 0.3], muzzle: [0, 0.05, 0.675], p: [...grip(INK), mag(0.11, 0.2, INK, -0.28, 0.04, 0.075), bx(0.056, 0.1, 0.32, 0, 0.038, 0.1, 0x2c323c), bx(0.06, 0.084, 0.27, 0, 0.042, 0.38, DARK), ...[0, 1, 2, 3, 4, 5].map((i) => bx(0.062, 0.05, 0.008, 0, 0.042, 0.28 + i * 0.038, 0x05060a)), tb(0.015, 0.14, 0, 0.05, 0.58, STEEL), ...brake(0.026, 0.64), ...rail(0.22, 0.48, 0.09), ...reddot(0.116, 0.12), bx(0.024, 0.08, 0.03, 0, -0.04, 0.3, INK, 0.25), bx(0.044, 0.08, 0.2, 0, 0.03, -0.17, DARK), bx(0.054, 0.12, 0.024, 0, 0.018, -0.28, INK), lit(0.062, 0.008, 0.18, 0, 0.076, 0.38, 0xffb040, 2)] }),
+  w_razor: () => ({ fore: [0.0, -0.05, 0.31], muzzle: [0, 0.05, 0.56], p: [...grip(TAN), mag(-0.14, 0.17, INK, 0.1), bx(0.06, 0.12, 0.5, 0, 0.038, 0.06, TAN), bx(0.05, 0.03, 0.5, 0, 0.11, 0.06, 0x2a2620), bx(0.056, 0.05, 0.13, 0, -0.04, 0.31, 0x8a7350), tb(0.016, 0.12, 0, 0.05, 0.49, INK), ...brake(0.024, 0.53), ...scope(0.14, 0.158, 0.09, INK, 0xff5040, 0.026), bx(0.062, 0.12, 0.016, 0, 0.03, -0.2, INK), ...[0, 1, 2].map((i) => bx(0.062, 0.006, 0.08, 0, 0.0 + i * 0.024, 0.16, 0x2a2620))] }),
+  w_nova: () => ({ fore: [0.0, -0.07, 0.32], muzzle: [0, 0.055, 0.72], p: [...grip(INK), bx(0.058, 0.11, 0.34, 0, 0.04, 0.1, 0xe2e8f0), bx(0.064, 0.09, 0.3, 0, 0.044, 0.4, 0xc8d0dc), lit(0.066, 0.016, 0.42, 0, 0.044, 0.3, 0x60e0ff, 3), ...[0, 1, 2].map((i) => ring(0.05, 0.007, 0, 0.055, 0.56 + i * 0.045, 0x60e0ff, 0x60e0ff, 2.6)), tb(0.016, 0.18, 0, 0.055, 0.62, INK), orb(0.02, 0, 0.055, 0.7, 0x9ff0ff, 3.5), mag(0.08, 0.15, 0x2a2f38, -0.2, 0.046, 0.09), bx(0.024, 0.08, 0.03, 0, -0.04, 0.32, INK, 0.25), ...scope(0.15, 0.17, 0.12, DARK, 0x60e0ff), bx(0.05, 0.1, 0.21, 0, 0.03, -0.18, 0xe2e8f0), bx(0.056, 0.13, 0.024, 0, 0.018, -0.29, INK), lit(0.052, 0.008, 0.16, 0, 0.056, -0.18, 0x60e0ff, 2.4)] }),
+  // ------------------------------------------- snipers
+  w_hunter: () => ({ fore: [0.0, -0.05, 0.33], muzzle: [0, 0.052, 0.825], p: [bx(0.052, 0.13, 0.07, 0, -0.06, -0.03, WOOD2, 0.5), bx(0.012, 0.012, 0.05, 0, -0.012, 0.04, STEEL), bx(0.056, 0.05, 0.56, 0, -0.012, 0.2, WOOD2), bx(0.05, 0.075, 0.2, 0, 0.038, 0.09, STEEL), tb(0.016, 0.56, 0, 0.052, 0.53, STEEL), tp(0.02, 0.014, 0.1, 0, 0.052, 0.27, STEEL), ...brake(0.022, 0.8), ...scope(0.28, 0.16, 0.1), tb(0.008, 0.06, 0.05, 0.05, 0.03, MID, 0, 0, 6), orb(0.016, 0.082, 0.05, 0.03, MID, 0), bx(0.052, 0.13, 0.3, 0, -0.03, -0.2, WOOD, -0.14), bx(0.058, 0.14, 0.022, 0, -0.05, -0.355, INK, -0.14)] }),
+  w_longshot: () => ({ fore: [0.0, -0.06, 0.3], muzzle: [0, 0.052, 0.99], p: [...grip(INK), bx(0.056, 0.1, 0.34, 0, 0.034, 0.1, 0x3a4a34), bx(0.06, 0.05, 0.3, 0, 0.012, 0.36, 0x2e3b2a), tb(0.018, 0.68, 0, 0.052, 0.62, STEEL), tp(0.018, 0.038, 0.14, 0, 0.052, 0.92, INK), ...[0, 1, 2].map((i) => tb(0.04, 0.01, 0, 0.052, 0.88 + i * 0.03, DARK)), ...scope(0.34, 0.172, 0.12, INK, 0x70ff90, 0.036), mag(0.08, 0.1, INK, 0), bx(0.012, 0.2, 0.012, 0.04, -0.09, 0.46, STEEL, 0.5, 0, 0.3), bx(0.012, 0.2, 0.012, -0.04, -0.09, 0.46, STEEL, 0.5, 0, -0.3), bx(0.044, 0.09, 0.26, 0, 0.018, -0.2, 0x3a4a34), bx(0.05, 0.14, 0.024, 0, 0.002, -0.34, INK), bx(0.05, 0.03, 0.09, 0, 0.082, -0.18, INK)] }),
+  w_phantom: () => ({ fore: [0.0, -0.08, 0.3], muzzle: [0, 0.05, 0.87], p: [...grip(INK), mag(0.09, 0.16, INK, -0.05, 0.04, 0.09), bx(0.052, 0.11, 0.36, 0, 0.038, 0.12, 0x20242c), bx(0.058, 0.086, 0.25, 0, 0.04, 0.4, 0x14171d), ...[0, 1, 2, 3, 4].map((i) => bx(0.06, 0.04, 0.01, 0, 0.04, 0.31 + i * 0.04, INK)), tb(0.036, 0.3, 0, 0.05, 0.71, INK), ...[0, 1, 2, 3].map((i) => tb(0.038, 0.012, 0, 0.05, 0.62 + i * 0.06, STEEL)), ...scope(0.26, 0.164, 0.14, DARK, 0xc070ff), bx(0.024, 0.09, 0.03, 0, -0.045, 0.3, INK, 0.25), bx(0.012, 0.11, 0.012, 0, 0.01, -0.13, STEEL, 0.5), bx(0.052, 0.1, 0.022, 0, -0.01, -0.21, INK), lit(0.06, 0.008, 0.22, 0, 0.066, 0.4, 0xc070ff, 2.2)] }),
+  w_railspike: () => ({ fore: [0.0, -0.08, 0.3], muzzle: [0, 0.065, 1.02], p: [...grip(INK), bx(0.06, 0.12, 0.38, 0, 0.04, 0.12, 0x2b3442), bx(0.016, 0.03, 0.66, 0.032, 0.065, 0.68, STEEL), bx(0.016, 0.03, 0.66, -0.032, 0.065, 0.68, STEEL), lit(0.018, 0.014, 0.62, 0, 0.065, 0.68, 0x50c8ff, 3.2), ...[0, 1, 2, 3].map((i) => bx(0.1, 0.06, 0.016, 0, 0.065, 0.44 + i * 0.16, DARK)), ...scope(0.26, 0.186, 0.12, INK, 0x50c8ff, 0.034), bx(0.05, 0.08, 0.1, 0, -0.03, 0.14, 0x3a4a60), lit(0.052, 0.012, 0.09, 0, -0.03, 0.14, 0x50c8ff, 2.6), bx(0.024, 0.09, 0.03, 0, -0.05, 0.3, INK, 0.25), bx(0.048, 0.1, 0.24, 0, 0.03, -0.18, 0x2b3442), bx(0.056, 0.14, 0.024, 0, 0.018, -0.3, INK)] }),
+  // ------------------------------------------- machine guns
+  w_bulldog: () => ({ fore: [0.0, -0.05, 0.27], muzzle: [0, 0.05, 0.77], p: [...grip(DARK), bx(0.064, 0.12, 0.38, 0, 0.038, 0.1, 0x2d3320), tb(0.03, 0.34, 0, 0.05, 0.46, DARK), ...[0, 1, 2, 3, 4, 5, 6].map((i) => tb(0.034, 0.012, 0, 0.05, 0.34 + i * 0.045, INK)), tb(0.015, 0.14, 0, 0.05, 0.68, STEEL), ...brake(0.028, 0.74), bx(0.1, 0.12, 0.16, 0.0, -0.075, 0.12, 0x3f4730), bx(0.11, 0.012, 0.17, 0, -0.012, 0.12, INK), bx(0.012, 0.2, 0.012, 0.05, -0.09, 0.56, STEEL, 0.4, 0, 0.3), bx(0.012, 0.2, 0.012, -0.05, -0.09, 0.56, STEEL, 0.4, 0, -0.3), ...rail(0.16, 0.34, 0.104), ...reddot(0.128, 0.12), bx(0.05, 0.1, 0.22, 0, 0.012, -0.18, 0x2d3320), bx(0.058, 0.13, 0.022, 0, 0.0, -0.29, INK)] }),
+  w_ironbelt: () => ({ fore: [0.0, 0.14, 0.2], muzzle: [0, 0.06, 0.84], p: [...grip(INK), bx(0.07, 0.14, 0.42, 0, 0.05, 0.12, STEEL), tb(0.021, 0.5, 0, 0.06, 0.56, MID), ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => tb(0.037, 0.016, 0, 0.06, 0.36 + i * 0.05, DARK)), tp(0.024, 0.052, 0.08, 0, 0.06, 0.82, INK), bx(0.012, 0.11, 0.012, 0.02, 0.17, 0.2, MID), bx(0.012, 0.11, 0.012, -0.02, 0.17, 0.2, MID), bx(0.06, 0.016, 0.016, 0, 0.14, 0.2, INK), bx(0.14, 0.14, 0.18, 0.1, -0.05, 0.11, 0x47502f), ...[0, 1, 2, 3, 4, 5, 6].map((i) => bx(0.018, 0.05, 0.016, 0.03 - i * 0.012 + 0.0, 0.03 + i * 0.012, 0.11, 0xd8a838)), ...reddot(0.142, 0.08), bx(0.05, 0.11, 0.2, 0, 0.012, -0.18, STEEL), bx(0.06, 0.14, 0.022, 0, 0.0, -0.285, INK)] }),
+  w_ripper: () => ({ fore: [0.0, 0.145, 0.18], muzzle: [0, 0.055, 0.72], spin: 'w_ripper_b', spinAt: [0, 0.055, 0], p: [...grip(INK), bx(0.11, 0.15, 0.3, 0, 0.055, 0.1, 0x303642), tb(0.052, 0.09, 0, 0.055, 0.28, MID, 0, 0, 12), bx(0.014, 0.1, 0.014, 0.03, 0.17, 0.18, MID), bx(0.014, 0.1, 0.014, -0.03, 0.17, 0.18, MID), bx(0.08, 0.018, 0.018, 0, 0.145, 0.18, INK), tb(0.082, 0.14, 0, -0.1, 0.1, 0x47502f, 0, 0, 14), ...[0, 1, 2].map((i) => lit(0.114, 0.008, 0.008, 0, 0.1, -0.03 + i * 0.03, 0xff5030, 2.2)), bx(0.09, 0.09, 0.1, 0, 0.06, -0.09, INK)] }),
+  w_ripper_b: () => [0, 1, 2, 3, 4, 5].flatMap((i) => [tb(0.0125, 0.46, Math.cos(i * 1.047) * 0.038, Math.sin(i * 1.047) * 0.038, 0.5, STEEL, 0, 0, 6)]).concat([tb(0.058, 0.022, 0, 0, 0.42, DARK, 0, 0, 12), tb(0.058, 0.022, 0, 0, 0.68, DARK, 0, 0, 12)]),
+  // ------------------------------------------- launchers
+  w_thumper: () => ({ fore: [0.0, -0.11, 0.26], muzzle: [0, 0.075, 0.57], p: [...grip(INK), bx(0.06, 0.11, 0.2, 0, 0.03, 0.08, OLIVE), tb(0.066, 0.42, 0, 0.075, 0.34, OLIVE, 0, 0, 12), tb(0.052, 0.012, 0, 0.075, 0.55, 0x050505), ...[0, 1, 2].map((i) => tb(0.072, 0.03, 0, 0.075, 0.18 + i * 0.16, INK, 0, 0, 12)), bx(0.024, 0.1, 0.03, 0, -0.06, 0.26, INK, 0.25), bx(0.014, 0.05, 0.05, 0, 0.17, 0.2, INK), lit(0.008, 0.012, 0.012, 0.01, 0.19, 0.2, 0xff4030, 3), bx(0.05, 0.1, 0.17, 0, 0.012, -0.12, OLIVE), bx(0.06, 0.12, 0.03, 0, 0.0, -0.21, INK), bx(0.024, 0.024, 0.13, 0.08, 0.03, 0.34, 0xffd030, 0, 0, 0, 0xff8020, 1.4)] }),
+  // ------------------------------------------- the legendaries
+  w_solar: () => ({ fore: [0.012, -0.09, 0.0], muzzle: [0, 0.052, 0.4], p: [bx(0.05, 0.15, 0.066, 0, -0.07, -0.02, 0x241808, 0.3), lit(0.052, 0.1, 0.012, 0, -0.07, -0.05, 0xffb030, 1.6, 0.3), bx(0.012, 0.012, 0.06, 0, -0.012, 0.05, 0xffc830), bx(0.06, 0.1, 0.22, 0, 0.038, 0.08, 0xffc830), bx(0.066, 0.036, 0.25, 0, 0.09, 0.09, 0xfff0a0, 0, 0, 0, 0xffa020, 0.5), tb(0.03, 0.2, 0, 0.052, 0.27, 0xffc830), ring(0.075, 0.012, 0, 0.052, 0.3, 0xfff4b0, 0xffb020, 3), ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => shard(0.018, 2.2, Math.cos(i * 0.5236) * 0.105, 0.052 + Math.sin(i * 0.5236) * 0.105, 0.3, 0xffe070, 0, 0, i * 0.5236 - HALF, 0xffa020, 3)), orb(0.038, 0, 0.052, 0.3, 0xfff4b0, 4.5), tp(0.03, 0.05, 0.06, 0, 0.052, 0.385, 0xffc830), orb(0.022, 0, 0.052, 0.41, 0xffffc0, 5), lit(0.068, 0.01, 0.2, 0, 0.05, 0.08, 0xff8a20, 3)] }),
+  w_frost: () => ({ fore: [0.0, -0.07, 0.3], muzzle: [0, 0.055, 0.78], p: [...grip(0x1c2c3c), bx(0.056, 0.1, 0.32, 0, 0.038, 0.1, 0xc8e8f8), bx(0.05, 0.08, 0.26, 0, 0.04, 0.38, 0x8cc8e8), lit(0.058, 0.012, 0.5, 0, 0.044, 0.3, 0x9ff0ff, 3.4), tb(0.016, 0.3, 0, 0.055, 0.6, 0xe0f8ff, 0x60d0ff, 1.2), ...[[0.08, 0.16, 0.5], [-0.07, 0.15, 0.56], [0.06, -0.05, 0.42], [-0.06, -0.05, 0.5], [0.02, 0.19, 0.3], [-0.03, 0.17, 0.2], [0.05, -0.02, 0.62]].map(([x, y, z], i) => shard(0.034, 2.1, x * 0.8, y, z, 0xc8f4ff, 0.5 - i * 0.2, i, x * 4, 0x60d0ff, 1.8)), shard(0.03, 3.4, 0, 0.055, 0.76, 0xe8fcff, HALF, 0, 0, 0x90e8ff, 3), mag(0.08, 0.16, 0x8cc8e8, -0.2, 0.046, 0.08), lit(0.03, 0.12, 0.06, 0, -0.1, 0.082, 0x9ff0ff, 2, -0.2), bx(0.024, 0.08, 0.03, 0, -0.04, 0.3, 0x1c2c3c, 0.25), ...scope(0.14, 0.17, 0.12, 0x1c2c3c, 0x9ff0ff), bx(0.05, 0.09, 0.2, 0, 0.03, -0.18, 0xc8e8f8), shard(0.05, 2.2, 0, 0.03, -0.32, 0xc8f4ff, HALF, 0, 0, 0x60d0ff, 1.6)] }),
+  w_stormb: () => ({ fore: [0.0, -0.08, 0.28], muzzle: [0, 0.05, 0.7], p: [...grip(0x181430), bx(0.08, 0.12, 0.24, 0, 0.034, 0.09, 0x2a2450), tb(0.036, 0.44, 0.04, 0.05, 0.44, 0x3a3268, 0, 0, 12), tb(0.036, 0.44, -0.04, 0.05, 0.44, 0x3a3268, 0, 0, 12), ...[0, 1, 2, 3].map((i) => ring(0.095, 0.009, 0, 0.05, 0.32 + i * 0.1, 0xd0c0ff, 0x9a70ff, 3.2)), ...[0, 1, 2].map((i) => lit(0.01, 0.13, 0.02, 0.0, 0.05, 0.36 + i * 0.1, 0xe8e0ff, 4, 0, 0, 0.5 + i)), shard(0.045, 2.6, 0, 0.17, 0.3, 0xe8e0ff, 0.7, 0, 0.1, 0x9a70ff, 3), shard(0.04, 2.4, 0, 0.16, 0.48, 0xe8e0ff, 0.8, 0, -0.1, 0x9a70ff, 3), shard(0.035, 2.4, 0.08, -0.04, 0.3, 0xe8e0ff, -0.5, 0, -0.5, 0x9a70ff, 3), shard(0.035, 2.4, -0.08, -0.04, 0.3, 0xe8e0ff, -0.5, 0, 0.5, 0x9a70ff, 3), orb(0.05, 0, 0.05, 0.12, 0xd0c0ff, 3.4), tp(0.04, 0.05, 0.05, 0.04, 0.05, 0.68, 0x181430), tp(0.04, 0.05, 0.05, -0.04, 0.05, 0.68, 0x181430), bx(0.06, 0.08, 0.15, 0, -0.03, 0.28, 0x181430), bx(0.05, 0.1, 0.2, 0, 0.0, -0.16, 0x2a2450), lit(0.052, 0.012, 0.18, 0, 0.01, -0.16, 0x9a70ff, 3)] }),
+  w_hellfire: () => ({ fore: [0.0, 0.16, 0.17], muzzle: [0, 0.055, 0.86], spin: 'w_hellfire_b', spinAt: [0, 0.055, 0], p: [...grip(0x180806), bx(0.13, 0.18, 0.34, 0, 0.06, 0.1, 0x2a100a), tb(0.066, 0.1, 0, 0.055, 0.3, 0x401a10, 0, 0, 14), bx(0.014, 0.12, 0.014, 0.035, 0.18, 0.17, MID), bx(0.014, 0.12, 0.014, -0.035, 0.18, 0.17, MID), bx(0.09, 0.018, 0.018, 0, 0.16, 0.17, INK), ...[0, 1, 2, 3].map((i) => shard(0.034, 2.8, 0.074, 0.12 + i * 0.012, -0.03 + i * 0.09, 0xff7a1a, 0.9, 0, -0.4, 0xff4a10, 3)), ...[0, 1, 2, 3].map((i) => shard(0.034, 2.8, -0.074, 0.12 + i * 0.012, -0.03 + i * 0.09, 0xff7a1a, 0.9, 0, 0.4, 0xff4a10, 3)), tb(0.11, 0.17, 0, -0.13, 0.1, 0x401a10, 0, 0, 14), ring(0.112, 0.01, 0, -0.13, 0.03, 0xffa040, 0xff5010, 3), ring(0.112, 0.01, 0, -0.13, 0.17, 0xffa040, 0xff5010, 3), orb(0.06, 0, -0.13, 0.19, 0xffb040, 4), bx(0.11, 0.1, 0.09, 0, 0.06, -0.1, 0x180806)] }),
+  w_hellfire_b: () => [0, 1, 2, 3, 4, 5].flatMap((i) => [tb(0.016, 0.54, Math.cos(i * 1.047) * 0.048, Math.sin(i * 1.047) * 0.048, 0.58, 0x4a2010, 0xff4a10, 0.5, 6)]).concat([tb(0.074, 0.03, 0, 0, 0.42, 0x180806, 0, 0, 12), ring(0.076, 0.012, 0, 0, 0.62, 0xffa040, 0xff5010, 3.2), ring(0.076, 0.012, 0, 0, 0.8, 0xffc060, 0xff6010, 4), orb(0.026, 0, 0, 0.84, 0xffc060, 5)]),
+  w_titan: () => ({ fore: [0.0, -0.1, 0.3], muzzle: [0, 0.07, 1.3], p: [...grip(0x141820), bx(0.08, 0.15, 0.46, 0, 0.05, 0.14, 0x1e2838), bx(0.024, 0.05, 0.98, 0.05, 0.07, 0.84, 0x4a5a70), bx(0.024, 0.05, 0.98, -0.05, 0.07, 0.84, 0x4a5a70), lit(0.03, 0.022, 0.92, 0, 0.07, 0.84, 0x50d0ff, 4.4), ...[0, 1, 2, 3, 4, 5].map((i) => ring(0.092, 0.012, 0, 0.07, 0.42 + i * 0.16, 0xa0e8ff, 0x30b0ff, 3)), ...[0, 1, 2].map((i) => tb(0.04, 0.1, 0.08, -0.02, 0.1 + i * 0.12, 0x2a3a50, 0x30b0ff, 0.6)), ...[0, 1, 2].map((i) => tb(0.04, 0.1, -0.08, -0.02, 0.1 + i * 0.12, 0x2a3a50, 0x30b0ff, 0.6)), ...scope(0.4, 0.22, 0.14, 0x141820, 0x50d0ff, 0.044), shard(0.05, 3, 0, 0.07, 1.32, 0xe0f8ff, HALF, 0, 0, 0x50d0ff, 4), bx(0.05, 0.3, 0.018, 0.075, -0.17, 0.7, STEEL, 0.45, 0, 0.3), bx(0.05, 0.3, 0.018, -0.075, -0.17, 0.7, STEEL, 0.45, 0, -0.3), bx(0.06, 0.12, 0.26, 0, 0.03, -0.22, 0x1e2838), bx(0.07, 0.17, 0.03, 0, 0.012, -0.36, 0x141820), lit(0.062, 0.012, 0.22, 0, 0.05, -0.22, 0x50d0ff, 3.2)] }),
+  w_void: () => ({ fore: [0.0, -0.11, 0.22], muzzle: [0, 0.09, 0.72], p: [...grip(0x100818), tb(0.11, 0.46, 0, 0.09, 0.24, 0x1a0c2a, 0, 0, 16), ...[0, 1, 2, 3].map((i) => ring(0.122, 0.014, 0, 0.09, 0.06 + i * 0.12, 0xc070ff, 0x8020ff, 3)), bx(0.024, 0.11, 0.03, 0, -0.07, 0.22, 0x100818, 0.25), ring(0.19, 0.016, 0, 0.09, 0.62, 0xe0a0ff, 0xa030ff, 4), ring(0.135, 0.012, 0, 0.09, 0.53, 0xe0a0ff, 0xa030ff, 3.4), orb(0.1, 0, 0.09, 0.62, 0x100020, 0.2), ring(0.103, 0.01, 0, 0.09, 0.62, 0xffffff, 0xd080ff, 5), ...[0, 1, 2, 3, 4, 5].map((i) => shard(0.022, 3.4, Math.cos(i * 1.047) * 0.23, 0.09 + Math.sin(i * 1.047) * 0.23, 0.55, 0xc070ff, 0.5, 0, i * 1.047 - HALF, 0x8020ff, 3)), bx(0.018, 0.1, 0.26, 0, 0.24, 0.26, 0x1a0c2a), bx(0.08, 0.1, 0.13, 0, -0.02, -0.08, 0x1a0c2a), shard(0.05, 2.4, 0, 0.09, -0.11, 0xc070ff, HALF, 0, 0, 0x8020ff, 2.6)] }),
+  w_dragon: () => ({ fore: [0.0, -0.12, 0.24], muzzle: [0, 0.09, 0.8], p: [...grip(0x200806), tb(0.096, 0.42, 0, 0.09, 0.22, 0x5a0f0a, 0, 0, 12), ...[0, 1, 2, 3, 4, 5, 6, 7].flatMap((i) => [0, 1, 2].map((k) => shard(0.034, 1.1, Math.cos(i * 0.785 + k * 0.39) * 0.1, 0.09 + Math.sin(i * 0.785 + k * 0.39) * 0.1, 0.08 + k * 0.13, 0x8a1810, HALF, 0, 0))), bx(0.024, 0.11, 0.03, 0, -0.07, 0.24, 0x200806, 0.25), bx(0.17, 0.09, 0.24, 0, 0.165, 0.56, 0x7a1410), bx(0.15, 0.04, 0.26, 0, 0.0, 0.57, 0x5a0f0a, -0.16), orb(0.075, 0, 0.09, 0.56, 0xffa030, 4.4), ...[0, 1, 2, 3, 4].map((i) => shard(0.014, 2.6, -0.056 + i * 0.028, 0.115, 0.68 - Math.abs(i - 2) * 0.012, 0xfff4d0, Math.PI)), ...[0, 1, 2, 3].map((i) => shard(0.012, 2.2, -0.04 + i * 0.027, 0.048, 0.67, 0xfff4d0)), orb(0.02, 0.078, 0.2, 0.62, 0xffe040, 5), orb(0.02, -0.078, 0.2, 0.62, 0xffe040, 5), shard(0.03, 4, 0.07, 0.27, 0.42, 0xd8c8a0, -1.1, 0, -0.3), shard(0.03, 4, -0.07, 0.27, 0.42, 0xd8c8a0, -1.1, 0, 0.3), ...[0, 1, 2, 3].map((i) => shard(0.024, 2.4, 0, 0.2 + i * 0.002, 0.34 - i * 0.12, 0xff5020, -0.4, 0, 0, 0xff3010, 2)), bx(0.09, 0.1, 0.14, 0, -0.02, -0.06, 0x200806), shard(0.05, 3.4, 0, 0.09, -0.08, 0x8a1810, HALF), shard(0.018, 2.4, 0.16, 0.14, 0.05, 0xff5020, 0, 0, -0.9, 0xff3010, 2), shard(0.018, 2.4, -0.16, 0.14, 0.05, 0xff5020, 0, 0, 0.9, 0xff3010, 2)] }),
+};
+const GUN_INFO = new Map();
+export const gunInfo = (id) => {
+  if (!GUN_INFO.has(id)) GUN_INFO.set(id, GUNS[id] ? GUNS[id]() : null);
+  return GUN_INFO.get(id);
+};
+// Weapons are small next to a climber and the maps are dark: every part shines faintly in its own colour, so a gun reads
+// against any background. Parts that glow keep their own glow.
+const shine = (p) => (p.glow ? p : Object.assign({}, p, { glow: p.c, gk: 0.32 }));
+for (const id of Object.keys(GUNS)) {
+  GEAR[id] = () => { const g = gunInfo(id); return (Array.isArray(g) ? g : g ? g.p.flat() : []).map(shine); };
+}
+
+// ---------------------------------------------------------------- legendary extras: wings, things on the back, horns, crowns
+// A wing is made for the left side (+x), from its root on the shoulder blade outwards; the right one is the same, mirrored.
+const ell = (x, y, z, w, l, t, rz, c, glow, gk) => part(new THREE.SphereGeometry(1, 12, 7), M(x, y, z, w, l, t, 0, 0, rz), c, glow, gk);
+const blade = (x, y, z, w, l, t, rz, c, glow, gk) => part(new THREE.OctahedronGeometry(1, 0), M(x, y, z, w, l, t, 0, 0, rz), c, glow, gk);
+const stick = (a, b, r0, r1, c, glow, gk, z = 0) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+  return part(new THREE.CylinderGeometry(r1, r0, L, 8), M((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z, 1, 1, 1, 0, 0, Math.atan2(-dx, dy)), c, glow, gk);
+};
+// rows: [count, shortest, longest, width, from angle, to angle, depth, colour, glow, glow strength]
+function featherWing(shape, bone, rows) {
+  const out = [], along = (s) => [0.04 + 0.62 * s, 0.03 + 0.38 * s - 0.1 * s * s];
+  for (let k = 0; k < 6; k++) out.push(stick(along(k / 6), along((k + 1) / 6), bone[0] * (1 - k * 0.1), bone[0] * (1 - (k + 1) * 0.1), bone[1], bone[2], bone[3]));
+  for (const [n, l0, l1, w, a0, a1, z, c, glow, gk] of rows) for (let i = 0; i < n; i++) {
+    const s = i / (n - 1), [bx, by] = along(0.1 + 0.9 * s), len = l0 + (l1 - l0) * s, rz = a0 + (a1 - a0) * s;
+    out.push(shape(bx + Math.sin(rz) * len * 0.5, by - Math.cos(rz) * len * 0.5, z - s * 0.03, w, len / 2, 0.02, rz, c, glow, gk));
+  }
+  return out;
+}
+// Bones that spread from the wrist like fingers, with skin stretched between them.
+function dragonWing(cb, cs, glow, gk) {
+  const out = [], root = [0.03, 0.02], wr = [0.36, 0.34], tips = [[1.0, 0.5], [0.98, 0.08], [0.8, -0.3], [0.5, -0.46]];
+  out.push(stick(root, wr, 0.036, 0.026, cb, glow, gk * 0.4));
+  out.push(cone(0.028, 0.13, wr[0] + 0.03, wr[1] + 0.07, 0, cb, 0, -0.45, glow, gk));
+  for (const t of tips) { out.push(stick(wr, t, 0.022, 0.01, cb, glow, gk * 0.6)); out.push(cone(0.014, 0.07, t[0] + (t[0] - wr[0]) * 0.06, t[1] + (t[1] - wr[1]) * 0.06, 0, cb, 0, Math.atan2(-(t[0] - wr[0]), t[1] - wr[1]), glow, gk)); }
+  const pts = [], tri = (a, b, c) => { for (const p of [a, b, c]) pts.push(p[0], p[1], -0.05 * Math.hypot(p[0], p[1])); };
+  const mid = (a, b, k = 0.7) => [wr[0] + ((a[0] + b[0]) / 2 - wr[0]) * k, wr[1] + ((a[1] + b[1]) / 2 - wr[1]) * k];
+  for (let i = 0; i < tips.length - 1; i++) { const m = mid(tips[i], tips[i + 1]); tri(wr, tips[i], m); tri(wr, m, tips[i + 1]); }
+  const low = [0.22, -0.34];
+  tri(wr, tips[3], low); tri(root, wr, low); tri(root, low, [0.04, -0.22]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  g.computeVertexNormals();
+  out.push(part(g, M(0, 0, 0), cs, cs, 0.35));
+  return out;
+}
+const curve = (side, c, glow, gk, big = 1) => {
+  // A horn that sweeps up, out and back, in segments getting thinner.
+  const out = [];
+  let x = side * 0.11, y = 0.12, z = 0.03;
+  for (let k = 0; k < 6; k++) {
+    const t = k / 6, dx = side * 0.035 * big, dy = (0.07 - t * 0.05) * big, dz = -(0.015 + t * 0.06) * big, L = Math.hypot(dx, dy, dz), r0 = 0.05 * big * (1 - t * 0.75), r1 = 0.05 * big * (1 - (t + 1 / 6) * 0.75);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / L, dy / L, dz / L));
+    out.push(part(new THREE.CylinderGeometry(r1, r0, L, 8), new THREE.Matrix4().compose(new THREE.Vector3(x + dx / 2, y + dy / 2, z + dz / 2), q, new THREE.Vector3(1, 1, 1)), c, k > 3 ? glow : 0, k > 3 ? gk : 0));
+    x += dx; y += dy; z += dz;
+  }
+  return out;
+};
+const ringOf = (n, r, y, f) => { const out = []; for (let i = 0; i < n; i++) out.push(...f(Math.sin((i / n) * 6.283) * r, y, Math.cos((i / n) * 6.283) * r, (i / n) * 6.283, i)); return out; };
+
+Object.assign(GEAR, {
+  wings_angel: () => featherWing(ell, [0.03, 0xfff6e0, 0xffd070, 1.1], [
+    [10, 0.34, 0.66, 0.058, 0.05, 1.0, -0.01, 0xfffaf0, 0xfff0c8, 0.6], [8, 0.2, 0.36, 0.052, 0.1, 0.85, 0.012, 0xffffff, 0xffe8b0, 0.75], [6, 0.11, 0.17, 0.046, 0.0, 0.55, 0.026, 0xfff8e8, 0xffd890, 1.0]]),
+  wings_fire: () => featherWing(ell, [0.03, 0xff7a1a, 0xff4a10, 2.2], [
+    [10, 0.36, 0.7, 0.05, 0.05, 1.05, -0.01, 0xffa030, 0xff5a10, 2.6], [8, 0.2, 0.36, 0.045, 0.1, 0.85, 0.012, 0xfff060, 0xffa020, 3.0], [6, 0.1, 0.16, 0.04, 0.0, 0.55, 0.026, 0xfffff0, 0xffd040, 3.4]]),
+  wings_energy: () => featherWing(blade, [0.022, 0xc0ffff, 0x40e0ff, 3.0], [
+    [9, 0.38, 0.74, 0.05, 0.05, 1.0, -0.01, 0x9ff4ff, 0x30d0ff, 2.6], [7, 0.2, 0.34, 0.045, 0.1, 0.8, 0.012, 0xe0ffff, 0x60e0ff, 3.0]]),
+  wings_ice: () => featherWing(blade, [0.026, 0xe8fcff, 0x80d8ff, 1.8], [
+    [9, 0.36, 0.7, 0.06, 0.05, 1.0, -0.01, 0xd8f6ff, 0x60c8ff, 1.3], [7, 0.2, 0.34, 0.05, 0.1, 0.8, 0.012, 0xffffff, 0x90e0ff, 1.9], [5, 0.1, 0.16, 0.04, 0.0, 0.5, 0.026, 0xffffff, 0xc0f0ff, 2.4]]),
+  wings_void: () => featherWing(blade, [0.03, 0x100818, 0xa040ff, 1.8], [
+    [9, 0.38, 0.74, 0.06, 0.05, 1.05, -0.01, 0x1a0a2a, 0x8020ff, 0.9], [7, 0.2, 0.34, 0.05, 0.1, 0.8, 0.012, 0x2a0f40, 0xc060ff, 1.7]]),
+  wings_dragon: () => dragonWing(0x3a1610, 0x6a140c, 0xff6a20, 1.6),
+  wings_dragon_sky: () => dragonWing(0x182a48, 0x1a5a9a, 0x80e0ff, 1.8),
+  horns_dragon: () => [...curve(1, 0x7a5236, 0xffa040, 2.2), ...curve(-1, 0x7a5236, 0xffa040, 2.2)],
+  horns_sky: () => [...curve(1, 0xe8f0ff, 0x80e0ff, 2.4, 0.9), ...curve(-1, 0xe8f0ff, 0x80e0ff, 2.4, 0.9)],
+  crown_ice: () => [tor(0.19, 0.016, 0, 0.13, 0, 0xd8f6ff, Math.PI / 2, 0, 0x80d8ff, 1.6), ...ringOf(9, 0.18, 0.22, (x, y, z, a, i) => [part(new THREE.OctahedronGeometry(1, 0), M(x, y + (i % 2 ? 0 : 0.05), z, 0.035, i % 2 ? 0.1 : 0.17, 0.035, Math.cos(a) * 0.3, 0, -Math.sin(a) * 0.3), 0xe8fcff, 0x70d0ff, 2)])],
+  crown_void: () => [tor(0.17, 0.014, 0, 0.32, 0, 0x2a0f40, Math.PI / 2, 0, 0xb050ff, 2.4), tor(0.13, 0.01, 0, 0.36, 0, 0x2a0f40, Math.PI / 2, 0, 0xe0a0ff, 3),
+    ...ringOf(7, 0.165, 0.42, (x, y, z, a) => [part(new THREE.OctahedronGeometry(1, 0), M(x, y, z, 0.03, 0.12, 0.03, Math.cos(a) * 0.25, 0, -Math.sin(a) * 0.25), 0x1a0a2a, 0xa040ff, 1.6)]), sph(0.04, 0, 0.5, 0, 0xffffff, 1, 1, 1, 0xd080ff, 4)],
+  // In the torso's own space: the hips are at 0, the shoulders at 0.46, the back at z -0.11.
+  katana_back: () => {
+    const A = [-0.24, 0.78], B = [0.2, 0.02], at = (k) => [A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k], z = -0.16;
+    return [stick(at(0), at(0.2), 0.02, 0.02, 0x14161c, 0, 0, z), stick(at(0.21), at(0.215), 0.06, 0.06, 0xd8b040, 0, 0, z), stick(at(0.22), at(1.0), 0.012, 0.004, 0xbff8ff, 0x30f0ff, 2.6, z),
+      ...[0.03, 0.08, 0.13, 0.18].map((k) => stick(at(k), at(k + 0.012), 0.024, 0.024, 0x30f0ff, 0x30f0ff, 2.2, z))];
+  },
+  scythe_back: () => {
+    const A = [0.3, 0.98], B = [-0.28, -0.3], z = -0.17, top = [A[0] - 0.02, A[1] + 0.02];
+    const arcGeo = new THREE.TorusGeometry(0.3, 0.026, 4, 20, 2.1);
+    return [stick(A, B, 0.02, 0.02, 0x5a4a3c, 0x70ffc0, 0.25, z), stick(A, [A[0] - 0.02, A[1] + 0.05], 0.03, 0.03, 0x8a9494, 0, 0, z),
+      part(arcGeo, M(top[0] - 0.3, top[1] - 0.06, z, 1, 1, 0.35, 0, 0, -0.2), 0xe0fff0, 0x70ffc0, 2.8), sph(0.035, A[0], A[1] + 0.03, z, 0x70ffc0, 1, 1, 1, 0x70ffc0, 3)];
+  },
+  orbs_void: () => ringOf(3, 0.6, 0.55, (x, y, z) => [sph(0.075, x, y, z, 0x14081c, 1, 1, 1, 0x8020ff, 1.2), tor(0.11, 0.008, x, y, z, 0xe0a0ff, Math.PI / 2 + 0.4, 0, 0xc060ff, 3)]),
+  orbs_gold: () => ringOf(4, 0.58, 0.5, (x, y, z, a, i) => [sph(0.06, x, y, z, [0xffd040, 0xff70c0, 0x40e0ff, 0x70ff90][i], 1, 1, 1, [0xffb020, 0xff40a0, 0x20c0ff, 0x40ff70][i], 2.8)]),
+  ring_diamond: () => [tor(0.6, 0.012, 0, 0.42, 0, 0xffffff, Math.PI / 2 + 0.3, 0, 0xc0f0ff, 2.6), tor(0.66, 0.008, 0, 0.42, 0, 0xffffff, Math.PI / 2 - 0.35, 0, 0x80d8ff, 2.2),
+    ...ringOf(6, 0.6, 0.42, (x, y, z) => [part(new THREE.OctahedronGeometry(0.045, 0), M(x, y + z * 0.3, z, 1, 1.6, 1), 0xffffff, 0xc0f0ff, 3)])],
+  ring_prism: () => [tor(0.62, 0.012, 0, 0.4, 0, 0xff70e0, Math.PI / 2 + 0.3, 0, 0xff40d0, 2.8), tor(0.62, 0.012, 0, 0.4, 0, 0x40e0ff, Math.PI / 2 - 0.3, 0, 0x30c0ff, 2.8), tor(0.7, 0.008, 0, 0.4, 0, 0xfff070, Math.PI / 2, 0, 0xffd040, 2.4)],
+  ring_synth: () => [tor(0.6, 0.014, 0, 0.1, 0, 0xff40d0, Math.PI / 2, 0, 0xff40d0, 3), tor(0.6, 0.014, 0, 0.75, 0, 0x30f0ff, Math.PI / 2, 0, 0x30f0ff, 3)],
+});
+for (const id of ['wings_angel', 'wings_fire', 'wings_energy', 'wings_ice', 'wings_void', 'wings_dragon', 'wings_dragon_sky']) GEAR_AT[id] = 'wings';
+for (const id of ['katana_back', 'scythe_back', 'orbs_void', 'orbs_gold', 'ring_diamond', 'ring_prism', 'ring_synth']) GEAR_AT[id] = 'back';
+for (const id of ['orbs_void', 'orbs_gold', 'ring_diamond', 'ring_prism', 'ring_synth']) GEAR_ANIM[id] = 'spin';
 
 // ---------------------------------------------------------------- palette and building
-const PAL = [];
+const PAL = [], PAL_W = 32;
 function swatch(hex) {
   let i = PAL.indexOf(hex);
   if (i < 0) { i = PAL.length; PAL.push(hex); }
-  return [((i % 16) + 0.5) / 16, 1 - (Math.floor(i / 16) + 0.5) / 16];
+  return [((i % PAL_W) + 0.5) / PAL_W, 1 - (Math.floor(i / PAL_W) + 0.5) / PAL_W];
 }
 
 const PARTS = new Map();
@@ -105,13 +273,31 @@ export function gearMat() {
   if (MAT) return MAT;
   for (const id of Object.keys(GEAR)) for (const p of gearParts(id)) swatch(p.c);
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = c.height = PAL_W * 16;
   const g = c.getContext('2d');
-  PAL.forEach((hex, i) => { g.fillStyle = '#' + hex.toString(16).padStart(6, '0'); g.fillRect((i % 16) * 16, Math.floor(i / 16) * 16, 16, 16); });
+  PAL.forEach((hex, i) => { g.fillStyle = '#' + hex.toString(16).padStart(6, '0'); g.fillRect((i % PAL_W) * 16, Math.floor(i / PAL_W) * 16, 16, 16); });
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   MAT = panelMat(0xffffff, { map: tex, roughness: 0.62, metalness: 0.05, pattern: 0, side: THREE.DoubleSide });
   return MAT;
+}
+
+// The same shape for the other side: x turned round, and each triangle the other way round so it still faces out.
+const MIRRORS = new Map();
+export function gearGeoMirror(id) {
+  if (MIRRORS.has(id)) return MIRRORS.get(id);
+  const src = gearGeo(id), out = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'uv', 'aGlow']) {
+    const a = src.attributes[name].array, n = src.attributes[name].itemSize, b = new Float32Array(a.length);
+    for (let v = 0; v < a.length / n; v++) {
+      const from = v - (v % 3) + [0, 2, 1][v % 3];
+      for (let k = 0; k < n; k++) b[v * n + k] = a[from * n + k] * ((name === 'position' || name === 'normal') && k === 0 ? -1 : 1);
+    }
+    out.setAttribute(name, new THREE.Float32BufferAttribute(b, n));
+  }
+  out.computeBoundingSphere();
+  MIRRORS.set(id, out);
+  return out;
 }
 
 const GEOS = new Map();
@@ -138,12 +324,12 @@ export function gearGeo(id) {
 }
 
 // Flat triangles for the shop's little pictures: [ax, ay, bx, by, cx, cy, depth, r, g, b] sorted back to front.
-const _v = new THREE.Vector3(), _e = new THREE.Euler(-0.18, -0.55, 0);
-export function gearTris(id) {
-  const out = [], rot = new THREE.Matrix4().makeRotationFromEuler(_e), col = new THREE.Color();
+const _v = new THREE.Vector3(), VIEWS = { head: new THREE.Euler(-0.18, -0.55, 0), gun: new THREE.Euler(-0.14, 1.28, 0), front: new THREE.Euler(-0.12, 0, 0) };
+// view: 'head' for hats, 'gun' from the side, 'front' for things on the back.
+export function gearTris(id, view = 'head') {
+  const gun = view === 'gun', out = [], rot = new THREE.Matrix4().makeRotationFromEuler(VIEWS[view]);
   for (const p of gearParts(id)) {
     const g = (p.geo.index ? p.geo.toNonIndexed() : p.geo.clone()).applyMatrix4(p.m), a = g.attributes.position.array;
-    col.setHex(p.c);
     for (let i = 0; i < a.length; i += 9) {
       const t = [];
       for (let k = 0; k < 3; k++) { _v.set(a[i + k * 3], a[i + k * 3 + 1], a[i + k * 3 + 2]).applyMatrix4(rot); t.push(_v.x, _v.y, _v.z); }
@@ -152,8 +338,8 @@ export function gearTris(id) {
       const l = Math.hypot(nx, ny, nz) || 1;
       nx /= l; ny /= l; nz /= l;
       if (nz < 0) continue; // faces away
-      const lit = 0.55 + 0.45 * Math.max(0, nx * -0.3 + ny * 0.6 + nz * 0.74);
-      out.push([t[0], t[1], t[3], t[4], t[6], t[7], (t[2] + t[5] + t[8]) / 3, (p.c >> 16 & 255) * lit, (p.c >> 8 & 255) * lit, (p.c & 255) * lit]);
+      const lit = p.glow ? 1.15 : 0.55 + 0.45 * Math.max(0, nx * -0.3 + ny * 0.6 + nz * 0.74), bright = gun && !p.glow ? 1.5 : 1;
+      out.push([t[0], t[1], t[3], t[4], t[6], t[7], (t[2] + t[5] + t[8]) / 3, Math.min(255, (p.c >> 16 & 255) * lit * bright + (gun ? 18 : 0)), Math.min(255, (p.c >> 8 & 255) * lit * bright + (gun ? 18 : 0)), Math.min(255, (p.c & 255) * lit * bright + (gun ? 18 : 0))]);
     }
     g.dispose();
   }

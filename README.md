@@ -84,7 +84,7 @@ Most of them shake, flicker or glow just before they strike.
 
 Every map has angry dummies guarding ledges from about 500 m up, and on Hardcore and Insane already from 50 m, in the map's own
 style: storm dummies, beach bullies, wild jumpers, ash brutes, street punks and splash bullies. Come close and they run
-at you and jump kick you off the ledge. Jump past them, or SHOOT to stun them for a few seconds.
+at you and jump kick you off the ledge. Jump past them, or SHOOT to paralyse them for over a minute.
 
 **Coins, shop and records**
 
@@ -99,8 +99,13 @@ Spend them in the shop:
 * **Common (green):** colours, simple faces and caps
 * **Rare (blue):** 41 country flags with a matching cape, patterns, funny faces and hats
 * **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat
-* **Legendary (orange):** living suits that move and leave a trail. Coins can't buy them. They only come from Hardcore
-  and Insane: a few are earned by what you do up there, the rest are hidden. Those who know, know.
+* **Legendary (orange):** living suits that move and leave a trail: aurora curtains, molten rock, cut crystal, deep
+  space, circuits, dragon scales, spirit smoke, a neon grid and holograms, many with wings, horns, crowns, orbs or a
+  blade on the back. Eleven are for sale from 25000 to 60000 coins. The others can't be bought: they only come from
+  Hardcore and Insane, where a few are earned by what you do up there and the rest are hidden. Those who know, know.
+* **Weapons:** 30 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
+  scope, machine guns and launchers. Each is held its own way, and the shop shows how long it paralyses, how fast it
+  fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
   the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
 
@@ -141,20 +146,25 @@ saved climb from the lobby.
   the same wall twice in a row, so bounce between two walls.
 * **DASH**: a quick burst where the stick points, or where you are looking if you aren't touching it. It works in the
   air too, once until you land.
-* **GRAB** (hold): clamp onto anything you touch, even walls. Grip drains faster on walls.
+* **GRAB** (hold): clamp onto anything you touch, even walls. Grip drains faster on walls. It stops you sliding,
+  but a hit from an enemy or a trap still tears you off.
 * **REEL** (hold): pull the cord in. It turns into **PULL** when your partner hangs below you (it hauls them up and
   over the edge) and **CLIMB** when you're the one hanging.
 * **GRAB, then REEL, then let go of REEL**: sling your partner upward
 * **GRAPPLE**: shows up near a hook. You zip up and get thrown across.
-* **SHOOT**: hold to aim over your shoulder, drag the crosshair, let go to fire. No auto aim.
-* **SHIELD** (Storm Tower): blocks lightning and hits for a second
+* **SHOOT**: hold to aim over your shoulder, drag the crosshair, let go to fire. Nothing fires without aiming first,
+  and the shot leaves the muzzle of your weapon. Automatic weapons keep firing while you hold, snipers look through
+  their scope. A hit paralyses monsters, bats and jumpers for over a minute, longer with better weapons. No auto aim.
+* **SHIELD** (Storm Tower): blocks lightning, the rods and hits for a second
 * **Emotes**: the smiley at the top right opens the menu during a climb. Everyone climbing with you sees them. Flips
   start with a small jump, and moving ends a pose.
 
-Keyboard and mouse: WASD, Space, Shift, E, F grapple, Q shield, C dash (left Ctrl too, except in a browser), T emotes, H tip. The mouse turns the camera, left click shoots, hold right click (or R) to aim, Esc pauses. In the PC app, F11 or Alt+Enter is fullscreen. On a PC the frame rate goes from 60 to 144 in Settings.
+Keyboard and mouse: WASD, Space, Shift, E, F grapple, Q shield, C dash (left Ctrl too, except in a browser), T emotes, H tip. The mouse turns the camera, hold right click (or R) to aim and left click fires, Esc pauses. In the PC app, F11 or Alt+Enter is fullscreen. On a PC the frame rate goes from 60 to 144 in Settings.
 
 Controller: left stick moves, right stick looks, A jump, B grab, X grapple, Y or pressing in the left stick dash, LT hold
-to aim, RT fire (aimed or from the hip), RB reel, LB shield, direction pad down emotes.
+to aim, RT fire while aiming, RB reel, LB shield, direction pad down emotes. As soon as a controller is used, the
+buttons on screen show which controller button does what (Xbox, PlayStation or Nintendo names), and a card with all
+the controls shows at the start of a climb and in the pause menu.
 
 A controller works in every menu as well: move with the direction pad or left stick, A selects, B goes back, LB and RB
 switch tabs, and text boxes open a letter board. Select opens the pause menu on Back to checkpoint. Settings has a dead
@@ -168,7 +178,8 @@ small **!** markers to read them again.
 
 Up to 4 climbers. Everyone needs the same StickManUp version. The host picks the map. Tied together, the team
 shares its checkpoints and falls back together. With the cord turned off in the lobby, nobody is tied together and
-everyone keeps their own checkpoint: a fall only sends you back to yours.
+everyone keeps their own checkpoint: a fall only sends you back to yours. With **friendly fire** on in the lobby,
+your shots throw your friends off the climb, and theirs throw you.
 
 * **Game server**: works on every network, because every phone only connects out to the server. Open the **server
   browser** to see public rooms, or create a room: public or private, with or without a password. A private room only

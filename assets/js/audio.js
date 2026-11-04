@@ -155,7 +155,28 @@ export class Sound {
   warn() { this.tone(1500, 1500, 0.07, 'square', 0.07); this.tone(1500, 1500, 0.07, 'square', 0.07, 0.12); }
   bonk() { this.tone(260, 90, 0.22, 'square', 0.18); this.noiseHit('lowpass', 700, 0.2, 0.35); }
   grapple() { this.tone(300, 1400, 0.25, 'sawtooth', 0.1); this.noiseHit('bandpass', 2000, 0.25, 0.2, 0, 3); }
-  shoot() { this.tone(1800, 220, 0.12, 'square', 0.12); this.noiseHit('highpass', 2500, 0.08, 0.2); }
+  // Each kind of weapon has its own voice. Very fast guns only make every sound that has room.
+  shoot(kind = 'pistol', vol = 1) {
+    const now = performance.now();
+    if (now - (this.shotLast || 0) < 42) return;
+    this.shotLast = now;
+    const v = vol, T = (a, b, d, t, q, w = 0) => this.tone(a, b, d, t, q * v, w), N = (t, f, d, q, w = 0) => this.noiseHit(t, f, d, q * v, w);
+    switch (kind) {
+      case 'smg': T(1400, 300, 0.05, 'square', 0.07); N('highpass', 3000, 0.04, 0.14); break;
+      case 'silent': T(900, 260, 0.04, 'triangle', 0.08); N('bandpass', 2600, 0.03, 0.1); break;
+      case 'magnum': T(620, 70, 0.22, 'sawtooth', 0.16); N('lowpass', 2400, 0.16, 0.32); break;
+      case 'rifle': T(1000, 120, 0.09, 'sawtooth', 0.1); N('bandpass', 1800, 0.08, 0.24); break;
+      case 'shotgun': T(260, 50, 0.26, 'sawtooth', 0.18); N('lowpass', 1700, 0.24, 0.5); break;
+      case 'sniper': T(800, 45, 0.5, 'sawtooth', 0.18); N('lowpass', 3000, 0.28, 0.45); N('lowpass', 700, 0.5, 0.14, 0.14); break;
+      case 'heavy': T(420, 70, 0.08, 'sawtooth', 0.11); N('lowpass', 1500, 0.07, 0.26); break;
+      case 'boom': T(150, 40, 0.5, 'sawtooth', 0.2); N('lowpass', 900, 0.5, 0.55); N('highpass', 2600, 0.08, 0.14); break;
+      case 'energy': T(1900, 500, 0.16, 'sine', 0.14); T(950, 240, 0.14, 'square', 0.05); N('highpass', 4200, 0.06, 0.08); break;
+      case 'rail': T(240, 3000, 0.16, 'sawtooth', 0.09); T(2400, 90, 0.55, 'sawtooth', 0.14, 0.14); N('lowpass', 2600, 0.5, 0.4, 0.14); break;
+      case 'thunder': T(1500, 90, 0.26, 'sawtooth', 0.15); N('highpass', 1800, 0.14, 0.3); N('lowpass', 500, 0.5, 0.42, 0.03); break;
+      case 'void': T(90, 900, 0.3, 'sine', 0.2); T(1100, 40, 0.65, 'sawtooth', 0.14, 0.26); N('lowpass', 500, 0.7, 0.5, 0.26); break;
+      default: T(1800, 220, 0.12, 'square', 0.12); N('highpass', 2500, 0.08, 0.2);
+    }
+  }
   door() { this.tone(120, 240, 0.6, 'sawtooth', 0.12); this.noiseHit('lowpass', 400, 0.6, 0.3); this.tone(880, 1320, 0.25, 'triangle', 0.15, 0.4); }
   stun() { [900, 700, 900, 700].forEach((f, i) => this.tone(f, f * 0.9, 0.08, 'triangle', 0.1, i * 0.07)); }
   crumble() { this.noiseHit('lowpass', 300, 0.6, 0.5); this.tone(90, 40, 0.5, 'sawtooth', 0.12); }

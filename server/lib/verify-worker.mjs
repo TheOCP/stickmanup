@@ -11,6 +11,7 @@ import { Game } from './sim/game.js';
 import * as cloud from './sim/cloud.js';
 import * as profile from './sim/profile.js';
 import { PR } from './sim/player.js';
+import { weaponOf } from './sim/weapons.js';
 
 const STEP = 1 / 60;
 const Q = 32767, PQ = 1024;
@@ -19,7 +20,7 @@ const MAX_LIVE = 64;
 const NEAR = 0.02;     // metres: counts as a perfect match
 const SOFT = 1.0;      // metres: a small slip, forgiven a few times per climb
 const SOFT_BUDGET = 3;
-const SHOT_REACH = 95; // metres: a shot goes 70 from a camera a little behind the climber
+const SHOT_SLACK = 25; // metres: a shot starts from a camera a little behind the climber
 const GRAPPLE_REACH = 14;
 
 // Everything that only makes noise or pictures: any property, any call, any number, and nothing happens.
@@ -89,7 +90,7 @@ function makeGame(run, head) {
   game.noteRun = () => {};
   game.coinTaken = new Set(Array.isArray(head.coins) ? head.coins : []);
   const live = {
-    run, game, tick: 0, soft: 0, tainted: false, last: null, snapSeq: head.saves | 0, relics: new Set(), crumb: null, lastT: head.t, lastShot: -99,
+    run, game, tick: 0, soft: 0, tainted: false, last: null, snapSeq: head.saves | 0, relics: new Set(), crumb: null, lastT: head.t, lastShot: -99, guns: new Set(),
     kicks: [], partners: null, pIdx: 0, stepNo: 0, coins: [], relicsNew: [], win: null, flags: [], h: 0, maxCp: head.cp | 0,
     op: {}, otherPool: [], kickCount: 0,
   };
@@ -223,6 +224,16 @@ function bad(live, kind, score, detail) {
   live.tainted = true;
 }
 
+// A shot on its way, by the weapon it says it came from: not faster than that weapon fires. Shots in the same step are the
+// same blast. Which weapons were used goes back to be checked against what this player owns.
+function shotInTime(live, gun) {
+  const gap = live.tick - live.lastShot;
+  if (gap !== 0 && gap < Math.max(1, Math.floor(gun.rate * 60 * 0.55))) return false;
+  live.lastShot = live.tick;
+  live.guns.add(gun.id);
+  return true;
+}
+
 function snapshot(live) {
   const g = live.game, m = g.me;
   return { seq: ++live.snapSeq, t: g.simT, cp: g.cp, falls: g.falls, doors: [...g.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...g.coinTaken], stuns: [...g.storm.stun].map(([k, v]) => [k, v.from, v.until]), foundRelics: [...live.relics], tick: live.tick };
@@ -255,19 +266,17 @@ function act(live, a, snaps, quiet) {
       if (!solo) break;
       const d = L.doors[a[2]];
       if (!d) return bad(live, 'door', 30, 'Opened a door that does not exist.');
-      const far = Math.hypot(d.bx - me.x, d.by - me.y, d.bz - me.z);
-      if (far > SHOT_REACH) return bad(live, 'door', 30, `Shot a door button from ${m1(far)} m away.`);
-      if (live.tick - live.lastShot < 10) return bad(live, 'door', 20, 'Shooting faster than the gun can.');
-      live.lastShot = live.tick;
+      const far = Math.hypot(d.bx - me.x, d.by - me.y, d.bz - me.z), gun = weaponOf(a[3]);
+      if (far > gun.range + gun.blast + SHOT_SLACK) return bad(live, 'door', 30, `Shot a door button from ${m1(far)} m away with the ${gun.name}.`);
+      if (!shotInTime(live, gun)) return bad(live, 'door', 20, `Shooting faster than the ${gun.name} can.`);
       g.hostEvent({ k: 'door', i: a[2] }, 0);
       break;
     }
     case 'n': {
       if (!solo) break;
-      const m = a[2], from = a[3], until = a[4];
-      if (!Number.isFinite(from) || !Number.isFinite(until) || until - from > 5.01 || until < from || Math.abs(from - g.simT) > 1) return bad(live, 'stun', 30, 'Stunned something for longer than a shot can.');
-      if (live.tick - live.lastShot < 10) return bad(live, 'stun', 20, 'Shooting faster than the gun can.');
-      live.lastShot = live.tick;
+      const m = a[2], from = a[3], until = a[4], gun = weaponOf(a[5]);
+      if (!Number.isFinite(from) || !Number.isFinite(until) || until - from > gun.stun + 0.01 || until < from || Math.abs(from - g.simT) > 1) return bad(live, 'stun', 30, `Paralysed something for longer than the ${gun.name} can.`);
+      if (!shotInTime(live, gun)) return bad(live, 'stun', 20, `Shooting faster than the ${gun.name} can.`);
       g.storm.stun.set(m, { from, until });
       break;
     }
@@ -352,6 +361,16 @@ function event(live, e) {
       const l = live.lastPartner;
       const close = (b) => Math.hypot(b.x, b.z) < L.summit.r + g.rope * 3 && b.y > L.top - g.rope * 4;
       if (!close(me) && !(l && close(l))) return bad(live, 'win', 60, `Claimed the top from ${m1(L.top - me.y)} m below it.`);
+      g.onEvent(e);
+      break;
+    }
+    case 'ff': {
+      const v = e.v;
+      if (e.to === g.slot) {
+        if (!g.rules || g.rules.ff !== 1) return bad(live, 'ff', 40, 'Shot by a friend in a game without friendly fire.');
+        if (!Array.isArray(v) || v.length !== 3 || !v.every(Number.isFinite) || Math.hypot(v[0], v[1], v[2]) > 62) return bad(live, 'ff', 50, 'Thrown by a friend harder than any weapon can.');
+        if (++live.kickCount > 4 + live.tick / 30) return bad(live, 'ff', 20, 'Thrown by friends far more often than weapons can.');
+      }
       g.onEvent(e);
       break;
     }
@@ -456,7 +475,7 @@ function handle(m) {
   const snaps = [];
   if (!live.tainted) play(live, c, snaps, false);
   remember(m.run.id, live);
-  const out = { tick: live.tick, simT: live.game.simT, coins: live.coins, relics: live.relicsNew, win: live.win, flags: live.flags, snaps, h: live.h, soft: live.soft, tainted: live.tainted, cp: live.game.cp, falls: live.game.falls };
+  const out = { tick: live.tick, simT: live.game.simT, coins: live.coins, relics: live.relicsNew, win: live.win, flags: live.flags, snaps, h: live.h, soft: live.soft, guns: [...live.guns], tainted: live.tainted, cp: live.game.cp, falls: live.game.falls };
   live.coins = []; live.relicsNew = []; live.win = null; live.flags = [];
   return out;
 }

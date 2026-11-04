@@ -10,7 +10,7 @@ const KEY_BTN = { Space: 'bJump', ShiftLeft: 'bGrab', ShiftRight: 'bGrab', KeyJ:
 export class Input {
   constructor(layer) {
     this.sx = 0; this.sy = 0;
-    this.btn = { jump: false, grab: false, reel: false, act: false, shield: false, aim: false, dash: false };
+    this.btn = { jump: false, grab: false, reel: false, act: false, shield: false, aim: false, dash: false, fire: false };
     this.jumpEdge = false;
     this.edge = { act: false, shield: false, fire: false, dash: false };
     this.padLock = false; // a menu that doesn't pause the game is using the controller
@@ -60,10 +60,13 @@ export class Input {
       if (!this.enabled) return;
       e.preventDefault();
       if (document.pointerLockElement !== L) { this.grabMouse(); return; }
-      if (e.button === 0) this.edge.fire = true;
+      if (e.button === 0) { this.edge.fire = true; this.btn.fire = true; }
       if (e.button === 2) this.btn.aim = true;
     });
-    window.addEventListener('mouseup', (e) => { if (e.button === 2 && this.enabled) this.btn.aim = false; });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.btn.fire = false;
+      if (e.button === 2 && this.enabled) this.btn.aim = false;
+    });
     window.addEventListener('contextmenu', (e) => { if (e.target.tagName !== 'INPUT') e.preventDefault(); });
     document.addEventListener('pointerlockchange', () => {
       this.mouseHint();
@@ -165,7 +168,8 @@ export class Input {
     };
     sb.addEventListener('pointerup', fire(true));
     sb.addEventListener('pointercancel', fire(false));
-    sb.addEventListener('lostpointercapture', fire(true));
+    // Losing the finger for any other reason is no reason to fire.
+    sb.addEventListener('lostpointercapture', fire(false));
     for (const [id, key] of [['bJump', 'jump'], ['bGrab', 'grab'], ['bReel', 'reel'], ['bAct', 'act'], ['bShield', 'shield'], ['bDash', 'dash']]) {
       const b = L.querySelector('#' + id);
       b.addEventListener('pointerdown', (e) => {
@@ -252,7 +256,7 @@ export class Input {
 
   reset() {
     this.sx = this.sy = 0;
-    this.btn.jump = this.btn.grab = this.btn.reel = this.btn.act = this.btn.shield = this.btn.aim = this.btn.dash = false;
+    this.btn.jump = this.btn.grab = this.btn.reel = this.btn.act = this.btn.shield = this.btn.aim = this.btn.dash = this.btn.fire = false;
     this.jumpEdge = false;
     this.edge.act = this.edge.shield = this.edge.fire = this.edge.dash = false;
     this.aimP = null;
@@ -272,7 +276,7 @@ export class Input {
     if (k.has('KeyS') || k.has('ArrowDown')) sy -= 1;
     let jump = this.btn.jump || k.has('Space'), grab = this.btn.grab || k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyJ');
     let reel = this.btn.reel || k.has('KeyE') || k.has('KeyK');
-    let jumpPressed = this.jumpEdge;
+    let jumpPressed = this.jumpEdge, fireHold = this.btn.fire;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     // The camera turns at the same speed at any frame rate.
     const now = performance.now(), padK = Math.min(3, (now - (this.padT || now - 16.67)) / 16.67), mask = this.padMask;
@@ -302,12 +306,13 @@ export class Input {
       this.padDash = pd;
       if (b(2) && !this.padAct) this.edge.act = true;
       this.padAct = b(2);
-      // Left trigger: hold to aim. Right trigger: fire, aimed or from the hip.
+      // Left trigger: hold to aim. Right trigger: fire, but only while aiming.
       if (b(6)) this.btn.aim = this.padAim = true;
       else if (this.padAim) { this.padAim = false; this.btn.aim = false; }
       const pf = b(7);
       if (pf && !this.padFire) this.edge.fire = true;
       this.padFire = pf;
+      fireHold = fireHold || pf;
       if (b(4) && !this.padShield) this.edge.shield = true;
       this.padShield = b(4);
     }
@@ -317,12 +322,14 @@ export class Input {
     const act = this.edge.act, shield = this.edge.shield, fire = this.edge.fire, dash = this.edge.dash, aim = this.btn.aim;
     this.edge.act = this.edge.shield = this.edge.fire = this.edge.dash = false;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    return { mx: fx * sy + rx * sx, mz: fz * sy + rz * sx, fx, fz, jump, jumpPressed, dash, grab, reel, act, shield, aim, fire };
+    // Aiming with one finger or key can't also pull a trigger, so there holding on is what keeps an automatic firing.
+    const aimFlow = !!this.aimP || k.has('KeyR');
+    return { mx: fx * sy + rx * sx, mz: fz * sy + rz * sx, fx, fz, jump, jumpPressed, dash, grab, reel, act, shield, aim, fire, fireHold, aimFlow };
   }
 
   // Camera turn since last frame; while aiming the aim sensitivity applies instead of the camera speed.
-  takeCam(aiming) {
-    const k = aiming ? this.aimSens * 0.7 : this.sens;
+  takeCam(aiming, zoom = 1) {
+    const k = aiming ? this.aimSens * 0.7 * zoom : this.sens;
     const d = [this.camDX * 0.0055 * k, this.camDY * 0.0045 * k * (this.invert ? -1 : 1)];
     this.camDX = this.camDY = 0;
     return d;

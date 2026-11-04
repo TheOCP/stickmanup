@@ -8,3 +8,5 @@ export const award = () => null;
 export const recordRun = () => {};
 export const addTotals = () => {};
 export const flushProfile = () => {};
+// The weapon a shot came from is in the recording, so the one carried here doesn't matter.
+export const myLook = () => ({ s: 'c0', f: 'smile', h: 'none', w: 'w_blaster' });

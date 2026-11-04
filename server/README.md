@@ -130,6 +130,9 @@ Also checked:
 * **The phone itself**: whether the app is the official one, whether its game files were changed, Frida, debuggers, Xposed
   and cheat tools. Android's key attestation asks the phone's secure hardware to vouch for the app, on a certificate back to
   Google. Being rooted is only noted, never held against anyone
+* **Weapons**: every shot in the rerun is checked against the weapon's own table: how fast it fires, how far it reaches,
+  how long it paralyses and how big its blast is. Using a weapon the account doesn't own is flagged. A friend thrown off
+  the climb only counts with friendly fire on in that room, and never harder than the strongest weapon
 * **Old versions**: a phone on another version can't be compared, so it is told to update
 
 It has two modes, switched with the bot's `/anticheat`. It starts in **watch**: everything is checked and reported, coins are

@@ -1,6 +1,7 @@
 // What this phone remembers about you: coins, what you own and wear, relics found and the record of your climbs.
 import { store } from './util.js';
 import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
+import { WEAPON, FREE_WEAPON } from './weapons.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
@@ -120,15 +121,16 @@ export function buy(item) {
   return true;
 }
 
-const SLOT = { suit: 's', face: 'f', hat: 'h' };
+const SLOT = { suit: 's', face: 'f', hat: 'h', weapon: 'w' };
 export function equip(item) { P.eq[SLOT[item.kind]] = item.id; saveNow(); }
-export const worn = (item) => P.eq[SLOT[item.kind]] === item.id;
+export const worn = (item) => (item.kind === 'weapon' ? myLook().w === item.id : P.eq[SLOT[item.kind]] === item.id);
 
 // What to send out and show: your picks, with the team suits only with the right flag.
 export function myLook() {
-  const e = P.eq || { s: FREE_SUIT, f: 'smile', h: 'none' }, s = SUIT[e.s];
+  const e = P.eq || { s: FREE_SUIT, f: 'smile', h: 'none', w: FREE_WEAPON }, s = SUIT[e.s], gun = WEAPON[e.w];
   const suit = s && (!s.team || owned(s)) ? e.s : FREE_SUIT;
-  return { s: suit, f: FACE[e.f] ? e.f : 'smile', h: HAT[e.h] ? e.h : 'none' };
+  // A weapon an admin took away again goes back in the box.
+  return { s: suit, f: FACE[e.f] ? e.f : 'smile', h: HAT[e.h] ? e.h : 'none', w: gun && owned(gun) ? e.w : FREE_WEAPON };
 }
 
 

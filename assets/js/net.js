@@ -14,6 +14,7 @@ const inList = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? 
 function cleanRoomRules(r) {
   const o = {};
   if (r && typeof r === 'object') for (const k of ['cps', 'haz', 'rope']) if (Number.isInteger(r[k]) && r[k] >= 0 && r[k] < DIFFS.length) o[k] = r[k];
+  if (r && r.ff === 1) o.ff = 1;
   return o;
 }
 function cleanLobby(l) {

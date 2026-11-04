@@ -199,7 +199,7 @@ export function makePool(scene) {
       brow.rotation.z = s * 0.45;
       r.head.add(brow);
     }
-    if (r.gun) r.gun.visible = false;
+    r.stiff = true; // a shot one stands rigid instead of spinning
     return r;
   });
   const ropes = [0, 1, 2].map(() => new RopeMesh(scene, COLORS[0], COLORS[1]));

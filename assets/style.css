@@ -688,3 +688,38 @@ body.pc .btn:hover:not(:disabled), body.pc .seg button:hover { filter: brightnes
 #bootFail .btn { flex: 1 1 auto; margin: 0 4px 4px 0; }
 #bootFail small { display: block; margin-top: 8px; font-size: 11px; line-height: 1.3; opacity: 0.6; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 #loading.failed > p { display: none; }
+
+/* The sight of a scoped weapon: black round the lens, fine lines, little marks to judge distance by. */
+#scope { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; opacity: 0; transition: opacity 0.08s;
+  background: radial-gradient(circle 46vh at center, rgba(120, 200, 255, 0.02) 0, rgba(120, 200, 255, 0.05) 88%, rgba(0, 0, 0, 0.55) 95%, #000 100%); }
+#scope.on { opacity: 1; }
+#scope::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: linear-gradient(90deg, #000 0, #000 calc(50% - 46vh), rgba(0, 0, 0, 0.9) calc(50% - 46vh), rgba(0, 0, 0, 0.9) calc(50% - 16px), transparent calc(50% - 16px), transparent calc(50% + 16px), rgba(0, 0, 0, 0.9) calc(50% + 16px), rgba(0, 0, 0, 0.9) calc(50% + 46vh), #000 calc(50% + 46vh)); }
+#scope::after { content: ''; position: absolute; top: 4vh; bottom: 4vh; left: 50%; width: 1px; background: linear-gradient(rgba(0, 0, 0, 0.9) 0, rgba(0, 0, 0, 0.9) calc(50% - 16px), transparent calc(50% - 16px), transparent calc(50% + 16px), rgba(0, 0, 0, 0.9) calc(50% + 16px)); }
+#scope i { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #ff3a30; box-shadow: 0 0 6px #ff3a30, 22px 0 0 -1px rgba(0, 0, 0, 0.85), 44px 0 0 -1px rgba(0, 0, 0, 0.85), 66px 0 0 -1px rgba(0, 0, 0, 0.85), -22px 0 0 -1px rgba(0, 0, 0, 0.85), -44px 0 0 -1px rgba(0, 0, 0, 0.85), -66px 0 0 -1px rgba(0, 0, 0, 0.85), 0 22px 0 -1px rgba(0, 0, 0, 0.85), 0 44px 0 -1px rgba(0, 0, 0, 0.85), 0 66px 0 -1px rgba(0, 0, 0, 0.85); }
+#scope.hot i { background: #40ff70; box-shadow: 0 0 9px #40ff70, 22px 0 0 -1px rgba(0, 0, 0, 0.85), 44px 0 0 -1px rgba(0, 0, 0, 0.85), 66px 0 0 -1px rgba(0, 0, 0, 0.85), -22px 0 0 -1px rgba(0, 0, 0, 0.85), -44px 0 0 -1px rgba(0, 0, 0, 0.85), -66px 0 0 -1px rgba(0, 0, 0, 0.85), 0 22px 0 -1px rgba(0, 0, 0, 0.85), 0 44px 0 -1px rgba(0, 0, 0, 0.85), 0 66px 0 -1px rgba(0, 0, 0, 0.85); }
+#scopeD { position: absolute; left: calc(50% + 30px); top: calc(50% + 22px); font: 700 13px ui-monospace, monospace; color: #bff4ff; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+
+/* With a controller: small buttons that say which button on the controller is which. */
+.gp { display: none; }
+body.pad .tb > kbd:not(.gp) { display: none; }
+body.pad .gp, body.pad .hb .gp { display: block; }
+.tb .gp, .hb .gp { position: absolute; top: -7px; right: -7px; left: auto; bottom: auto; transform: none; z-index: 3; min-width: 21px; height: 21px; padding: 0 3px; box-sizing: border-box; border-radius: 50%; font: 800 12px/19px system-ui, sans-serif; text-align: center; color: #fff; background: #20242e; border: 1.5px solid rgba(255, 255, 255, 0.55); box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6); letter-spacing: 0; }
+.gp.wide { border-radius: 7px; font-size: 10px; padding: 0 5px; }
+.gp.c0 { background: #1f9e4a; border-color: #5fe88a; } .gp.c1 { background: #c2303a; border-color: #ff7a82; } .gp.c2 { background: #2b64c8; border-color: #7aaeff; } .gp.c3 { background: #c79a1a; border-color: #ffe06a; }
+.pstyle-ps .gp.c0 { background: #2b64c8; border-color: #7aaeff; } .pstyle-ps .gp.c1 { background: #c2303a; border-color: #ff7a82; } .pstyle-ps .gp.c2 { background: #a83a9a; border-color: #ff8ae8; } .pstyle-ps .gp.c3 { background: #178a78; border-color: #5fe8d0; }
+.pstyle-nin .gp.c0, .pstyle-nin .gp.c1, .pstyle-nin .gp.c2, .pstyle-nin .gp.c3 { background: #2a2e38; border-color: rgba(255, 255, 255, 0.6); }
+#padCard { display: none; position: absolute; left: 50%; top: 56px; transform: translateX(-50%); max-width: min(620px, 92vw); padding: 8px 12px; border-radius: 14px; background: rgba(8, 14, 24, 0.82); border: 1px solid rgba(255, 255, 255, 0.14); pointer-events: none; }
+body.pad #padCard.on { display: block; }
+.padkeys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; font-size: 12px; font-weight: 650; color: var(--tx); }
+.padkeys span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.padkeys .gp { display: inline-block; position: static; }
+.pause .padkeys { margin-top: 10px; display: none; }
+body.pad .pause .padkeys { display: flex; }
+
+/* Weapons in the shop. */
+.wstats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; margin: 2px 0 8px; width: 100%; font-size: 10.5px; color: var(--tx2); }
+.wstats div { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1px 6px; }
+.wstats i { grid-column: 1 / -1; grid-row: 2; display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.wstats i::before { content: ''; display: block; height: 100%; width: var(--v); border-radius: 3px; background: var(--c, var(--a)); }
+.wstats b { font-weight: 700; color: var(--tx); text-align: right; font-size: 11px; }
+.wtag { font-size: 11px; color: var(--tx2); margin: 0 0 5px; }

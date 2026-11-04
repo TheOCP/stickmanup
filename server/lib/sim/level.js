@@ -34,7 +34,7 @@ export const MAPS = [
     zones: [
       Z('Flooded Docks', 'SHIELD when lightning marks you', 100, 0x3ff0d0, 0x3d4652, 0x0b1820, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { gap: 5, stairs: 2, pillars: 2, beam: 2, crates: 2, laser: 1 }),
       Z('Turbine Halls', 'Cross between the gusts', 208, 0xff8a3d, 0x4a3d37, 0x1a1210, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { gap: 4, mover: 3, spinner: 2, fan: 3, stairs: 1, grapple: 1, laser: 2, swing: 1 }),
-      Z('Lightning Rods', 'GRAB when the rods glow', 316, 0x9b7bff, 0x3b3858, 0x100d22, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { gap: 3, rods: 4, beam: 2, pad: 2, pillars: 1, door: 1, gate: 2, laser: 1 }),
+      Z('Lightning Rods', 'Move or SHIELD when the rods glow', 316, 0x9b7bff, 0x3b3858, 0x100d22, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { gap: 3, rods: 4, beam: 2, pad: 2, pillars: 1, door: 1, gate: 2, laser: 1 }),
       Z('Broken Elevator Shaft', 'Ride it up', 424, 0xffc23d, 0x4a4433, 0x18140a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { gap: 3, lift: 3, mover: 2, crumble: 3, stairs: 1, grapple: 1, gate: 2, swing: 1 }),
       Z('Floating Wreckage', 'Nothing here stands still', 532, 0xff4fb4, 0x4a3446, 0x1a0c18, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { gap: 2, tilt: 3, bob: 3, crumble: 2, pad: 1, beam: 1, door: 1, laser: 2, arrows: 1 }),
       Z('Ice Crown', 'Slippery when frozen', 640, 0x8fe9ff, 0x6a8292, 0x0e1a24, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gap: 4, pillars: 2, beam: 2, iceslope: 2, bob: 1, grapple: 1, gate: 2, laser: 1 }, { ice: true }),
@@ -934,7 +934,7 @@ export function generateLevel(mapId = 0) {
       const ax = Math.cos(p.ry), az = -Math.sin(p.ry), half = p.sx / 2 - 0.9;
       out.monsters.push({ i: out.monsters.length, ax: p.x - ax * half, az: p.z - az * half, bx: p.x + ax * half, bz: p.z + az * half,
         y: p.y + 0.65, per: rr(3.2, 4.6), ph: R(), r: 0.65, zone });
-      if (zone === 0 && !intro.monster) { intro.monster = true; sign(p, 'Monsters knock you off. Time it, hold GRAB, or SHOOT to stun them.'); }
+      if (zone === 0 && !intro.monster) { intro.monster = true; sign(p, 'Monsters knock you off. Time it, or SHOOT to paralyse them.'); }
       return T.gap(p, { g: rr(1.3, 2.0) });
     },
     // Gaps with bats circling through them.

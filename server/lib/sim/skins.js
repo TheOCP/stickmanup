@@ -3,6 +3,7 @@
 // painters that draw them. No three.js in here; stickman.js turns these into materials and the shop into
 // thumbnails.
 import { rng } from './util.js';
+import { WEAPON, FREE_WEAPON } from './weapons.js';
 
 // Older phones' browsers don't have this yet; faces and thumbnails use it.
 if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
@@ -407,29 +408,43 @@ export const SUITS = [
   pt('samurai', 'Samurai', 2, 1600, 0x7a1420, 'angry', 'samurai'),
 ];
 
-// Legendary suits are alive: they run on a shader (mode, three colours) and leave a trail. Coins can't buy
-// them. Twelve hide in the hidden places on Hardcore, three are earned by what you do on Hardcore.
-// Modes: 0 flowing fire, 1 lightning, 2 rainbow, 3 galaxy, 4 gold sheen, 5 falling code.
+// Legendary suits are alive: they run on a shader (mode, three colours) and leave a trail. Twelve hide in the hidden places on
+// Hardcore, three are earned by what you do on Hardcore, and the rest cost a fortune. Many have wings, things on their back, or
+// a cape made of the suit itself (cape: 'shader').
+// Modes: 0 flowing fire, 1 lightning, 2 rainbow, 3 galaxy, 4 gold sheen, 5 falling code, 6 aurora, 7 molten rock, 8 crystal,
+// 9 deep space, 10 circuits, 11 shimmering scales, 12 spirit smoke, 13 neon grid, 14 hologram.
 const L = (id, name, mode, a, b, c, o) => s(id, name, 3, -1, Object.assign({ tab: 'legend', c, shader: { mode, a, b, c: o.glow ?? c }, trail: c }, o));
 const LOW = 'somewhere between 150 and 300 m', HIGH = 'somewhere between 550 and 750 m';
 const low = (map) => `Hardcore on ${map}, ${LOW}. Stop staring at the tower and turn round.`;
 const high = (map) => `Hardcore on ${map}, ${HIGH}. Only the brave step off the edge.`;
 export const LEGENDS = [
   L('l_storm0', 'Stormcaller', 1, 0x0a1428, 0x2040a0, 0x7fd8ff, { relic: 'storm:0', hint: low('Storm Tower'), face: 'hollow', hat: 'bolt' }),
-  L('l_storm1', 'Thunder God', 1, 0x180a30, 0x6030c0, 0xffe870, { relic: 'storm:1', hint: high('Storm Tower'), face: 'cool', hat: 'l_crown' }),
+  L('l_storm1', 'Thunder God', 1, 0x180a30, 0x6030c0, 0xffe870, { relic: 'storm:1', hint: high('Storm Tower'), face: 'cool', hat: 'l_crown', cape: 'shader' }),
   L('l_sunny0', 'Golden Hour', 4, 0xffb030, 0xff7030, 0xfff0a0, { relic: 'sunny:0', hint: low('Sunny Isles'), face: 'cool', hat: 'sunrays' }),
   L('l_sunny1', 'Deep Sea King', 0, 0x02203a, 0x0a90a8, 0x70ffe0, { relic: 'sunny:1', hint: high('Sunny Isles'), face: 'hollow', hat: 'l_crown' }),
   L('l_forest0', 'Forest Spirit', 0, 0x0a2810, 0x30a040, 0xc0ff70, { relic: 'forest:0', hint: low('Wild Forest'), face: 'hollow', hat: 'antlers' }),
-  L('l_forest1', 'Monster King', 3, 0x0a1a10, 0x503090, 0x9cff5a, { relic: 'forest:1', hint: high('Wild Forest'), face: 'monster', hat: 'devil' }),
+  L('l_forest1', 'Monster King', 3, 0x0a1a10, 0x503090, 0x9cff5a, { relic: 'forest:1', hint: high('Wild Forest'), face: 'monster', hat: 'devil', cape: 'shader' }),
   L('l_volcano0', 'Magma Lord', 0, 0x1a0604, 0xd02a08, 0xffb030, { relic: 'volcano:0', hint: low('Magma Chimney') + ' Here, the middle is the way.', face: 'angry', hat: 'flames' }),
-  L('l_volcano1', 'Ash Phoenix', 0, 0x401008, 0xff6a10, 0xfff060, { relic: 'volcano:1', hint: high('Magma Chimney') + ' Here, the middle is the way.', face: 'cool', hat: 'flames' }),
-  L('l_city0', 'Neon Ronin', 3, 0x0a0a20, 0xc020c0, 0x30f0ff, { relic: 'city:0', hint: low('Neon Skyline'), face: 'visor', hat: 'samurai' }),
+  L('l_volcano1', 'Ash Phoenix', 0, 0x401008, 0xff6a10, 0xfff060, { relic: 'volcano:1', hint: high('Magma Chimney') + ' Here, the middle is the way.', face: 'cool', hat: 'flames', gear: ['wings_fire'] }),
+  L('l_city0', 'Neon Ronin', 10, 0x07040f, 0x6a1a9a, 0xff40e0, { relic: 'city:0', hint: low('Neon Skyline'), face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
   L('l_city1', 'Chrome Phantom', 4, 0x8090a8, 0x303848, 0x60e0ff, { relic: 'city:1', hint: high('Neon Skyline'), face: 'visor', hat: 'antenna' }),
   L('l_waterfall0', 'River Spirit', 0, 0x08305a, 0x20a0e0, 0xd0ffff, { relic: 'waterfall:0', hint: low('Waterfall'), face: 'hollow', hat: 'halo' }),
-  L('l_waterfall1', 'Rainbow Dragon', 2, 0xffffff, 0xffffff, 0xffffff, { relic: 'waterfall:1', hint: high('Waterfall'), face: 'cool', hat: 'devil', trail: 0xff70c0 }),
-  L('l_summit', 'Summit King', 4, 0xffd24a, 0xb8860b, 0xfff4b0, { ach: 'summit', hint: 'Reach the top of any map on Hardcore.', face: 'cool', hat: 'l_crown' }),
-  L('l_flawless', 'Flawless', 3, 0x101840, 0x20a0ff, 0xffffff, { ach: 'flawless', hint: 'Reach the top of any map on Hardcore without a single fall.', face: 'cool', hat: 'halo' }),
-  L('l_hunter', 'Relic Hunter', 2, 0xffffff, 0xffffff, 0xffffff, { ach: 'hunter', hint: 'Find all twelve hidden relics.', face: 'hollow', hat: 'l_crown', trail: 0xffc040 }),
+  L('l_waterfall1', 'Rainbow Dragon', 11, 0x14082a, 0x1a6ac0, 0xffffff, { relic: 'waterfall:1', hint: high('Waterfall'), face: 'cool', gear: ['wings_dragon_sky', 'horns_sky'], trail: 0xff70c0 }),
+  L('l_summit', 'Summit King', 4, 0xffd24a, 0xb8860b, 0xfff4b0, { ach: 'summit', hint: 'Reach the top of any map on Hardcore.', face: 'cool', hat: 'l_crown', cape: 'shader' }),
+  L('l_flawless', 'Flawless', 3, 0x101840, 0x20a0ff, 0xffffff, { ach: 'flawless', hint: 'Reach the top of any map on Hardcore without a single fall.', face: 'cool', hat: 'halo', gear: ['wings_energy'] }),
+  L('l_hunter', 'Relic Hunter', 14, 0x3a2a10, 0x806020, 0xffc040, { ach: 'hunter', hint: 'Find all twelve hidden relics.', face: 'hollow', hat: 'l_crown', gear: ['orbs_gold'], trail: 0xffc040 }),
+  // For sale, for a fortune.
+  L('l_seraph', 'Celestial Seraph', 4, 0xfff4dc, 0xc8a050, 0xffffff, { price: 30000, face: 'cool', hat: 'halo', gear: ['wings_angel'], trail: 0xfff0b0 }),
+  L('l_synth', 'Neon Drive', 13, 0x0a0018, 0x48005a, 0xff40d0, { price: 25000, face: 'visor', hat: 'phones', gear: ['ring_synth'] }),
+  L('l_cyber', 'Cyber Shogun', 10, 0x03070d, 0x1a6080, 0x30f0ff, { price: 30000, face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
+  L('l_aurora', 'Aurora Empress', 6, 0x040a1e, 0x20e8a0, 0xb070ff, { price: 35000, face: 'cute', gear: ['wings_energy', 'crown_ice'], trail: 0x40ffc0 }),
+  L('l_frost', 'Frost Wraith', 8, 0x0a2040, 0x58c0ff, 0xe8ffff, { price: 35000, face: 'hollow', gear: ['wings_ice', 'crown_ice'], trail: 0x9ff0ff }),
+  L('l_reaper', 'Soul Reaper', 12, 0x05080a, 0x1c3038, 0x70ffc0, { price: 40000, face: 'hollow', gear: ['hood', 'scythe_back'], cape: 'shader' }),
+  L('l_infernal', 'Infernal Overlord', 7, 0x1a0606, 0xff4a10, 0xffd050, { price: 45000, face: 'angry', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff6a10 }),
+  L('l_diamond', 'Diamond Sovereign', 8, 0x70b0f0, 0xe8f6ff, 0xffffff, { price: 45000, face: 'cool', hat: 'crown', gear: ['ring_diamond'], trail: 0xc0f0ff }),
+  L('l_voidking', 'Void Emperor', 9, 0x040108, 0x5a1ab0, 0xe8b0ff, { price: 50000, face: 'hollow', gear: ['crown_void', 'orbs_void', 'wings_void'], cape: 'shader', trail: 0xa040ff }),
+  L('l_prism', 'Prismatic', 14, 0x14141c, 0x8080a0, 0xffffff, { price: 55000, face: 'cool', gear: ['ring_prism', 'wings_energy'], trail: 0xff70e0 }),
+  L('l_dragonlord', 'Dragon Emperor', 11, 0x2a0604, 0xa0200c, 0xffc040, { price: 60000, face: 'angry', hat: 'l_crown', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff8a20 }),
 ];
 
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
@@ -530,11 +545,29 @@ export function paintSuit(suit, size = TEX) {
   else if (suit.shader) {
     // Only used for the shop picture: the shader's colours as a still image.
     const cc = (x) => '#' + x.toString(16).padStart(6, '0'), S = suit.shader, p = P(g);
-    if (S.mode === 2) paintFn.rainbow(p);
-    else if (S.mode === 5) { p.all(cc(S.a)); const R = rng(9); g.fillStyle = cc(S.c); for (let i = 0; i < 240; i++) g.fillRect(((R() * 48) | 0) * 10.7, R() * TEX, 7, 9 + R() * 16); }
-    else { p.vgrad(cc(S.a), cc(S.b)); p.blobs([cc(S.c), cc(S.b)], 26, 6, 24, 77); }
+    legendStill(p, g, S, cc(S.a), cc(S.b), cc(S.c));
   } else { g.fillStyle = '#' + suit.c.toString(16).padStart(6, '0'); g.fillRect(0, 0, TEX, TEX); }
   return c;
+}
+
+// A still picture of each shader, for the shop's cards.
+function legendStill(p, g, S, A, B, C) {
+  const R = rng(9 + S.mode), line = (c, w, pts) => { g.strokeStyle = c; g.lineWidth = w; g.lineJoin = 'round'; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
+  const walk = (n, step) => { const out = []; let x = R() * TEX, y = R() * TEX; for (let i = 0; i < n; i++) { out.push([x, y]); x += (R() - 0.5) * step; y += (R() - 0.3) * step; } return out; };
+  switch (S.mode) {
+    case 2: paintFn.rainbow(p); break;
+    case 5: { p.all(A); g.fillStyle = C; for (let i = 0; i < 240; i++) g.fillRect(((R() * 48) | 0) * 10.7, R() * TEX, 7, 9 + R() * 16); break; }
+    case 6: { p.vgrad(B, A); g.globalAlpha = 0.45; for (let i = 0; i < 16; i++) { g.fillStyle = i % 3 ? C : B; g.fillRect(R() * TEX, R() * TEX * 0.4, 6 + R() * 18, TEX * 0.6); } g.globalAlpha = 1; break; }
+    case 7: { p.all(A); for (let i = 0; i < 26; i++) { const w = walk(7, 70); line(B, 7, w); line(C, 2.5, w); } break; }
+    case 8: { p.vgrad(B, A); for (let i = 0; i < 70; i++) { const x = R() * TEX, y = R() * TEX, r = 18 + R() * 30; g.fillStyle = R() > 0.5 ? A : B; g.globalAlpha = 0.6; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.globalAlpha = 1; g.strokeStyle = C; g.lineWidth = 1.5; g.stroke(); } break; }
+    case 9: { p.all(A); p.blobs([B, C], 22, 10, 36, 41); p.dots('#ffffff', 90, 1, 2.5, 13); break; }
+    case 10: { p.all(A); for (let i = 0; i < 60; i++) { const x = ((R() * 40) | 0) * 13, y = ((R() * 34) | 0) * 15, h = R() > 0.5; line(i % 4 ? B : C, i % 4 ? 2 : 3, [[x, y], h ? [x + 40 + R() * 60, y] : [x, y + 40 + R() * 60]]); } p.dots(C, 30, 3, 5, 17); break; }
+    case 11: { p.all(A); for (let y = 0; y < 30; y++) for (let x = 0; x < 30; x++) { const cx = x * 18 + (y % 2) * 9, cy = y * 18; g.fillStyle = (x + y) % 3 ? B : A; g.beginPath(); g.arc(cx, cy, 11, 0, Math.PI); g.fill(); g.strokeStyle = C; g.lineWidth = 1.2; g.stroke(); } break; }
+    case 12: { p.vgrad(B, A); g.globalAlpha = 0.5; p.blobs([C, B], 18, 8, 30, 23); g.globalAlpha = 1; break; }
+    case 13: { p.vgrad(B, A); for (let i = 0; i < TEX; i += 26) { line(C, 2, [[i, 0], [i, TEX]]); line(C, 2, [[0, i], [TEX, i]]); } break; }
+    case 14: { paintFn.rainbow(p); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(0, 0, TEX, TEX); for (let y = 0; y < TEX; y += 6) { g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(0, y, TEX, 2); } break; }
+    default: p.vgrad(A, B); p.blobs([C, B], 26, 6, 24, 77);
+  }
 }
 
 // A suit's colour for its cord and name tag: a black suit still needs a cord you can see.
@@ -581,7 +614,8 @@ export function resolveLook(look, role) {
   // No hat or the classic face picked: the suit may bring its own.
   const fid = l.f && l.f !== 'smile' ? l.f : suit.face || 'smile', hid = l.h && l.h !== 'none' ? l.h : suit.hat || 'none';
   const face = FACE[fid] || FACE.smile, hat = HAT[hid] || HAT.none;
-  return { suit, face, hat, key: suit.id + '|' + face.id + '|' + hat.id };
+  const weapon = typeof l.w === 'string' && Object.hasOwn(WEAPON, l.w) ? WEAPON[l.w] : WEAPON[FREE_WEAPON];
+  return { suit, face, hat, weapon, key: suit.id + '|' + face.id + '|' + hat.id + '|' + weapon.id };
 }
 // A plain stickman in one colour (the extra climbers on the title screen).
 const PLAINS = new Map();
@@ -593,7 +627,7 @@ const known = (table, id) => typeof id === 'string' && Object.hasOwn(table, id);
 // What marks a thing as yours. Some faces and hats are named like a suit ('santa' is both), and owning one is not owning
 // the other.
 export const itemKey = (it) => ((it.kind === 'face' || it.kind === 'hat') && Object.hasOwn(SUIT, it.id) ? it.kind + ':' + it.id : it.id);
-export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none' } : null);
+export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none', w: known(WEAPON, l.w) ? l.w : FREE_WEAPON } : null);
 // The flags someone can have. A name means nothing: only the server says who has which (server/lib/rooms.js).
 export const ROLE_TAGS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MOD' };
 export const cleanRole = (r) => (typeof r === 'string' && Object.hasOwn(ROLE_TAGS, r) ? r : '');

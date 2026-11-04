@@ -468,7 +468,8 @@ export class Body {
 
   knock(vx, vy, vz, stun) {
     if (this.shield > 0) { this.events.push({ k: 'blocked' }); return false; }
-    if (this.anchored) return false;
+    // Holding on is no protection: a hit tears you loose. Stunned, you can't grab again straight away.
+    this.release();
     this.vx = vx; this.vy = vy; this.vz = vz;
     this.dashT = 0;
     this.stun = stun;

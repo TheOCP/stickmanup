@@ -11,9 +11,10 @@ globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), se
 const { generateLevel, MAPS, DIFFS } = await import('../assets/js/level.js');
 const { SUITS, FACES, HATS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
+const { WEAPONS } = await import('../assets/js/weapons.js');
 
 const items = {}, names = {};
-for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...EMOTES]) {
+for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...EMOTES, ...WEAPONS]) {
   // Free things everybody has already. All the rest can be given by the bot, except the team suits: those go with a flag.
   if (it.price === 0) continue;
   const key = itemKey(it);

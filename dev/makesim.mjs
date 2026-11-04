@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = path.join(root, 'assets/js'), out = path.join(root, 'server/lib/sim');
-const FILES = ['detmath.js', 'util.js', 'physics.js', 'level.js', 'obstacles.js', 'player.js', 'storm.js', 'chain.js', 'colors.js', 'emotes.js', 'skins.js', 'game.js'];
+const FILES = ['detmath.js', 'util.js', 'physics.js', 'level.js', 'obstacles.js', 'player.js', 'storm.js', 'chain.js', 'colors.js', 'emotes.js', 'weapons.js', 'skins.js', 'game.js'];
 
 const want = new Map();
 const hash = crypto.createHash('sha256');
@@ -42,6 +42,8 @@ export const award = () => null;
 export const recordRun = () => {};
 export const addTotals = () => {};
 export const flushProfile = () => {};
+// The weapon a shot came from is in the recording, so the one carried here doesn't matter.
+export const myLook = () => ({ s: 'c0', f: 'smile', h: 'none', w: 'w_blaster' });
 `);
 want.set('cloud.js', `// What the climb tells the account. In a rerun that goes to the code doing the rerun.
 export const sink = { coin: () => {}, relic: () => {}, win: () => {} };

@@ -8,7 +8,7 @@ import { World } from './physics.js';
 import { WorldView, setSimple, setThin } from './worldview.js';
 import { setDetail } from './scenery.js';
 import { AutoQ, STEPS } from './autoq.js';
-import { PadNav } from './padnav.js';
+import { PadNav, padNames } from './padnav.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { Storm } from './storm.js';
@@ -26,7 +26,7 @@ import { openShop, openRecords } from './shop.js';
 import { TitleShow } from './titleshow.js';
 import { startLang, tr, LANG_NAMES } from './i18n.js';
 import { Fx } from './fx.js';
-import { PR, PC } from './player.js';
+import { PR, PC, F } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -69,6 +69,8 @@ const RULES = [
   ['haz', 'Obstacles', ['Calm', 'Normal', 'Wild']],
   ['rope', 'Cord', ['Long', 'Normal', 'Short']],
 ];
+const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Friendly fire<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="ff" data-v="0" class="${r.ff === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="ff" data-v="1" class="${r.ff === 1 ? 'on' : ''}">On</button></div></label></div>
+    <p class="sub" style="margin:4px 0 0">On: your shots throw your friends off the climb, and theirs throw you.</p>`;
 const cleanRules = (r = {}) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; return o; };
 function rulesHtml(r, editable, solo) {
   return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
@@ -199,7 +201,7 @@ const ui = (app.ui = {
     else {
       for (const r of L.rods) {
         if (Math.abs(r.y - me.y) > 4 || Math.hypot(r.x - me.x, r.z - me.z) > r.rad + 1.5) continue;
-        if (g.storm.rodWarn(r, T) > 0) { warn = 'LIGHTNING: GRAB!'; cls = 'w'; break; }
+        if (g.storm.rodWarn(r, T) > 0) { warn = 'LIGHTNING: MOVE OR SHIELD!'; cls = 'w'; break; }
       }
     }
     const w = hudEl('#hWarn'), wc = warn ? 'on ' + cls : '';
@@ -283,6 +285,24 @@ const ui = (app.ui = {
     const c = $('#cross');
     c.classList.toggle('on', !!on);
     c.classList.toggle('hot', !!on && !!hot);
+  },
+  // Looking through the sight of a scoped weapon, with how far away the point under it is.
+  scope(on, hot, dist) {
+    const c = $('#scope');
+    if (on !== c.classList.contains('on')) c.classList.toggle('on', on);
+    if (!on) return;
+    c.classList.toggle('hot', !!hot);
+    const txt = dist > 0 ? Math.round(dist) + ' m' : '', d = $('#scopeD');
+    if (d.textContent !== txt) d.textContent = txt;
+  },
+  // Pulled the trigger without aiming: nothing fires, and this says why.
+  aimFirst() {
+    const now = performance.now();
+    if (now - (this.aimTold || -1e9) < 15000) return;
+    this.aimTold = now;
+    if (document.body.classList.contains('pad')) { const L = padNames(nav && nav.name); this.toast(`Hold ${L.aim} to aim, then ${L.fire} to fire`); }
+    else if (ON_PC) this.toast('Hold right click to aim, then left click to fire');
+    else this.toast('Hold SHOOT to aim, let go to fire');
   },
   // Name tags just above each other player's head. The camera has moved this frame, so its matrices are
   // brought up to date before projecting (otherwise the tags trail a frame behind and swim around).
@@ -607,6 +627,7 @@ function lobby(s) {
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
         <div class="kind" style="margin:10px 0 6px">Rules</div>
         ${rulesHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
+        ${friendlyFireHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord (nobody is tied together, and everyone keeps their own checkpoint)</label>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
@@ -1238,7 +1259,7 @@ function autoTick(now) {
 const BTN = { bJump: [66, 64, 96], bGrab: [163, 59, 74], bReel: [77, 165, 74], bAct: [167, 149, 74], bShoot: [252, 160, 74], bDash: [252, 72, 74], bShield: [340, 112, 74] };
 function applyLayout() {
   // On a PC nothing presses them: they are small, and show the keys, the grip and what is ready.
-  const k = ON_PC ? 0.68 : settings.btnSize, pos = ON_PC ? {} : settings.btnPos || {}, lefty = !ON_PC && settings.lefty, side = lefty ? 'left' : 'right', other = lefty ? 'right' : 'left';
+  const small = ON_PC || document.body.classList.contains('pad'), k = small ? 0.68 : settings.btnSize, pos = small ? {} : settings.btnPos || {}, lefty = !small && settings.lefty, side = lefty ? 'left' : 'right', other = lefty ? 'right' : 'left';
   for (const id in BTN) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -1251,6 +1272,43 @@ function applyLayout() {
   }
   $('#btns').style.setProperty('--ba', settings.btnAlpha);
   if (app.input) app.input.lefty = !!lefty;
+}
+
+// With a controller in the hands every button on screen says which one it is, the way that controller names them.
+function padButtons(on) {
+  applyLayout();
+  if (!on) { $('#padCard').classList.remove('on'); return; }
+  const L = padNames(nav && nav.name), body = document.body.classList;
+  body.remove('pstyle-xbox', 'pstyle-ps', 'pstyle-nin');
+  body.add('pstyle-' + L.style);
+  const put = (id, text, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    let g = el.querySelector('.gp');
+    if (!g) { g = document.createElement('kbd'); el.append(g); }
+    g.className = 'gp ' + cls;
+    g.textContent = text;
+  };
+  put('bJump', L.jump, 'c0'); put('bGrab', L.grab, 'c1'); put('bAct', L.act, 'c2'); put('bDash', L.dash, 'c3');
+  put('bShield', L.shield, 'wide'); put('bReel', L.reel, 'wide'); put('bShoot', `${L.aim} + ${L.fire}`, 'wide');
+  put('hEmote', L.emote, 'wide'); put('hPause', L.pause, 'wide');
+  $('#padCard').innerHTML = padKeys();
+  if (app.screen === 'game') showPadCard();
+}
+const padKey = (text, cls, word) => `<span><kbd class="gp ${cls}">${esc(text)}</kbd>${word}</span>`;
+function padKeys() {
+  const L = padNames(nav && nav.name);
+  return `<div class="padkeys">${padKey(L.jump, 'c0', 'Jump')}${padKey(L.grab, 'c1', 'Grab')}${padKey(L.act, 'c2', 'Action')}${padKey(L.dash, 'c3', 'Dash')}${padKey(L.aim, 'wide', 'Aim')}${padKey(L.fire, 'wide', 'Fire')}${padKey(L.reel, 'wide', 'Reel')}${padKey(L.shield, 'wide', 'Shield')}${padKey(L.emote, 'wide', 'Emotes')}${padKey(L.pause, 'wide', 'Pause')}</div>`;
+}
+// A reminder of the buttons at the start of a climb, or when a controller is first picked up during one.
+let padCardT = 0;
+function showPadCard() {
+  if (!document.body.classList.contains('pad')) return;
+  const c = $('#padCard');
+  c.innerHTML = padKeys();
+  c.classList.add('on');
+  clearTimeout(padCardT);
+  padCardT = setTimeout(() => c.classList.remove('on'), 9000);
 }
 
 // Drag-to-place editor for the touch buttons.
@@ -1375,10 +1433,10 @@ function howTo(back) {
   app.screen = 'how';
   show(`<div class="panel">${header('How to play')}<div class="how">
     ${ON_PC
-    ? '<div><b>Mouse and keyboard</b>W A S D moves and the mouse turns the camera. Space jumps, Shift grabs, E reels, C dashes, F is the action button and Q the shield. Left click shoots, hold right click to aim. T opens emotes, H reads a tip and Esc pauses. A controller works too.</div>'
+    ? '<div><b>Mouse and keyboard</b>W A S D moves and the mouse turns the camera. Space jumps, Shift grabs, E reels, C dashes, F is the action button and Q the shield. Hold right click to aim, then left click fires. T opens emotes, H reads a tip and Esc pauses. A controller works too.</div>'
     : '<div><b>Move and look</b>Touch the left side to get a stick under your thumb. Drag the right side to turn the camera.</div>'}
     <div><b>JUMP</b>Tap for a hop, hold for full height. You can still jump for a split second after running off an edge.</div>
-    <div><b>GRAB (hold)</b>Clamps you to whatever you're touching, even walls. The ring shows your grip, which drains faster on walls.</div>
+    <div><b>GRAB (hold)</b>Clamps you to whatever you're touching, even walls. The ring shows your grip, which drains faster on walls. It stops you sliding, but a hit from an enemy or a trap still tears you off.</div>
     <div><b>REEL (hold)</b>Pulls the cord in to haul a dangling partner up. Let go and it slowly lets out again.</div>
     <div><b>Sling</b>While holding GRAB, hold REEL, then let go of REEL. A partner on a tight cord gets flung upward.</div>
     <div><b>A partner falls</b>Their weight drags you toward the edge. Hold GRAB to stop, or walk away from the edge to haul them up.</div>
@@ -1386,22 +1444,22 @@ function howTo(back) {
     <div><b>DASH</b>A fast burst the way the stick points, or the way the camera looks. One in the air, and landing, a wall jump or a grab gives it back. Glowing arrows mean the gap is too wide without it: jump, then dash near the top of the jump.</div>
     <div><b>Emotes and stunts</b>The smiley at the top of the screen opens your emotes: waves, flips, breakdance and more. Flips work in the air as well. The rest are in the shop.</div>
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
-    <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to stun them for a few seconds.</div>
+    <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to paralyse them for over a minute.</div>
     <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
-    <div><b>Legendary suits</b>Coins can't buy these. They only come from Hardcore or Insane. Some are earned by what you do up there, the others are hidden. Those who know, know.</div>
+    <div><b>Legendary suits</b>Some can be bought for a lot of coins. The others only come from Hardcore or Insane: some are earned by what you do up there, the rest are hidden. Those who know, know.</div>
     <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
-    <div><b>SHOOT</b>Doors block some bridges. Look at the round target and tap SHOOT to open the door for the whole team. In the forest, SHOOT stuns monsters and bats for a few seconds.</div>
-    <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike, so GRAB. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
+    <div><b>SHOOT</b>Doors block some bridges. Hold SHOOT to aim at the round target and let go to open the door for the whole team. A shot paralyses monsters, bats and jumpers for over a minute, and longer with better weapons. Weapons are in the shop.</div>
+    <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike: get away from them or SHIELD. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
     <div><b>Sunny Isles</b>The route zigzags across the lighthouse. Arrow traps fire across the bridges and some platforms swing like pendulums: ride them over.</div>
     <div><b>Magma Chimney</b>You climb up the inside of a volcano. Stand on a vent when it erupts and it launches you up to the ledge above, but standing next to it gets you shoved off. Shadows show where boulders are about to land.</div>
     <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
     <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides shove you back down, so run up them and jump the inner tubes rolling at you. Launch slides whoosh you down a chute and throw you onto a higher ledge. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
-    <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run, hold GRAB, or SHOOT them first.</div>
+    <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run or SHOOT them first.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
     <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>C</kbd> dash, <kbd>T</kbd> emotes, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
-    <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> grab, <kbd>RB</kbd> reel, <kbd>Y</kbd> or <kbd>L3</kbd> dash, <kbd>LT</kbd> hold to aim, <kbd>RT</kbd> fire, <kbd>Down</kbd> on the direction pad emotes, <kbd>X</kbd> grapple, <kbd>RB</kbd> hold to aim and let go to shoot, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
+    <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> grab, <kbd>RB</kbd> reel, <kbd>Y</kbd> or <kbd>L3</kbd> dash, <kbd>LT</kbd> hold to aim, <kbd>RT</kbd> fire while aiming, <kbd>Down</kbd> on the direction pad emotes, <kbd>X</kbd> grapple, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
     <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
   </div></div>`, { back });
 }
@@ -1464,7 +1522,8 @@ function pause() {
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
     <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
     <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
-    ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}</div>`, {
+    ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
+    ${padKeys()}</div>`, {
     back: resume,
     respawn: () => { g.s.toHost({ k: 'restart' }); resume(); },
     settings: () => settingsScreen(pause),
@@ -1591,7 +1650,7 @@ function boot() {
   app.input = new Input($('#touch'));
   app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
   app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };
-  if (ON_PC) for (const [id, key] of [['bJump', 'Space'], ['bGrab', 'Shift'], ['bReel', 'E'], ['bAct', 'F'], ['bShoot', 'Click'], ['bShield', 'Q'], ['bDash', 'C']]) {
+  if (ON_PC) for (const [id, key] of [['bJump', 'Space'], ['bGrab', 'Shift'], ['bReel', 'E'], ['bAct', 'F'], ['bShoot', 'Right + Left'], ['bShield', 'Q'], ['bDash', 'C']]) {
     const k = document.createElement('kbd');
     k.textContent = key;
     $('#' + id).append(k);
@@ -1610,6 +1669,7 @@ function boot() {
   // Touching anywhere else closes it, and still counts as what it touched.
   document.addEventListener('pointerdown', (e) => { if (emoteOpen() && !e.target.closest('#emoteMenu, #hEmote')) closeEmotes(); }, { capture: true });
   nav = new PadNav({
+    using: padButtons,
     input: app.input,
     root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : emoteOpen() ? $('#emoteMenu') : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
     screen: () => app.screen,
@@ -1824,7 +1884,7 @@ function shopScene(dt) {
     else if (!r0.emote && (P.wait += dt) > 0.7) { r0.playEmote(P.emote); P.wait = 0; }
   } else if (r0.emote) r0.stopEmote();
   r0.yaw = Math.atan2(ox, oz) + P.yaw;
-  r0.update(dt, x, y, z, 0, 0, 0, 1, 0, gy, undefined, 9);
+  r0.update(dt, x, y, z, 0, 0, 0, P.aim ? 1 | F.AIM : 1, 0, gy, undefined, 9);
   const fov = 38, D = 4.5, off = 0.62 * D * Math.tan((fov / 2) * (Math.PI / 180)) * (window.innerWidth / window.innerHeight);
   const rx = oz, rz = -ox, x0 = x + rx * off, z0 = z + rz * off;
   cam.position.set(x0 + ox * D, y + 0.5, z0 + oz * D);

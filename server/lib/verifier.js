@@ -210,6 +210,15 @@ class Verifier {
         tainted = 1;
       }
       if (result.tainted) tainted = 1;
+      // A weapon has to be yours to shoot with it.
+      for (const id of result.guns || []) {
+        if (this.wallet.ownsLook(user.id, { w: id })) continue;
+        const detail = `Used a weapon they do not own: ${id}.`;
+        this.stats.flags++;
+        this.admin.flag(user.id, 'weapon', detail, 50, r.id);
+        verdict = detail;
+        tainted = 1;
+      }
       for (const s of result.snaps) { snaps.push(s); while (snaps.length > SNAPS_KEPT) snaps.shift(); }
     }
 
@@ -291,6 +300,7 @@ function cleanRules(o) {
     const v = SAFE_RULE(o && o[k]);
     if (v !== undefined) out[k] = v;
   }
+  if (o && o.ff === 1) out.ff = 1;
   return out;
 }
 

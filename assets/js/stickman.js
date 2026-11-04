@@ -221,38 +221,44 @@ function legendMat(S) {
           col = mix(uB, uA, 0.5 + 0.5 * sin(u.y * 26.0 + u.x * 9.0)) * 0.7;
           col += uC * pow(max(0.0, sin((u.y * 3.0 + u.x) * 3.2 - uT * 2.2)), 18.0) * 1.6;
         } else if (uMode < 5.5) {
-          // The Hacker: a black screen of a suit with code raining down it in two layers, each glyph a little grid of lit
-          // cells that keeps changing as it falls, white hot at the head of each stream. Under it circuit traces with data
-          // running along them, a fine raster, a scan line sweeping up, and now and then a glitch that tears it sideways for a
-          // moment. The head stays dark inside the hood, so only the eyes show. (Every h21 here is given whole numbers: on
-          // Android it reads them from a texture.)
-          float head = step(0.74, u.y), gt = floor(uT * 5.0), gOn = step(0.93, h21(vec2(gt, 4.0)));
-          float band = floor(u.y * 26.0 + gt * 7.0), tear = gOn * step(0.55, h21(vec2(band, gt))) * (h21(vec2(band, gt + 9.0)) - 0.5) * 0.2;
+          // The Hacker, after the one in Flashdeck's de_dust2 animation: a black stick figure (his green lens is the face and
+          // gear.js 'monocle'), code raining faintly down him in two layers, each glyph a little grid of lit cells that keeps
+          // changing, white hot at the head of each stream. Round him a wallhack's green outline, and a thin scan line going
+          // up. The hacks show through: every so often bands of him tear sideways and the code in them burns at full strength,
+          // with pink and cyan fringes on the tears, and every few seconds all of him flares up with it for a moment. The head
+          // keeps only the outline and the tears, so the face reads. (Every h21 here is given whole numbers: on Android it
+          // reads them from a texture.)
+          float gt = floor(uT * 6.0), gOn = step(0.92, h21(vec2(gt, 4.0)));
+          float by = u.y * 22.0 + gt * 7.0, band = floor(by), torn = gOn * step(0.55, h21(vec2(band, gt)));
+          float tear = torn * (h21(vec2(band, gt + 9.0)) - 0.5) * 0.24;
+          float flick = step(0.975, h21(vec2(floor(uT * 8.0), 17.0))), hot = max(torn, flick);
+          // The hands (the arm column below the wrist, see skins.js) are where the hacking happens: the code burns in them.
+          float arm = step(0.75, u.x), glove = arm * (1.0 - step(0.378, u.y));
+          float k = max(max(hot, glove * 0.85), (1.0 - step(0.74, u.y)) * 0.12);
           vec2 q = vec2(u.x + tear, u.y);
-          vec3 rain = vec3(0.0);
-          for (int L = 0; L < 2; L++) {
-            float fl = float(L), cols = fl < 0.5 ? 44.0 : 76.0, rows = fl < 0.5 ? 30.0 : 52.0;
-            float cx = floor(q.x * cols), sp = (0.55 + h21(vec2(cx, 1.0 + fl * 7.0)) * 1.3) * (1.0 - fl * 0.35);
-            float y = q.y * rows + uT * sp * 5.5 + h21(vec2(cx, 3.0 + fl)) * 60.0, cell = floor(y);
-            vec2 gg = (vec2(fract(q.x * cols), fract(y)) - vec2(0.16, 0.1)) / vec2(0.68, 0.8);
-            float inside = step(0.0, gg.x) * step(gg.x, 0.999) * step(0.0, gg.y) * step(gg.y, 0.999);
-            float gk = floor(uT * (1.5 + 7.0 * h21(vec2(cell, cx + 11.0))));
-            float lit = step(0.42, h21(floor(gg * vec2(3.0, 5.0)) + vec2(cx * 3.0 + gk * 5.0, cell * 5.0 + fl * 101.0))) * inside;
-            float len = 9.0 + h21(vec2(cx, 5.0 + fl)) * 20.0, s = fract(cell / len + h21(vec2(cx, 6.0 + fl)));
-            float tail = pow(max(0.0, 1.0 - s / 0.8), 2.0), hd = step(s, 1.05 / len);
-            rain += lit * (uB * tail * (1.15 - fl * 0.6) + vec3(0.7, 1.0, 0.82) * hd * (2.4 - fl * 1.1) + uC * tail * tail * 0.35);
+          col = uA * (0.85 + 0.15 * step(0.5, fract(u.y * 150.0)));
+          if (k > 0.0) {
+            vec3 rain = vec3(0.0);
+            for (int L = 0; L < 2; L++) {
+              float fl = float(L), cols = fl < 0.5 ? 44.0 : 76.0, rows = fl < 0.5 ? 30.0 : 52.0;
+              float cx = floor(q.x * cols), sp = (0.55 + h21(vec2(cx, 1.0 + fl * 7.0)) * 1.3) * (1.0 - fl * 0.35);
+              float y = q.y * rows + uT * sp * 5.5 + h21(vec2(cx, 3.0 + fl)) * 60.0, cell = floor(y);
+              vec2 gg = (vec2(fract(q.x * cols), fract(y)) - vec2(0.16, 0.1)) / vec2(0.68, 0.8);
+              float inside = step(0.0, gg.x) * step(gg.x, 0.999) * step(0.0, gg.y) * step(gg.y, 0.999);
+              float gk = floor(uT * (1.5 + 7.0 * h21(vec2(cell, cx + 11.0))));
+              float lit = step(0.42, h21(floor(gg * vec2(3.0, 5.0)) + vec2(cx * 3.0 + gk * 5.0, cell * 5.0 + fl * 101.0))) * inside;
+              float len = 9.0 + h21(vec2(cx, 5.0 + fl)) * 20.0, s = fract(cell / len + h21(vec2(cx, 6.0 + fl)));
+              float tail = pow(max(0.0, 1.0 - s / 0.8), 2.0), hd = step(s, 1.05 / len);
+              rain += lit * (uB * tail * (1.15 - fl * 0.6) + vec3(0.7, 1.0, 0.82) * hd * (2.4 - fl * 1.1) + uC * tail * tail * 0.35);
+            }
+            float fb = fract(by), fe = (1.0 - smoothstep(0.0, 0.1, min(fb, 1.0 - fb))) * torn;
+            col = mix(col + rain * k, fb < 0.5 ? vec3(1.0, 0.25, 0.85) : vec3(0.2, 1.0, 1.0), fe * 0.85);
           }
-          vec2 cg = q * vec2(20.0, 15.0), ci = floor(cg), cf = fract(cg);
-          float hx = step(0.5, h21(ci + 13.0)), vy = step(0.62, h21(ci + 29.0));
-          float tr = max(hx * (1.0 - smoothstep(0.03, 0.08, abs(cf.y - 0.5))), vy * (1.0 - smoothstep(0.03, 0.08, abs(cf.x - 0.5))));
-          float pulse = pow(fract((cg.x + cg.y) * 0.1 - uT * 0.7 + h21(ci)), 10.0);
-          float raster = 0.8 + 0.2 * step(0.5, fract(u.y * 150.0));
-          float scan = pow(max(0.0, 1.0 - abs(fract(u.y * 0.55 - uT * 0.24) - 0.5) * 12.0), 2.0);
-          col = (uA + uB * tr * (0.16 + pulse * 1.5) + rain) * raster + uC * scan * 0.8;
-          col += gOn * step(0.001, abs(tear)) * vec3(0.35, 1.0, 0.9) * 0.9;
-          col *= 0.9 + 0.1 * sin(uT * 3.1);
-          col += uC * pow(1.0 - fr, 2.2) * 0.75;
-          col = mix(col, uA + uC * scan * 0.12, head);
+          float scan = pow(max(0.0, 1.0 - abs(fract(u.y * 0.55 - uT * 0.24) - 0.5) * 16.0), 2.0);
+          col = mix(col, uC * 1.15, smoothstep(0.62, 0.93, 1.0 - fr) * 0.9) + uC * scan * 0.5;
+          // A cuff of light at each wrist and a green line round each sole.
+          float cuff = arm * (1.0 - smoothstep(0.002, 0.009, abs(u.y - 0.384))), sole = (1.0 - arm) * (1.0 - smoothstep(0.002, 0.008, abs(u.y - 0.02)));
+          col += uC * (cuff + sole) * 1.5;
         } else if (uMode < 6.5) {
           // Aurora: curtains of light rising and swaying.
           float w = fbm(vec2(u.x * 5.0 + uT * 0.12, u.y * 1.2 - uT * 0.25));
@@ -324,9 +330,13 @@ function legendMat(S) {
   });
 }
 
-// The ribbon of data behind The Hacker: rows of code streaming away from the climber, bright down the middle, fading with age.
-// uv.x is how old that part is (0 at the climber, 1 at the end), uv.y across.
+// The ribbon of light behind The Hacker: clean and smooth, a thin white hot core in a soft green glow, going deeper green and
+// fading with age, a faint shimmer running back along it. The two crossed strips make it a tube from every side. uv.x is how
+// old that part is (0 at the climber, 1 at the end), uv.y across.
 const RIB_N = 36, RIB_LIFE = 0.55, CODE_BITS = 40;
+// Its speedhack: copies of the climber in green light left behind while running fast, GHOSTS of them GHOST_DT apart, like the
+// Hacker's blur in the video.
+const GHOSTS = 3, GHOST_DT = 0.05, GHOST_FAST = 4.5;
 function ribbonMat() {
   return new THREE.ShaderMaterial({
     fog: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
@@ -338,17 +348,13 @@ function ribbonMat() {
       }`,
     fragmentShader: `#include <fog_pars_fragment>
       uniform float uT; uniform vec3 uC; varying vec2 vUv;
-      ${noiseGlsl()}
       void main(){
-        float age = vUv.x, edge = 1.0 - abs(vUv.y - 0.5) * 2.0;
-        float fade = pow(1.0 - age, 1.4) * smoothstep(0.0, 0.06, age + 0.01);
-        float rows = 6.0, ry = floor(vUv.y * rows), x = age * 30.0 - uT * (8.0 + h21(vec2(ry, 1.0)) * 6.0), cell = floor(x);
-        vec2 g = (vec2(fract(x), fract(vUv.y * rows)) - 0.15) / 0.7;
-        float inside = step(0.0, g.x) * step(g.x, 0.999) * step(0.0, g.y) * step(g.y, 0.999);
-        float bit = step(0.5, h21(floor(g * 3.0) + vec2(cell * 3.0 + floor(uT * 9.0) * 13.0, ry * 7.0))) * inside * step(0.3, h21(vec2(cell, ry + 40.0)));
-        float core = pow(max(edge, 0.0), 4.0);
-        vec3 col = uC * (bit * 1.8 + core * 0.7) + vec3(0.75, 1.0, 0.85) * pow(max(edge, 0.0), 14.0) * 0.9;
-        gl_FragColor = vec4(col, fade * min(1.0, bit * 0.9 + core * 0.8 + 0.08));
+        float age = vUv.x, a = abs(vUv.y - 0.5) * 2.0;
+        float fade = pow(1.0 - age, 1.6) * smoothstep(0.0, 0.08, age);
+        float core = exp(-a * a * 70.0), glow = exp(-a * a * 5.0) * (1.0 - a);
+        float shim = 0.85 + 0.15 * sin(age * 16.0 - uT * 12.0);
+        vec3 col = uC * glow * 0.8 * shim + mix(vec3(0.85, 1.0, 0.9), uC, age) * core * 1.7;
+        gl_FragColor = vec4(col, fade * min(1.0, glow * 0.65 + core * 0.7));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         #include <fog_fragment>
@@ -603,7 +609,7 @@ export class Stickman {
       this.cape.material = mat;
       this.cape.visible = true;
     } else if (this.cape) this.cape.visible = false;
-    // Legendary trail: sparkles, or for The Hacker falling code and a ribbon of data (trailFx 'code'). Each kind is made once
+    // Legendary trail: sparkles, or for The Hacker a ribbon of light, falling code and ghosts (trailFx 'code'). Each kind is made once
     // and kept, like everything else here.
     if (S.trail) {
       const fx = S.trailFx === 'code' ? 'code' : 'spark';
@@ -616,7 +622,11 @@ export class Stickman {
     } else if (this.trail) { this.trailVis(this.trail, false); this.trail.off = true; }
   }
 
-  trailVis(T, on) { for (const o of T.parts) o.visible = on; }
+  trailVis(T, on) {
+    for (const o of T.parts) o.visible = on;
+    // Ghosts only ever show when made, never when the trail comes back.
+    if (T.ghosts && !on) for (const set of T.ghosts) for (const m of set) m.visible = false;
+  }
 
   sparkTrail() {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
@@ -629,8 +639,8 @@ export class Stickman {
     return { fx: 'spark', parts: [im], tint: [mat], im, i: 0, acc: 0, p: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, life: 0 })) };
   }
 
-  // The Hacker's: zeros and ones dropping off the climber like the code on the suit, flipping as they fall, and a ribbon of
-  // data streaming out behind, two crossed strips so it shows from every side.
+  // The Hacker's: a clean ribbon of light streaming out behind (two crossed strips so it shows from every side), now and then a
+  // zero or a one dropping off the climber and flipping as it falls, and the speedhack ghosts.
   codeTrail() {
     const bits = (geo) => {
       const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false });
@@ -653,8 +663,45 @@ export class Stickman {
     ribbon.frustumCulled = false;
     ribbon.renderOrder = 2;
     this.scene.add(ribbon);
+    // The speedhack ghosts: one set of the body's parts for each, placed by copying where the real ones were. Each ghost
+    // keeps its own see-through material; on every new copy they all move one back, so the oldest is the faintest.
+    const ghosts = [];
+    for (let r = 0; r < GHOSTS; r++) {
+      const gm = new THREE.MeshBasicMaterial({ color: 0x30ff70, transparent: true, opacity: 0.5 - r * 0.14, depthWrite: false, blending: THREE.AdditiveBlending });
+      ghosts.push(this.limbs.map((o) => {
+        const m = new THREE.Mesh(o.geometry, gm);
+        m.matrixAutoUpdate = false;
+        m.visible = false;
+        m.renderOrder = 1;
+        this.scene.add(m);
+        return m;
+      }));
+    }
     return { fx: 'code', parts: [im0, im1, ribbon], tint: [im0.material, im1.material], uC: mat.uniforms.uC, uT: mat.uniforms.uT, im0, im1, geo, i: 0, acc: 0,
-      p: Array.from({ length: CODE_BITS }, () => ({ x: 0, y: 0, z: 0, vy: 0, life: 0, max: 1, one: false, r: 0, s: 1 })), pts: [], pool: [], empty: false };
+      p: Array.from({ length: CODE_BITS }, () => ({ x: 0, y: 0, z: 0, vy: 0, life: 0, max: 1, one: false, r: 0, s: 1 })), pts: [], pool: [], empty: false,
+      ghosts, gAcc: 0, gx: 0, gz: 0 };
+  }
+
+  // A new speedhack ghost where the body is now, the older ones one step back; none while slow, so they run out.
+  ghostStep(T, dt, x, z, fast) {
+    T.gAcc += dt;
+    if (T.gAcc < GHOST_DT) return;
+    T.gAcc = 0;
+    const G0 = T.ghosts, jump = Math.abs(x - T.gx) + Math.abs(z - T.gz) > 3;
+    T.gx = x; T.gz = z;
+    for (let r = GHOSTS - 1; r > 0; r--) {
+      const a = G0[r], b = G0[r - 1];
+      for (let j = 0; j < a.length; j++) {
+        a[j].visible = b[j].visible && !jump;
+        if (a[j].visible) { a[j].matrix.copy(b[j].matrix); a[j].matrixWorldNeedsUpdate = true; }
+      }
+    }
+    if (fast) this.g.updateMatrixWorld(true);
+    const a = G0[0];
+    for (let j = 0; j < a.length; j++) {
+      a[j].visible = fast && this.limbs[j].visible;
+      if (a[j].visible) { a[j].matrix.copy(this.limbs[j].matrixWorld); a[j].matrixWorldNeedsUpdate = true; }
+    }
   }
 
   trailZero(im) {
@@ -664,10 +711,10 @@ export class Stickman {
   }
 
   // Sparkles left behind while moving.
-  trailStep(dt, x, y, z, moving, t) {
+  trailStep(dt, x, y, z, moving, t, sp = 0) {
     const T = this.trail;
     if (!T || T.off) return;
-    if (T.fx === 'code') return this.codeStep(T, dt, x, y, z, moving, t);
+    if (T.fx === 'code') { this.ghostStep(T, dt, x, z, sp > GHOST_FAST && this.g.visible); return this.codeStep(T, dt, x, y, z, moving, t); }
     T.acc += dt;
     if (moving && T.acc > 0.06) {
       T.acc = 0;
@@ -690,15 +737,14 @@ export class Stickman {
   codeStep(T, dt, x, y, z, moving, t) {
     // Seen through the climber's own eyes (a maze garden) nothing new is left: it would fall right across the view.
     const on = moving && this.g.visible;
+    // Only a few, small, so the trail stays clean.
     T.acc += dt;
-    if (on && T.acc > 0.03) {
+    if (on && T.acc > 0.09) {
       T.acc = 0;
-      for (let k = 0; k < 2; k++) {
-        const q = T.p[T.i];
-        T.i = (T.i + 1) % T.p.length;
-        q.x = x + (Math.random() - 0.5) * 0.8; q.y = y - 0.25 + Math.random() * 1.15; q.z = z + (Math.random() - 0.5) * 0.8;
-        q.vy = -(0.7 + Math.random() * 1.8); q.life = q.max = 0.8 + Math.random() * 0.6; q.one = Math.random() < 0.5; q.r = Math.random() * 6.283; q.s = 0.7 + Math.random() * 0.7;
-      }
+      const q = T.p[T.i];
+      T.i = (T.i + 1) % T.p.length;
+      q.x = x + (Math.random() - 0.5) * 0.7; q.y = y - 0.2 + Math.random() * 1.0; q.z = z + (Math.random() - 0.5) * 0.7;
+      q.vy = -(0.6 + Math.random() * 1.2); q.life = q.max = 0.7 + Math.random() * 0.5; q.one = Math.random() < 0.5; q.r = Math.random() * 6.283; q.s = 0.5 + Math.random() * 0.35;
     }
     const m = Stickman.m4 || (Stickman.m4 = new THREE.Matrix4()), Z = Stickman.m0 || (Stickman.m0 = new THREE.Matrix4().makeScale(0, 0, 0));
     const sv = Stickman.sv || (Stickman.sv = new THREE.Vector3());
@@ -744,7 +790,7 @@ export class Stickman {
       let dx = a && b ? a.x - b.x : 0, dz = a && b ? a.z - b.z : 1;
       const l = Math.hypot(dx, dz) || 1;
       dx /= l; dz /= l;
-      const u = live ? Math.min(1, p.a / RIB_LIFE) : 1, w = live ? 0.26 * (1 - u * 0.65) : 0, o = i * 12, k = i * 8;
+      const u = live ? Math.min(1, p.a / RIB_LIFE) : 1, w = live ? 0.2 * (1 - u * 0.8) : 0, o = i * 12, k = i * 8;
       pos[o] = px; pos[o + 1] = py + w; pos[o + 2] = pz;
       pos[o + 3] = px; pos[o + 4] = py - w; pos[o + 5] = pz;
       pos[o + 6] = px - dz * w; pos[o + 7] = py; pos[o + 8] = pz + dx * w;
@@ -1022,7 +1068,7 @@ export class Stickman {
       this.capeA += (want - this.capeA) * Math.min(1, dt * 7);
       this.cape.rotation.x = this.capeA;
     }
-    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5, t);
+    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5, t, sp);
     this.shield.visible = !!(flags & F.SHIELD);
     if (this.shield.visible) this.shieldMat.opacity = 0.22 + Math.sin(t * 20) * 0.06;
     // Contact shadow on the floor below, fading with height.

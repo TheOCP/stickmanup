@@ -754,7 +754,7 @@ export const LEGENDS = [
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
 // server to check it against.)
 export const OWNERS = [
-  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x020604, b: 0x12c040, c: 0x70ffa0 }, trail: 0x40ff70, trailFx: 'code', face: 'hacker', gear: ['hood', 'hood_halo', 'hood_crown'], hint: 'Only for TheOCP.' }),
+  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x050706, b: 0x12c040, c: 0x40ff70 }, trail: 0x40ff70, trailFx: 'code', face: 'hacker', gear: ['monocle', 'glider', 'hood_halo', 'hood_crown'], hint: 'Only for TheOCP.' }),
   s('o_shortgg', 'GG Girl', 4, -1, { tab: 'legend', team: ['owner', 'admin'], c: 0xff6aa8, p: paintFn.fengish, face: 'cute', gear: ['hairgg', 'headset', 'hemgg'], trail: 0xff8ac0, glow: 0.22, hint: 'Only for ShortGG.' }),
 ];
 
@@ -806,22 +806,21 @@ export const FACES = [
   f('monster', 'Monster', 2, 1100, (g) => { dot(g, LX, EY, 13, '#ffe040'); dot(g, RX, EY, 13, '#ffe040'); g.fillStyle = '#0c0d12'; g.fillRect(LX - 3, EY - 12, 6, 24); g.fillRect(RX - 3, EY - 12, 6, 24); }, (g, i) => { g.fillStyle = '#0c0d12'; g.beginPath(); g.moveTo(24, 16); g.quadraticCurveTo(64, 62, 104, 16); g.closePath(); g.fill(); g.fillStyle = '#ffffff'; for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(34 + k * 11, 19); g.lineTo(44 + k * 11, 19); g.lineTo(39 + k * 11, 30); g.fill(); } }, { still: true }),
   f('pumpkin', 'Jack o Lantern', 2, 900, (g) => { for (const x of [LX, RX]) { g.fillStyle = '#ffd02a'; g.beginPath(); g.moveTo(x, 18); g.lineTo(x + 16, 46); g.lineTo(x - 16, 46); g.fill(); } }, (g) => { g.fillStyle = '#ffd02a'; g.beginPath(); g.moveTo(18, 14); g.lineTo(34, 24); g.lineTo(46, 14); g.lineTo(64, 26); g.lineTo(82, 14); g.lineTo(94, 24); g.lineTo(110, 14); g.quadraticCurveTo(64, 72, 18, 14); g.fill(); }, { glow: 1.5, still: true }),
   // Owner faces.
-  // Eyes that burn through the dark of the hood: slanted blades of light with a white hot core, a visor line between them,
-  // hard brows, and code dripping from under each eye.
+  // Flashdeck's Hacker: a big green lens over one eye, half shut under a flat black lid and lit from below, with a glint, and
+  // the other eye a white slit slanting up, smug, as Flashdeck draws eyes on a black head. No mouth. (The monocle round the
+  // lens is gear.js 'monocle'.)
   f('hacker', 'Hacker', 4, -1, (g) => {
     g.save();
-    g.shadowColor = '#40ff70'; g.shadowBlur = 12;
-    line(g, 'rgba(64,255,112,0.6)', 2, [[6, 37], [122, 37]], false);
-    for (const [x, s] of [[LX, 1], [RX, -1]]) {
-      const blade = (k, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x - s * 18 * k, 37 - 8 * k); g.lineTo(x + s * 16 * k, 37 - 2 * k); g.lineTo(x + s * 13 * k, 37 + 5 * k); g.lineTo(x - s * 15 * k, 37 + 3 * k); g.closePath(); g.fill(); };
-      blade(1, '#40ff70');
-      blade(0.55, '#e4fff0');
-      line(g, '#40ff70', 4, [[x - s * 20, 19], [x + s * 14, 28]]);
-      for (let k = 0; k < 4; k++) { g.globalAlpha = 1 - k * 0.22; g.fillStyle = '#40ff70'; g.fillRect(x - 3 + (k % 2) * 6 - s * 4, 47 + k * 4, 3, 3); }
-      g.globalAlpha = 1;
-    }
+    g.beginPath(); g.rect(0, 28, 70, 40); g.clip();
+    g.shadowColor = '#40ff70'; g.shadowBlur = 8;
+    const gr = g.createLinearGradient(0, 28, 0, 50);
+    gr.addColorStop(0, '#0c6a2a'); gr.addColorStop(0.3, '#2ee060'); gr.addColorStop(1, '#d0ffe0');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(LX, 33, 20, 16, 0, 0, 7); g.fill();
     g.restore();
-  }, () => {}, { glow: 2.6, still: true, hidden: true }),
+    line(g, '#0a0d14', 6, [[13, 28], [56, 27]]);
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.beginPath(); g.ellipse(45, 34, 4, 2.6, -0.3, 0, 7); g.fill();
+    line(g, '#f4f8f6', 9, [[82, 40], [107, 28]]);
+  }, () => {}, { glow: 1.5, still: true, hidden: true }),
 ];
 export const FACE = Object.fromEntries(FACES.map((x) => [x.id, x]));
 
@@ -898,20 +897,28 @@ function legendStill(p, g, S, A, B, C) {
   switch (S.mode) {
     case 2: paintFn.rainbow(p); break;
     case 5: {
-      // Streams of little glyphs, white at the head and fading up behind it, over a fine raster.
-      const u = TEX / 128;
-      p.all(A);
-      g.fillStyle = 'rgba(64,255,112,0.06)';
-      for (let y = 0; y < TEX; y += 4 * u) g.fillRect(0, y, TEX, u);
-      for (let i = 0; i < 70; i++) {
-        const x = ((R() * 40) | 0) * (TEX / 40), len = 4 + ((R() * 9) | 0), y0 = R() * TEX;
+      // Black with faint streams of little glyphs, a few bands torn sideways where the code burns bright, pink and cyan on
+      // their edges, and a green scan line.
+      const u = TEX / 128, glyphs = (x, y0, len, a) => {
         for (let k = 0; k < len; k++) {
-          g.globalAlpha = (1 - k / len) * 0.95;
+          g.globalAlpha = (1 - k / len) * a;
           g.fillStyle = k === 0 ? '#e4fff0' : k < 2 ? C : B;
           for (let b = 0; b < 4; b++) if (R() > 0.35) g.fillRect(x + (b % 2) * 4 * u, y0 - k * 11 * u + ((b / 2) | 0) * 4 * u, 3 * u, 3 * u);
         }
+        g.globalAlpha = 1;
+      };
+      p.all(A);
+      for (let i = 0; i < 60; i++) glyphs(((R() * 40) | 0) * (TEX / 40), R() * TEX, 4 + ((R() * 9) | 0), 0.35);
+      for (let i = 0; i < 5; i++) {
+        const y = R() * TEX * 0.9, h = (3 + R() * 6) * u, dx = (R() - 0.5) * 12 * u;
+        g.save(); g.beginPath(); g.rect(0, y, TEX, h); g.clip();
+        g.fillStyle = A; g.fillRect(0, y, TEX, h);
+        for (let x = 0; x < TEX; x += TEX / 40) glyphs(x + dx, y + h, 2 + ((R() * 3) | 0), 1);
+        g.restore();
+        g.fillStyle = 'rgba(255,64,216,0.85)'; g.fillRect(0, y, TEX, 0.8 * u);
+        g.fillStyle = 'rgba(51,255,255,0.85)'; g.fillRect(0, y + h - 0.8 * u, TEX, 0.8 * u);
       }
-      g.globalAlpha = 1;
+      g.fillStyle = C; g.globalAlpha = 0.7; g.fillRect(0, TEX * 0.32, TEX, u); g.globalAlpha = 1;
       break;
     }
     case 6: { p.vgrad(B, A); g.globalAlpha = 0.45; for (let i = 0; i < 16; i++) { g.fillStyle = i % 3 ? C : B; g.fillRect(R() * TEX, R() * TEX * 0.4, 6 + R() * 18, TEX * 0.6); } g.globalAlpha = 1; break; }

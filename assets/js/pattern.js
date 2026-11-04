@@ -2,7 +2,7 @@
 // renderer (NRender.java, regenerated from this file by dev/sync_pattern.py). Returns a colour factor that
 // multiplies the material colour. pat: 1 metal panels, 2 stone blocks, 3 wood planks, 4 hex tiles,
 // 5 grass on rock, 6 sand on rock, 7 basalt, 8 tread plate, 9 bamboo, 10 marble, 11 coral, 12 concrete,
-// 13 moss on wet stone, 14 snow on rock, 15 cloud, 16 bark.
+// 13 moss on wet stone, 14 snow on rock, 15 cloud, 16 bark, 17 hedge.
 // The same noise for the other shaders (water, legendary suits). On Android it is read from a texture the native
 // renderer bakes once at startup (NRender.makeNoise) instead of being worked out for every pixel every frame.
 let baked = false;
@@ -104,6 +104,14 @@ vec3 smuPattern(int pat, vec3 w, vec3 n){
     float seam = 1.0 - smoothstep(0.0, 0.012, 0.5 - max(t.x, t.y));
     float stain = smoothstep(0.55, 0.8, smuFbm(uv * 0.7 + 3.0));
     return vec3((0.82 + 0.16 * smuNoise(uv * 5.0)) * (1.0 - 0.25 * stain) * (1.0 - 0.4 * seam));
+  }
+  if (pat == 17) {
+    // A clipped hedge: small leaves on every side, darker hollows, here and there a lighter tip.
+    vec2 g = uv * 4.0;
+    float l = smuNoise(g) * 0.5 + smuNoise(g * 2.6 + 3.1) * 0.3 + smuNoise(g * 6.3 + 1.7) * 0.2;
+    float hollow = smoothstep(0.5, 0.8, smuNoise(uv * 1.3 + 9.0));
+    float tip = step(0.9, smuHash(floor(g * 3.0)));
+    return mix(vec3(0.2, 0.42, 0.16), vec3(0.42, 0.72, 0.3), l) * (1.0 - 0.38 * hollow) + tip * vec3(0.1, 0.12, 0.04);
   }
   if (pat == 15) return mix(vec3(0.86, 0.9, 1.0), vec3(1.0), smoothstep(-0.3, 0.6, n.y)) * (0.93 + 0.08 * smuNoise(uv * 2.0));
   if (pat == 16) {

@@ -67,6 +67,8 @@ public final class NRender {
         boolean fresh = true;
         int spec = 1;
         Tex tex;
+        /** A glow texture of its own, next to the colour map (suits whose lights glow more than the cloth). */
+        Tex emTex;
     }
 
     private static final class Obj {
@@ -137,7 +139,7 @@ public final class NRender {
     private boolean liteOn;
     private Prog lite;
     // What is already set, so the same GL state is not sent again for every object.
-    private int sProg, sVao, sDepthTest, sDepthMask, sBlend, sBlendDst, sCull, sCullFace, sTex;
+    private int sProg, sVao, sDepthTest, sDepthMask, sBlend, sBlendDst, sCull, sCullFace, sTex, sEmTex;
 
     public NRender(GLApi gl, Images images, Log log) {
         this.gl = gl;
@@ -555,7 +557,7 @@ public final class NRender {
     }
 
     private void resetState() {
-        sProg = sVao = sDepthTest = sDepthMask = sBlend = sBlendDst = sCull = sCullFace = sTex = -1;
+        sProg = sVao = sDepthTest = sDepthMask = sBlend = sBlendDst = sCull = sCullFace = sTex = sEmTex = -1;
     }
 
     private void useProgram(int id) {
@@ -904,13 +906,23 @@ public final class NRender {
         }
         if (p.lastMat != m || m.fresh) applyMat(p, m);
         // Another program may have used the slot in between, so this one is checked on every draw.
-        Tex t = m.tex;
+        Tex t = m.tex, e = m.emTex;
+        // Uploading binds on unit 0, so the glow map goes up before the colour map is bound.
+        if (e != null && e.gl == 0) uploadTex(e);
         if (t != null) {
             if (t.gl == 0) uploadTex(t);
             if (t.gl != sTex) {
                 sTex = t.gl;
                 gl.activeTexture(GLC.TEXTURE0);
                 gl.bindTexture(GLC.TEXTURE_2D, t.gl);
+            }
+        }
+        if (e != null) {
+            if (e.gl != sEmTex) {
+                sEmTex = e.gl;
+                gl.activeTexture(GLC.TEXTURE0 + EM_UNIT);
+                gl.bindTexture(GLC.TEXTURE_2D, e.gl);
+                gl.activeTexture(GLC.TEXTURE0);
             }
         }
     }
@@ -934,8 +946,11 @@ public final class NRender {
         int texId = m.lit ? (albedo ? m.map : m.em) : m.map;
         Tex t = texId != 0 ? texs.get(texId) : null;
         // 3: the same map colours the surface and makes it glow (skins that stay readable in the dark).
-        if (p.lHasTex >= 0) gl.uniform1i(p.lHasTex, t == null ? 0 : albedo ? (m.em == m.map ? 3 : 2) : 1);
+        // 4: one map colours it and a second one, on its own unit, says where it glows.
+        Tex et = albedo && m.em != 0 && m.em != m.map ? texs.get(m.em) : null;
+        if (p.lHasTex >= 0) gl.uniform1i(p.lHasTex, t == null ? 0 : albedo ? (m.em == m.map ? 3 : et != null ? 4 : 2) : 1);
         m.tex = t;
+        m.emTex = t != null ? et : null;
         if (p.lUv >= 0) gl.uniformMatrix3fv(p.lUv, t != null ? t.uv : IDENT3);
     }
 
@@ -1101,6 +1116,14 @@ public final class NRender {
             + "    float stain = smoothstep(0.55, 0.8, smuFbm(uv * 0.7 + 3.0));\n"
             + "    return vec3((0.82 + 0.16 * smuNoise(uv * 5.0)) * (1.0 - 0.25 * stain) * (1.0 - 0.4 * seam));\n"
             + "  }\n"
+            + "  if (pat == 17) {\n"
+            + "    // A clipped hedge: small leaves on every side, darker hollows, here and there a lighter tip.\n"
+            + "    vec2 g = uv * 4.0;\n"
+            + "    float l = smuNoise(g) * 0.5 + smuNoise(g * 2.6 + 3.1) * 0.3 + smuNoise(g * 6.3 + 1.7) * 0.2;\n"
+            + "    float hollow = smoothstep(0.5, 0.8, smuNoise(uv * 1.3 + 9.0));\n"
+            + "    float tip = step(0.9, smuHash(floor(g * 3.0)));\n"
+            + "    return mix(vec3(0.2, 0.42, 0.16), vec3(0.42, 0.72, 0.3), l) * (1.0 - 0.38 * hollow) + tip * vec3(0.1, 0.12, 0.04);\n"
+            + "  }\n"
             + "  if (pat == 15) return mix(vec3(0.86, 0.9, 1.0), vec3(1.0), smoothstep(-0.3, 0.6, n.y)) * (0.93 + 0.08 * smuNoise(uv * 2.0));\n"
             + "  if (pat == 16) {\n"
             + "    vec2 g = vec2(uv.x * 7.0, uv.y * 0.7);\n"
@@ -1115,7 +1138,7 @@ public final class NRender {
     private static final String LIT_FS = COMMON + TONE + FOG + PATTERN
             + "in vec3 vW; in vec3 vN; in vec3 vGlow; in vec3 vIC; in vec2 vUv; out vec4 outColor;\n"
             + "uniform vec3 uColor, uEmissive, cameraPosition, uHemiSky, uHemiGround, uMoonColor, uMoonDir;\n"
-            + "uniform float uOpacity, uRough, uMetal, uHemiI, uMoonI; uniform int uPanel, uHasTex, uSpec; uniform sampler2D uTex;\n"
+            + "uniform float uOpacity, uRough, uMetal, uHemiI, uMoonI; uniform int uPanel, uHasTex, uSpec; uniform sampler2D uTex, uEmTex;\n"
             + "vec3 Fs(vec3 f0, float vh){ float fr = exp2((-5.55473 * vh - 6.98316) * vh); return f0 * (1.0 - fr) + fr; }\n"
             // The usual visibility term without its two square roots (nearly the same, much cheaper).
             + "float Vg(float a, float nl, float nv){ return 0.5 / max(mix(2.0 * nl * nv, nl + nv, a), 1e-4); }\n"
@@ -1134,7 +1157,7 @@ public final class NRender {
             + "  if (nl > 0.0) { vec3 lit = diff * 0.3183099;\n"
             + "    if (uSpec > 0) { vec3 h = normalize(uMoonDir + v); float nv = max(dot(n, v), 1e-4); lit += Fs(f0, max(dot(v, h), 0.0)) * Vg(a, nl, nv) * Dg(a, max(dot(n, h), 0.0)); }\n"
             + "    col += uMoonColor * uMoonI * nl * lit; }\n"
-            + "  vec3 em = uEmissive; if (uHasTex == 1 || uHasTex == 3) em *= texc;\n"
+            + "  vec3 em = uEmissive; if (uHasTex == 1 || uHasTex == 3) em *= texc; else if (uHasTex == 4) em *= smuLin(texture(uEmTex, vUv).rgb);\n"
             + "  col += em + vGlow;\n"
             + "  col = smuFog(col);\n"
             + "  outColor = vec4(smuSRGB(smuTone(min(col, vec3(40.0)))), uOpacity);\n"
@@ -1162,7 +1185,7 @@ public final class NRender {
             + "  if (uKind == 0) { mat3 r = mat3(m); vec3 s2 = vec3(dot(r[0], r[0]), dot(r[1], r[1]), dot(r[2], r[2]));\n"
             + "    vec3 n = normalize(r * (normal / max(s2, vec3(1e-8)))), diff = uColor * instanceColor * (1.0 - 0.5 * uMetal) * 0.3183099;\n"
             // A glow map (window lights) can't be mixed in until its pixels are read: passed along on its own.
-            + "    bool em = uHasTex == 1;\n"
+            + "    bool em = uHasTex == 1 || uHasTex == 4;\n"
             + "    col = mix(uHemiGround, uHemiSky, 0.5 * n.y + 0.5) * uHemiI * diff + uMoonColor * uMoonI * max(dot(n, uMoonDir), 0.0) * diff + (em ? vec3(0.0) : uEmissive) + aGlow;\n"
             + "    vEm = em ? smuSRGB(smuTone(uEmissive)) : vec3(0.0);\n"
             + "  } else { col = uColor * instanceColor; vEm = vec3(0.0); }\n"
@@ -1171,10 +1194,11 @@ public final class NRender {
             + "  vOut = smuSRGB(smuTone(min(col, vec3(40.0)))); }\n";
 
     private static final String LITE_FS = "#version 300 es\nprecision mediump float;\nprecision highp int;\n"
-            + "in vec3 vOut, vEm; in float vF; in highp vec2 vUv; out vec4 outColor; uniform float uOpacity; uniform vec3 uFogOut; uniform int uHasTex, uKind; uniform sampler2D uTex;\n"
+            + "in vec3 vOut, vEm; in float vF; in highp vec2 vUv; out vec4 outColor; uniform float uOpacity; uniform vec3 uFogOut; uniform int uHasTex, uKind; uniform sampler2D uTex, uEmTex;\n"
             + "void main(){ vec4 c = vec4(vOut, uOpacity);\n"
             + "  if (uHasTex > 0) { vec4 t = texture(uTex, vUv);\n"
             + "    if (uKind == 0 && uHasTex == 1) c.rgb += vEm * t.rgb;\n"
+            + "    else if (uKind == 0 && uHasTex == 4) c.rgb = c.rgb * t.rgb + vEm * texture(uEmTex, vUv).rgb;\n"
             + "    else { c.rgb *= t.rgb; if (uKind == 1) c.a *= t.a; } }\n"
             + "  c.rgb = mix(c.rgb, uFogOut, vF);\n"
             + "  outColor = c; }\n";
@@ -1287,8 +1311,9 @@ public final class NRender {
         // Samplers never change: the material's map on unit 0, the baked noise on its own unit.
         gl.useProgram(id);
         sProg = id;
-        Integer tx = p.u.get("uTex"), nz = p.u.get("uNoise");
+        Integer tx = p.u.get("uTex"), nz = p.u.get("uNoise"), et = p.u.get("uEmTex");
         if (tx != null) gl.uniform1i(tx, 0);
+        if (et != null) gl.uniform1i(et, EM_UNIT);
         if (nz != null) gl.uniform1i(nz, NOISE_UNIT);
         return p;
     }
@@ -1298,7 +1323,7 @@ public final class NRender {
         return l == null ? -1 : l;
     }
 
-    private static final int NOISE_UNIT = 5, NOISE_N = 512;
+    private static final int NOISE_UNIT = 5, NOISE_N = 512, EM_UNIT = 6;
 
     /**
      * Noise baked once at startup, so shaders read it instead of working it out for every pixel every frame
@@ -1359,7 +1384,7 @@ public final class NRender {
 
     private static final String[] STD_U = {"uModel", "uView", "uProj", "uUv", "uInst", "uColor", "uEmissive", "uOpacity", "uRough", "uMetal",
             "uPanel", "uHasTex", "uTex", "cameraPosition", "uHemiSky", "uHemiGround", "uHemiI", "uMoonColor", "uMoonI", "uMoonDir",
-            "uFogColor", "uFogDensity", "uFog", "smuExposure", "uNoise", "uSpec", "uKind", "uFogOut"};
+            "uFogColor", "uFogDensity", "uFog", "smuExposure", "uNoise", "uSpec", "uKind", "uFogOut", "uEmTex"};
 
     private void buildPrograms() {
         makeNoise();

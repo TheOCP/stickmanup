@@ -18,6 +18,8 @@ const { Verifier, cleanRules, BUILD } = require('./lib/verifier');
 const { Bot } = require('./lib/discord');
 const { Attest } = require('./lib/attest');
 const { Friends } = require('./lib/friends');
+const { Staff } = require('./lib/staff');
+const { Terminal } = require('./lib/terminal');
 
 const VERSION = require('./package.json').version;
 const env = process.env;
@@ -54,6 +56,7 @@ const termsVersion = crypto.createHash('sha256').update(terms).digest('hex').sli
 const db = new DB(cfg.dataDir);
 const wallet = new Wallet(db, env);
 const admin = new Admin(db, wallet, env);
+const staff = new Staff(db, admin);
 if (db.setting('dayCap')) wallet.setDayCap(+db.setting('dayCap'));
 const verifier = new Verifier(db, wallet, admin, env);
 const attest = new Attest(env);
@@ -68,11 +71,12 @@ const rooms = verifier.rooms = new Rooms({
   onCheat: (id, kind, detail, score) => admin.flag(id, kind, detail, score),
   ownsLook: (id, look) => { const u = db.user(id); return wallet.ownsLook(id, look, u ? u.role : ''); },
   roleOf: (id) => { const u = db.user(id); return u ? u.role : ''; },
+  canJoinAny: (id) => staff.can(admin.info(id), 'join'),
   ipKey,
   // Old games have no token to give. Once the anticheat is enforcing, they need the update.
   needToken: () => admin.mode === 'enforce',
 });
-const friends = new Friends(db, admin, rooms);
+const friends = new Friends(db, admin, rooms, staff);
 const auth = new Auth(cfg, db, termsVersion, admin);
 admin.onBan = ({ userId, ip, reason }) => {
   const why = `You are banned from this server. Reason: ${reason}`;
@@ -82,7 +86,9 @@ admin.onBan = ({ userId, ip, reason }) => {
 const bot = new Bot({
   token: env.DISCORD_BOT_TOKEN || '', guild: env.DISCORD_BOT_GUILD || '', logChannel: env.DISCORD_BOT_LOG_CHANNEL || '', warnChannel: env.DISCORD_BOT_WARN_CHANNEL || '', admins: env.DISCORD_BOT_ADMINS || '',
   api: cfg.devUrls && cfg.devUrls.botApi, gateway: cfg.devUrls && cfg.devUrls.botGateway, registerEvery: +env.DISCORD_BOT_REGISTER_EVERY || 0,
-}, { db, wallet, admin, verifier, rooms, version: VERSION });
+}, { db, wallet, admin, verifier, rooms, friends, staff, version: VERSION });
+// The same commands, typed in the game by the team. Answers go back over the live socket.
+friends.terminal = new Terminal(bot.s, bot);
 
 const limits = {
   auth: new Limiter(20, 20 / 60),
@@ -230,7 +236,7 @@ async function route(req, res) {
   if (!limits.api.take(ip)) return json(res, 429, { err: 'Too many requests' });
 
   if (method === 'GET' && p === '/api/info') {
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined });
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, roles: staff.table() });
   }
   if (method === 'GET' && p === '/api/rooms') {
     const proto = +url.searchParams.get('proto');

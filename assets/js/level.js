@@ -8,7 +8,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 15;
+export const LEVEL_VERSION = 16;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -172,6 +172,118 @@ function hardened(z, t) {
   return Object.assign({}, z, { wide, sx: [f(z.sx[0]), f(z.sx[1])], sz: [f(z.sz[0]), f(z.sz[1])], gap: [z.gap[0] * wide, z.gap[1] * wide] });
 }
 
+// ---------------------------------------------------------------- maze gardens
+// Every checkpoint that is a platform of its own (the one halfway up each zone, and the rooftop pads in the city) is a
+// walled garden with a maze in it: N x N cells, the checkpoint in the first cell, the way on out of the far side, and a
+// porch with a fence each side in front of both ways out, so nobody walks round the outside. The inner walls change every
+// time the team goes back to a checkpoint (applyMaze, from game.js), so the way through has to be found again. The walls
+// are slick (no wall jumps, nothing to grab) and higher than any jump.
+export const MAZE_CELL = 2.6, MAZE_WALL_H = 2.6, MAZE_WALL_T = 0.3, MAZE_RIM = 1.6;
+// How many legendary relics hide in each map's mazes (relic ids map:m0, map:m1; skins.js says what each one opens).
+export const MAZE_RELICS = { storm: 2, sunny: 2, forest: 1, volcano: 2, city: 2, waterfall: 2 };
+
+// Edges of an N x N maze: first the N - 1 walls inside each row (between cell i and i + 1), row by row, then the N walls
+// between each row and the next. Cells are numbered j * N + i.
+const edgeV = (N, i, j) => j * (N - 1) + i, edgeH = (N, i, j) => N * (N - 1) + j * N + i;
+function carveMaze(N, R, start) {
+  const walls = new Uint8Array(2 * N * (N - 1)).fill(1), seen = new Uint8Array(N * N), stack = [start];
+  seen[start] = 1;
+  while (stack.length) {
+    const c = stack[stack.length - 1], i = c % N, j = (c - i) / N, opts = [];
+    if (i > 0 && !seen[c - 1]) opts.push(c - 1, edgeV(N, i - 1, j));
+    if (i < N - 1 && !seen[c + 1]) opts.push(c + 1, edgeV(N, i, j));
+    if (j > 0 && !seen[c - N]) opts.push(c - N, edgeH(N, i, j - 1));
+    if (j < N - 1 && !seen[c + N]) opts.push(c + N, edgeH(N, i, j));
+    if (!opts.length) { stack.pop(); continue; }
+    const k = ((R() * (opts.length / 2)) | 0) * 2;
+    walls[opts[k + 1]] = 0;
+    seen[opts[k]] = 1;
+    stack.push(opts[k]);
+  }
+  return walls;
+}
+// Steps from cell a to every cell (walking through open edges).
+function mazeDist(N, walls, a) {
+  const d = new Int16Array(N * N).fill(-1), q = [a];
+  d[a] = 0;
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], i = c % N, j = (c - i) / N;
+    const go = (n, e) => { if (!walls[e] && d[n] < 0) { d[n] = d[c] + 1; q.push(n); } };
+    if (i > 0) go(c - 1, edgeV(N, i - 1, j));
+    if (i < N - 1) go(c + 1, edgeV(N, i, j));
+    if (j > 0) go(c - N, edgeH(N, i, j - 1));
+    if (j < N - 1) go(c + N, edgeH(N, i, j));
+  }
+  return d;
+}
+// Which inner walls stand in variant v of a maze (1 = a wall), by edge. Of a few mazes made from the variant, the one
+// with the longest way from the checkpoint to the way out.
+export function mazeLayout(m, v) {
+  if (m.lv === v) return m.lw;
+  const N = m.N, R = rng((m.seed ^ Math.imul(v + 1, 0x9e3779b1)) >>> 0), a = m.ej * N + m.ei, b = m.xj * N + m.xi;
+  let best = null, bestD = -1;
+  for (let k = 0; k < 6; k++) {
+    const w = carveMaze(N, R, a), d = mazeDist(N, w, a)[b];
+    if (d > bestD) { best = w; bestD = d; }
+  }
+  m.lv = v; m.lw = best;
+  return best;
+}
+// The way through variant v, as cells [i, j] from the checkpoint's cell to the one by the way out.
+export function mazePath(m, v) {
+  const N = m.N, w = mazeLayout(m, v), d = mazeDist(N, w, m.ej * N + m.ei), out = [];
+  let c = m.xj * N + m.xi;
+  while (c >= 0) {
+    const i = c % N, j = (c - i) / N;
+    out.unshift([i, j]);
+    if (d[c] === 0) break;
+    let next = -1;
+    const step = (n, e) => { if (next < 0 && !w[e] && d[n] === d[c] - 1) next = n; };
+    if (i > 0) step(c - 1, edgeV(N, i - 1, j));
+    if (i < N - 1) step(c + 1, edgeV(N, i, j));
+    if (j > 0) step(c - N, edgeH(N, i, j - 1));
+    if (j < N - 1) step(c + N, edgeH(N, i, j));
+    c = next;
+  }
+  return out;
+}
+// Where a cell's middle is (x, z).
+export function mazeCell(m, i, j) {
+  const u = (i - (m.N - 1) / 2) * MAZE_CELL, w = ((m.N - 1) / 2 - j) * MAZE_CELL;
+  return [m.x + m.fx * u + m.nx * w, m.z + m.fz * u + m.nz * w];
+}
+// Straight corridors two cells long or more, as [i0, j0, i1, j1], longest first.
+function mazeRuns(m, walls) {
+  const N = m.N, out = [];
+  for (let j = 0; j < N; j++) {
+    let s = 0;
+    for (let i = 1; i <= N; i++) if (i === N || walls[edgeV(N, i - 1, j)]) { if (i - 1 > s) out.push([s, j, i - 1, j]); s = i; }
+  }
+  for (let i = 0; i < N; i++) {
+    let s = 0;
+    for (let j = 1; j <= N; j++) if (j === N || walls[edgeH(N, i, j - 1)]) { if (j - 1 > s) out.push([i, s, i, j - 1]); s = j; }
+  }
+  return out.map((r, k) => [r, k]).sort((a, b) => (b[0][2] - b[0][0] + b[0][3] - b[0][1]) - (a[0][2] - a[0][0] + a[0][3] - a[0][1]) || a[1] - b[1]).map((x) => x[0]);
+}
+// Puts every maze of a level into variant v: its inner walls, and the creatures onto corridors of the new maze (never the
+// one with the checkpoint in it).
+export function applyMaze(L, v) {
+  for (const m of L.mazes || []) {
+    const w = mazeLayout(m, v);
+    for (let e = 0; e < m.walls.length; e++) m.walls[e].on = !!w[e];
+    if (!m.mons.length) continue;
+    const runs = mazeRuns(m, w).filter((r) => !(m.ei >= r[0] && m.ei <= r[2] && m.ej >= r[1] && m.ej <= r[3]));
+    const R = rng((m.seed ^ Math.imul(v + 7, 0x85ebca6b)) >>> 0), pickFrom = Math.min(runs.length, 4);
+    m.mons.forEach((mi, k) => {
+      const mon = L.monsters[mi];
+      if (!runs.length) { mon.ax = mon.bx = m.rx; mon.az = mon.bz = m.rz; return; }
+      const r = runs[(((R() * pickFrom) | 0) + k * 2) % runs.length], a = mazeCell(m, r[0], r[1]), b = mazeCell(m, r[2], r[3]);
+      mon.ax = a[0]; mon.az = a[1]; mon.bx = b[0]; mon.bz = b[1];
+      mon.per = 2.2 + (r[2] - r[0] + r[3] - r[1]) * MAZE_CELL * 0.55;
+    });
+  }
+}
+
 export function generateLevel(mapId = 0) {
   const MAP = MAPS[mapId] || MAPS[0], ZONE_LIST = MAP.zones;
   const R = rng(MAP.seed);
@@ -180,7 +292,7 @@ export function generateLevel(mapId = 0) {
     map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
     anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
-    obs: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [], moves: [], hops: [], zips: [],
+    obs: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [], moves: [], hops: [], zips: [], mazes: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [], usedObs = [], obsZone = [];
@@ -1213,6 +1325,93 @@ export function generateLevel(mapId = 0) {
       if (zone === 0 && !intro.door) { intro.door = true; sign(cur, 'Door in the way? SHOOT the round target to open it.'); }
       return nxt;
     },
+    // A maze garden for a checkpoint (see MAZE_CELL at the top). It sits like a big square platform with its flat side to the
+    // middle the route goes round (on the volcano, inside the crater, it reaches in toward the middle instead): the way in
+    // and the way out are both on the side nearest the route. Answers the landing after the way out, or null if it can't
+    // be laid out from here. cpo: the checkpoint's options.
+    maze(cur, N, cpo, shift = 0) {
+      const C = MAZE_CELL, S = N * C, RIM = MAZE_RIM, F = S + 2 * RIM, half = F / 2, H = MAZE_WALL_H, T = MAZE_WALL_T;
+      const inward = ROUTE === 'crater', so = inward ? -1 : 1;
+      // How far the garden's side nearest the route is from the middle the route goes round: about as far as where we
+      // are, so the way in comes up right ahead (shift tries a little further in or out), never into the middle column
+      // and, in the crater, never into its wall.
+      const up = S / 2 + RIM / 2, wp = Math.sqrt(Math.max(0, cur.r * cur.r - up * up)) + so * (RIM + C / 2) * -1 + shift;
+      const d0 = inward ? Math.min(MAIN.hi + 1.6, wp)
+        : Math.max(ROUTE === 'towers' ? TBAND.lo + 0.2 : Math.max(MAIN.lo, coreRadius(MAP.key, cur.y) + CORE_SKIN + 0.7), wp);
+      // f: the way the route goes; n: toward the route's side of the garden.
+      const frame = (thc) => {
+        const rx = Math.cos(thc), rz = Math.sin(thc), dc = d0 + so * half, fx = -rz * DIR, fz = rx * DIR;
+        return { x: CX + rx * dc, z: CZ + rz * dc, fx, fz, nx: -rx * so, nz: -rz * so, ry: Math.atan2(-fz, fx) };
+      };
+      const at = (f, u, w) => [f.x + f.fx * u + f.nx * w, f.z + f.fz * u + f.nz * w];
+      const rowW = (j) => ((N - 1) / 2 - j) * C;
+      const je = 0, jx = N > 4 && R() < 0.5 ? 1 : 0;
+      // A landing straight out in front of the way in, one short hop from the porch: the route comes in at an angle, and
+      // this keeps the platform before it clear of the garden.
+      const sIn = rr(2.3, 2.6), gIn = rr(1.1, 1.4);
+      const landIn = (f) => { const [x, z] = at(f, -(S / 2 + RIM + gIn + sIn / 2), rowW(je)); return { x, z, ry: f.ry, sx: sIn, sz: sIn }; };
+      // Turn the garden round the middle until that landing is one hop ahead of where we are.
+      const g = rr(1.2, 1.7), hx = -Math.sin(cur.th) * DIR, hz = Math.cos(cur.th) * DIR;
+      const gapAt = (thc) => {
+        const p = landIn(frame(thc)), dx = p.x - cur.x, dz = p.z - cur.z, d = Math.hypot(dx, dz) || 1e-6;
+        if (dx * hx + dz * hz < 0) return -1e3;
+        return d - support(cur, dx / d, dz / d) - support(p, dx / d, dz / d);
+      };
+      let lo = cur.th, hi = cur.th + DIR * 2.6;
+      if (gapAt(hi) < g) return null;
+      for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (gapAt(mid) < g) lo = mid; else hi = mid; }
+      const f = frame((lo + hi) / 2), ry = f.ry;
+      // Where we jump from must not reach into it.
+      const cry = cur.ry ?? -(cur.th + Math.PI / 2);
+      if (overlap({ x: cur.x, z: cur.z, hx: cur.sx / 2, hz: cur.sz / 2, c: Math.cos(cry), s: Math.sin(cry) }, { x: f.x, z: f.z, hx: half, hz: half, c: Math.cos(ry), s: Math.sin(ry) }, 0.3)) return null;
+      const li = landIn(f), lth = Math.atan2(li.z - CZ, li.x - CX);
+      const pIn = plat(lth, Math.hypot(li.x - CX, li.z - CZ), cur.y + rr(-0.1, 0.3), sIn, sIn, { dry: ry + lth + Math.PI / 2, nosign: true });
+      const y = pIn.y + rr(0, 0.3), k = out.mazes.length;
+      const mz = { i: k, N, x: f.x, z: f.z, y, ry, landIn: pIn.col, fx: f.fx, fz: f.fz, nx: f.nx, nz: f.nz, half, ei: 0, ej: je, xi: N - 1, xj: jx, ri: N >> 1, rj: N - 1,
+        seed: (Math.imul(MAP.seed, 131) + k * 7919 + 17) >>> 0, zone, walls: [], mons: [], key: MAP.key };
+      const box = (u, w, hu, hy, hw, yc, kind, extra) => {
+        const [x, z] = at(f, u, w);
+        return add(makeBox(x, yc, z, hu, hy, hw, 0, ry, 0), kind, Object.assign({ mz: k }, extra));
+      };
+      const WALL = { slick: true, solidCam: false, solidRope: false, surf: 'ice' };
+      mz.floor = box(0, 0, half, 0.35, half, y - 0.35, 'mfloor', { surf: null });
+      const yc = y + H / 2, hl = C / 2 + T / 2;
+      for (let j = 0; j < N; j++) for (let i = 0; i < N - 1; i++) mz.walls[edgeV(N, i, j)] = box((i + 1 - N / 2) * C, rowW(j), T / 2, H / 2, hl, yc, 'mwall', WALL);
+      for (let j = 0; j < N - 1; j++) for (let i = 0; i < N; i++) mz.walls[edgeH(N, i, j)] = box((i - (N - 1) / 2) * C, rowW(j) - C / 2, hl, H / 2, T / 2, yc, 'mwall', WALL);
+      // The outside, each side in as few pieces as it takes to leave the ways in and out open.
+      const face = (u, skip) => {
+        let a = 0;
+        for (let j = 0; j <= N; j++) {
+          if (j < N && j !== skip) continue;
+          if (j > a) box(u, (rowW(a) + rowW(j - 1)) / 2, T / 2, H / 2, ((j - a) * C) / 2 + T / 2, yc, 'mouter', WALL);
+          a = j + 1;
+        }
+      };
+      face(-S / 2, je);
+      face(S / 2, jx);
+      for (const w of [S / 2, -S / 2]) box(0, w, S / 2 + T / 2, H / 2, T / 2, yc, 'mouter', WALL);
+      // A fence each side of both porches, across the rim.
+      for (const [u, j] of [[-(S / 2 + RIM / 2), je], [S / 2 + RIM / 2, jx]]) for (const s2 of [-1, 1]) box(u, rowW(j) + (s2 * C) / 2, RIM / 2 + T / 2, H / 2, T / 2, yc, 'mouter', WALL);
+      const [cx, cz] = mazeCell(mz, 0, je);
+      checkpoint(Math.atan2(cz - CZ, cx - CX), Math.hypot(cx - CX, cz - CZ), y, Object.assign({ maze: k }, cpo));
+      [mz.rx, mz.rz] = mazeCell(mz, mz.ri, mz.rj);
+      // Creatures prowl its corridors: a new corridor each time the maze changes (applyMaze).
+      for (let q = 0; q < (N >= 5 && zone >= 5 ? 2 : 1); q++) {
+        mz.mons.push(out.monsters.length);
+        out.monsters.push({ i: out.monsters.length, ax: mz.rx, az: mz.rz, bx: mz.rx, bz: mz.rz, y: y + 0.65, per: 4, ph: R(), r: 0.6, zone, mz: k });
+      }
+      out.mazes.push(mz);
+      // Nothing may pass over it lower than its walls and a head's room above them.
+      recBox(f.x, f.z, half, half, ry, y, H + HEAD);
+      pathLen += S * 1.6;
+      // The way on: a landing straight out from the far porch.
+      const [px, pz] = at(f, S / 2 + RIM / 2, rowW(jx));
+      lastP = { x: px, z: pz };
+      const s = rr(2.3, 2.7), [lx, lz] = at(f, S / 2 + RIM + rr(1.2, 1.6) + s / 2, rowW(jx)), th = Math.atan2(lz - CZ, lx - CX);
+      const land = plat(th, Math.hypot(lx - CX, lz - CZ), y + rr(-0.1, 0.3), s, s, { dry: ry + th + Math.PI / 2, nosign: true });
+      mz.land = land.col;
+      return land;
+    },
     // A wide platform patrolled by a monster that knocks robots off. Time it, GRAB, or SHOOT to stun it.
     monster(cur) {
       const p = T.gap(cur, { size: [rr(5, 6), rr(3.2, 3.8)], g: rr(1.4, 2.2), dy: rr(-0.2, 0.6), nosign: true });
@@ -1445,7 +1644,7 @@ export function generateLevel(mapId = 0) {
   // Every section is checked right after it is placed. If anything in it sits too close above or below
   // older route, the section is undone and the route climbs straight up with a lift instead, so the
   // finished level always keeps its clearances (dev/leveltest.js checks the same rule).
-  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers', 'flows', 'jumpers', 'moves', 'hops', 'zips'];
+  const LISTS = ['cols', 'rings', 'decor', 'cps', 'fans', 'rods', 'signs', 'crumbles', 'anchors', 'doors', 'monsters', 'bats', 'lasers', 'arrows', 'swings', 'trees', 'geysers', 'rocks', 'obs', 'blinks', 'traps', 'bumpers', 'flows', 'jumpers', 'moves', 'hops', 'zips', 'mazes'];
   function snapshot() {
     const n = {};
     for (const k of LISTS) n[k] = out[k].length;
@@ -1561,6 +1760,27 @@ export function generateLevel(mapId = 0) {
     return fn();
   }
 
+  // A maze garden for a checkpoint, as big as fits: 6, 5, then 4 cells a side. If older route is too close below, a few
+  // steps up first. Answers the landing after it, or null if none fits (the caller makes a plain pad instead).
+  function mazeAt(at, cpo) {
+    for (let step = 0; step < 5; step++) {
+      let raise = 0;
+      for (const [N, shift] of [[6, 0], [6, 1.5], [5, 0], [5, 1.5], [5, -1.5], [4, 0], [4, 1.5], [4, -1.5]]) {
+        const snap = snapshot(), res = T.maze(at, N, cpo, shift);
+        if (res) {
+          const r2 = badness(snap.recs), bu = buried(snap.n.cols), bs = blocksShaft(snap.n.cols, snap.n.moves);
+          if (r2 <= 0 && !bu && !bs) return res;
+          raise = Math.max(raise, r2);
+        }
+        restore(snap);
+      }
+      // Older route too close below: a few steps up. Nothing fits from here at all: one more hop along, and try again.
+      const a0 = at;
+      at = raise > 0 && raise <= 9 ? place(() => T.stairs(a0, Math.ceil(raise / 0.95) + 1), a0) : place(() => T.gap(a0), a0);
+    }
+    return null;
+  }
+
   // Each template call tags the footprints it records (for the clearance test's reports).
   const T = {};
   for (const k in T0) T[k] = (...args) => { const prev = TAG; TAG = k; const r = T0[k](...args); TAG = prev; return r; };
@@ -1652,10 +1872,10 @@ export function generateLevel(mapId = 0) {
   // ---------- hidden places ----------
   // Paths of stepping stones leading off the route, each to a relic. The camera looks in at the tower from outside, so
   // anything further out than the route is behind you until you turn round.
-  //   suit    two hidden ones per map, with no sign: a legendary suit each. Real Hardcore and Insane only.
+  //   suit    two hidden ones per map, with no sign: a legendary suit each, on every difficulty.
   //   epic    one per map, on every difficulty: a sign at the start, a long path with traps, and a vault at the end that
   //           opens the epic things of this map in the shop.
-  //   weapon  one per map, real Hardcore and Insane only: a sign, tiny stones, long gaps and many traps, to a vault with
+  //   weapon  one per map, on every difficulty: a sign, tiny stones, long gaps and many traps, to a vault with
   //           the map's legendary weapon.
   // game.js switches them on (pathOn), worldview.js shows them, and the server's rerun does the same.
   function buildSecrets() {
@@ -1827,10 +2047,13 @@ export function generateLevel(mapId = 0) {
     const zi = { name: ZD.name, sub: ZD.sub, color: ZD.color, fog: ZD.fog, tint: ZD.tint, y0: cur.y, y1: ZD.y1 };
     if (zone > 0 && ROUTE === 'towers') {
       // No ring round a core here: a wide rooftop pad starts the zone.
-      const at0 = cur;
-      cur = place(() => T.gap(at0, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at0);
-      zi.y0 = cur.y;
-      checkpoint(cur.th, cur.r, cur.y, { normal: zone % 2 === 0 });
+      const at0 = cur, mz = mazeAt(at0, { normal: zone % 2 === 0 });
+      if (mz) { cur = mz; zi.y0 = out.cps[out.cps.length - 1].y; }
+      else {
+        cur = place(() => T.gap(at0, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at0);
+        zi.y0 = cur.y;
+        checkpoint(cur.th, cur.r, cur.y, { normal: zone % 2 === 0 });
+      }
     } else if (zone > 0) {
       // Zone gate: a wide three-quarter ring that doubles as a safety net and checkpoint.
       const rIn = 7.0, rOut = 16.5, rm = 11.75, span = TAU * 0.72;
@@ -1860,8 +2083,12 @@ export function generateLevel(mapId = 0) {
       const at = cur, g = place(() => guard(at), at);
       if (g) { cur = g; continue; }
       if (!midDone && cur.y > mid) {
-        cur = place(() => T.gap(at, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at);
-        checkpoint(cur.th, cur.r, cur.y, { mid: true });
+        const mz = mazeAt(at, { mid: true });
+        if (mz) cur = mz;
+        else {
+          cur = place(() => T.gap(at, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at);
+          checkpoint(cur.th, cur.r, cur.y, { mid: true });
+        }
         midDone = true;
         continue;
       }
@@ -2013,8 +2240,49 @@ export function generateLevel(mapId = 0) {
   // Nothing on the island grows through a pier.
   out.decor = out.decor.filter((d) => d.y > 1.5 || d.k === 'fountain' || !onPier(d.x, d.z, 1.0));
 
+  applyMaze(out, 0);
+  // The way up, in order, for the arrow that points along it (main.js): where each piece of the route is. Big footprints
+  // (the maze gardens) are left out, so in a maze it points at the way out.
+  out.route = [];
+  for (const q of recs) {
+    if (q.tag === 'secret' || q.rad > 6) continue;
+    const p = out.route[out.route.length - 1];
+    if (p && Math.hypot(q.x - p[0], q.y - p[1], q.z - p[2]) < 1.5) continue;
+    out.route.push([q.x, q.y, q.z]);
+  }
+  // The UP HERE sign on the dock: a few steps from where everyone starts, toward the first piece of the route and in from
+  // it toward the middle, clear of everything. Its post is solid.
+  {
+    const [sx, sz] = polar(out.spawn.th, out.spawn.r), f = out.route.find((p) => Math.hypot(p[0] - sx, p[2] - sz) > 2) || [sx + 1, 3, sz];
+    const dl = Math.hypot(f[0] - sx, f[2] - sz) || 1, ux = (f[0] - sx) / dl, uz = (f[2] - sz) / dl, rl = Math.hypot(sx, sz), ix = -sx / rl, iz = -sz / rl;
+    const clear = (x, z) => {
+      const r = Math.hypot(x, z);
+      if (r < CORE_R * coreFlare(MAP.key) + 1.4 || r > 18.2) return false;
+      return !out.cols.some((c) => {
+        if (c.kind === 'dock' || c.kind === 'ring' || c.y - (c.hy ?? c.hh) > 6 || c.y + (c.hy ?? c.hh) < 1.5) return false;
+        if (c.r !== undefined) return Math.hypot(c.x - x, c.z - z) < c.r + 1.2;
+        const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry);
+        return Math.abs(dx * cs - dz * sn) < c.hx + 1.2 && Math.abs(dx * sn + dz * cs) < c.hz + 1.2;
+      });
+    };
+    let at = null;
+    for (const a of [2.2, 3, 1.4, 4]) { for (const b of [4.2, 3.4, 5, 2.6, -3.4, -4.2]) { const x = sx + ux * a + ix * b, z = sz + uz * a + iz * b; if (clear(x, z)) { at = [x, z]; break; } } if (at) break; }
+    if (at) {
+      add(makeCyl(at[0], 2 + 1.5, at[1], 0.14, 1.5), 'signpost');
+      // The board faces where everyone starts; the arrow points at the first piece of the route up.
+      out.startSign = { x: at[0], y: 2, z: at[1], ry: Math.atan2(sx - at[0], sz - at[1]), tx: f[0], ty: f[1] + 0.6, tz: f[2] };
+    }
+  }
   buildCoins();
   buildSecrets();
+  // Legendary relics in the mazes (MAZE_RELICS), in the cell furthest from the way in, spread up the climb. Like the other
+  // hidden suits (kind 'suit'), on every difficulty without custom rules.
+  const nRel = Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
+  for (let q = 0; q < nRel; q++) {
+    const m = out.mazes[Math.floor(((q + 1) * out.mazes.length) / (nRel + 1))];
+    m.relic = MAP.key + ':m' + q;
+    out.relics.push({ i: out.relics.length, id: m.relic, kind: 'suit', x: m.rx, y: m.y + 1.05, z: m.rz, maze: m.i });
+  }
 
   // Clouds never get in the way of the climb. They slowly circle the middle, so only their distance from it counts:
   // each stays outside the widest part of the route at its height (hidden stones included), with room for the camera
@@ -2046,9 +2314,9 @@ export function generateLevel(mapId = 0) {
   return out;
 }
 
-// Which hidden paths a climb has: the epic ones on every difficulty, the others on real Hardcore and Insane only. Custom
-// rules have none: they could make a path easier than it is meant to be.
-export const pathOn = (kind, diff, custom) => !custom && (kind === 'epic' || diff >= 2);
+// Which hidden paths a climb has: all of them, on every difficulty (4.10.6; the hard ones used to be Hardcore and Insane only).
+// Custom rules have none: they could make a path easier than it is meant to be.
+export const pathOn = (kind, diff, custom) => !custom;
 // Both kinds at once, as storm.sec and worldview.setSecrets take them: 'open' are the epic paths, 'hard' all the others.
 export const pathsOf = (diff, custom) => ({ hard: pathOn('weapon', diff, custom), open: pathOn('epic', diff, custom) });
 export const secretOn = (c, sec) => !!sec && (c.rk === 'epic' ? !!sec.open : !!sec.hard);

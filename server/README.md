@@ -186,20 +186,26 @@ to use one. They work only in those channels because everyone there can read the
 those channels private. The bot gets every message in the channels it can see, but it only looks at the ones starting with `!`,
 and it stores none of them.
 
-* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer`
-* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits, and without its relic. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`. `/catalog` lists it all, 60 to a page (`page`), and can search by name or show one kind only (`kind`: suit, epic, legend, face, hat, emote or weapon).
+* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer` `/tell`
+* **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/giverelic` `/takerelic` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits, and without its relic. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`. `/catalog` lists it all, 60 to a page (`page`), and can search by name or show one kind only (`kind`: suit, epic, legend, face, hat, emote or weapon).
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
 * **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`
+* **Roles and permissions**: `/setrole` `/roles` `/newrole` `/editrole` `/delrole` `/roleperm` `/playerperm` `/perms`
+* **Live, in the game only**: `/vanish` `/watch` `/join` (on Discord they say to use the terminal)
+
+`/tell` sends a player a message that shows in their game. `/giverelic` gives a relic, so what it opens can be bought:
+one relic, every relic of a map (`storm`), or `all`. `/takerelic` takes them back.
 
 ### Flags in the game
 
-`/setrole player:Name role:owner` gives a player a flag next to their name: `owner`, `admin` or `mod`. `role:none` takes it
-away, and `/roles` lists everyone who has one. They are kept on this server and it writes them into every room itself, so a
-changed app or a chosen name gets nobody a flag. Owners can wear The Hacker and GG Girl, admins GG Girl.
+`/setrole player:Name role:vip` gives a player a role, shown as a coloured tag next to their name. `role:none` takes it
+away, and `/roles` lists the roles and everyone who has one. They are kept on this server and it writes them into every
+room itself, so a changed app or a chosen name gets nobody a tag. Owners can wear The Hacker and GG Girl, admins GG Girl.
 
-A flag only shows in rooms on this server. Online games don't go through it, so nobody can check
-them, and nobody has a flag or a team suit there. A flag gives no power: who may use the bot is still the list of Discord IDs.
+A tag only shows in rooms on this server. Online games don't go through it, so nobody can check them, and nobody has a
+tag or a team suit there. What a role may do in the game is up to you: see [The team](#the-team). Who may use the bot
+on Discord is still the list of Discord IDs.
 
 ### Join and leave messages
 
@@ -222,12 +228,67 @@ files are kept as a name and a link, and Discord's links stop working after a wh
 The bot needs Manage Channels, Attach Files and Read Message History for this. Invite it with this link, using your Application
 ID: `https://discord.com/oauth2/authorize?client_id=YOUR_ID&scope=bot+applications.commands&permissions=117776`
 
+## The team
+
+Roles decide who may do what in the game. Six are there from the start:
+
+* **owner** (rank 1000): everything, always
+* **admin** (rank 80): players, coins and items, climbs, bans, the anticheat, rooms, vanish, watch and join, and also
+  `/status` `/stats` `/announce` `/audit` `/setrole` `/roles` `/perms`
+* **mod** (rank 50): `/player` `/search` `/online` `/recent` `/lastplayed` `/notes` `/note` `/tell` `/flags` `/suspects`
+  `/kick` `/tempban` `/baninfo` `/bans` `/rooms` `/roles` `/perms`, and vanish, watch and join
+* **family** (rank 20), **vip** and **friend** (rank 10): a coloured tag and no commands, until you give them some
+
+Make yourself the owner from Discord first: `/setrole player:YourName role:owner`. On Discord everyone on the bot's list
+counts as an owner. In the game the rank decides who can act on whom: you can only kick, ban, change or take from players
+below your own rank (looking a player up, sending them a message and giving them something work on anyone), you can
+only give, make or change roles below your rank, and you can only hand out permissions you have yourself. Owner, admin
+and mod can't be deleted, but what they may do can be changed (except the owner's).
+
+* `/newrole key:helper tag:HELPER color:#33aaff rank:30` makes a role. It may do nothing until it is given commands.
+* `/editrole` changes a role's tag, colour or rank. `/delrole` deletes one, and whoever had it loses it.
+* `/roleperm role:helper action:add perm:kick` lets a role use a command, `action:remove` stops it. A permission is a
+  command's name, a whole group with `@` (`@players` `@coins` `@climbs` `@bans` `@anticheat` `@rooms` `@live`
+  `@server` `@staff` `@discord`), or `*` for everything.
+* `/playerperm player:Ana action:allow perm:watch` lets one player use a command their role doesn't give them.
+  `action:deny` forbids it even when their role allows it, and `action:reset` goes back to what the role says.
+* `/perms` shows what you (or someone else) may use.
+
+Anyone allowed at least one command is staff, and may always use `/help` and `/perms` too. In the game `/player` shows
+a player's address only to those who may use `/ips`. Everything that changes something goes into `/audit` and the log
+channel, marked "in the game" when it came from there.
+
+### The terminal
+
+Staff get a **Terminal** button on the title screen, in the pause menu and on the watching screen. On a keyboard the \`
+key or F2 opens it, and Esc closes it. It takes the same commands as the bot, with or without the `/`: a name with spaces
+goes in quotes, and optional parts go by name, like `ban "Cool Guy" flying around days=3`. While you type it shows how
+to use the command, with the part you are on in capitals, and suggests players who are online, roles, permissions and
+choices. Tab takes the first suggestion, the up and down arrows bring back what you typed before, and `clear` empties
+the screen. A misspelled command or player name gets a "did you mean". What only works on Discord (welcome messages,
+tickets, `/admins`) is left out.
+
+The second tab, Players online, lists everyone in the game right now with what they are doing (map, difficulty, height,
+who with, which room), and buttons to watch them, join their room, see more or kick them (tap twice).
+
+* `/vanish` switches it on or off for you, `on:false` turns it off, and those allowed can vanish someone else. While
+  vanished, friends see you as offline (last seen when you vanished), you aren't counted online, and when you watch a
+  climb nobody is told: no eye, no name. Climbing in a room still shows you to the others in it.
+* `/watch player` follows anyone's climb live, solo climbs too, whether or not they let friends watch. Without
+  vanish they see that you are watching, like with a friend.
+* `/join player` (or a room code) joins their room on this server as a climber, without its password, and everyone in
+  it sees you. While vanished it watches that room's climb unseen instead. A solo climb can only be watched, and Online
+  games don't go through the server, so their passwords can't be skipped.
+
+To watch or join from inside a game with others, leave it first: the terminal says so. A solo climb is saved and ended.
+
 ## The terms
 
 `terms.txt` here is a simple draft, not legal advice. To use your own, put them in `/etc/stickmanup/terms.txt` and run
 `sudo systemctl restart stickmanup`. Any change to the text makes everyone accept again. Someone who says no is signed out,
-and plays without coins. The draft says plainly that IP addresses and phone checks are kept and shown to you on Discord. If you
-write your own, keep that in, and check what the law asks of you where you and your players are.
+and plays without coins. The draft says plainly that IP addresses and phone checks are kept and shown to you on Discord, and that the team
+can see what everyone is doing, join any room without its password and watch any climb unseen. If you write your own,
+keep those in, and check what the law asks of you where you and your players are.
 
 ## If you already run a web server
 

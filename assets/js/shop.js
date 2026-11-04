@@ -129,7 +129,7 @@ function whereText(it) {
   if (w.kind === 'void') return 'Find all six legendary weapons first: each waits at the end of the hardest path of its map.';
   const m = MAPS.find((x) => x.key === w.map), name = m ? m.name : w.map;
   if (w.kind === 'epic') return `Find the epic vault on ${name} first. Its path is there on every difficulty: look for the EPIC sign.`;
-  if (w.kind === 'weapon') return `Find the legendary vault on ${name} first, on Hardcore or Insane. Look for the LEGENDARY sign.`;
+  if (w.kind === 'weapon') return `Find the legendary vault on ${name} first, on any difficulty. Look for the LEGENDARY sign.`;
   return it.hint || '';
 }
 function weaponStats(w) {
@@ -180,7 +180,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   function sideHtml() {
     const it = sel;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
-      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest paths on Hardcore and Insane: find them, then buy them.</p>`
+      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest hidden paths, on any difficulty: find them, then buy them.</p>`
       : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Epic things are in the epic vaults first: every map has one, behind the EPIC sign.</p>`;
     const r = RARITY[it.r], have = owned(it), on = have && worn(it), open = unlocked(it), where = whereOf(it);
     let act;
@@ -218,12 +218,12 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     const list = listFor(tab);
     show(`<div class="shop">
       <div class="shopside">
-        <div class="ph"><button class="back" data-a="back">‹</button><div class="wallet">${COIN}<b>${coins()}</b></div></div>
+        <div class="ph"><button class="back big" data-a="back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 L7 12 L15 20"/></svg><span>Back</span></button><div class="wallet">${COIN}<b>${coins()}</b></div></div>
         <div class="shopinfo">${sideHtml()}</div>
       </div>
       <div class="shopmain">
         <div class="tabs">${TABS.map(([k, n]) => `<button data-a="tab" data-t="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        ${tab === 'legend' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found on Hardcore or Insane first and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}
+        ${tab === 'legend' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found first, on any difficulty, and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}
         <div class="shopgrid">${sections(list)}</div>
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },

@@ -52,6 +52,26 @@ then crosses the crater to the far side. Storm Tower, Wild Forest and Waterfall 
 round on its way: lightning pylons with glowing bands, smaller trees, and mossy rock stacks with a little fall of
 their own. The wall of the middle tower is solid all the way round, on every map: nothing sinks into it.
 
+Up close the middle column and the side pillars are full of detail. The forest's giant trunk and its side trees have deep
+bark with lichen, moss, ivy and shelf fungi, and leafy branches that only grow where nothing of the climb is near, so
+they never get in the way of a jump, an obstacle or a maze. The storm and city towers have floors of offices with lit
+windows and steel fins, the lighthouse real stonework, and the waterfall's rock ledges moss, ferns and hanging ivy.
+
+**Maze gardens.** Every checkpoint that is a platform of its own (the one halfway up each zone, and the rooftop pads in
+the city) is a walled garden with a maze in it, built in the map's style: metal walls with glowing trims in the storm,
+sandstone on the beach, clipped hedges in the forest, basalt columns with lava between them in the volcano, neon and
+concrete in the city and mossy ruins by the waterfall. Trees and plants of the zone grow round it, there is a pond (lava
+in the volcano) with stones round it, and small animals walk and fly about. A creature prowls the corridors: a storm
+crab, a scorpion, a wild boar, a fire imp, a robot dog or a crocodile. If it reaches you it throws you, and a shot
+paralyses it like any monster. The walls are too high to jump and too slick to grab, and every time the whole team goes
+back to a checkpoint they change, so the way through has to be found again. Eleven mazes hide a legendary relic in the
+cell furthest from the way in.
+
+**The way up.** At the foot of every climb an UP HERE sign in the map's style, with a big glowing arrow over it, points
+at the first piece of the route, and the dock has plants and props along both edges. During a climb a small arrow under
+the clock points the way on. It follows the route in order, so it never points at a part that is closer but further
+on, and in a maze it points at the way out. Settings can turn it off.
+
 Two kinds of section need the new moves. Gaps too wide to jump have glowing arrows in the air: jump, then DASH across.
 Shafts between two high walls have orange rungs up the walls: bounce up with wall jumps and out over the lower wall.
 
@@ -116,16 +136,18 @@ Spend them in the shop:
 
 * **Common (green):** colours, simple faces and caps
 * **Rare (blue):** 41 country flags with a matching cape, patterns, funny faces and hats
-* **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton and Solid Gold, with their own face and hat,
+* **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton, Solid Gold, Viking, Pharaoh, Battle Mech,
+  Shark and Thundercloud, with their own face and hat,
   and each with something of its own: a jetpack, a parrot on the shoulder, a samurai banner, a tail, a sack of
   presents, balloons, a rainbow over the shoulders. Neon lines, slime, lava and stars on them really glow. They wait
   in each map's epic vault first (see below).
 * **Legendary (orange):** living suits that move and leave a trail: aurora curtains, molten rock, cut crystal, deep
   space, circuits, dragon scales, spirit smoke, a neon grid and holograms, many with wings, horns, crowns, orbs or a
-  blade on the back. Eleven are for sale from 25000 to 60000 coins. Twelve are hidden on Hardcore and Insane, two on
-  each map: find one and it can be bought. Three are earned by what you do up there.
-* **Weapons:** 30 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
-  scope, machine guns and launchers. Each is held its own way, and the shop shows how long it paralyses, how fast it
+  blade on the back. Eleven wait in the maze gardens and twelve at the end of hidden paths, two on each map, on every
+  difficulty: find one and it can be bought, from 25000 to 60000 coins for the maze ones. Three are earned by what you
+  do up there.
+* **Weapons:** 50 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
+  scope, machine guns, launchers, and odd ones like the Tesla Coil, the Harpoon Gun and the Cryo Blaster. Each is held its own way, and the shop shows how long it paralyses, how fast it
   fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
   Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest path, and the Void
   Cannon opens once all six are found.
@@ -134,7 +156,7 @@ Spend them in the shop:
 
 **Hidden vaults.** Finding something only opens it in the shop: it still costs coins. Every map has an epic vault on
 every difficulty, Easy and Normal too, at the end of a side path that leaves the route behind a sign saying EPIC and
-THIS WAY: small stones over wide gaps, with swinging weights and spikes on the way. On Hardcore and Insane a harder
+THIS WAY: small stones over wide gaps, with swinging weights and spikes on the way. On every difficulty a harder
 path behind a LEGENDARY sign, with smaller stones, wider gaps and presses too, leads to the map's legendary weapon.
 Legendary suits found before this update stay yours.
 
@@ -226,7 +248,7 @@ Every player has a player ID, shown on the Friends screen with a button to share
 send a request. Once it is accepted you can see which friends are online and, while they climb, the map, difficulty,
 height, time, falls and who they climb with. Tap Watch to follow their climb live (it works for solo climbs too), or Join
 if their room has a free spot. Anyone who would rather not be watched can turn that off on the same screen, and a climber is
-told who is watching. Watching shows the climb as it is: the shots flying, the coins still hanging, and climbers riding
+told which friends are watching (the team can watch any climb without showing up, see [The team](#the-team)). Watching shows the climb as it is: the shots flying, the coins still hanging, and climbers riding
 lifts and ziplines without sinking into the floor. Both people need the game server.
 
 Friends can join a climb that is already running.
@@ -243,6 +265,16 @@ but earn nothing, because nothing can check those.
 
 Every climb that earns coins is played again on the server with the same physics, so a speed hack, a higher jump, flying, teleporting
 or an edited save all show up. Coins from older versions that were kept on the phone are gone: only the server counts now.
+
+## The team
+
+The owner and the people they trust run the game from inside it. Staff get a **Terminal** button on the title screen,
+in the pause menu and while watching (or press the \` key or F2 on a keyboard). It takes the same commands as the
+Discord bot, suggests them as you type, fills in names of players who are online, and says what you probably meant
+when something is misspelled. A second tab lists everyone in the game right now with what they are doing, with buttons
+to watch them, join their room, see more or kick them. Roles like Friend, VIP and Family show as a coloured tag next to
+the name. Who may do what is set with roles and permissions on the server: see
+[server/README.md](server/README.md#the-team).
 
 ## Smooth on any phone
 

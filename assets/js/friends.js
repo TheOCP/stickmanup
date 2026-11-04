@@ -234,8 +234,8 @@ export function openFriends(back, tab = 'list') {
 }
 
 // ---------- joining a friend's room ----------
-function joinRoom(room, back) {
-  const { app, joinWith, roomPassword } = ctx, here = () => openFriends(back);
+function joinRoom(room, back, after) {
+  const { app, joinWith, roomPassword } = ctx, here = after || (() => openFriends(back));
   app.joinBack = here;
   if (room.kind === 'online') joinWith('online', room.code);
   else if (room.locked) roomPassword(room.code, here);
@@ -264,10 +264,12 @@ function specScreen(spec, f, leave, back) {
       <div class="spstats"><div><b id="spH">0 m</b><small>Height</small></div><div><b id="spTop">0 m</b><small>Top</small></div><div><b id="spF">0</b><small>Falls</small></div></div>
       <div class="spteam" id="spTeam"></div>
       ${f && canJoin(f) ? '<button class="btn primary sm spjoin" data-a="join">Join</button>' : ''}
+      ${ctx.team && ctx.team() ? '<button class="btn sm spterm" data-a="term">Terminal</button>' : ''}
     </div>
   </div>`, {
     back: () => leave(),
     follow: (b) => spec.follow(+b.dataset.s),
+    term: () => ctx.openTerminal && ctx.openTerminal(),
     join: () => leave(null, () => joinRoom(f.room, back)),
   }, false);
   $('#menu').classList.add('specm');
@@ -300,9 +302,13 @@ function showInfo(i) {
   }
 }
 
-function watchFriend(num, back) {
-  const { app, ui, busy, settings, N } = ctx, f = known && known.friends.find((x) => x.num === num);
-  const toList = () => openFriends(back);
+// The team can watch anyone (the server decides who may): f is what is known about them, and back where to go after.
+export function watchPlayer(num, f, back) { watchFriend(num, back, f || { num, name: `#${num}` }, back); }
+export function joinPlayerRoom(code, back) { joinRoom({ kind: 'server', code, locked: false }, back, back); }
+
+function watchFriend(num, back, who, after) {
+  const { app, ui, busy, settings, N } = ctx, f = who || (known && known.friends.find((x) => x.num === num));
+  const toList = after || (() => openFriends(back));
   let spec = null, done = false;
   // Everything that ends watching comes through here, once.
   const leave = (said, then) => {

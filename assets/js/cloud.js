@@ -7,7 +7,7 @@
 import { store } from './util.js';
 import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun } from './profile.js';
 import { DIFFS } from './level.js';
-import { itemKey } from './skins.js';
+import { itemKey, setRoleTable } from './skins.js';
 import { Recorder, toBase64, fromBase64, deflate } from './replay.js';
 import { SIM_BUILD } from './simbuild.js';
 
@@ -100,7 +100,10 @@ function setBan(j) {
 export async function getInfo() {
   if (!serverUrl()) return null;
   const r = await call('/api/info', { timeout: 8000 });
-  return r.ok && r.json && typeof r.json.terms === 'string' ? r.json : null;
+  const ok = r.ok && r.json && typeof r.json.terms === 'string';
+  // The tag and colour of every role, for the flags next to names.
+  if (ok && r.json.roles) setRoleTable(r.json.roles);
+  return ok ? r.json : null;
 }
 export async function getRooms(proto) {
   if (!serverUrl()) return null;

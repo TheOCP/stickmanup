@@ -1,5 +1,8 @@
 // Difficulties, maps, zones and the tips along the way. [English, es, pt, fr, de, ru, tr]. See ../i18n.js.
 export default [
+  // The sign at the foot of every climb.
+  ["UP HERE", "SUBE AQUÍ", "SUBA AQUI", "ÇA MONTE ICI", "HIER HOCH", "НАВЕРХ ТУТ", "BURADAN YUKARI"],
+  ["The climb starts here", "La escalada empieza aquí", "A escalada começa aqui", "L'ascension commence ici", "Hier beginnt der Aufstieg", "Подъём начинается здесь", "Tırmanış burada başlıyor"],
   ["Easy", "Fácil", "Fácil", "Facile", "Leicht", "Легко", "Kolay"],
   ["Checkpoints in every zone, a long cord, a calmer storm and fewer, slower obstacles.", "Puntos de control en cada zona, cuerda larga, tormenta más tranquila y menos obstáculos, más lentos.", "Checkpoints em cada zona, corda longa, tempestade mais calma e menos obstáculos, mais lentos.", "Points de contrôle dans chaque zone, corde longue, orage plus calme et obstacles moins nombreux et plus lents.", "Checkpoints in jeder Zone, langes Seil, ruhigerer Sturm und weniger, langsamere Hindernisse.", "Чекпоинты в каждой зоне, длинная верёвка, гроза спокойнее, препятствий меньше и они медленнее.", "Her bölgede kontrol noktası, uzun ip, daha sakin fırtına, daha az ve yavaş engel."],
   ["Normal", "Normal", "Normal", "Normal", "Normal", "Нормально", "Normal"],

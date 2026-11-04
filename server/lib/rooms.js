@@ -34,6 +34,8 @@ class Rooms {
     this.onCheat = opts.onCheat || (() => {});
     this.ownsLook = opts.ownsLook || (() => true);
     this.roleOf = opts.roleOf || (() => '');
+    // The team may join any room on this server without its password (staff.js decides who that is).
+    this.canJoinAny = opts.canJoinAny || (() => false);
     this.needToken = opts.needToken || (() => false);
     this.ipKey = opts.ipKey || ((x) => x);
     this.perIp = new Map();
@@ -283,7 +285,7 @@ class Rooms {
     const room = this.rooms.get(code);
     if (!room) return this.err(ws, 'No game with that code.');
     if (m.proto !== room.proto) return this.err(ws, 'That game is on a different StickManUp version. Update both to the same release.');
-    if (room.hash) {
+    if (room.hash && !(ws.userId && this.canJoinAny(ws.userId))) {
       // Guessing is limited per address and room before any work is done, whether the guess turns out right or wrong.
       if (!this.passLimit.take(ws.ip + '/' + code)) return this.err(ws, 'Too many password tries. Wait a minute and try again.');
       const pass = typeof m.pass === 'string' ? m.pass.slice(0, 64) : '';
@@ -337,6 +339,7 @@ class Rooms {
   }
 
   // ---------------------------------------------------------------- for the admins
+  room(code) { return this.rooms.get(String(code || '').toUpperCase()) || null; }
   all() {
     const out = [];
     for (const r of this.rooms.values()) {

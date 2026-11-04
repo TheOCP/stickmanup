@@ -278,6 +278,66 @@ function sparkles(p, c, n, seed) {
   }
 }
 
+// Shared bits for the costumes added in 4.10.6.
+// Circuit traces: lines that turn at right angles and end in a pad.
+function traces(p, c, w, seed, n) {
+  const R = rng(seed), g = p.g;
+  g.strokeStyle = c; g.fillStyle = c; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round';
+  for (let i = 0; i < n; i++) {
+    let x = R() * TEX, y = R() * TEX;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 4; k++) { if (k % 2) y += (R() - 0.5) * 120; else x += (R() - 0.5) * 120; g.lineTo(x, y); }
+    g.stroke(); g.beginPath(); g.arc(x, y, w * 1.7, 0, 7); g.fill();
+  }
+}
+// Zigzag lightning bolts.
+function bolts(p, c, n, seed) {
+  const R = rng(seed), g = p.g;
+  g.fillStyle = c;
+  for (let i = 0; i < n; i++) {
+    const x = R() * TEX, y = R() * TEX, k = 0.7 + R() * 0.8;
+    g.beginPath();
+    [[0, 0], [14, 0], [8, 16], [18, 16], [-2, 46], [4, 22], [-6, 22]].forEach(([a, b], j) => (j ? g.lineTo(x + a * k, y + b * k) : g.moveTo(x + a * k, y + b * k)));
+    g.closePath(); g.fill();
+  }
+}
+// Crystal facets: the whole sheet in triangles of the given colours.
+function facets(p, seed, cols, edge) {
+  const R = rng(seed), g = p.g, s = 32;
+  for (let j = 0; j < TEX / s; j++) for (let i = 0; i < TEX / s; i++) {
+    const x = i * s, y = j * s;
+    for (const t of [[[x, y], [x + s, y], [x, y + s]], [[x + s, y], [x + s, y + s], [x, y + s]]]) {
+      g.fillStyle = cols[(R() * cols.length) | 0];
+      g.beginPath(); t.forEach(([a, b], k) => (k ? g.lineTo(a, b) : g.moveTo(a, b))); g.closePath(); g.fill();
+      if (edge) { g.strokeStyle = edge; g.lineWidth = 1.2; g.stroke(); }
+    }
+  }
+}
+// A five petalled blossom.
+function blossom(g, x, y, r, c, mid) {
+  g.fillStyle = c;
+  for (let k = 0; k < 5; k++) { const a = k * 1.2566; g.beginPath(); g.ellipse(x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.55, r * 0.5, r * 0.36, a, 0, 7); g.fill(); }
+  g.fillStyle = mid; g.beginPath(); g.arc(x, y, r * 0.22, 0, 7); g.fill();
+}
+// A cog wheel.
+function cog(g, x, y, r, c) {
+  g.fillStyle = c;
+  for (let k = 0; k < 10; k++) { g.save(); g.translate(x, y); g.rotate(k * 0.628); g.fillRect(-r * 0.14, -r * 1.18, r * 0.28, r * 0.36); g.restore(); }
+  g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.45)'; g.beginPath(); g.arc(x, y, r * 0.35, 0, 7); g.fill();
+}
+// The neon bits of Synthwave: a sunset of stripes on the chest and a grid down the legs.
+function synthNeon(p) {
+  const g = p.g;
+  p.both(() => ['#ff40d0', '#ff5aa0', '#ff8070', '#ffa040', '#ffd040'].forEach((k, i) => p.rect(k, -0.21, 0.66 - i * 0.05, 0.21, 0.635 - i * 0.05)));
+  g.strokeStyle = '#40e0ff'; g.lineWidth = 2;
+  for (let x = 0; x < COL_ARMS; x += 24) { g.beginPath(); g.moveTo(x, WAIST_Y); g.lineTo(x, TEX); g.stroke(); }
+  for (let y = WAIST_Y; y < TEX; y += 18) { g.beginPath(); g.moveTo(0, y); g.lineTo(COL_ARMS, y); g.stroke(); }
+  p.armBand('#ff40d0', 0.6, 0.57);
+}
+// The lit parts of the Battle Mech: visor slits on the chest and a power core.
+function mechLights(p, c) { p.both(() => { p.rect(c, -0.15, 0.7, -0.08, 0.68); p.rect(c, 0.08, 0.7, 0.15, 0.68); p.rect('#40e0ff', -0.03, 0.6, 0.03, 0.5); }); }
+
 const paintFn = {
   ref: (p) => { p.vStripes('#111111', '#f0f0f0', 8); p.head(SKIN); p.legs('#111111'); },
   prisoner: (p) => { p.hStripes('#f0f0f0', '#222222', 20); p.head(SKIN); },
@@ -360,6 +420,153 @@ const paintFn = {
     p.armBand('#3c8a2a', 0.82, 0.76); p.armBand('#e8701a', 0.27, 0.22);
   },
   samurai: (p) => { p.all('#7a1420'); p.head(SKIN); p.hands(SKIN); p.legs('#17141c'); p.both(() => { for (const y of [0.75, 0.65, 0.55, 0.45]) p.rect('#d8b040', -0.21, y, 0.21, y - 0.02); }); p.armBand('#17141c', 0.7, 0.4); },
+  // Added in 4.10.6.
+  diver: (p) => {
+    p.all('#16343c'); p.head(SKIN); p.hands('#0c1418'); p.feet('#f0c020');
+    p.both((sd) => { p.rect('#f08a20', -0.21, 0.8, 0.21, 0.74); p.rect('#2a8a9a', -0.21, 0.62, -0.13, 0.3); p.rect('#2a8a9a', 0.13, 0.62, 0.21, 0.3); p.rect('#f08a20', -0.21, -0.04, 0.21, -0.09); if (!sd) p.rect('#c8d0dc', -0.01, 0.8, 0.01, 0.32); });
+    p.armBand('#f08a20', 0.64, 0.58); p.armBand('#2a8a9a', 0.5, 0.3);
+  },
+  chef: (p) => {
+    const g = p.g;
+    p.all('#f6f6f6'); p.legs('#1a1a1a');
+    p.both(() => { for (let j = 0; j < 12; j++) for (let i = 0; i < 8; i++) if ((i + j) % 2) p.rect('#ececec', -0.21 + i * 0.0525, 0.28 - j * 0.06, -0.21 + (i + 1) * 0.0525, 0.28 - (j + 1) * 0.06); });
+    p.head(SKIN); p.hands(SKIN); p.feet('#1a1a1a');
+    p.front(() => { g.fillStyle = '#b8bcc4'; for (const x of [-0.07, 0.07]) for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(X(x), Y(0.72 - k * 0.1), 6, 0, 7); g.fill(); } p.rect('#e02a2a', -0.09, 0.82, 0.09, 0.76); });
+    p.armBand('#e4e4ea', 0.3, 0.24);
+  },
+  pilot: (p) => {
+    p.all('#6a4028'); p.lines('#5a3420', 160, 3, 81); p.head(SKIN); p.hands('#3a2414'); p.legs('#a89468'); p.feet('#2a1a10');
+    p.both((sd) => { p.rect('#efe4cc', -0.21, 0.82, 0.21, 0.73); p.rect('#3a2414', -0.21, 0.36, 0.21, 0.3); if (!sd) { p.rect('#d8b040', -0.16, 0.66, -0.03, 0.645); p.rect('#3a2414', -0.008, 0.73, 0.008, 0.36); } });
+    p.armBand('#efe4cc', 0.3, 0.22); p.armBand('#4a2a18', 0.8, 0.72);
+  },
+  viking: (p) => {
+    const g = p.g;
+    p.all('#5a4a3a'); p.torso('#8a929e');
+    p.both(() => {
+      g.strokeStyle = '#5a626e'; g.lineWidth = 2;
+      for (let y = HEAD_Y; y < WAIST_Y; y += 8) for (let x = (y / 8) % 2 ? 0 : 4; x < COL_W; x += 8) { g.beginPath(); g.arc(x, y, 4, 0, Math.PI); g.stroke(); }
+      p.rect('#cfc0a0', -0.21, 0.82, 0.21, 0.71); p.rect('#4a2e18', -0.21, 0.35, 0.21, 0.29); p.rect('#c8a040', -0.04, 0.35, 0.04, 0.29);
+      for (const y of [0.12, -0.04, -0.2]) p.rect('#3a2a1a', -0.21, y, 0.21, y - 0.03);
+    });
+    p.arms('#8a929e'); p.armBand('#cfc0a0', 0.84, 0.72); p.head(SKIN); p.hands('#4a2e18'); p.feet('#3a2a1a');
+  },
+  pharaoh: (p) => {
+    p.all(SKIN);
+    p.both(() => {
+      for (let i = 0; i < 9; i++) p.rect(i % 2 ? '#2a4ad0' : '#ffd24a', -0.21, 0.82 - i * 0.06, 0.21, 0.82 - (i + 1) * 0.06);
+      p.rect('#f4f0e4', -0.21, 0.29, 0.21, 0.02);
+      for (let x = -0.18; x < 0.2; x += 0.06) p.rect('#dcd6c4', x, 0.27, x + 0.012, 0.02);
+      p.rect('#ffd24a', -0.21, 0.35, 0.21, 0.29); p.rect('#2a4ad0', -0.03, 0.35, 0.03, 0.29);
+    });
+    p.armBand('#ffd24a', 0.64, 0.58); p.armBand('#2a4ad0', 0.58, 0.55); p.armBand('#ffd24a', 0.3, 0.25); p.feet('#c8a040');
+  },
+  panda: (p) => { p.all('#f4f4f4'); p.arms('#17171a'); p.legs('#17171a'); p.both(() => p.rect('#17171a', -0.21, 0.8, 0.21, 0.66)); p.dots('#e8e8e8', 60, 3, 7, 115); p.head('#f4f4f4'); },
+  fox: (p) => {
+    const g = p.g;
+    p.all('#e8701a'); p.lines('#d8601a', 120, 2, 87); p.head('#e8701a');
+    p.front(() => { g.fillStyle = '#f8f0e4'; g.beginPath(); g.moveTo(X(-0.14), Y(0.82)); g.lineTo(X(0.14), Y(0.82)); g.quadraticCurveTo(X(0.17), Y(0.5), X(0), Y(0.3)); g.quadraticCurveTo(X(-0.17), Y(0.5), X(-0.14), Y(0.82)); g.fill(); });
+    p.both(() => p.rect('#2a1a12', -0.21, -0.08, 0.21, -0.44)); p.hands('#2a1a12'); p.armBand('#2a1a12', 0.34, 0.2);
+  },
+  dino: (p) => {
+    const R = rng(89), g = p.g;
+    p.all('#3a9a3a');
+    for (let i = 0; i < 260; i++) { g.fillStyle = R() < 0.5 ? '#2e8030' : '#4ab048'; g.beginPath(); g.arc(R() * TEX, R() * TEX, 4 + R() * 6, 0, 7); g.fill(); }
+    p.front(() => { for (let k = 0; k < 7; k++) p.rect(k % 2 ? '#f0d060' : '#e8c048', -0.11, 0.8 - k * 0.075, 0.11, 0.8 - (k + 1) * 0.075); });
+    p.back(() => p.rect('#2a6a2a', -0.04, 0.82, 0.04, 0.28)); p.head('#3a9a3a'); p.hands('#2e8030'); p.feet('#2a6a2a');
+  },
+  shark: (p) => {
+    const g = p.g;
+    p.vgrad('#6a7a8c', '#8a9aac');
+    p.front(() => { g.fillStyle = '#f4f6f8'; g.beginPath(); g.moveTo(X(-0.15), Y(0.8)); g.quadraticCurveTo(X(0), Y(0.9), X(0.15), Y(0.8)); g.lineTo(X(0.12), Y(0.3)); g.lineTo(X(-0.12), Y(0.3)); g.fill(); });
+    p.both((sd) => { for (let k = 0; k < 3; k++) p.rect('#3a4652', sd ? -0.19 : 0.15, 0.72 - k * 0.06, sd ? -0.15 : 0.19, 0.7 - k * 0.06); });
+    p.head('#6a7a8c'); p.legs('#2a3a5a'); p.both(() => p.rect('#f0f0f0', -0.21, 0.2, 0.21, 0.17)); p.feet('#1a2030'); p.hands('#6a7a8c');
+  },
+  synth: (p) => { p.all('#1a0a2a'); synthNeon(p); p.head(SKIN); p.hands(SKIN); },
+  circuit: (p) => {
+    const R = rng(93), g = p.g;
+    p.all('#145a30'); traces(p, '#d8b040', 3, 91, 70);
+    for (let i = 0; i < 14; i++) {
+      const x = R() * TEX, y = R() * TEX, w = 20 + R() * 30, h = 14 + R() * 24;
+      g.fillStyle = '#14161c'; g.fillRect(x, y, w, h); g.fillStyle = '#c8c8d0';
+      for (let k = 3; k < w - 2; k += 6) { g.fillRect(x + k, y - 3, 2, 3); g.fillRect(x + k, y + h, 2, 3); }
+    }
+    p.head(SKIN); p.hands('#145a30');
+  },
+  disco: (p) => {
+    const R = rng(97), g = p.g;
+    p.vgrad('#c8a0ff', '#6a3ac8');
+    for (let y = 0; y < TEX; y += 10) for (let x = (y / 10) % 2 ? 5 : 0; x < TEX; x += 10) { const l = R(); g.fillStyle = l < 0.2 ? '#ffffff' : l < 0.5 ? '#e0d0ff' : l < 0.75 ? '#b080f0' : '#ff80e0'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
+    p.head(SKIN); p.hands(SKIN); p.both(() => p.rect('#ffd24a', -0.21, 0.34, 0.21, 0.3));
+  },
+  steampunk: (p) => {
+    const g = p.g;
+    p.all('#5a3a22'); p.lines('#4a2e1a', 140, 3, 101); p.legs('#3a3a40'); p.head(SKIN); p.hands('#3a2414'); p.feet('#2a1a10');
+    p.both((sd) => {
+      if (!sd) { p.rect('#7a1a24', -0.1, 0.8, 0.1, 0.36); g.fillStyle = '#d8b040'; for (let k = 0; k < 5; k++) { g.beginPath(); g.arc(X(0), Y(0.76 - k * 0.09), 5, 0, 7); g.fill(); } }
+      else { cog(g, X(0), Y(0.6), 34, '#b08a3a'); cog(g, X(0.12), Y(0.44), 18, '#c89a40'); }
+      p.rect('#2a1a10', -0.21, 0.36, 0.21, 0.31); p.rect('#d8b040', -0.03, 0.36, 0.03, 0.31);
+    });
+    p.armBand('#d8b040', 0.3, 0.27);
+  },
+  jester: (p) => {
+    const g = p.g, w = 16, h = 24;
+    p.all('#8a1aa8');
+    g.fillStyle = '#ffd030';
+    for (let j = 0; j <= TEX / h; j++) for (let i = 0; i <= TEX / (2 * w); i++) { const x = i * 2 * w + (j % 2) * w, y = j * h; g.beginPath(); g.moveTo(x, y - h / 2); g.lineTo(x + w / 2, y); g.lineTo(x, y + h / 2); g.lineTo(x - w / 2, y); g.closePath(); g.fill(); }
+    p.both(() => { p.rect('#ffd030', -0.21, 0.28, 0, -0.44); p.rect('#8a1aa8', 0, 0.28, 0.21, -0.44); p.rect('#f4f4f4', -0.21, 0.82, 0.21, 0.76); });
+    p.head(SKIN); p.hands('#ffd030');
+  },
+  cactus: (p) => {
+    const g = p.g;
+    p.all('#4a9a4a');
+    for (let x = 0; x < TEX; x += 16) { g.fillStyle = '#3a8a3a'; g.fillRect(x, 0, 4, TEX); g.fillStyle = '#6ab86a'; g.fillRect(x + 8, 0, 2, TEX); }
+    g.fillStyle = '#f4ecd0';
+    for (let x = 2; x < TEX; x += 16) for (let y = ((x / 16) % 2) * 12; y < TEX; y += 24) { g.fillRect(x - 3, y, 6, 1.5); g.fillRect(x, y - 3, 1.5, 6); }
+    p.front(() => blossom(g, X(0.08), Y(0.66), 18, '#ff5aa0', '#ffe060'));
+    p.head(SKIN); p.feet('#c87a4a');
+  },
+  thunder: (p) => { p.vgrad('#2a3040', '#4a5262'); p.blobs(['#3a4252', '#5a6272', '#262c38'], 70, 14, 40, 103); bolts(p, '#ffe040', 18, 105); p.head(SKIN); p.hands('#262c38'); },
+  koi: (p) => {
+    const R = rng(107), g = p.g;
+    p.vgrad('#3a9ad8', '#14406a');
+    g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 2;
+    for (let i = 0; i < 30; i++) { g.beginPath(); g.ellipse(R() * TEX, R() * TEX, 10 + R() * 20, 4 + R() * 8, 0, 0, 7); g.stroke(); }
+    for (let i = 0; i < 16; i++) {
+      g.save(); g.translate(R() * TEX, R() * TEX); g.rotate(R() * 6.28);
+      g.fillStyle = R() < 0.6 ? '#ff7a2a' : '#f4f4f4'; g.beginPath(); g.ellipse(0, 0, 18, 8, 0, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(-14, 0); g.lineTo(-30, -9); g.lineTo(-30, 9); g.fill();
+      g.fillStyle = R() < 0.5 ? '#e02020' : '#ffffff'; g.beginPath(); g.ellipse(4, -2, 6, 4, 0, 0, 7); g.fill();
+      g.restore();
+    }
+    g.fillStyle = '#3a9a3a';
+    for (let i = 0; i < 10; i++) { const x = R() * TEX, y = R() * TEX; g.beginPath(); g.arc(x, y, 12, 0.4, 6.0); g.lineTo(x, y); g.fill(); }
+    p.head(SKIN); p.hands(SKIN);
+  },
+  amethyst: (p) => { facets(p, 109, ['#8a4ad8', '#a060f0', '#6a2ab8', '#c090ff', '#7a3ac8'], 'rgba(255,255,255,0.25)'); p.head('#c8a8f0'); },
+  mech: (p) => {
+    const g = p.g;
+    p.all('#4a5a6a');
+    g.strokeStyle = '#2a323c'; g.lineWidth = 3;
+    for (let y = 0; y < TEX; y += 48) { g.beginPath(); g.moveTo(0, y); g.lineTo(TEX, y); g.stroke(); }
+    for (let x = 0; x < TEX; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, TEX); g.stroke(); }
+    g.fillStyle = '#9aa4b2';
+    for (let y = 6; y < TEX; y += 48) for (let x = 6; x < TEX; x += 64) { g.fillRect(x, y, 4, 4); g.fillRect(x + 52, y, 4, 4); }
+    p.head('#5a6a7a');
+    p.both(() => { for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#1a1e24' : '#f0b020'; g.beginPath(); g.moveTo(k * 24, Y(0.34)); g.lineTo(k * 24 + 12, Y(0.34)); g.lineTo(k * 24 + 24, Y(0.28)); g.lineTo(k * 24 + 12, Y(0.28)); g.fill(); } });
+    mechLights(p, '#ff6a1a');
+    p.armBand('#f0b020', 0.66, 0.62); p.hands('#2a323c'); p.feet('#2a323c');
+  },
+  sakura: (p) => {
+    const R = rng(113), g = p.g;
+    p.vgrad('#ffd0e0', '#ff9ac0');
+    for (let i = 0; i < 46; i++) blossom(g, R() * TEX, R() * TEX, 8 + R() * 8, R() < 0.5 ? '#ffffff' : '#ff6aa0', '#ffd040');
+    p.head(SKIN); p.hands(SKIN);
+    p.both((sd) => {
+      p.rect('#c01a4a', -0.21, 0.42, 0.21, 0.3); p.rect('#ffd24a', -0.21, 0.375, 0.21, 0.355);
+      if (!sd) { g.fillStyle = '#f8f4f0'; g.beginPath(); g.moveTo(X(-0.12), Y(0.82)); g.lineTo(X(0.03), Y(0.42)); g.lineTo(X(0.07), Y(0.42)); g.lineTo(X(-0.06), Y(0.82)); g.fill(); }
+    });
+    p.feet('#f8f4f0');
+  },
   // Owner suits.
   fengish: (p) => {
     // A gamer girl's outfit: pink and white jacket over dark leggings.
@@ -445,6 +652,26 @@ export const SUITS = [
   pt('grid', 'Neon Grid', 2, 1500, 0xff2ad8),
   pt('pumpkin', 'Pumpkin Head', 2, 1300, 0xee7a14, 'pumpkin'),
   pt('samurai', 'Samurai', 2, 1600, 0x7a1420, 'angry', 'samurai'),
+  pt('diver', 'Deep Diver', 2, 1300, 0x2a8a9a, 'wow'),
+  pt('chef', 'Master Chef', 2, 1000, 0xf6f6f6, 'happy', 'chef'),
+  pt('pilot', 'Sky Pilot', 2, 1200, 0x6a4028, 'smirk'),
+  pt('viking', 'Viking', 2, 1500, 0x8a929e, 'angry', 'viking'),
+  pt('pharaoh', 'Pharaoh', 2, 1800, 0xffd24a, 'cool', null, { glow: 0.15 }),
+  pt('panda', 'Panda', 2, 1100, 0xf4f4f4, 'cute'),
+  pt('fox', 'Fox', 2, 1100, 0xe8701a, 'cat', 'catears'),
+  pt('dino', 'Dino', 2, 1300, 0x3a9a3a, 'monster'),
+  pt('shark', 'Shark', 2, 1300, 0x7a8a9c, 'smirk'),
+  pt('synth', 'Synthwave', 2, 1700, 0xff40d0, 'cool', 'phones'),
+  pt('circuit', 'Circuit Board', 2, 1600, 0x1a8a4a, 'visor', 'antenna'),
+  pt('disco', 'Disco Fever', 2, 1500, 0xb080f0, 'cool', 'afro'),
+  pt('steampunk', 'Steampunk', 2, 1600, 0x8a5a2a, 'nerd', 'tophat'),
+  pt('jester', 'Jester', 2, 1200, 0x8a1aa8, 'tongue', 'party'),
+  pt('cactus', 'Cactus', 2, 900, 0x4a9a4a, 'happy', 'flowers'),
+  pt('thunder', 'Thundercloud', 2, 1700, 0x4a5262, 'angry'),
+  pt('koi', 'Koi Pond', 2, 1400, 0x3a8ad0, 'wow'),
+  pt('amethyst', 'Amethyst', 2, 2000, 0x9a5aff, 'hollow', null, { glow: 0.2 }),
+  pt('mech', 'Battle Mech', 2, 2200, 0x4a5a6a, 'visor'),
+  pt('sakura', 'Sakura', 2, 1400, 0xff9ac0, 'cute', 'flowers'),
 ];
 
 // Epic costumes each carry something of their own (gear.js), and in some the parts that should shine are painted again (lit)
@@ -455,6 +682,9 @@ const EPIC_GEAR = {
   hero: ['belt_hero'], tiger: ['tail_tiger'], zebra: ['tail_zebra'], camo: ['rucksack'], snowcamo: ['skis_back'], galaxy: ['planets'], lava: ['magma'],
   frost: ['ice_spikes'], gold: ['bling'], chrome: ['fins'], wizard: ['spellbook'], vampire: ['collar'], toxic: ['canister'], rainbow: ['rainbow_arc'],
   grid: ['disc_back'], pumpkin: ['candy_bucket'], samurai: ['sashimono'],
+  diver: ['divetank'], chef: ['ladle'], pilot: ['scarf'], viking: ['roundshield'], pharaoh: ['pharaoh_collar'], panda: ['bamboo_back'], fox: ['tail_fox'],
+  dino: ['dino_plates', 'tail_dino'], shark: ['fin_shark'], synth: ['keytar'], circuit: ['chip_back'], disco: ['discoball'], steampunk: ['cogs'], jester: ['bells'],
+  cactus: ['spines'], thunder: ['cloud_back'], koi: ['koi_back'], amethyst: ['crystals_back'], mech: ['mech_pods'], sakura: ['parasol'],
 };
 const faint = (k, fn) => (p) => { p.g.globalAlpha = k; fn(p); p.g.globalAlpha = 1; };
 const LIT = {
@@ -468,6 +698,12 @@ const LIT = {
   robot: (p) => p.both(() => { p.g.fillStyle = '#40e8ff'; for (let i = 0; i < 3; i++) p.g.fillRect(52 + i * 32, HEAD_Y + 44, 22, 40); }),
   skeleton: faint(0.5, (p) => paintFn.skeleton(p)),
   pumpkin: faint(0.45, (p) => { p.head('#ff9a30'); p.both(() => pumpkinStripes(p, '#ff8a2a')); }),
+  synth: (p) => synthNeon(p),
+  circuit: (p) => traces(p, '#40ff90', 2, 95, 30),
+  disco: (p) => sparkles(p, '#ffffff', 40, 99),
+  thunder: (p) => bolts(p, '#fff080', 18, 105),
+  amethyst: (p) => { const R = rng(111), g = p.g; g.fillStyle = '#d0a0ff'; for (let i = 0; i < 26; i++) { const x = R() * TEX, y = R() * TEX, r = 8 + R() * 14; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r * 0.6, y); g.lineTo(x, y + r); g.lineTo(x - r * 0.6, y); g.closePath(); g.fill(); } },
+  mech: (p) => mechLights(p, '#ff8a2a'),
 };
 for (const x of SUITS) {
   if (EPIC_GEAR[x.id]) x.gear = EPIC_GEAR[x.id];
@@ -481,8 +717,10 @@ for (const x of SUITS) {
 // 9 deep space, 10 circuits, 11 shimmering scales, 12 spirit smoke, 13 neon grid, 14 hologram.
 const L = (id, name, mode, a, b, c, o) => s(id, name, 3, -1, Object.assign({ tab: 'legend', c, shader: { mode, a, b, c: o.glow ?? c }, trail: c }, o));
 const LOW = 'somewhere between 150 and 300 m', HIGH = 'somewhere between 550 and 750 m';
-const low = (map) => `Hardcore on ${map}, ${LOW}. Stop staring at the tower and turn round.`;
-const high = (map) => `Hardcore on ${map}, ${HIGH}. Only the brave step off the edge.`;
+const low = (map) => `On ${map}, ${LOW}. Stop staring at the tower and turn round.`;
+const high = (map) => `On ${map}, ${HIGH}. Only the brave step off the edge.`;
+// The ones for sale wait in the maze gardens (level.js, MAZE_RELICS): the relic opens the shop, coins still buy them.
+const maze = (map, h) => `On ${map}, in the maze garden at about ${h} m. The maze changes every time you go back to a checkpoint.`;
 export const LEGENDS = [
   L('l_storm0', 'Stormcaller', 1, 0x0a1428, 0x2040a0, 0x7fd8ff, { relic: 'storm:0', price: 12000, hint: low('Storm Tower'), face: 'hollow', hat: 'bolt' }),
   L('l_storm1', 'Thunder God', 1, 0x180a30, 0x6030c0, 0xffe870, { relic: 'storm:1', price: 20000, hint: high('Storm Tower'), face: 'cool', hat: 'l_crown', cape: 'shader' }),
@@ -498,19 +736,19 @@ export const LEGENDS = [
   L('l_waterfall1', 'Rainbow Dragon', 11, 0x14082a, 0x1a6ac0, 0xffffff, { relic: 'waterfall:1', price: 20000, hint: high('Waterfall'), face: 'cool', gear: ['wings_dragon_sky', 'horns_sky'], trail: 0xff70c0 }),
   L('l_summit', 'Summit King', 4, 0xffd24a, 0xb8860b, 0xfff4b0, { ach: 'summit', hint: 'Reach the top of any map on Hardcore.', face: 'cool', hat: 'l_crown', cape: 'shader' }),
   L('l_flawless', 'Flawless', 3, 0x101840, 0x20a0ff, 0xffffff, { ach: 'flawless', hint: 'Reach the top of any map on Hardcore without a single fall.', face: 'cool', hat: 'halo', gear: ['wings_energy'] }),
-  L('l_hunter', 'Relic Hunter', 14, 0x3a2a10, 0x806020, 0xffc040, { ach: 'hunter', hint: 'Find all twelve hidden relics.', face: 'hollow', hat: 'l_crown', gear: ['orbs_gold'], trail: 0xffc040 }),
-  // For sale, for a fortune.
-  L('l_seraph', 'Celestial Seraph', 4, 0xfff4dc, 0xc8a050, 0xffffff, { price: 30000, face: 'cool', hat: 'halo', gear: ['wings_angel'], trail: 0xfff0b0 }),
-  L('l_synth', 'Neon Drive', 13, 0x0a0018, 0x48005a, 0xff40d0, { price: 25000, face: 'visor', hat: 'phones', gear: ['ring_synth'] }),
-  L('l_cyber', 'Cyber Shogun', 10, 0x03070d, 0x1a6080, 0x30f0ff, { price: 30000, face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
-  L('l_aurora', 'Aurora Empress', 6, 0x040a1e, 0x20e8a0, 0xb070ff, { price: 35000, face: 'cute', gear: ['wings_energy', 'crown_ice'], trail: 0x40ffc0 }),
-  L('l_frost', 'Frost Wraith', 8, 0x0a2040, 0x58c0ff, 0xe8ffff, { price: 35000, face: 'hollow', gear: ['wings_ice', 'crown_ice'], trail: 0x9ff0ff }),
-  L('l_reaper', 'Soul Reaper', 12, 0x05080a, 0x1c3038, 0x70ffc0, { price: 40000, face: 'hollow', gear: ['hood', 'scythe_back'], cape: 'shader' }),
-  L('l_infernal', 'Infernal Overlord', 7, 0x1a0606, 0xff4a10, 0xffd050, { price: 45000, face: 'angry', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff6a10 }),
-  L('l_diamond', 'Diamond Sovereign', 8, 0x70b0f0, 0xe8f6ff, 0xffffff, { price: 45000, face: 'cool', hat: 'crown', gear: ['ring_diamond'], trail: 0xc0f0ff }),
-  L('l_voidking', 'Void Emperor', 9, 0x040108, 0x5a1ab0, 0xe8b0ff, { price: 50000, face: 'hollow', gear: ['crown_void', 'orbs_void', 'wings_void'], cape: 'shader', trail: 0xa040ff }),
-  L('l_prism', 'Prismatic', 14, 0x14141c, 0x8080a0, 0xffffff, { price: 55000, face: 'cool', gear: ['ring_prism', 'wings_energy'], trail: 0xff70e0 }),
-  L('l_dragonlord', 'Dragon Emperor', 11, 0x2a0604, 0xa0200c, 0xffc040, { price: 60000, face: 'angry', hat: 'l_crown', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff8a20 }),
+  L('l_hunter', 'Relic Hunter', 14, 0x3a2a10, 0x806020, 0xffc040, { ach: 'hunter', hint: 'Find all twelve relics on the hidden paths.', face: 'hollow', hat: 'l_crown', gear: ['orbs_gold'], trail: 0xffc040 }),
+  // For sale, for a fortune, once their relic is found in a maze garden.
+  L('l_seraph', 'Celestial Seraph', 4, 0xfff4dc, 0xc8a050, 0xffffff, { relic: 'sunny:m0', hint: maze('Sunny Isles', 380), price: 30000, face: 'cool', hat: 'halo', gear: ['wings_angel'], trail: 0xfff0b0 }),
+  L('l_synth', 'Neon Drive', 13, 0x0a0018, 0x48005a, 0xff40d0, { relic: 'storm:m0', hint: maze('Storm Tower', 380), price: 25000, face: 'visor', hat: 'phones', gear: ['ring_synth'] }),
+  L('l_cyber', 'Cyber Shogun', 10, 0x03070d, 0x1a6080, 0x30f0ff, { relic: 'city:m0', hint: maze('Neon Skyline', 380), price: 30000, face: 'visor', hat: 'samurai', gear: ['katana_back'] }),
+  L('l_aurora', 'Aurora Empress', 6, 0x040a1e, 0x20e8a0, 0xb070ff, { relic: 'waterfall:m1', hint: maze('Waterfall', 715), price: 35000, face: 'cute', gear: ['wings_energy', 'crown_ice'], trail: 0x40ffc0 }),
+  L('l_frost', 'Frost Wraith', 8, 0x0a2040, 0x58c0ff, 0xe8ffff, { relic: 'waterfall:m0', hint: maze('Waterfall', 375), price: 35000, face: 'hollow', gear: ['wings_ice', 'crown_ice'], trail: 0x9ff0ff }),
+  L('l_reaper', 'Soul Reaper', 12, 0x05080a, 0x1c3038, 0x70ffc0, { relic: 'forest:m0', hint: maze('Wild Forest', 590), price: 40000, face: 'hollow', gear: ['hood', 'scythe_back'], cape: 'shader' }),
+  L('l_infernal', 'Infernal Overlord', 7, 0x1a0606, 0xff4a10, 0xffd050, { relic: 'volcano:m0', hint: maze('Magma Chimney', 380), price: 45000, face: 'angry', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff6a10 }),
+  L('l_diamond', 'Diamond Sovereign', 8, 0x70b0f0, 0xe8f6ff, 0xffffff, { relic: 'sunny:m1', hint: maze('Sunny Isles', 710), price: 45000, face: 'cool', hat: 'crown', gear: ['ring_diamond'], trail: 0xc0f0ff }),
+  L('l_voidking', 'Void Emperor', 9, 0x040108, 0x5a1ab0, 0xe8b0ff, { relic: 'storm:m1', hint: maze('Storm Tower', 710), price: 50000, face: 'hollow', gear: ['crown_void', 'orbs_void', 'wings_void'], cape: 'shader', trail: 0xa040ff }),
+  L('l_prism', 'Prismatic', 14, 0x14141c, 0x8080a0, 0xffffff, { relic: 'city:m1', hint: maze('Neon Skyline', 645), price: 55000, face: 'cool', gear: ['ring_prism', 'wings_energy'], trail: 0xff70e0 }),
+  L('l_dragonlord', 'Dragon Emperor', 11, 0x2a0604, 0xa0200c, 0xffc040, { relic: 'volcano:m1', hint: maze('Magma Chimney', 705), price: 60000, face: 'angry', hat: 'l_crown', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff8a20 }),
 ];
 
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
@@ -708,4 +946,26 @@ export const itemKey = (it) => ((it.kind === 'face' || it.kind === 'hat') && Obj
 export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none', w: known(WEAPON, l.w) ? l.w : FREE_WEAPON } : null);
 // The flags someone can have. A name means nothing: only the server says who has which (server/lib/rooms.js).
 export const ROLE_TAGS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MOD' };
-export const cleanRole = (r) => (typeof r === 'string' && Object.hasOwn(ROLE_TAGS, r) ? r : '');
+// Roles can be made on the server (Friend, VIP, Family, or anything): it says each one's tag and colour (live.js).
+const ROLE_KEY = /^[a-z][a-z0-9_]{1,15}$/;
+const BUILT_IN = { owner: '#ff3b5c', admin: '#e8690c', mod: '#2f7bff' };
+let roleTable = {};
+export function setRoleTable(t) {
+  const out = {};
+  if (t && typeof t === 'object') {
+    for (const [k, v] of Object.entries(t)) {
+      if (!ROLE_KEY.test(k) || !v || typeof v !== 'object') continue;
+      const tag = String(v.tag || k).replace(/[^\p{L}\p{N} _.!?&+#*]/gu, '').trim().toUpperCase().slice(0, 12);
+      out[k] = { tag: tag || k.toUpperCase(), color: /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : '#6a7a99' };
+    }
+  }
+  roleTable = out;
+}
+export const cleanRole = (r) => (typeof r === 'string' && ROLE_KEY.test(r) ? r : '');
+export const roleKeys = () => (Object.keys(roleTable).length ? Object.keys(roleTable) : Object.keys(ROLE_TAGS));
+// What a flag says and its colour, or null for none.
+export function roleInfo(r) {
+  const k = cleanRole(r);
+  if (!k) return null;
+  return roleTable[k] || (ROLE_TAGS[k] ? { tag: ROLE_TAGS[k], color: BUILT_IN[k] } : { tag: k.toUpperCase().slice(0, 12), color: '#6a7a99' });
+}

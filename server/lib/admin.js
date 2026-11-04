@@ -126,6 +126,7 @@ class Admin {
       sameDevice: q(`SELECT DISTINCT u.id, u.num, u.name, u.game_name FROM user_devices a JOIN user_devices x ON x.device = a.device AND x.user_id != a.user_id JOIN users u ON u.id = x.user_id WHERE a.user_id = ? LIMIT ?`),
       usersOnIp: q(`SELECT u.id, u.num, u.name, u.game_name, x.last FROM user_ips x JOIN users u ON u.id = x.user_id WHERE x.ip = ? ORDER BY x.last DESC LIMIT ?`),
       identities: q('SELECT provider, subject FROM identities WHERE user_id = ?'),
+      byIdentity: q('SELECT user_id FROM identities WHERE provider = ? AND subject = ?'),
       trust: q('UPDATE users SET trusted = ? WHERE id = ?'),
       rename: q('UPDATE users SET name = ?, game_name = ? WHERE id = ?'),
       endSessions: q('DELETE FROM sessions WHERE user_id = ?'),
@@ -245,6 +246,8 @@ class Admin {
     return this.q.search.all(l, l, t, num ? +num[1] : -1, n);
   }
   info(id) { return this.q.full.get(id) || null; }
+  // The player behind a sign in, like a Discord account.
+  byIdentity(provider, subject) { const r = this.q.byIdentity.get(String(provider), String(subject)); return r ? r.user_id : null; }
   // The flag someone has in the game. Only the bot changes it, and nothing a phone sends can.
   setRole(id, role) { this.q.setRole.run(role, id); }
   withRoles() { return this.q.withRoles.all(); }

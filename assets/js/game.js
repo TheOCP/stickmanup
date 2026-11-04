@@ -4,7 +4,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn } from './level.js';
+import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn, applyMaze } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -16,6 +16,8 @@ import { myLook } from './profile.js';
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
+// What a maze garden's creature does to you, by map.
+const MAZE_BITE = { storm: 'A storm crab pinched you!', sunny: 'A scorpion stung you!', forest: 'A wild boar charged you!', volcano: 'A fire imp burned you!', city: 'A robot dog bit you!', waterfall: 'A crocodile snapped at you!' };
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
 // Seconds of aiming before a shot can leave: an accidental tap or click fires nothing.
 const AIM_READY = 0.13;
@@ -101,6 +103,9 @@ export class Game {
     app.view.resetDoors();
     this.doors = new Set(g.doors || []);
     for (const i of this.doors) this.openDoor(i, true);
+    // The maze gardens: which way their walls stand. It changes each time the team goes back to a checkpoint.
+    this.mazeSeen = false;
+    this.setMaze(g.mz);
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
@@ -128,8 +133,7 @@ export class Game {
     app.ui.coins(this.run.coins);
     // Without the cord, climbers pass through each other (no bumping anyone off a ledge).
     this.env = { world: this.W, others: this.noCord ? [] : this.others, grip: this.D.grip, coyote: this.D.coyote, maxReel: this.rope - 1.2, wind: null, zips: this.L.zips || [] };
-    const th = Math.atan2(this.me.z, this.me.x);
-    this.cam = { yaw: Math.PI - th, pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
+    this.cam = { yaw: this.startYaw(this.me.x, this.me.z, this.cp), pitch: 0.34, d: 7, x: this.me.x, y: this.me.y + 0.7, z: this.me.z };
 
     // The moving parts start from this moment, so a rerun of this climb starts from exactly the same place.
     this.W.setTime(this.simT);
@@ -143,6 +147,7 @@ export class Game {
     session.on('S', (m) => {
       if (m.f !== undefined) this.falls = m.f;
       if (m.cp !== undefined && m.cp !== this.cp) { if (this.rec) this.rec.act('m', m.cp); this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
+      if (m.mz !== undefined && m.mz !== this.mz) this.onEvent({ k: 'maze', v: m.mz });
       if (m.jp) this.jumpNet(m.jp);
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
@@ -153,7 +158,7 @@ export class Game {
     this.syncRoster();
     app.view.setCheckpoints(this.cpl, this.cp);
     // From here on the climb is written down, starting with everything it started from.
-    this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t: this.simT, cp: this.cp, falls: this.falls, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
+    this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t: this.simT, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
   }
 
   get time() {
@@ -168,12 +173,21 @@ export class Game {
     return [cp.x + Math.cos(a) * 0.64, cp.y + PR + 0.4, cp.z + Math.sin(a) * 0.64];
   }
 
+  // Which way the camera looks on (re)starting at checkpoint i: at the start, at the first piece of the way up (the UP HERE
+  // sign is off to the side of it);
+  // anywhere else, round the middle.
+  startYaw(x, z, i) {
+    const S = this.L.startSign;
+    if (!i && S && Math.hypot(x - S.x, z - S.z) < 12) { const dx = S.tx - x, dz = S.tz - z; return Math.atan2(-dx, -dz); }
+    return Math.PI - Math.atan2(z, x);
+  }
+
   snapshot(slot) {
     const m = this.me, stuns = [];
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
     // A player joining a game without the cord starts with the host's checkpoint (they appear next to the host).
     if (this.noCord && this.pcp[slot] === undefined) this.pcp[slot] = this.cp;
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t0: this.t0, base: this.base, cp: this.noCord ? this.pcp[slot] : this.cp, falls: this.falls, doors: [...this.doors], stuns,
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t0: this.t0, base: this.base, cp: this.noCord ? this.pcp[slot] : this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns,
       pos: { [slot]: [m.x + 0.6, m.y + 1.2, m.z] } };
   }
 
@@ -291,7 +305,7 @@ export class Game {
       this.sendAcc = 0;
       const m = this.me, st = [r3(m.x), r3(m.y), r3(m.z), r3(m.vx), r3(m.vy), r3(m.vz), r3(this.robots.get(this.slot).yaw), m.flags, r3(m.reel), r3(m.charge), r3(this.aimElev)];
       if (this.s.isHost) {
-        const ex = this.noCord ? { f: this.falls } : { f: this.falls, cp: this.cp }, jp = this.jumpPack();
+        const ex = this.noCord ? { f: this.falls, mz: this.mz } : { f: this.falls, cp: this.cp, mz: this.mz }, jp = this.jumpPack();
         if (jp.length) ex.jp = jp;
         this.s.hostState(T, st, ex);
       }
@@ -376,7 +390,7 @@ export class Game {
     this.pickups();
   }
 
-  // Coins are each climber's own, and stay gone after a fall. Relics only exist on Hardcore.
+  // Coins are each climber's own, and stay gone after a fall. Relics are there whenever the hidden paths are (pathOn).
   pickups() {
     const me = this.me, b = Math.floor(me.y / 8);
     if (me.grounded) { const h = Math.min(1000, Math.round(me.y - PR - 2)); if (h > this.run.h) this.run.h = h; }
@@ -394,7 +408,8 @@ export class Game {
     for (const r of this.L.relics) {
       if (hasRelic(r.id) || !pathOn(r.kind, this.diff, this.custom)) continue;
       const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
-      if (d < 1.9) this.takeRelic(r);
+      // In a maze garden it has to be from its own cell, not through the wall next to it.
+      if (d < (r.maze !== undefined ? 1.35 : 1.9)) this.takeRelic(r);
       else if (d < 25 && !this.relicNear.has(r.id)) {
         this.relicNear.add(r.id);
         this.app.sound.relicHum();
@@ -446,13 +461,13 @@ export class Game {
       if (me.knock(nx * 9 * k, 6.5 * k, nz * 9 * k, 0.6)) {
         this.app.sound.bonk();
         this.app.ui.haptic('heavy');
-        this.app.ui.toast(src === 'bat' ? 'Bat attack!' : 'Monster hit you!', 'bad');
+        this.app.ui.toast(src === 'bat' ? 'Bat attack!' : src === 'maze' ? MAZE_BITE[L.mapKey] || 'Monster hit you!' : 'Monster hit you!', 'bad');
       }
     };
     for (const m of L.monsters) {
       if (Math.abs(m.y - me.y) > 3 || Math.abs(m.ax - me.x) + Math.abs(m.az - me.z) > 14) continue;
       const p = this.storm.monsterPos(m, t, tmpP);
-      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, 'monster');
+      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, m.mz !== undefined ? 'maze' : 'monster');
     }
     for (const b of L.bats) {
       if (!this.storm.on(b) || Math.abs(b.cy - me.y) > 3 || Math.abs(b.cx - me.x) + Math.abs(b.cz - me.z) > 12) continue;
@@ -988,6 +1003,10 @@ export class Game {
     if (!this.winSent && me.grounded && me.y > L.top - 0.5 && Math.hypot(me.x, me.z) < L.summit.r) { this.winSent = true; this.s.toHost({ k: 'win' }); }
     const g = me.grounded && me.ground;
     if (g && g.crumble && g.crumble.st === 0) { this.crumble(g.crumble.i); this.s.toHost({ k: 'crumble', i: g.crumble.i }); }
+    if (g && g.kind === 'mfloor') {
+      this.mazeT = me.time;
+      if (!this.mazeSeen) { this.mazeSeen = true; this.app.ui.toast('A maze! It changes every time you go back to a checkpoint', ''); }
+    }
     const z = zoneAt(L, me.y);
     if (z > this.maxZone) {
       if (this.maxZone >= 0 || z === 0) this.app.sound.zone();
@@ -1012,10 +1031,13 @@ export class Game {
         this.locks[key] = T + 1.5;
         if (e.k === 'splash') this.falls++;
         if (this.cpl === 2 && one === null) this.cp = 0;
+        // The whole team back at the checkpoint: the maze gardens change, so the way through has to be found again.
+        // (Without the cord one climber going back leaves them alone: the others may be inside one.)
+        if (one === null) this.mz++;
         // Without the cord, the one who fell goes back to their own checkpoint.
         const cp = one === null ? this.cp : this.pcp[one] || 0, pos = {}, at = this.cpl === 2 ? 0 : cp;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
-        this.s.toAll({ k: 'respawn', cp, at, pos, falls: this.falls, why: e.k, only: one });
+        this.s.toAll({ k: 'respawn', cp, at, pos, falls: this.falls, mz: this.mz, why: e.k, only: one });
         break;
       }
       case 'cp':
@@ -1039,10 +1061,11 @@ export class Game {
   onEvent(e) {
     const ui = this.app.ui;
     // With others, these come from elsewhere, so the rerun can't work them out and they get written down.
-    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff')) this.rec.act('e', e);
+    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff' || e.k === 'maze')) this.rec.act('e', e);
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
+        if (e.mz !== undefined && e.mz !== this.mz) this.setMaze(e.mz);
         if (e.only !== null && e.only !== undefined && e.only !== this.slot) {
           // Someone else went back (no cord). Forget their old track so they don't glide across the map.
           const pl = this.s.players.get(e.only);
@@ -1058,8 +1081,7 @@ export class Game {
         this.cpSent.clear();
         for (const l of this.links) l.chain.ok = false;
         if (e.only === null || e.only === undefined) for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
-        const th = Math.atan2(p[2], p[0]);
-        Object.assign(this.cam, { yaw: Math.PI - th, x: p[0], y: p[1] + 0.7, z: p[2] });
+        Object.assign(this.cam, { yaw: this.startYaw(p[0], p[2], e.at ?? e.cp), x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.cpl, this.cp);
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
         ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
@@ -1080,6 +1102,7 @@ export class Game {
         ui.haptic('tick');
         break;
       case 'sling': if (e.to === this.slot) this.me.fling(e.v[0], e.v[1], e.v[2]); break;
+      case 'maze': if (e.v !== this.mz) this.setMaze(e.v); break;
       case 'crumble': this.crumble(e.i); break;
       case 'door': if (!this.doors.has(e.i)) this.openDoor(e.i); break;
       case 'stun': this.storm.stun.set(e.m, { from: e.from, until: e.until }); this.app.sound.stun(); break;
@@ -1108,12 +1131,20 @@ export class Game {
     }
   }
 
+  // Stand the maze walls the way variant v has them (level.js applyMaze), here and on screen.
+  setMaze(v) {
+    this.mz = Math.max(0, Math.floor(+v) || 0);
+    if (!this.L.mazes || !this.L.mazes.length) return;
+    applyMaze(this.L, this.mz);
+    this.app.view.setMaze(this.mz);
+  }
+
   save() {
     // Halfway through a physics step the climber isn't anywhere yet. It happens when the step is done.
     if (this.stepping) { this.saveLater = true; return; }
     const m = this.me, rs = this.rec ? this.rec.save() : undefined;
     cloud.climbSaved();
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run });
   }
 
   finish(e) {
@@ -1265,6 +1296,7 @@ export class Game {
     if (app.ui.scope) app.ui.scope(sk > 0.7, this.aimHot, this.aimDist);
     app.ui.tags(this);
     app.ui.tips(this);
+    if (app.ui.nav) app.ui.nav(this);
   }
 
   // Camera assist: while you run and leave the camera alone, it swings round behind you. Aim assist:
@@ -1275,6 +1307,9 @@ export class Game {
     const F = S.camFollow ?? 1;
     // Bouncing between walls the speed flips side to side every moment: the camera stays still until you are out.
     const bouncing = me.kickT !== undefined && me.time - me.kickT < 0.9;
+    // In a maze garden it looks down from higher up, so the walls don't hide the way.
+    const maze = this.mazeT !== undefined && me.time - this.mazeT < 1.2, pitchTo = maze ? 0.82 : 0.32;
+    if (maze && F > 0.01 && !this.aiming && c.pitch < pitchTo - 0.05 && T - (this.camTouched || -9) > 1.5) c.pitch += (pitchTo - c.pitch) * Math.min(1, dt * 1.4);
     if (F > 0.01 && !this.aiming && !me.hook && !bouncing && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
       const sp = Math.hypot(me.vx, me.vz);
       if (sp > 1.5) {
@@ -1284,7 +1319,7 @@ export class Game {
         e *= Math.min(1, 0.35 + F * 0.65);
         // Running straight at the camera: leave it, so it never whips round.
         if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
-        c.pitch += (0.32 - c.pitch) * Math.min(1, dt * 0.8 * F);
+        c.pitch += (pitchTo - c.pitch) * Math.min(1, dt * 0.8 * F);
       }
     }
     const A = S.aimHelp ?? 0.5;

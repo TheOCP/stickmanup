@@ -271,7 +271,8 @@ export class Body {
   }
 
   tryGrab(inp) {
-    if (inp.grab && !this.anchored && !this.gripLock && !this.noGrab && this.stun <= 0 && this.contact && this.time - this.contactT < 0.12) this.anchor();
+    // Slick walls (the maze gardens) give nothing to hold on to.
+    if (inp.grab && !this.anchored && !this.gripLock && !this.noGrab && this.stun <= 0 && this.contact && !this.contact.slick && this.time - this.contactT < 0.12) this.anchor();
   }
 
   // A wall was touched a moment ago, and it isn't the one the last wall jump left from (facing the same way):
@@ -387,8 +388,8 @@ export class Body {
       this.ground = c;
     }
     if (c) { this.contact = c; this.contactT = this.time; this.contactWall = ny < 0.6; }
-    // Nearly upright surface: good to slide down or jump off. Other climbers don't count.
-    if (c && Math.abs(ny) < 0.35) {
+    // Nearly upright surface: good to slide down or jump off. Other climbers don't count, and nor do slick walls.
+    if (c && !c.slick && Math.abs(ny) < 0.35) {
       const h = Math.hypot(nx, nz);
       if (h > 1e-3) { this.wallT = this.time; this.wallNx = nx / h; this.wallNz = nz / h; }
     }

@@ -200,6 +200,47 @@ class Wallet {
       return true;
     });
   }
+  // ---------------------------------------------------------------- relics, given by hand
+  // Every relic there is, as [id, name]: storm:0 and storm:1 are the hidden paths, storm:e the epic vault, storm:w the
+  // legendary weapon, storm:m0 and m1 the maze gardens.
+  relicList() { return catalog.maps.flatMap((m) => m.relics.map((r) => [r, this.relicName(r)])); }
+  relicName(id) {
+    const [map, k] = String(id).split(':'), M = map ? map[0].toUpperCase() + map.slice(1) : '';
+    const what = { 0: 'hidden path 1', 1: 'hidden path 2', e: 'epic vault', w: 'legendary weapon', m0: 'maze garden 1', m1: 'maze garden 2' }[k];
+    return what ? `${M} ${what}` : String(id);
+  }
+  // One relic, all of a map's (its name), or all of them.
+  findRelics(text) {
+    const t = String(text || '').trim().toLowerCase().replace(/[\s_]+/g, ':'), all = this.relicList().map((x) => x[0]);
+    if (t === 'all') return { list: all };
+    const m = catalog.maps.find((x) => x.key === t);
+    if (m) return { list: m.relics.slice() };
+    if (all.includes(t)) return { list: [t] };
+    return { err: `There is no relic called "${String(text).slice(0, 30)}". They look like storm:0, storm:e, storm:w or forest:m0, or give a map name or all.` };
+  }
+  giveRelics(id, list, why) {
+    return this.tx(() => {
+      const w = this.load(id), got = list.filter((r) => !w.relics.includes(r));
+      if (!got.length) return got;
+      w.relics.push(...got);
+      const suits = catalog.suitRelics || [];
+      if (suits.length && suits.every((x) => w.relics.includes(x)) && !w.ach.includes('hunter')) w.ach.push('hunter');
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), 0, String('relics given ' + got.join(' ') + ': ' + why).slice(0, 200));
+      return got;
+    });
+  }
+  takeRelics(id, list, why) {
+    return this.tx(() => {
+      const w = this.load(id), gone = list.filter((r) => w.relics.includes(r));
+      if (!gone.length) return gone;
+      w.relics = w.relics.filter((r) => !gone.includes(r));
+      this.store(id, w);
+      this.q.log.run(id, Date.now(), 0, String('relics taken ' + gone.join(' ') + ': ' + why).slice(0, 200));
+      return gone;
+    });
+  }
+
   // Coins for everyone at once, an event say. Answers how many got them.
   giveAll(delta, why) {
     let n = 0;
@@ -299,11 +340,9 @@ class Wallet {
       for (const i of out.accepted) taken.add(i);
       if (allow) payDay(allow * D.coin, 'coins');
 
-      // Relics: only the ones that exist on this map, never with custom rules. The epic vaults on every difficulty, the rest on
-      // real Hardcore or Insane.
+      // Relics: only the ones that exist on this map, never with custom rules, on every difficulty (since 1.6.6).
       if (!r.custom) {
-        const open = M.open || [];
-        for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x) && (r.diff >= 2 || open.includes(x)))) {
+        for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x))) {
           out.relics.push(relic);
           if (!w.relics.includes(relic)) w.relics.push(relic);
         }

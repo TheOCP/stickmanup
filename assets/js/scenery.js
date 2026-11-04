@@ -70,6 +70,62 @@ const cone = (r, h, s = 8) => new THREE.ConeGeometry(r, h, s);
 const ico = (r, d = 0) => new THREE.IcosahedronGeometry(r, d);
 const box = (x, y, z) => new THREE.BoxGeometry(x, y, z);
 
+
+// Foliage: leaves as small double sided diamonds whose normals point out from the middle of the clump, so a clump
+// is lit like one soft rounded crown, not as flat facets. Built once per model from a fixed seed.
+function leafGeo(list) {
+  const pos = [], nor = [];
+  for (const { c, t, b, n, s, w } of list) {
+    const B = c.clone().addScaledVector(t, -s * 0.45), T = c.clone().addScaledVector(t, s * 0.55), Lf = c.clone().addScaledVector(b, w), Rt = c.clone().addScaledVector(b, -w);
+    // Front side: wound so its face looks along n; the back the other way round, lit the same.
+    let tri = [[B, Lf, T], [B, T, Rt]];
+    const e1 = Lf.clone().sub(B), e2 = T.clone().sub(B);
+    if (e1.cross(e2).dot(n) < 0) tri = [[B, T, Lf], [B, Rt, T]];
+    for (const [p, q, r] of [...tri, ...tri.map(([p, q, r]) => [p, r, q])]) for (const v of [p, q, r]) { pos.push(v.x, v.y, v.z); nor.push(n.x, n.y, n.z); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return g;
+}
+// A round clump of leaves about 1 m across (squashed a little), in three shades over a dark inner fill.
+function clump(seed, n, cols, inner, flat = 0.72) {
+  const R = rng(seed), lists = cols.map(() => []), V = (x, y, z) => new THREE.Vector3(x, y, z);
+  for (let i = 0; i < n; i++) {
+    // More leaves on top and round the sides than underneath.
+    const y = Math.min(1, Math.max(-0.75, R() * 2 - 0.62)), a = R() * TAU, h = Math.sqrt(1 - y * y);
+    const d = V(Math.cos(a) * h, y, Math.sin(a) * h), rr = 0.82 + R() * 0.3;
+    const c = V(d.x * rr, d.y * rr * flat, d.z * rr), n0 = V(d.x + (R() - 0.5) * 0.5, d.y * 1.3 + 0.25, d.z + (R() - 0.5) * 0.5).normalize();
+    // The leaf lies across the surface, at a random turn, tilted a little.
+    const up = Math.abs(n0.y) > 0.9 ? V(1, 0, 0) : V(0, 1, 0), t0 = up.clone().cross(n0).normalize(), b0 = n0.clone().cross(t0);
+    const k = R() * TAU, t = t0.clone().multiplyScalar(Math.cos(k)).addScaledVector(b0, Math.sin(k)).addScaledVector(n0, (R() - 0.5) * 0.7).normalize();
+    const b = n0.clone().cross(t).normalize(), s = 0.46 + R() * 0.2;
+    lists[i % cols.length].push({ c, t, b, n: n0, s, w: s * (0.26 + R() * 0.08) });
+  }
+  return [P(ico(0.86, 1), M(0, 0, 0, 1, flat, 1), inner), ...lists.map((l, i) => P(leafGeo(l), M(0, 0, 0), cols[i]))];
+}
+// Ivy climbing a wall that faces +z: a wandering vine about 3 m tall with leaves lying nearly flat on the wall.
+function ivy(seed, cols, stem) {
+  const R = rng(seed), V = (x, y, z) => new THREE.Vector3(x, y, z), parts = [], lists = cols.map(() => []);
+  let x = 0;
+  for (let y = 0; y < 3; y += 0.5) {
+    const nx = Math.max(-0.25, Math.min(0.25, x + (R() - 0.5) * 0.3));
+    parts.push(P(cyl(0.022, 0.026, 0.52, 4), M((x + nx) / 2, y + 0.25, 0.03, 1, 1, 1, 0, 0, Math.atan2(x - nx, 0.5)), stem));
+    x = nx;
+  }
+  for (let i = 0; i < 26; i++) {
+    const y = R() * 3, side = R() < 0.5 ? -1 : 1, s = 0.2 + R() * 0.12;
+    const c = V(Math.sin(y * 2.1 + seed) * 0.18 + side * (0.06 + R() * 0.16), y, 0.06 + R() * 0.08);
+    const n = V((R() - 0.5) * 0.4, 0.3 + R() * 0.3, 1).normalize(), t = V(side * 0.5, -0.55 - R() * 0.4, 0.2).normalize(), b = n.clone().cross(t).normalize();
+    lists[i % cols.length].push({ c, t, b, n, s, w: s * 0.42 });
+  }
+  return [...parts, ...lists.map((l, i) => P(leafGeo(l), M(0, 0, 0), cols[i]))];
+}
+// Shelf fungi on a wall facing +z: half discs stacked off the bark.
+const bracket = (cols) => [[0, 0, 0.34], [0.2, 0.32, 0.26], [-0.16, 0.56, 0.2], [0.1, -0.3, 0.22]].flatMap(([x, y, r], i) => [
+  P(new THREE.CylinderGeometry(r, r * 0.92, 0.07, 12, 1, false, -Math.PI / 2, Math.PI), M(x, y, -0.02, 1, 1, 1, -0.08), cols[i % 2]),
+  P(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 0.02, 12, 1, false, -Math.PI / 2, Math.PI), M(x, y + 0.045, -0.02, 1, 1, 1, -0.08), cols[2])]);
+
 // ---------------------------------------------------------------- plants and props (about 1 unit = 1 m)
 const MODELS = {
   pine: () => [P(cyl(0.12, 0.2, 1.4), M(0, 0.7, 0), 0x5a3e28), P(cone(1.0, 1.7, 9), M(0, 1.7, 0), 0x24603a), P(cone(0.8, 1.5, 9), M(0, 2.4, 0, 1, 1, 1, 0, 0.4), 0x2c6e40), P(cone(0.55, 1.2, 9), M(0, 3.1, 0, 1, 1, 1, 0, 0.8), 0x347a46)],
@@ -141,6 +197,60 @@ const MODELS = {
   umbrella: () => [P(cyl(0.03, 0.03, 2.0, 6), M(0, 1.0, 0, 1, 1, 1, 0.08, 0, 0), 0xeeeeee), P(cone(1.0, 0.45, 10), M(0, 2.05, 0.08), 0xff5a4a), P(cone(1.02, 0.12, 10), M(0, 1.84, 0.08), 0xffffff)],
   rocks: () => [P(new THREE.DodecahedronGeometry(0.35, 0), M(0, 0.2, 0, 1, 0.7, 1), 0x8a8478), P(new THREE.DodecahedronGeometry(0.25, 0), M(0.35, 0.12, 0.15), 0x7a746a), P(new THREE.DodecahedronGeometry(0.2, 0), M(-0.25, 0.1, -0.2), 0x9a9488)],
   planter: () => [P(box(1.0, 0.4, 0.5), M(0, 0.2, 0), 0x6a6e76), P(ico(0.32, 1), M(-0.25, 0.55, 0), 0x3f8a36), P(ico(0.3, 1), M(0.22, 0.52, 0.05), 0x4a9a3e), P(ico(0.08, 0), M(0.05, 0.7, 0.15), 0xff5a8a)],
+  // The maze gardens (mazeview.js): pond things, the tops of the posts between the walls, and the creatures that prowl
+  // the corridors. Creatures face +z with their feet at 0.
+  lilypad: () => [P(cyl(0.26, 0.26, 0.02, 10), M(0, 0.01, 0), 0x3a9a3a), P(cyl(0.2, 0.2, 0.025, 10), M(0.05, 0.012, 0.02), 0x4ab04a)],
+  lotus: () => [P(cyl(0.24, 0.24, 0.02, 10), M(0, 0.01, 0), 0x3a9a3a), ...[0, 1, 2, 3, 4].map((k) => P(cone(0.05, 0.16, 4), M(Math.cos(k * 1.26) * 0.05, 0.08, Math.sin(k * 1.26) * 0.05, 1, 1, 1, Math.sin(k * 1.26) * 0.5, 0, -Math.cos(k * 1.26) * 0.5), 0xffb0d8)), P(ico(0.035, 0), M(0, 0.07, 0), 0xffe066, 0xffe066, 0.6)],
+  topiary: () => [P(ico(0.3, 1), M(0, 0.24, 0), 0x3a8a32), P(ico(0.16, 1), M(0, 0.6, 0), 0x4a9a3e)],
+  urn: () => [P(cyl(0.16, 0.22, 0.08, 10), M(0, 0.04, 0), 0xe8d4a8), P(cyl(0.2, 0.1, 0.3, 10), M(0, 0.23, 0), 0xc87a4a), P(cyl(0.13, 0.2, 0.06, 10), M(0, 0.41, 0), 0xc87a4a), P(ico(0.14, 0), M(0, 0.5, 0), 0x4a9a3e), P(ico(0.05, 0), M(0.06, 0.6, 0.04), 0xff5a8a)],
+  pylon: () => [P(cyl(0.2, 0.22, 0.1, 8), M(0, 0.05, 0), 0x3a4250), P(cyl(0.05, 0.05, 0.3, 6), M(0, 0.25, 0), 0x5a6270), P(new THREE.OctahedronGeometry(0.11, 0), M(0, 0.48, 0), 0x7ff8ff, 0x7ff8ff, 2.4)],
+  brazier: () => [P(cyl(0.22, 0.14, 0.18, 8), M(0, 0.09, 0), 0x2a2220), P(cone(0.13, 0.32, 6), M(0, 0.32, 0), 0xffa030, 0xff6a10, 2.6), P(cone(0.07, 0.22, 5), M(0.05, 0.42, 0.02), 0xffe070, 0xffd040, 3)],
+  neonpost: () => [P(cyl(0.19, 0.19, 0.06, 12), M(0, 0.03, 0), 0x2a2e38), P(new THREE.TorusGeometry(0.12, 0.025, 4, 16).rotateX(Math.PI / 2), M(0, 0.12, 0), 0xff40d0, 0xff40d0, 2.6), P(ico(0.06, 0), M(0, 0.22, 0), 0x40f0ff, 0x40f0ff, 2.6)],
+  mosscap: () => [P(cyl(0.22, 0.2, 0.08, 8), M(0, 0.04, 0), 0x6a7a6a), P(ico(0.14, 0), M(0.06, 0.12, 0), 0x3a8a3a), P(cyl(0.025, 0.03, 0.14, 5), M(-0.07, 0.13, 0.05), 0xe8f0e0), P(new THREE.SphereGeometry(0.08, 8, 4, 0, TAU, 0, Math.PI / 2), M(-0.07, 0.2, 0.05, 1, 0.6, 1), 0x3fd8c0, 0x3fe0c8, 1.2)],
+  shrine: () => [P(cyl(0.42, 0.5, 0.14, 12), M(0, 0.07, 0), 0x6a5e72), P(cyl(0.22, 0.3, 0.42, 10), M(0, 0.35, 0), 0x524860), P(cyl(0.34, 0.28, 0.1, 12), M(0, 0.61, 0), 0x6a5e72),
+    P(new THREE.TorusGeometry(0.31, 0.03, 4, 24).rotateX(Math.PI / 2), M(0, 0.67, 0), 0xffc040, 0xffa030, 2.4)],
+  boar: () => [P(ico(0.42, 1), M(0, 0.58, 0, 0.9, 0.8, 1.35), 0x5a3a26), P(ico(0.28, 1), M(0, 0.58, 0.55, 0.9, 0.85, 1.1), 0x4a2e1e), P(cyl(0.12, 0.14, 0.18, 8), M(0, 0.5, 0.84, 1, 1, 1, Math.PI / 2), 0xc88a7a),
+    P(cone(0.035, 0.24, 5), M(0.11, 0.52, 0.84, 1, 1, 1, -0.5, 0, -0.3), 0xf4ecd8), P(cone(0.035, 0.24, 5), M(-0.11, 0.52, 0.84, 1, 1, 1, -0.5, 0, 0.3), 0xf4ecd8),
+    P(ico(0.045, 0), M(0.13, 0.68, 0.74), 0xff3a2a, 0xff3a2a, 2.4), P(ico(0.045, 0), M(-0.13, 0.68, 0.74), 0xff3a2a, 0xff3a2a, 2.4),
+    P(cone(0.08, 0.18, 4), M(0.17, 0.85, 0.5, 1, 1, 1, 0, 0, -0.4), 0x3a2416), P(cone(0.08, 0.18, 4), M(-0.17, 0.85, 0.5, 1, 1, 1, 0, 0, 0.4), 0x3a2416),
+    P(box(0.1, 0.16, 0.8), M(0, 0.95, 0.02), 0x2a1a10), P(cyl(0.025, 0.02, 0.24, 4), M(0, 0.66, -0.62, 1, 1, 1, -0.6), 0x3a2416),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => P(cyl(0.07, 0.055, 0.42, 6), M(x * 0.2, 0.21, z * 0.32), 0x3a2416))],
+  scorpion: () => [P(ico(0.3, 1), M(0, 0.26, 0, 1, 0.45, 1.5), 0xc08a3a), P(ico(0.22, 1), M(0, 0.28, 0.42, 1.1, 0.5, 0.9), 0x8a5a22),
+    ...[1, -1].flatMap((s) => [P(cyl(0.04, 0.04, 0.4, 5), M(s * 0.22, 0.26, 0.58, 1, 1, 1, Math.PI / 2, 0, s * 0.5), 0x8a5a22), P(ico(0.11, 1), M(s * 0.32, 0.27, 0.8, 1.2, 0.6, 1.6), 0xb07a2e)]),
+    ...[[0.32, -0.42], [0.5, -0.6], [0.7, -0.6], [0.86, -0.46], [0.94, -0.28]].map(([y, z], k) => P(ico(0.1 - k * 0.008, 0), M(0, y, z), k % 2 ? 0x9a6a2a : 0xc08a3a)),
+    P(cone(0.05, 0.22, 5), M(0, 0.86, -0.14, 1, 1, 1, 2.3), 0xff3060, 0xff3060, 2.2),
+    P(ico(0.03, 0), M(0.06, 0.38, 0.55), 0xff4020, 0xff4020, 2.4), P(ico(0.03, 0), M(-0.06, 0.38, 0.55), 0xff4020, 0xff4020, 2.4),
+    ...[1, -1].flatMap((s) => [-0.2, 0, 0.2].map((z) => P(box(0.42, 0.03, 0.03), M(s * 0.3, 0.15, z, 1, 1, 1, 0, s * 0.2, s * 0.5), 0x7a4a1a)))],
+  stormcrab: () => [P(ico(0.45, 1), M(0, 0.48, 0, 1.35, 0.5, 1), 0x2a3a5a), P(box(0.9, 0.04, 0.04), M(0, 0.66, 0.28), 0x5af0ff, 0x5af0ff, 2.2), P(box(0.6, 0.04, 0.04), M(0, 0.7, 0), 0x5af0ff, 0x5af0ff, 1.6),
+    ...[1, -1].flatMap((s) => [P(cyl(0.06, 0.06, 0.4, 6), M(s * 0.45, 0.45, 0.3, 1, 1, 1, Math.PI / 2, 0, s * 0.6), 0x3a4a6a), P(ico(0.18, 1), M(s * 0.58, 0.48, 0.5, 1.2, 0.7, 1.5), 0x3a4a6a),
+      P(cyl(0.025, 0.025, 0.22, 4), M(s * 0.12, 0.72, 0.3), 0x22304a), P(ico(0.06, 0), M(s * 0.12, 0.85, 0.32), 0x7ff8ff, 0x7ff8ff, 2.6),
+      ...[-0.25, -0.02, 0.2].map((z) => P(box(0.55, 0.05, 0.05), M(s * 0.6, 0.27, z, 1, 1, 1, 0, s * 0.15, s * 0.6), 0x22304a))])],
+  imp: () => [P(ico(0.3, 1), M(0, 0.76, 0, 1, 1.1, 0.9), 0x8a1a10, 0xff4a10, 0.4), P(ico(0.24, 1), M(0, 1.16, 0.05), 0xa02414),
+    P(cone(0.06, 0.26, 5), M(0.12, 1.4, 0, 1, 1, 1, 0, 0, -0.4), 0x2a1a14), P(cone(0.06, 0.26, 5), M(-0.12, 1.4, 0, 1, 1, 1, 0, 0, 0.4), 0x2a1a14),
+    P(ico(0.045, 0), M(0.08, 1.2, 0.24), 0xffe040, 0xffe040, 3), P(ico(0.045, 0), M(-0.08, 1.2, 0.24), 0xffe040, 0xffe040, 3),
+    P(cone(0.13, 0.36, 6), M(0, 1.46, -0.06), 0xffa030, 0xff8a1a, 2.6), P(cone(0.07, 0.24, 5), M(0.04, 1.58, -0.04), 0xffe070, 0xffd040, 3),
+    P(cyl(0.05, 0.04, 0.42, 5), M(0.3, 0.8, 0.05, 1, 1, 1, 0, 0, -0.5), 0x8a1a10), P(cyl(0.05, 0.04, 0.42, 5), M(-0.3, 0.8, 0.05, 1, 1, 1, 0, 0, 0.5), 0x8a1a10),
+    P(cyl(0.07, 0.06, 0.46, 5), M(0.12, 0.25, 0), 0x6a120a), P(cyl(0.07, 0.06, 0.46, 5), M(-0.12, 0.25, 0), 0x6a120a),
+    P(box(0.42, 0.28, 0.02), M(0.3, 0.98, -0.18, 1, 1, 1, 0, 0.7, 0), 0x3a0a08), P(box(0.42, 0.28, 0.02), M(-0.3, 0.98, -0.18, 1, 1, 1, 0, -0.7, 0), 0x3a0a08),
+    P(cyl(0.025, 0.02, 0.5, 4), M(0, 0.55, -0.35, 1, 1, 1, -1.0), 0x6a120a), P(cone(0.06, 0.12, 4), M(0, 0.4, -0.58, 1, 1, 1, -2.2), 0xffa030, 0xff6a10, 2)],
+  robodog: () => [P(box(0.45, 0.34, 0.9), M(0, 0.58, 0), 0x3a3e4a), P(box(0.32, 0.28, 0.36), M(0, 0.82, 0.56), 0x4a4e5a), P(box(0.27, 0.07, 0.02), M(0, 0.85, 0.745), 0xff2a4a, 0xff2a4a, 3),
+    P(box(0.04, 0.2, 0.08), M(0.1, 1.04, 0.5), 0x2a2e38), P(box(0.04, 0.2, 0.08), M(-0.1, 1.04, 0.5), 0x2a2e38),
+    P(box(0.02, 0.04, 0.72), M(0.235, 0.62, 0), 0x30f0ff, 0x30f0ff, 2.2), P(box(0.02, 0.04, 0.72), M(-0.235, 0.62, 0), 0x30f0ff, 0x30f0ff, 2.2),
+    P(cyl(0.02, 0.02, 0.36, 4), M(0, 0.86, -0.56, 1, 1, 1, -0.7), 0x2a2e38), P(ico(0.04, 0), M(0, 1.0, -0.7), 0xff2a4a, 0xff2a4a, 2.6),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].flatMap(([x, z]) => [P(box(0.09, 0.44, 0.09), M(x * 0.19, 0.22, z * 0.32), 0x2a2e38), P(ico(0.06, 0), M(x * 0.19, 0.38, z * 0.32), 0x6a6e7a)])],
+  // Foliage for the big trees (worldview.js and coreview.js): crowns and branch tips, ivy and shelf fungi on bark,
+  // and the mossy ferny clumps on the waterfall's rock stacks.
+  canopy: () => clump(11, 84, [0x2f6a2a, 0x3c8030, 0x58993c], 0x22501f),
+  canopy2: () => clump(12, 84, [0x3a7428, 0x4f8c2e, 0x7aa83a], 0x2a5a20),
+  mossclump: () => clump(13, 70, [0x4a8a3a, 0x63a446, 0x8cc05a], 0x3a6e2e, 0.5),
+  ivy: () => ivy(5, [0x2c5a24, 0x3b6e2c, 0x548a38], 0x4a3a26),
+  bracket: () => bracket([0xc89a5a, 0xa8743e, 0xeee0c0]),
+  croc: () => [P(ico(0.3, 1), M(0, 0.26, -0.1, 1.3, 0.55, 2.4), 0x3a6a2a), P(box(0.5, 0.06, 1.1), M(0, 0.12, -0.1), 0x9ab86a), P(box(0.32, 0.15, 0.62), M(0, 0.25, 0.78), 0x3a6a2a),
+    P(box(0.3, 0.06, 0.56), M(0, 0.37, 0.8, 1, 1, 1, -0.22), 0x34622a), ...[-1, 1].flatMap((s) => [0.6, 0.78, 0.96].map((z) => P(cone(0.02, 0.06, 3), M(s * 0.13, 0.32, z, 1, 1, 1, Math.PI), 0xf4f0e0))),
+    P(ico(0.06, 0), M(0.1, 0.42, 0.52), 0xffd23a, 0xffd23a, 2), P(ico(0.06, 0), M(-0.1, 0.42, 0.52), 0xffd23a, 0xffd23a, 2),
+    ...[-0.5, -0.3, -0.1, 0.1, 0.3].map((z) => P(cone(0.05, 0.12, 4), M(0, 0.43, z), 0x2e5a22)),
+    P(cone(0.18, 1.1, 6), M(0, 0.22, -1.2, 1, 0.6, 1, -Math.PI / 2), 0x3a6a2a),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => P(box(0.14, 0.14, 0.26), M(x * 0.36, 0.08, z * 0.4, 1, 1, 1, 0, x * z * 0.4), 0x2e5a22))],
 };
 
 // ---------------------------------------------------------------- platform shapes
@@ -234,7 +344,7 @@ export function shapeGeo(name) {
 
 // Surface pattern ids (pattern.js): 1 metal, 2 stone, 3 wood, 4 hex tiles, 5 grass on rock, 6 sand on rock,
 // 7 basalt, 8 tread plate, 9 bamboo, 10 marble, 11 coral, 12 concrete, 13 moss on wet stone, 14 snow on rock,
-// 15 cloud, 16 bark.
+// 15 cloud, 16 bark, 17 hedge.
 const PATMATS = new Map();
 export function patMat(pat, color = 0xffffff, o = {}) {
   const key = pat + ':' + color + ':' + (o.rough ?? '');
@@ -440,6 +550,12 @@ const ANIMALS = {
     A(box(0.1, 0.12, 0.06), M(0, 0.95, -0.42), 0xf4f0e8), ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.07, 0.7, 0.07), M(s * 0.1, 0.35, f * 0.3), 0x7a5232, 2))],
   lizard: () => [A(box(0.16, 0.1, 0.5), M(0, 0.06, 0), 0x3a2a24), A(box(0.12, 0.08, 0.14), M(0, 0.06, 0.3), 0x3a2a24), A(cone(0.06, 0.5, 4), M(0, 0.05, -0.48, 1, 0.6, 1, -Math.PI / 2), 0x3a2a24),
     A(ico(0.03, 0), M(0.04, 0.08, 0.08), 0xff6a1a), A(ico(0.03, 0), M(-0.03, 0.08, -0.08), 0xff6a1a), ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.14, 0.03, 0.04), M(s * 0.12, 0.03, f * 0.15), 0x2a1e1a, 2))],
+  rabbit: () => [A(lo(0.13), M(0, 0.14, 0, 1, 0.9, 1.3), 0xb89a7a), A(lo(0.09), M(0, 0.24, 0.15), 0xb89a7a), A(box(0.035, 0.16, 0.06), M(0.03, 0.38, 0.12, 1, 1, 1, -0.2, 0, -0.15), 0xa88a6a),
+    A(box(0.035, 0.16, 0.06), M(-0.03, 0.38, 0.12, 1, 1, 1, -0.2, 0, 0.15), 0xa88a6a), A(ico(0.045, 0), M(0, 0.17, -0.18), 0xffffff), A(ico(0.02, 0), M(0.05, 0.27, 0.21), 0x111111), A(ico(0.02, 0), M(-0.05, 0.27, 0.21), 0x111111),
+    A(box(0.06, 0.05, 0.18), M(0.08, 0.04, -0.04), 0xa88a6a, 2), A(box(0.06, 0.05, 0.18), M(-0.08, 0.04, -0.04), 0xa88a6a, 2)],
+  pigeon: () => [A(lo(0.1), M(0, 0.16, 0, 1, 1, 1.7), 0x8a8e9a), A(lo(0.065), M(0, 0.28, 0.13), 0x6a7a8a), A(cone(0.018, 0.06, 4), M(0, 0.27, 0.21, 1, 1, 1, Math.PI / 2), 0xd8a060),
+    A(box(0.1, 0.03, 0.18), M(0.08, 0.17, -0.02, 1, 1, 1, 0, 0, -0.3), 0x7a7e8a), A(box(0.1, 0.03, 0.18), M(-0.08, 0.17, -0.02, 1, 1, 1, 0, 0, 0.3), 0x7a7e8a),
+    A(quad(0.1, 0.12), M(0, 0.14, -0.2), 0x5a5e6a), A(box(0.015, 0.1, 0.015), M(0.03, 0.05, 0), 0xd86a5a, 2), A(box(0.015, 0.1, 0.015), M(-0.03, 0.05, 0), 0xd86a5a, 2)],
   dolphin: () => [A(lo(0.4), M(0, 0, 0, 0.8, 0.8, 2.6), 0x7a8a9a), A(cone(0.08, 0.4, 5), M(0, 0.02, 1.1, 1, 1, 1, Math.PI / 2), 0x8a9aaa), A(cone(0.18, 0.4, 4), M(0, 0.38, -0.1, 0.3, 1, 1), 0x6a7a8a),
     A(quad(0.6, 0.2), M(0, 0, -1.05), 0x6a7a8a), A(box(0.3, 0.04, 0.14), M(0.3, -0.12, 0.3, 1, 1, 1, 0, 0, -0.4), 0x6a7a8a), A(box(0.3, 0.04, 0.14), M(-0.3, -0.12, 0.3, 1, 1, 1, 0, 0, 0.4), 0x6a7a8a)],
 };
@@ -492,7 +608,7 @@ const SWARM_FS = `#include <fog_pars_fragment>
     #include <fog_fragment>
   }`;
 // One mesh per flock: list of { x, y, z, ph, R, sp, amp, sz, tint }.
-function swarm(view, animal, list, o = {}) {
+export function swarm(view, animal, list, o = {}) {
   if (!list.length) return;
   const parts = ANIMALS[animal](), tmpl = [];
   for (const p of parts) {
@@ -659,3 +775,4 @@ export function buildMist(view, spots) {
   view.timeMats.push(m);
   view.root.add(new THREE.Mesh(g, m));
 }
+export { FLORA, pick as pickWeighted };

@@ -14,8 +14,14 @@
 //   watch     phone to server: start watching a friend, by player number
 //   unwatch   phone to server: stop
 //   g, s      climbing phone to watchers: who and where (the game, then many small updates)
-//   watchers  server to climbing phone: who is watching
+//   watchers  server to climbing phone: who is watching (n and names), and whether to send at all (any)
 //   over      server to watcher: there is nothing more to watch
+//   cmd       a team member's phone to server: a line typed in the terminal. out (the answer) and act (do this) come back
+//   list      a team member's phone to server: everyone in the game right now, and what they are doing
+//   staff     server to phone: what this player may do, when it changes. roles: every role's tag and colour
+//
+// The team: someone allowed to /watch can watch anyone, and while vanished (/vanish) they are not in the list of who is
+// watching, and their friends see them as offline. See staff.js.
 const { WebSocketServer, WebSocket } = require('../vendor/ws');
 const { Limiter, SocketRate } = require('./limits');
 
@@ -55,10 +61,12 @@ function cleanPresence(p) {
 const shownName = (u) => u.game_name || (/^Guest \d+$/.test(u.name) ? u.name : '');
 
 class Friends {
-  constructor(db, admin, rooms) {
+  constructor(db, admin, rooms, staff) {
     this.db = db;
     this.admin = admin;
     this.rooms = rooms;
+    this.staff = staff;
+    this.terminal = null;
     const d = db.db;
     d.exec(`
       CREATE TABLE IF NOT EXISTS friends (
@@ -75,8 +83,8 @@ class Friends {
     const q = (s) => d.prepare(s);
     const WHO = 'u.id, u.num, u.name, u.game_name, u.last_seen, u.no_watch';
     this.q = {
-      me: q('SELECT id, num, name, game_name, no_watch FROM users WHERE id = ?'),
-      byNum: q('SELECT id, num, name, game_name, no_watch FROM users WHERE num = ?'),
+      me: q('SELECT id, num, name, game_name, no_watch, role FROM users WHERE id = ?'),
+      byNum: q('SELECT id, num, name, game_name, no_watch, role FROM users WHERE num = ?'),
       search: q(`SELECT ${WHO} FROM users u WHERE u.game_name LIKE ? ESCAPE '\\' OR (u.game_name IS NULL AND u.name LIKE 'Guest %' AND u.name LIKE ? ESCAPE '\\')
         ORDER BY u.game_name = ? COLLATE NOCASE DESC, u.last_seen DESC LIMIT 25`),
       pair: q('SELECT a, b, state FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ?)'),
@@ -114,8 +122,11 @@ class Friends {
   friendIds(id) { return this.q.friendIds.all(id, id, id).map((r) => r.id); }
   isBanned(id) { return !!this.admin.banOf(id); }
 
-  // What a friend gets to see about what someone is doing.
-  now(id) {
+  // What a friend gets to see about what someone is doing. Someone vanished is not there.
+  now(id) { return this.vanished(id) ? { st: 'off' } : this.presence(id); }
+  vanished(id) { return !!this.staff && this.staff.vanished(id); }
+  // What someone is really doing, for the team.
+  presence(id) {
     const ws = this.live.get(id);
     if (!ws || !ws.pres) return { st: 'off' };
     const t = Date.now();
@@ -129,7 +140,8 @@ class Friends {
   card(u) {
     const o = Object.assign(this.now(u.id), { num: u.num, name: shownName(u), climbs: u.climbs || 0, wins: u.wins || 0 });
     o.canWatch = o.st === 'climb' && !u.no_watch;
-    if (o.st === 'off') o.ago = Math.max(0, Date.now() - (u.last_seen || 0));
+    // Vanished: last seen when they vanished, not just now.
+    if (o.st === 'off') o.ago = Math.max(0, Date.now() - (this.vanished(u.id) ? this.staff.vanishedAt(u.id) : u.last_seen || 0));
     return o;
   }
 
@@ -303,6 +315,8 @@ class Friends {
       if (ws.pres.st !== 'climb') this.endWatchers(ws, 'ended');
     } else if (m.t === 'watch') this.watch(ws, m.num);
     else if (m.t === 'unwatch') this.stopWatching(ws);
+    else if (m.t === 'cmd' && this.terminal) this.terminal.run(ws, m, (o) => this.send(ws, o)).catch((e) => console.error('terminal:', e.message));
+    else if (m.t === 'list') this.staffList(ws);
   }
 
   hello(ws, text) {
@@ -322,9 +336,57 @@ class Friends {
     if (typeof m.name === 'string') { ws.gameName = m.name; this.admin.setGameName(id, m.name); }
     this.live.set(id, ws);
     this.admin.seen(id, ws.ip);
-    this.send(ws, { t: 'ok', num: u.num, name: shownName(this.q.me.get(id)) });
+    const ok = { t: 'ok', num: u.num, name: shownName(this.q.me.get(id)) };
+    if (this.staff) {
+      ok.roles = this.staff.table();
+      const st = this.staffInfo(id);
+      if (st) ok.staff = st;
+    }
+    this.send(ws, ok);
     this.pushCount(id);
     for (const f of this.friendIds(id)) this.pushCount(f);
+  }
+
+  // ---------------------------------------------------------------- the team
+  staffInfo(id) {
+    const u = this.admin.info(id), st = u && this.staff.infoFor(u);
+    if (st && this.terminal) st.menu = this.terminal.menu(u);
+    return st;
+  }
+  // Someone's powers changed: their game hears it now. Without an id, everyone's (a role changed).
+  staffChanged(id) {
+    if (!this.staff) return;
+    const tell = (ws) => this.send(ws, { t: 'staff', staff: this.staffInfo(ws.uid) });
+    if (id) { const ws = this.live.get(id); if (ws) tell(ws); return; }
+    for (const ws of this.live.values()) tell(ws);
+  }
+  rolesChanged() {
+    const msg = JSON.stringify({ t: 'roles', roles: this.staff.table() });
+    for (const ws of this.live.values()) this.sendText(ws, msg);
+    this.staffChanged(null);
+  }
+  vanishChanged(id) {
+    for (const f of this.friendIds(id)) this.pushCount(f);
+    const ws = this.live.get(id);
+    if (!ws) return;
+    // Watching right now: from now on seen or not seen.
+    if (ws.target) { ws.silent = !!ws.teamWatch && this.vanished(id); this.tellWatchers(ws.target); }
+    this.staffChanged(id);
+  }
+  // Everyone in the game right now, climbing first.
+  everyone() {
+    const order = { climb: 0, lobby: 1, watch: 2, menu: 3, off: 4 }, out = [];
+    for (const [id, ws] of this.live) out.push({ id, ws, p: this.presence(id), vanished: this.vanished(id) });
+    return out.sort((a, b) => order[a.p.st] - order[b.p.st] || (b.p.h || 0) - (a.p.h || 0));
+  }
+  staffList(ws) {
+    const me = this.admin.info(ws.uid);
+    if (!this.staff || !this.staff.can(me, 'online')) return this.send(ws, { t: 'list', err: 'You may not see who is online.' });
+    const players = this.everyone().slice(0, 300).map(({ id, p, vanished }) => {
+      const u = this.q.me.get(id);
+      return u ? Object.assign({}, p, { num: u.num, name: shownName(u) || `#${u.num}`, role: u.role || '', vanished, me: id === ws.uid, watched: this.live.get(id).watchers.size }) : null;
+    }).filter(Boolean);
+    this.send(ws, { t: 'list', players, rooms: this.rooms.stats() });
   }
 
   gone(ws) {
@@ -345,7 +407,7 @@ class Friends {
     const ws = this.live.get(id);
     if (!ws) return;
     let on = 0;
-    for (const f of this.friendIds(id)) if (this.live.has(f)) on++;
+    for (const f of this.friendIds(id)) if (this.live.has(f) && !this.vanished(f)) on++;
     this.send(ws, { t: 'count', on, req: this.q.countAsks.get(id).n });
   }
 
@@ -354,31 +416,42 @@ class Friends {
     this.stopWatching(ws);
     const fail = (why) => this.send(ws, { t: 'err', why });
     const u = Number.isInteger(num) ? this.q.byNum.get(num) : null;
-    if (!u || !this.isFriend(ws.uid, u.id)) return fail('You can only watch your friends.');
-    if (u.no_watch) return fail('This friend does not allow watching.');
+    // The team can watch anyone below their own rank, friend or not, and whatever their privacy setting says.
+    const me = this.staff ? this.admin.info(ws.uid) : null;
+    const team = !!(u && me && u.id !== me.id && this.staff.can(me, 'watch') && this.staff.outranks(me, u));
+    if (!u || (!team && !this.isFriend(ws.uid, u.id))) return fail('You can only watch your friends.');
+    if (u.no_watch && !team) return fail('This friend does not allow watching.');
     const target = this.live.get(u.id);
-    if (!target || !target.pres || target.pres.st !== 'climb') return fail('This friend is not climbing right now.');
-    if (target.watchers.size >= MAX_WATCHERS) return fail('Too many people are watching this climb.');
+    if (!target || !target.pres || target.pres.st !== 'climb') return fail(team ? 'They are not climbing right now.' : 'This friend is not climbing right now.');
+    if (target.watchers.size >= MAX_WATCHERS && !team) return fail('Too many people are watching this climb.');
     target.watchers.add(ws);
     ws.target = target;
+    ws.teamWatch = team;
+    ws.silent = team && this.vanished(ws.uid);
     this.send(ws, { t: 'watching', num: u.num, name: shownName(u) });
     this.tellWatchers(target);
   }
 
   // The climbing phone starts or stops sending, and it can say who is looking.
+  // Someone vanished watching is not counted, but the phone still has to send (any).
   tellWatchers(target) {
     const names = [];
+    let n = 0;
     for (const w of target.watchers) {
+      if (w.silent) continue;
+      n++;
       const u = this.q.me.get(w.uid);
       if (u) names.push(shownName(u) || `#${u.num}`);
     }
-    this.send(target, { t: 'watchers', n: target.watchers.size, names });
+    this.send(target, { t: 'watchers', n, names, any: target.watchers.size });
   }
 
   stopWatching(ws) {
     const target = ws.target;
     if (!target) return;
     ws.target = null;
+    ws.silent = false;
+    ws.teamWatch = false;
     target.watchers.delete(ws);
     this.tellWatchers(target);
   }

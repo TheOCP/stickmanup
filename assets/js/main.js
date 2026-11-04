@@ -16,11 +16,12 @@ import * as cloud from './cloud.js';
 import { Session, PROTO, makeLink, MAX_PLAYERS } from './net.js';
 import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keepAwake } from './platform.js';
 import * as live from './live.js';
-import { initFriends, openFriends, friendBadge, endSpectate } from './friends.js';
+import { initFriends, openFriends, friendBadge, endSpectate, watchPlayer, joinPlayerRoom } from './friends.js';
+import { initTerminal, openTerminal, termSay, close as closeTerminal, seen as termSeen } from './terminal.js';
 import { Game } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
-import { SUIT, resolveLook, plainLook, ROLE_TAGS, cleanRole, tagColor } from './skins.js';
+import { SUIT, resolveLook, plainLook, ROLE_TAGS, roleInfo, tagColor } from './skins.js';
 import { initProfile, myLook, myRole, owned, wonOnce, coins as myCoins } from './profile.js';
 import { openShop, openRecords } from './shop.js';
 import { TitleShow } from './titleshow.js';
@@ -48,7 +49,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
@@ -78,7 +79,7 @@ function rulesHtml(r, editable, solo) {
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
     <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
 }
-const roleChip = (r) => (cleanRole(r) ? `<em class="role ${r}">${ROLE_TAGS[r]}</em>` : '');
+const roleChip = (r) => { const i = roleInfo(r); return i ? `<em class="role${ROLE_TAGS[r] ? ' ' + r : ''}" style="background:${i.color}">${esc(i.tag)}</em>` : ''; };
 const roleTag = (p) => roleChip(p.role);
 // A player's colour in the session (their pick, or their slot's default).
 const pcol = (s, slot) => { const p = s.players.get(slot); return css((p && p.color) ?? COLORS[slot % 4]); };
@@ -240,6 +241,32 @@ const ui = (app.ui = {
       putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
     }
   },
+  // The arrow under the clock that shows the way up (Settings can turn it off). It follows the route in the order it was
+  // laid (level.js route): where on it the climber is, then a few steps further along, so it never points at a part of
+  // the climb that is closer but further on. In a maze garden that means the way out.
+  nav(g) {
+    const el = this.navEl || (this.navEl = $('#hNav')), P = g.L.route, me = g.me;
+    if (!settings.nav || g.won || !P || !P.length || g.aiming) { if (!el.hidden) el.hidden = true; return; }
+    const feet = me.y - 0.42, sc = (p) => Math.hypot(p[0] - me.x, p[2] - me.z) + Math.abs(p[1] - feet) * 2;
+    let k = this.navL === P ? this.navK : -1, best = 1e9, bi = 0;
+    const scan = (lo, hi) => { for (let i = lo; i < hi; i++) { const s = sc(P[i]); if (s < best) { best = s; bi = i; } } };
+    if (k >= 0) scan(Math.max(0, k - 25), Math.min(P.length, k + 60));
+    // Lost (just started, went back to a checkpoint, off on a hidden path): look along all of it, now and then.
+    const now = performance.now();
+    if ((k < 0 || best > 14) && now - (this.navScan || 0) > 400) { this.navScan = now; best = 1e9; scan(0, P.length); }
+    this.navL = P; this.navK = k = best < 1e9 ? bi : Math.max(0, k);
+    let t = k + 1;
+    while (t < P.length - 1 && t < k + 8 && Math.hypot(P[t][0] - me.x, P[t][1] - feet, P[t][2] - me.z) < 3.5) t++;
+    const p = P[Math.min(t, P.length - 1)], v = this.navV || (this.navV = new THREE.Vector3());
+    v.set(p[0], p[1] + 0.8, p[2]).project(app.renderer.camera);
+    let x = v.x, y = v.y;
+    if (v.z > 1) { x = -x; y = -y; }
+    const a = Math.atan2(x, y), was = this.navA ?? a, d = Math.atan2(Math.sin(a - was), Math.cos(a - was));
+    this.navA = was + d * 0.25;
+    if (el.hidden) el.hidden = false;
+    const tf = `translateX(-50%) rotate(${this.navA.toFixed(3)}rad)`;
+    if (el.__tf !== tf) { el.__tf = tf; el.style.transform = tf; }
+  },
   // Tips: a small "!" floats over each tip spot; tap it to read the tip. Each tip also pops up by
   // itself the first time you come near it. The card is see-through and fades out on its own.
   tips(g) {
@@ -319,7 +346,7 @@ const ui = (app.ui = {
         el = document.createElement('div');
         el.dataset.s = slot;
         el.style.color = pcol(g.s, slot);
-        el.textContent = (cleanRole(p.role) ? ROLE_TAGS[p.role] + ' · ' : '') + p.name;
+        el.textContent = (roleInfo(p.role) ? roleInfo(p.role).tag + ' · ' : '') + p.name;
         box.appendChild(el);
       }
       v.set(o.x, o.y + 1.45, o.z).project(cam);
@@ -492,6 +519,7 @@ function title() {
       <div class="row"><button class="btn sm frbtn" data-a="friends"${off}><span>Friends</span><span id="frCount">${friendBadge()}</span></button><button class="btn sm" data-a="browser"${off}>Server browser</button></div>
       <div class="row"><button class="btn sm acctbtn" data-a="account"><span>${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</span>${roleChip(myRole())}</button><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button></div>
       <div class="row three"><button class="btn sm" data-a="records"${off}>Records</button><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
+      <div id="termSlot">${termButton()}</div>
       ${DESK ? '<button class="btn sm" data-a="quit">Quit game</button>' : ''}
     </div></div>`, lockedIf(ban, {
     shop: () => { app.screen = 'shop'; openShop(shopCtx, title); },
@@ -502,6 +530,7 @@ function title() {
     join: () => joinScreen(cloud.serverUrl() ? 'server' : 'online'),
     browser: () => browserScreen(title),
     friends: () => openFriends(title),
+    term: openTerminal,
     account: () => accountScreen(title),
     donate: openDonate,
     settings: () => settingsScreen(title),
@@ -540,7 +569,7 @@ function soloPick() {
 
 function startSolo(map, diff, save) {
   const s = new Session('solo', settings.name, null, myColor(), myLook(), myRole());
-  beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
+  beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
 app.startSolo = startSolo;
@@ -646,7 +675,7 @@ function lobby(s) {
       const save = s.lobby.resume && mp;
       const pos = {};
       if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0,
+      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0,
         doors: save ? save.doors : null, pos: save ? pos : null });
     },
   });
@@ -1073,7 +1102,7 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
     ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
-    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}</div>
+    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}${chk('nav', 'Arrow that shows the way up')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
@@ -1447,7 +1476,7 @@ function howTo(back) {
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
     <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to paralyse them for over a minute.</div>
     <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
-    <div><b>Legendary suits</b>Some can be bought for a lot of coins. The others only come from Hardcore or Insane: some are earned by what you do up there, the rest are hidden. Those who know, know.</div>
+    <div><b>Legendary suits</b>Some can be bought for a lot of coins. Some are earned by what you do on Hardcore, the rest are hidden on the maps, on any difficulty: on secret paths and in the maze gardens. Those who know, know.</div>
     <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
     <div><b>SHOOT</b>Doors block some bridges. Hold SHOOT to aim at the round target and let go to open the door for the whole team. A shot paralyses monsters, bats and jumpers for over a minute, and longer with better weapons. Weapons are in the shop.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike: get away from them or SHIELD. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>
@@ -1521,7 +1550,7 @@ function pause() {
     <button class="btn primary" data-a="back"><b>Resume</b></button>
     ${g.diff < 2 ? `<button class="btn" data-a="respawn"><b>Back to checkpoint</b><small>${mp ? 'Moves the whole team' : 'If you are stuck'}</small></button>`
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
-    <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button></div>
+    <div class="row"><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
     <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
     ${padKeys()}</div>`, {
@@ -1529,8 +1558,28 @@ function pause() {
     respawn: () => { g.s.toHost({ k: 'restart' }); resume(); },
     settings: () => settingsScreen(pause),
     how: () => howTo(pause),
+    term: openTerminal,
     quit: () => { if (g.s.isHost) g.save(); endGame(); title(); },
   });
+}
+
+// ---------- the team's terminal (terminal.js) ----------
+const termButton = () => (live.staff() ? `<button class="btn sm termbtn" data-a="term"><span>Terminal</span>${live.staff().vanished ? '<em class="termvan">VANISHED</em>' : ''}</button>` : '');
+// What the server said to do after /watch or /join. A solo climb is saved first, to carry on later; a game with others is not
+// left without asking.
+function teamAct(m) {
+  const g = app.game;
+  const go = (fn) => {
+    if (g && !g.solo) return termSay(tr('You are in a game with others. Leave it first (pause, then leave the game), then try again.'), 'warn');
+    if (g) { g.save(); endGame(); }
+    closeTerminal();
+    if (app.spec || app.screen === 'spec') endSpectate();
+    fn();
+  };
+  if (Number.isInteger(m.watch)) {
+    const p = termSeen(m.watch), room = p && p.room && p.room.kind === 'server' ? Object.assign({}, p.room, { locked: false }) : null;
+    go(() => watchPlayer(m.watch, { num: m.watch, name: String(m.name || (p && p.name) || `#${m.watch}`).slice(0, 20), room, n: p ? p.n : 1 }, title));
+  } else if (typeof m.join === 'string' && /^[A-Z0-9]{5}$/.test(m.join)) go(() => joinPlayerRoom(m.join, title));
 }
 
 function resume() {
@@ -1701,7 +1750,14 @@ function boot() {
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
   cloud.setTestServer(settings.server);
   cloud.start();
-  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, canShare, share: shareText });
+  initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, canShare, share: shareText, team: live.staff, openTerminal });
+  initTerminal({
+    esc,
+    act: teamAct,
+    // Opened during a solo climb: the climb waits.
+    opened: () => { if (app.screen === 'game' && app.game && app.game.solo) pause(); },
+    staffChanged: () => { const s = $('#termSlot'); if (s) s.innerHTML = termButton(); },
+  });
   if (!N) {
     // What the Android app tells the game itself.
     document.addEventListener('visibilitychange', () => window.SMU_vis(!document.hidden));

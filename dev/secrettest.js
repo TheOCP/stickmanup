@@ -43,6 +43,8 @@ for (const M of MAPS) {
   for (const c of L.cols) if (c.kind === 'secret') c.on = true;
   const env = { world, others: [], wind: null, grip: 1, maxReel: 4 };
   for (const r of L.relics) {
+    // In a maze: every cell of a maze can be reached whichever way its walls stand (a maze with no loops spans them all).
+    if (r.maze !== undefined) { console.log(`${M.key} relic ${r.i}: ${Math.round(r.y - 2)} m, in maze ${r.maze}`); continue; }
     const b = new Body(), st = r.start, path = [st, ...r.stones];
     b.spawn(st.x, st.y + st.hy + PR + 0.05, st.z);
     for (let k = 0; k < 30; k++) b.step(dt, none, env);

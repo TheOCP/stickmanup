@@ -9,7 +9,7 @@
 // this is checked here, on every single command and button.
 const { WebSocket } = require('../vendor/ws');
 const crypto = require('node:crypto');
-const { COMMANDS, runCommand, runButton, runModal, suggest, playerLine, parseBang } = require('./botcommands');
+const { COMMANDS, runCommand, runButton, runModal, suggest, playerLine, parseBang, didYouMean } = require('./botcommands');
 const { Community } = require('./community');
 
 const API = 'https://discord.com/api/v10';
@@ -401,7 +401,7 @@ class Bot {
       reply(this.admins.size ? 'You are not allowed to use this.' : 'Nobody is allowed to use the bot yet. Add Discord user IDs with: install.sh --bot', { color: 'bad' });
       return;
     }
-    if (b.unknown) return reply(`There is no \`!${esc(b.unknown).slice(0, 40)}\`. \`!help\` lists them all.`, { color: 'warn' });
+    if (b.unknown) return reply(`There is no \`!${esc(b.unknown).slice(0, 40)}\`.${didYouMean(b.near || [], '!')} \`!help\` lists them all.`, { color: 'warn' });
     if (b.err) return reply(`${esc(b.err)}\nHow to use it: \`${b.usage}\``, { color: 'warn' });
     const ctx = {
       s: this.s, bot: this, who: whoName, whoShort: who.username || String(who.id), userId: String(who.id), whoUser: who, channel, bang: true,

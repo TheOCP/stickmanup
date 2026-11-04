@@ -13,10 +13,16 @@ const IP = { type: 3, name: 'ip', description: 'The address', required: true, ma
 const DAYS = { type: 4, name: 'days', description: 'For how many days (leave empty for good)', required: false, min_value: 1, max_value: 36500 };
 const ITEM = { type: 3, name: 'item', description: 'Which item', required: true, autocomplete: true };
 const CONFIRM = { type: 5, name: 'confirm', description: 'Say true: this can not be undone', required: true };
+const ROLE = { type: 3, name: 'role', description: 'Which role', required: true, autocomplete: true, max_length: 16 };
+const PERM = { type: 3, name: 'perm', description: 'A command, a @group of them, or * for all', required: true, autocomplete: true, max_length: 24 };
+const RELIC = { type: 3, name: 'relic', description: 'Which relic: like storm:e, a map (all of its relics) or all', required: true, autocomplete: true, max_length: 24 };
+const TAG = { type: 3, name: 'tag', description: 'What it says next to names', required: false, max_length: 12 };
+const COLOUR = { type: 3, name: 'color', description: 'Its colour, like #ff8800', required: false, max_length: 7 };
+const RANK = { type: 4, name: 'rank', description: 'Higher ranks can act on lower ones (owner 1000, admin 80, mod 50)', required: false, min_value: 1, max_value: 999 };
 const cmd = (name, description, ...options) => ({ name, description, options, type: 1, dm_permission: false });
 
 const COMMANDS = [
-  cmd('help', 'What the bot can do', { type: 3, name: 'command', description: 'One command, for its details', required: false, autocomplete: true }),
+  cmd('help', 'The commands, or one of them in detail', { type: 3, name: 'command', description: 'One command, for its details', required: false, autocomplete: true }),
   // Players
   cmd('player', 'Everything about one player', PLAYER),
   cmd('players', 'All players, with their numbers, names and IDs', PAGE),
@@ -48,6 +54,8 @@ const COMMANDS = [
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
   cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 },
     { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }] }, PAGE),
+  cmd('giverelic', 'Give a player a relic, so what it opens can be bought', PLAYER, RELIC, REASON(false)),
+  cmd('takerelic', 'Take a relic from a player', PLAYER, RELIC, REASON(false)),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),
   // Climbs
   cmd('climbs', 'A player\'s last climbs and what the rerun found', PLAYER, COUNT),
@@ -63,6 +71,7 @@ const COMMANDS = [
   cmd('bans', 'Everyone who is banned, and why', PAGE),
   cmd('baninfo', 'Whether a player is banned, and their history', PLAYER),
   cmd('kick', 'Throw a player out of the room they are in', PLAYER, REASON(false)),
+  cmd('tell', 'Send a player a message in the game', PLAYER, { type: 3, name: 'text', description: 'The message', required: true, max_length: 300 }),
   // Anticheat
   cmd('flags', 'What was flagged lately, or for one player', { ...PLAYER, required: false }, COUNT),
   cmd('suspects', 'Players with the most against them', COUNT),
@@ -74,6 +83,10 @@ const COMMANDS = [
   // Rooms
   cmd('rooms', 'The rooms open right now'),
   cmd('closeroom', 'Close a room', { type: 3, name: 'code', description: 'The 5 letter code', required: true, max_length: 5 }, REASON(false)),
+  // Live, in the game
+  cmd('vanish', 'Be invisible: offline to friends, and nobody is told you watch', { type: 5, name: 'on', description: 'On or off (empty switches it)', required: false }, { ...PLAYER, required: false, description: 'Whose (you, if empty)' }),
+  cmd('watch', 'Watch any climb, solo or in a room (in the game)', PLAYER),
+  cmd('join', 'Join the room a player is in, past its password (in the game)', { ...PLAYER, description: 'Name, #number, ID or a room code' }),
   // The server
   cmd('status', 'How the server is doing'),
   cmd('announce', 'Show a message to everyone in the game', { type: 3, name: 'text', description: 'The message. "off" removes it', required: true, max_length: 400 }, { type: 4, name: 'minutes', description: 'For how long (empty for until removed)', required: false, min_value: 1, max_value: 100000 }),
@@ -82,8 +95,15 @@ const COMMANDS = [
   cmd('backup', 'Make a backup of everything now'),
   cmd('audit', 'What the admins did lately', COUNT),
   cmd('admins', 'Who may use the bot'),
-  cmd('setrole', 'Give a player a flag in the game, or take it away', PLAYER, { type: 3, name: 'role', description: 'The flag, or none to take it away', required: true, choices: [{ name: 'owner', value: 'owner' }, { name: 'admin', value: 'admin' }, { name: 'mod', value: 'mod' }, { name: 'none', value: 'none' }] }),
-  cmd('roles', 'Everyone with a flag in the game'),
+  // Roles and permissions
+  cmd('setrole', 'Give a player a role (their flag in the game), or none', PLAYER, { ...ROLE, description: 'The role, or none to take it away' }),
+  cmd('roles', 'Every role: its rank, what it may do and who has it'),
+  cmd('newrole', 'Make a new role', { type: 3, name: 'key', description: 'A short name: small letters, numbers and _', required: true, max_length: 16 }, TAG, COLOUR, RANK),
+  cmd('editrole', 'Change a role\'s tag, colour or rank', ROLE, TAG, COLOUR, RANK),
+  cmd('delrole', 'Delete a role: whoever has it loses it', ROLE, CONFIRM),
+  cmd('roleperm', 'Let a role use a command, or stop it', ROLE, { type: 3, name: 'action', description: 'Add or remove', required: true, choices: [{ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }] }, PERM),
+  cmd('playerperm', 'Let one player use a command, forbid it, or go back to their role', PLAYER, { type: 3, name: 'action', description: 'Allow, deny or reset', required: true, choices: [{ name: 'allow', value: 'allow' }, { name: 'deny', value: 'deny' }, { name: 'reset', value: 'reset' }] }, PERM),
+  cmd('perms', 'What a role or a player may do', { type: 3, name: 'who', description: 'A role or a player (empty: yourself in the game, or the groups)', required: false, autocomplete: true, max_length: 64 }),
   cmd('welcome', 'Where to say who joined and who left, or see how it is set', { type: 7, name: 'channel', description: 'The channel for joins, and for leaves unless given below', required: false, channel_types: [0, 5] }, { type: 7, name: 'leavechannel', description: 'Another channel for who left (optional)', required: false, channel_types: [0, 5] }, { type: 3, name: 'message', description: 'The welcome. {user} pings them, {name} is their name', required: false, max_length: 500 }, { type: 5, name: 'off', description: 'Turn these messages off', required: false }, { type: 5, name: 'test', description: 'Show both messages using you as the example', required: false }),
   cmd('ticketsetup', 'Where tickets go and who answers them, or see how it is set', { type: 7, name: 'category', description: 'The category new ticket channels go in', required: false, channel_types: [4] }, { type: 7, name: 'logchannel', description: 'A private channel for finished tickets (otherwise the log channel)', required: false, channel_types: [0] }, { type: 8, name: 'staffrole', description: 'The role that sees and answers tickets', required: false }),
   cmd('ticketpanel', 'Put the Open a ticket button in a channel', { type: 7, name: 'channel', description: 'The channel for the button', required: true, channel_types: [0, 5] }, { type: 3, name: 'text', description: 'What it says above the button', required: false, max_length: 1500 }),
@@ -91,6 +111,49 @@ const COMMANDS = [
   cmd('transcript', 'Post what was said in a ticket, as a file in the private channel', { type: 4, name: 'number', description: 'The ticket number', required: true, min_value: 1, max_value: 100000000 }),
   cmd('closeticket', 'Close a ticket. Without a number, the one in this channel', { type: 4, name: 'number', description: 'The ticket number', required: false, min_value: 1, max_value: 100000000 }, REASON(false)),
 ];
+
+// Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
+const GROUPS = {
+  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell'],
+  coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'giverelic', 'takerelic', 'dailycap'],
+  climbs: ['climbs', 'climb'],
+  bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
+  anticheat: ['flags', 'suspects', 'clearflags', 'trust', 'untrust', 'anticheat', 'phone'],
+  rooms: ['rooms', 'closeroom'],
+  live: ['vanish', 'watch', 'join'],
+  server: ['status', 'announce', 'maintenance', 'logguests', 'backup', 'audit', 'admins', 'help'],
+  staff: ['setrole', 'roles', 'newrole', 'editrole', 'delrole', 'roleperm', 'playerperm', 'perms'],
+  discord: ['welcome', 'ticketsetup', 'ticketpanel', 'tickets', 'transcript', 'closeticket'],
+};
+// What can't work from the game, and what can't work from Discord.
+const DISCORD_ONLY = new Set([...GROUPS.discord, 'admins']);
+const GAME_ONLY = new Set(['watch', 'join']);
+const IN_GAME = 'That works in the game: open the terminal there (staff have a Terminal button on the main menu and in the pause menu).';
+// Commands that only look at a player, or give them something. All the others need a higher rank than theirs, in the game.
+const GENTLE = new Set(['player', 'coins', 'items', 'history', 'notes', 'note', 'climbs', 'flags', 'baninfo', 'lastplayed', 'alts', 'ips', 'phone', 'perms', 'givecoins', 'giveitem', 'giverelic', 'tell']);
+
+// How far apart two words are, in letters changed, added, left out or swapped round.
+function dist(a, b) {
+  const m = a.length, n = b.length, d = [];
+  for (let i = 0; i <= m; i++) d.push([i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[m][n];
+}
+// The words that were probably meant, best first.
+function closest(word, names, n = 3) {
+  const w = String(word || '').toLowerCase();
+  if (!w) return [];
+  return names.map((x) => [x, dist(w, String(x).toLowerCase())])
+    .filter(([x, s]) => s <= Math.max(1, Math.floor(String(x).length / 3)) || (w.length >= 3 && String(x).toLowerCase().startsWith(w)))
+    .sort((a, b) => a[1] - b[1]).slice(0, n).map((x) => x[0]);
+}
+const didYouMean = (near, mark = '') => (near.length ? ` Did you mean ${near.map((x) => `\`${mark}${x}\``).join(' or ')}?` : '');
 
 // ---------------------------------------------------------------- helpers
 const esc = (s) => String(s == null ? '' : s).replace(/[\p{C}\p{Zl}\p{Zp}]/gu, ' ').replace(/([\\`*_~|>#@:[\]()-])/g, '\\$1').slice(0, 300);
@@ -101,7 +164,6 @@ const opt = (data, name) => { const o = (data.options || []).find((x) => x.name 
 const nameOf = (u) => (u.game_name && u.game_name !== u.name ? `${u.name} (plays as ${u.game_name})` : u.name);
 const playerLine = (u) => `${nameOf(u)} #${u.num}`;
 const line = (u) => `\`#${u.num}\` ${esc(nameOf(u))}`;
-const ROLE_NAME = { owner: 'Owner', admin: 'Admin', mod: 'Mod' };
 const PROVIDER = { discord: 'Discord', google: 'Google', steam: 'Steam', guest: 'Guest' };
 const DIFF = ['Easy', 'Normal', 'Hardcore', 'Insane'];
 const fmtH = (ms) => { const m = Math.floor(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
@@ -110,10 +172,72 @@ const clip = (rows, none) => (rows.length ? rows.join('\n') : none);
 // Finds the player the command is about, or explains why it can't. Several people called the same? Then it lists them.
 function target(ctx, data, name = 'player') {
   const text = opt(data, name), r = ctx.s.admin.find(text);
-  if (r.id) return ctx.s.admin.info(r.id);
-  if (r.many) ctx.reply(`More than one player is called that. Use a number:\n${r.many.map(line).join('\n')}`, { color: 'warn' });
-  else ctx.reply(`No player found for "${esc(text)}".`, { color: 'warn' });
-  return null;
+  if (r.many) { ctx.reply(`More than one player is called that. Use a number:\n${r.many.map(line).join('\n')}`, { color: 'warn' }); return null; }
+  if (!r.id) {
+    // Part of a name, or the start of one with a typo further on.
+    const t = String(text || '').trim();
+    let near = t ? ctx.s.admin.search(t, 5) : [];
+    if (!near.length && t.length >= 3) {
+      // A typo: the names of everyone in the game now, and of players whose name starts the same way.
+      const pool = new Map();
+      for (const x of ctx.s.friends ? ctx.s.friends.everyone() : []) { const u = ctx.s.admin.info(x.id); if (u) pool.set(u.id, u); }
+      for (const u of ctx.s.admin.search(t.slice(0, 2), 40)) pool.set(u.id, u);
+      const users = [...pool.values()], names = users.flatMap((u) => [u.name, u.game_name].filter(Boolean));
+      const best = closest(t, names, 5);
+      near = users.filter((u) => best.includes(u.name) || best.includes(u.game_name)).slice(0, 5);
+    }
+    ctx.reply(`No player found for "${esc(text)}".${near.length ? ` Did you mean: ${near.map(line).join(', ')}?` : ''}`, { color: 'warn' });
+    return null;
+  }
+  const u = ctx.s.admin.info(r.id);
+  if (u && ctx.game && !GENTLE.has(ctx.cmd) && !ctx.s.staff.outranks(ctx.actor, u)) {
+    ctx.reply(`${line(u)} has the same rank as you or a higher one, so you can't do that to them.`, { color: 'bad' });
+    return null;
+  }
+  return u;
+}
+// The player who typed it: in the game that is them, on Discord the account they signed in to the game with.
+function self(ctx) {
+  if (ctx.game) return ctx.actor;
+  const id = ctx.s.admin.byIdentity('discord', ctx.userId), u = id ? ctx.s.admin.info(id) : null;
+  if (!u) ctx.reply('Your Discord account has no player in the game yet: sign in to the game with Discord, or name a player.', { color: 'warn' });
+  return u;
+}
+const roleTag = (ctx, key) => { const r = key && ctx.s.staff.role(key); return r ? r.tag : ''; };
+// What someone is doing right now, from what their game last said (friends.js).
+function doing(ctx, p) {
+  const map = p.map !== undefined ? mapName(ctx, p.map) : '', diff = DIFF[p.diff] || '';
+  if (p.st === 'climb') return `climbing ${esc(map)}, ${diff}, ${p.h} of ${p.top} m${p.solo ? ', alone' : `, ${p.n} climbers`}${p.room ? `, room ${p.room.code}${p.room.kind === 'online' ? ' (Online)' : ''}` : ''}${p.paused ? ', paused' : ''}${p.won ? ', at the top' : ''}`;
+  if (p.st === 'lobby') return `in the lobby of ${p.room ? `room ${p.room.code}` : 'a room'}, ${esc(map)}, ${p.n} climbers`;
+  if (p.st === 'watch') return 'watching a climb';
+  if (p.st === 'menu') return 'in the menus';
+  return 'not in the game';
+}
+// May they hand this out? Only what they have themselves, and roles below their own.
+const mayGivePerm = (ctx, perm) => !ctx.game || ctx.s.staff.can(ctx.actor, perm);
+const belowMe = (ctx, rank) => !ctx.game || ctx.s.staff.isOwner(ctx.actor) || rank < ctx.s.staff.rankOf(ctx.actor);
+function permFrom(ctx, text) {
+  const p = ctx.s.staff.perm(text);
+  if (!p) {
+    const all = ctx.s.staff.permNames(), bare = (x) => x.replace(/^[@/]/, '');
+    const near = [...new Set(closest(bare(String(text)), all.map(bare), 3))].flatMap((w) => all.filter((x) => bare(x) === w));
+    ctx.reply(`There is no command or group called "${esc(text)}".${didYouMean(near.slice(0, 3))} Groups: ${Object.keys(GROUPS).map((g) => '@' + g).join(', ')}.`, { color: 'warn' });
+  }
+  return p;
+}
+function roleFrom(ctx, text) {
+  const r = ctx.s.staff.findRole(text);
+  if (!r) ctx.reply(`There is no role called "${esc(text)}".${didYouMean(closest(text, ctx.s.staff.list().map((x) => x.key)))} /roles lists them.`, { color: 'warn' });
+  return r;
+}
+// What a player may do, by group.
+function permsText(ctx, u) {
+  const can = new Set(ctx.s.staff.commandsOf(u)), out = [];
+  for (const [g, list] of Object.entries(GROUPS)) {
+    const mine = list.filter((n) => can.has(n));
+    if (mine.length) out.push(`@${g}: ${mine.length === list.length ? 'all' : mine.join(', ')}`);
+  }
+  return out.length ? out.join('\n') : 'No commands.';
 }
 function done(ctx, cmdName, detail, text, o) {
   ctx.s.admin.audit(ctx.who, cmdName, detail);
@@ -128,8 +252,8 @@ function mapName(ctx, i) { const m = ctx.s.wallet.mapNames; return m[i] || Strin
 function playerText(ctx, u) {
   const a = ctx.s.admin, w = ctx.s.wallet.get(u.id), ban = a.banOf(u.id), score = a.score(u.id);
   const out = [`**${esc(nameOf(u))}** \`#${u.num}\``, `ID: \`${u.id}\``, `Signed in with: ${PROVIDER[u.provider] || esc(u.provider)}`, `Joined ${when(u.created)}, last seen ${when(u.last_seen)}`];
-  if (ROLE_NAME[u.role]) out.push(`Flag in the game: **${ROLE_NAME[u.role]}**`);
-  out.push(`Last address: \`${code(u.last_ip || 'unknown')}\``);
+  if (roleTag(ctx, u.role)) out.push(`Role: **${esc(roleTag(ctx, u.role))}**${ctx.s.staff.vanished(u.id) ? ', vanished' : ''}`);
+  if (!ctx.game || ctx.can('ips')) out.push(`Last address: \`${code(u.last_ip || 'unknown')}\``);
   out.push(`Coins: **${n0(w.coins)}**, ever earned ${n0(w.earned)}, items ${w.own.length}, relics ${w.relics.length}`);
   out.push(u.last_played ? `Last played ${when(u.last_played)}: ${esc(mapName(ctx, u.last_map))}, ${DIFF[u.last_diff] || u.last_diff}, ${u.last_h} m up. ${u.climbs} climbs in all.` : 'Has not played yet.');
   out.push(`Flags: ${score} of ${a.banScore} in the last 30 days${u.trusted ? '. Trusted' : ''}`);
@@ -160,11 +284,15 @@ function safely(ctx, fn) {
 
 const RUN = {
   help(ctx, d) {
-    const c = opt(d, 'command');
+    const c = opt(d, 'command'), mark = ctx.game ? '/' : '!';
     if (c) {
-      const f = COMMANDS.find((x) => x.name === String(c).replace(/^\//, ''));
-      if (!f) return ctx.reply('No such command.', { color: 'warn' });
-      return ctx.reply(`**${ctx.bang ? '!' : '/'}${f.name}**: ${f.description}\n${ctx.bang ? `\`${usage(f)}\`\n` : ''}${f.options.map((o) => `\`${o.name}\`${o.required ? '' : ' (optional)'}: ${o.description}`).join('\n')}`);
+      const want = String(c).replace(/^[/!]/, '').toLowerCase(), f = COMMANDS.find((x) => x.name === want);
+      if (!f) return ctx.reply(`No such command.${didYouMean(closest(want, COMMANDS.map((x) => x.name)), ctx.game || ctx.bang ? mark : '/')}`, { color: 'warn' });
+      return ctx.reply(`**${ctx.bang || ctx.game ? mark : '/'}${f.name}**: ${f.description}\n${ctx.bang || ctx.game ? `\`${usage(f, mark)}\`\n` : ''}${f.options.map((o) => `\`${o.name}\`${o.required ? '' : ' (optional)'}: ${o.description}${o.choices ? ` (${o.choices.map((x) => x.value).join(', ')})` : ''}`).join('\n')}`);
+    }
+    if (ctx.game) {
+      const mine = COMMANDS.filter((x) => !DISCORD_ONLY.has(x.name) && ctx.can(x.name));
+      return ctx.reply(`Type a command and press Enter. A player is a name, a #number or an ID, and a name with spaces goes in quotes: /ban "Cool Guy" flying around days=3. /help ban explains one.\n${mine.map((x) => `/${x.name}: ${x.description}`).join('\n')}`);
     }
     if (ctx.bang) return ctx.reply(`A player can be given by name, by number (#12) or by ID. A name with spaces goes in quotes, and optional parts go by name: \`!ban "Cool Guy" flying around days=3\`\n${COMMANDS.map((x) => `\`!${x.name}\` ${x.description}`).join('\n')}`.slice(0, 3900));
     return ctx.reply(`A player can always be given by name, by number (#12) or by ID, and the list suggests them as you type. Everything also works with a ! in the log channel, like \`!ban #12 flying around\`.\n${COMMANDS.map((x) => `\`/${x.name}\` ${x.description}`).join('\n')}`.slice(0, 3900));
@@ -195,14 +323,17 @@ const RUN = {
     return ctx.reply(clip(rows.map((u) => `${line(u)} ${PROVIDER[u.provider] || ''}, joined ${when(u.created)}, \`${code(u.last_ip || '')}\``), 'No accounts yet.'));
   },
   online(ctx) {
-    const a = ctx.s.admin, list = a.online(), r = ctx.s.rooms.stats();
-    const rows = list.slice(0, 40).map((p) => {
-      const u = a.info(p.id);
-      if (!u) return null;
-      const doing = p.climbing && Date.now() - p.climbing < 60000 ? `climbing ${esc(mapName(ctx, p.map))}, ${p.h} m` : 'in the menus';
-      return `${line(u)} ${doing}`;
+    const a = ctx.s.admin, r = ctx.s.rooms.stats(), live = ctx.s.friends.everyone(), seen = new Set(live.map((x) => x.id));
+    const rows = live.slice(0, 50).map((x) => {
+      const u = a.info(x.id), tag = u && roleTag(ctx, u.role);
+      return u ? `${line(u)}${tag ? ` ${esc(tag)}` : ''}${x.vanished ? ' (vanished)' : ''}: ${doing(ctx, x.p)}` : null;
     }).filter(Boolean);
-    return ctx.reply(`${list.length} around in the last few minutes, ${r.players} in ${r.rooms} rooms.\n${clip(rows, 'Nobody right now.')}`);
+    // Older games don't keep the live line open, but still say they are there.
+    const old = a.online().filter((p) => !seen.has(p.id)).slice(0, 20).map((p) => {
+      const u = a.info(p.id);
+      return u ? `${line(u)}: ${p.climbing && Date.now() - p.climbing < 60000 ? `climbing ${esc(mapName(ctx, p.map))}, ${p.h} m` : 'around'} (older version)` : null;
+    }).filter(Boolean);
+    return ctx.reply(`${live.length + old.length} in the game right now, ${r.players} of them in ${r.rooms} rooms.\n${clip([...rows, ...old], 'Nobody right now.')}`);
   },
   top(ctx, d) {
     const by = opt(d, 'by') || 'coins', rows = ctx.s.admin.top(by, opt(d, 'count') || 15);
@@ -480,7 +611,7 @@ const RUN = {
   },
   status(ctx) {
     const s = ctx.s, m = process.memoryUsage(), b = ctx.bot.status(), v = s.verifier.stats, a = s.admin;
-    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting, ! commands ${b.bang ? 'on' : 'off'}, join and leave messages ${b.members ? 'on' : 'off'}${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
+    return ctx.reply(`Server ${esc(s.version)}, up ${fmtH(process.uptime() * 1000)}\nMemory: ${Math.round(m.rss / 1048576)} MB\nAnticheat: **${a.mode}**, ${n0(v.chunks)} chunks checked since starting (${v.chunks ? Math.round(v.ms / v.chunks) : 0} ms each), ${v.flags} flags, ${s.verifier.queueLength()} waiting\nBot: ${b.on ? `${b.commands} commands, ${b.admins} admins, ${b.queue} messages waiting, ! commands ${b.bang ? 'on' : 'off'}, join and leave messages ${b.members ? 'on' : 'off'}${b.error ? `\nLast trouble: ${esc(b.error)}` : ''}` : 'off'}\nMaintenance: ${a.maintenance ? esc(a.maintenance) : 'off'}\nAnnouncement: ${a.liveAnnouncement() ? esc(a.liveAnnouncement().text) : 'none'}`);
   },
   announce(ctx, d) {
     const text = opt(d, 'text');
@@ -514,15 +645,168 @@ const RUN = {
   setrole(ctx, d) {
     const u = target(ctx, d);
     if (!u) return undefined;
-    const role = opt(d, 'role') === 'none' ? '' : opt(d, 'role'), was = u.role || '';
-    if (role === was) return ctx.reply(`${line(u)} already has ${role ? `the ${ROLE_NAME[role]} flag` : 'no flag'}.`, { color: 'warn' });
+    const text = String(opt(d, 'role')).trim().toLowerCase(), r = text === 'none' ? null : roleFrom(ctx, text);
+    if (text !== 'none' && !r) return undefined;
+    const role = r ? r.key : '', was = u.role || '', st = ctx.s.staff;
+    if (role === was) return ctx.reply(`${line(u)} already has ${role ? `the ${esc(r.tag)} role` : 'no role'}.`, { color: 'warn' });
+    if (r && !belowMe(ctx, r.rank)) return ctx.reply(`You can only give roles below your own rank (${st.rankOf(ctx.actor)}). ${esc(r.tag)} is ${r.rank}.`, { color: 'bad' });
     ctx.s.admin.setRole(u.id, role);
-    tell(ctx, u, role ? `You now have the ${ROLE_NAME[role]} flag in the game.` : 'Your flag in the game was taken away.');
-    return done(ctx, 'setrole', `${playerLine(u)}: ${ROLE_NAME[was] || 'none'} to ${ROLE_NAME[role] || 'none'}`, role ? `${line(u)} now has the **${ROLE_NAME[role]}** flag. It reaches their game within about 30 seconds.` : `${line(u)} has no flag now.`);
+    ctx.s.friends.staffChanged(u.id);
+    tell(ctx, u, r ? `You now have the ${r.tag} role in the game.` : 'Your role in the game was taken away.');
+    return done(ctx, 'setrole', `${playerLine(u)}: ${roleTag(ctx, was) || 'none'} to ${r ? r.tag : 'none'}`, r ? `${line(u)} now has the **${esc(r.tag)}** role. It reaches their game within about 30 seconds.` : `${line(u)} has no role now.`);
   },
   roles(ctx) {
-    const rows = ctx.s.admin.withRoles().map((u) => `**${ROLE_NAME[u.role] || esc(u.role)}** ${line(u)}`);
-    return ctx.reply(`Flags in the game\n${clip(rows, 'Nobody has one yet. Use /setrole.')}`);
+    const st = ctx.s.staff;
+    const rows = st.list().map((r) => {
+      const h = st.holders(r.key, 8), who = h.total ? `${h.rows.map(line).join(', ')}${h.total > h.rows.length ? ` and ${h.total - h.rows.length} more` : ''}` : 'nobody';
+      return `**${esc(r.tag)}** \`${r.key}\`, rank ${r.rank}, ${r.color}\nMay use: ${r.key === 'owner' ? 'everything' : r.perms.length ? r.perms.join(', ') : 'nothing, it is only a flag'}\nHas it: ${who}`;
+    });
+    return ctx.reply(`Roles, highest rank first\n\n${rows.join('\n\n')}\n\nChange them with /newrole, /editrole, /delrole, /roleperm, /playerperm and /setrole.`);
+  },
+  newrole(ctx, d) {
+    const rank = opt(d, 'rank') || 10;
+    if (!belowMe(ctx, rank)) return ctx.reply(`A new role needs a rank below your own (${ctx.s.staff.rankOf(ctx.actor)}).`, { color: 'bad' });
+    const r = ctx.s.staff.create(opt(d, 'key'), opt(d, 'tag'), opt(d, 'color'), rank);
+    if (r.err) return ctx.reply(r.err, { color: 'warn' });
+    ctx.s.friends.rolesChanged();
+    return done(ctx, 'newrole', `${r.role.key} (${r.role.tag}, rank ${r.role.rank})`, `Made the role **${esc(r.role.tag)}** \`${r.role.key}\`, rank ${r.role.rank}, colour ${r.role.color}. It may use nothing yet: /roleperm ${r.role.key} add ... gives it commands, /setrole gives it to players.`);
+  },
+  editrole(ctx, d) {
+    const r = roleFrom(ctx, opt(d, 'role'));
+    if (!r) return undefined;
+    const rank = opt(d, 'rank');
+    if (!belowMe(ctx, r.rank) || (rank !== undefined && !belowMe(ctx, rank))) return ctx.reply('You can only change roles below your own rank, and keep them there.', { color: 'bad' });
+    if (opt(d, 'tag') === undefined && opt(d, 'color') === undefined && rank === undefined) return ctx.reply(`**${esc(r.tag)}** \`${r.key}\`, rank ${r.rank}, colour ${r.color}. Give a tag, color or rank to change it.`);
+    const out = ctx.s.staff.edit(r.key, { tag: opt(d, 'tag'), color: opt(d, 'color'), rank });
+    if (out.err) return ctx.reply(out.err, { color: 'warn' });
+    ctx.s.friends.rolesChanged();
+    return done(ctx, 'editrole', `${r.key}: ${out.role.tag}, ${out.role.color}, rank ${out.role.rank}`, `**${esc(out.role.tag)}** \`${out.role.key}\` is now rank ${out.role.rank}, colour ${out.role.color}.`);
+  },
+  delrole(ctx, d) {
+    if (opt(d, 'confirm') !== true) return ctx.reply('Nothing was deleted. Say confirm: true if you mean it.', { color: 'warn' });
+    const r = roleFrom(ctx, opt(d, 'role'));
+    if (!r) return undefined;
+    if (!belowMe(ctx, r.rank)) return ctx.reply('You can only delete roles below your own rank.', { color: 'bad' });
+    const out = ctx.s.staff.remove(r.key);
+    if (out.err) return ctx.reply(out.err, { color: 'warn' });
+    ctx.s.friends.rolesChanged();
+    return done(ctx, 'delrole', `${r.key} (${out.n} players had it)`, `Deleted the role ${esc(r.tag)}. ${out.n} player(s) had it and have no role now.`);
+  },
+  roleperm(ctx, d) {
+    const r = roleFrom(ctx, opt(d, 'role'));
+    if (!r) return undefined;
+    const perm = permFrom(ctx, opt(d, 'perm')), add = opt(d, 'action') === 'add';
+    if (!perm) return undefined;
+    if (!belowMe(ctx, r.rank)) return ctx.reply('You can only change roles below your own rank.', { color: 'bad' });
+    if (add && !mayGivePerm(ctx, perm)) return ctx.reply(`You can only hand out what you may use yourself, and ${perm} is not.`, { color: 'bad' });
+    const out = ctx.s.staff.setRolePerm(r.key, perm, add);
+    if (out.err) return ctx.reply(out.err, { color: 'warn' });
+    if (out.same) return ctx.reply(`${esc(r.tag)} ${add ? 'already has' : 'does not have'} ${perm}.`, { color: 'warn' });
+    ctx.s.friends.staffChanged(null);
+    const note = !add && r.perms.some((p) => p !== perm && p.startsWith('@')) ? ' It may still come from a group the role has.' : '';
+    return done(ctx, 'roleperm', `${r.key} ${add ? '+' : 'minus '}${perm}`, `${esc(r.tag)} ${add ? 'may now use' : 'may no longer use'} **${perm}**.${note}`);
+  },
+  playerperm(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const perm = permFrom(ctx, opt(d, 'perm')), mode = opt(d, 'action');
+    if (!perm) return undefined;
+    if (ctx.s.staff.isOwner(u)) return ctx.reply(`${line(u)} is an owner and may always do everything.`, { color: 'warn' });
+    if (mode === 'allow' && !mayGivePerm(ctx, perm)) return ctx.reply(`You can only hand out what you may use yourself, and ${perm} is not.`, { color: 'bad' });
+    const changed = ctx.s.staff.setUserPerm(u.id, perm, mode);
+    if (mode === 'reset' && !changed) return ctx.reply(`${line(u)} had nothing of their own for ${perm}: it comes from their role.`, { color: 'warn' });
+    ctx.s.friends.staffChanged(u.id);
+    const said = mode === 'allow' ? `may now use **${perm}**, whatever their role says` : mode === 'deny' ? `may not use **${perm}**, whatever their role says` : `goes by their role again for **${perm}**`;
+    return done(ctx, 'playerperm', `${playerLine(u)} ${mode} ${perm}`, `${line(u)} ${said}.`);
+  },
+  perms(ctx, d) {
+    const st = ctx.s.staff, who = opt(d, 'who');
+    if (who === undefined && !ctx.game) return ctx.reply(`Permissions are command names, groups of them or * for all. A role has a list of them, and one player can be allowed or denied single ones on top (/playerperm).\n${Object.entries(GROUPS).map(([g, l]) => `**@${g}**: ${l.join(', ')}`).join('\n')}`);
+    const r = who !== undefined ? st.findRole(who) : null;
+    if (r) return ctx.reply(`**${esc(r.tag)}** \`${r.key}\`, rank ${r.rank}\nGiven: ${r.key === 'owner' ? 'everything' : r.perms.join(', ') || 'nothing'}`);
+    let u = ctx.actor;
+    if (who !== undefined) {
+      if (ctx.game && !ctx.can('perms')) return ctx.reply('You may only see your own.', { color: 'bad' });
+      u = target(ctx, { options: [{ name: 'player', value: who }] });
+    }
+    if (!u) return undefined;
+    const own = st.userPerms(u.id), tag = roleTag(ctx, u.role);
+    return ctx.reply(`${line(u)}: ${tag ? `role **${esc(tag)}**, rank ${st.rankOf(u)}` : 'no role'}${own.length ? `\nTheir own: ${own.map((x) => (x.allow ? '+' : 'not ') + x.perm).join(', ')}` : ''}${st.vanished(u.id) ? '\nVanished.' : ''}\n${st.isOwner(u) ? 'May use everything.' : permsText(ctx, u)}`);
+  },
+  // ---------------------------------------------------------------- live, in the game
+  vanish(ctx, d) {
+    const u = opt(d, 'player') !== undefined ? target(ctx, d) : self(ctx);
+    if (!u) return undefined;
+    const st = ctx.s.staff, was = st.vanished(u.id), on = opt(d, 'on') === undefined ? !was : opt(d, 'on');
+    if (on === was) return ctx.reply(`${line(u)} is ${on ? 'already vanished' : 'not vanished'}.`, { color: 'warn' });
+    st.setVanish(u.id, on);
+    ctx.s.friends.vanishChanged(u.id);
+    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline, and nobody is told when they watch a climb. Rooms still show them when they climb in one.` : `${line(u)} can be seen again.`);
+  },
+  watch(ctx, d) {
+    if (!ctx.game) return ctx.reply(IN_GAME, { color: 'warn' });
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    if (u.id === ctx.actor.id) return ctx.reply('That is you.', { color: 'warn' });
+    const p = ctx.s.friends.presence(u.id);
+    if (p.st !== 'climb') return ctx.reply(`${line(u)} is not climbing right now: ${doing(ctx, p)}.`, { color: 'warn' });
+    ctx.act({ watch: u.num, name: u.game_name || u.name });
+    return ctx.reply(`Watching ${line(u)}.${ctx.s.staff.vanished(ctx.actor.id) ? ' You are vanished, so they are not told.' : ' They see that you are watching: /vanish first to stay hidden.'}`);
+  },
+  join(ctx, d) {
+    if (!ctx.game) return ctx.reply(IN_GAME, { color: 'warn' });
+    const text = String(opt(d, 'player') || '').trim(), rooms = ctx.s.rooms;
+    const codeLike = /^[A-Za-z0-9]{5}$/.test(text);
+    let room = codeLike ? rooms.room(text.toUpperCase()) : null;
+    if (!room && codeLike && ctx.s.admin.find(text).none) return ctx.reply(`No room has the code ${esc(text.toUpperCase())} right now, and no player is called that. /rooms lists the open rooms.`, { color: 'warn' });
+    if (!room) {
+      const u = target(ctx, d);
+      if (!u) return undefined;
+      if (u.id === ctx.actor.id) return ctx.reply('That is you.', { color: 'warn' });
+      const at = rooms.roomOf(u.id), p = ctx.s.friends.presence(u.id);
+      room = at ? rooms.room(at.code) : null;
+      if (!room && p.room && p.room.kind === 'online') return ctx.reply(`${line(u)} is in an Online room (${p.room.code}). Those don't go through this server, so only its own password lets anyone in: try Join a game, Online. /watch shows their climb.`, { color: 'warn' });
+      if (!room && p.st === 'climb') return ctx.reply(`${line(u)} is climbing alone, so there is no room to join. /watch ${u.num} shows the climb.`, { color: 'warn' });
+      if (!room) return ctx.reply(`${line(u)} is not in a room: ${doing(ctx, p)}.`, { color: 'warn' });
+    }
+    if (ctx.s.staff.vanished(ctx.actor.id)) {
+      // Climbing in a room shows you to everyone there, so a vanished join watches it through its host instead.
+      const host = room.host.userId ? ctx.s.admin.info(room.host.userId) : null;
+      if (!host || ctx.s.friends.presence(host.id).st !== 'climb') return ctx.reply(`You are vanished, and climbing in room ${room.code} would show you to everyone in it. ${room.started ? 'Its host can not be watched right now either.' : 'They have not started climbing yet, so there is nothing to watch.'} /vanish off, then /join, to climb with them.`, { color: 'warn' });
+      ctx.act({ watch: host.num, name: host.game_name || host.name });
+      return ctx.reply(`You are vanished, so you watch room ${room.code} through its host ${line(host)} instead of climbing in it. Nobody is told. /vanish off, then /join, to climb with them.`);
+    }
+    if (room.peers.size >= 3) return ctx.reply(`Room ${room.code} is full (4 climbers).`, { color: 'warn' });
+    ctx.act({ join: room.code });
+    return ctx.reply(`Joining room ${room.code}${room.hash ? ' past its password' : ''}. Everyone in it sees you join and climb.`);
+  },
+  tell(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const text = opt(d, 'text');
+    ctx.s.admin.tell(u.id, `Message from ${ctx.game ? ctx.whoShort : 'the team'}: ${text}`);
+    return done(ctx, 'tell', `${playerLine(u)}: ${text}`, `Sent to ${line(u)}. It shows in their game within about 30 seconds, or the next time they open it.`);
+  },
+  giverelic(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const f = ctx.s.wallet.findRelics(opt(d, 'relic'));
+    if (f.err) return ctx.reply(`${esc(f.err)}${didYouMean(closest(opt(d, 'relic'), ctx.s.wallet.relicList().map((x) => x[0])))}`, { color: 'warn' });
+    const said = opt(d, 'reason'), why = said || 'no reason given', got = ctx.s.wallet.giveRelics(u.id, f.list, `${ctx.whoShort}: ${why}`);
+    if (!got.length) return ctx.reply(`${line(u)} already has ${f.list.length > 1 ? 'all of those' : 'that one'}.`, { color: 'warn' });
+    const names = got.map((x) => ctx.s.wallet.relicName(x));
+    tell(ctx, u, got.length === 1 ? `You got a relic: ${names[0]}. What it opens can be bought in the shop now.` : `You got ${got.length} relics. What they open can be bought in the shop now.`, said);
+    return done(ctx, 'giverelic', `${got.join(', ')} to ${playerLine(u)}: ${why}`, `Gave ${line(u)} ${got.length === 1 ? 'the relic' : `${got.length} relics:`} ${esc(names.join(', '))}.${withWhy(said)}`);
+  },
+  takerelic(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const f = ctx.s.wallet.findRelics(opt(d, 'relic'));
+    if (f.err) return ctx.reply(`${esc(f.err)}${didYouMean(closest(opt(d, 'relic'), ctx.s.wallet.relicList().map((x) => x[0])))}`, { color: 'warn' });
+    const said = opt(d, 'reason'), why = said || 'no reason given', gone = ctx.s.wallet.takeRelics(u.id, f.list, `${ctx.whoShort}: ${why}`);
+    if (!gone.length) return ctx.reply(`${line(u)} does not have ${f.list.length > 1 ? 'any of those' : 'that one'}.`, { color: 'warn' });
+    tell(ctx, u, gone.length === 1 ? `A relic was taken from you: ${ctx.s.wallet.relicName(gone[0])}.` : `${gone.length} relics were taken from you.`, said);
+    return done(ctx, 'takerelic', `${gone.join(', ')} from ${playerLine(u)}: ${why}`, `Took ${gone.length} relic(s) from ${line(u)}: ${esc(gone.map((x) => ctx.s.wallet.relicName(x)).join(', '))}. What they bought with them stays theirs.${withWhy(said)}`);
   },
   welcome(ctx, d) {
     const c = ctx.bot.community, cfg = c.config('welcome'), ch = opt(d, 'channel'), leave = opt(d, 'leavechannel'), msg = opt(d, 'message');
@@ -667,7 +951,7 @@ function parseBang(content) {
   const m = /^!([a-z]+)(?:\s+([\s\S]*))?$/i.exec(String(content).trim());
   if (!m) return null;
   const f = COMMANDS.find((c) => c.name === m[1].toLowerCase());
-  if (!f) return { unknown: m[1] };
+  if (!f) return { unknown: m[1], near: closest(m[1], COMMANDS.map((c) => c.name)) };
   const got = new Map(), free = [];
   for (const w of splitWords(m[2] || '')) {
     const o = w.key ? f.options.find((x) => x.name === w.key) : null;
@@ -700,6 +984,11 @@ function parseBang(content) {
 function runCommand(ctx, data) {
   const f = Object.hasOwn(RUN, data.name) ? RUN[data.name] : null;
   if (!f) return ctx.reply('This server does not know that command.', { color: 'warn' });
+  if (ctx.game) {
+    if (DISCORD_ONLY.has(data.name)) return ctx.reply('That one only works on Discord.', { color: 'warn' });
+    if (!ctx.can(data.name)) return ctx.reply(`You may not use /${data.name}. /perms shows what you may.`, { color: 'bad' });
+  }
+  ctx.cmd = data.name;
   try {
     return f(ctx, data);
   } catch (e) {
@@ -744,6 +1033,22 @@ function suggest(s, data) {
     const q = text.toLowerCase();
     return s.wallet.catalogList().filter(([k, name]) => k.toLowerCase().includes(q) || name.toLowerCase().includes(q)).slice(0, 25).map(([k, name]) => ({ name: `${name} (${k})`.slice(0, 100), value: k }));
   }
+  if (focus.name === 'role') {
+    const q = text.toLowerCase();
+    return [{ name: 'none (take it away)', value: 'none' }, ...s.staff.list().map((r) => ({ name: `${r.tag} (${r.key}, rank ${r.rank})`, value: r.key }))].filter((c) => c.name.toLowerCase().includes(q)).slice(0, 25);
+  }
+  if (focus.name === 'perm') {
+    const q = text.toLowerCase();
+    return s.staff.permNames().filter((n) => n.includes(q)).slice(0, 25).map((n) => ({ name: n, value: n }));
+  }
+  if (focus.name === 'relic') {
+    const q = text.toLowerCase();
+    return [['all', 'Every relic'], ...s.wallet.mapNames.map((m) => [m, `Every relic on ${m}`]), ...s.wallet.relicList()].filter(([k, n]) => k.includes(q) || n.toLowerCase().includes(q)).slice(0, 25).map(([k, n]) => ({ name: `${n} (${k})`.slice(0, 100), value: k }));
+  }
+  if (focus.name === 'who') {
+    const q = text.toLowerCase();
+    return [...s.staff.list().filter((r) => r.key.includes(q) || r.tag.toLowerCase().includes(q)).map((r) => ({ name: `Role ${r.tag}`, value: r.key })), ...s.admin.search(text, 20).map((u) => ({ name: String(`${nameOf(u)} #${u.num}`).slice(0, 100), value: String(u.id) }))].slice(0, 25);
+  }
   if (focus.name === 'command') {
     const q = text.toLowerCase();
     return COMMANDS.filter((c) => c.name.includes(q)).slice(0, 25).map((c) => ({ name: c.name, value: c.name }));
@@ -751,4 +1056,4 @@ function suggest(s, data) {
   return [];
 }
 
-module.exports = { COMMANDS, RUN, runCommand, runButton, runModal, suggest, playerLine, guardText, parseBang, usage };
+module.exports = { COMMANDS, RUN, GROUPS, DISCORD_ONLY, GAME_ONLY, runCommand, runButton, runModal, suggest, playerLine, guardText, parseBang, usage, closest, didYouMean };

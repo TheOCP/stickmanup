@@ -6,7 +6,10 @@ import { CORE_R, coreFlare, cpEnabled, secretOn } from './level.js';
 import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
-import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail } from './scenery.js';
+import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail, modelGeo, vegMat } from './scenery.js';
+import { buildMazes, showMaze, MAZE_BEAST } from './mazeview.js';
+import { buildStart, updateStart } from './startview.js';
+import { barkTex, rockTex as rockTexture, facadeTex, lighthouseTex, steelTex, buildCoreDetail } from './coreview.js';
 
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -170,6 +173,7 @@ export class WorldView {
     this.buildCreatures();
     this.buildHazards();
     this.buildSideTrees();
+    buildCoreDetail(this);
     this.buildVolcano();
     this.buildVentsRocks();
     this.buildCity();
@@ -183,7 +187,14 @@ export class WorldView {
     this.buildSmallFalls();
     buildMist(this, this.mistSpots);
     this.buildSecrets();
+    buildMazes(this);
+    buildStart(this);
     this.freeze();
+  }
+
+  // The maze gardens' inner walls, the way the colliders have them now (game.js setMaze after level.js applyMaze).
+  setMaze() {
+    showMaze(this);
   }
 
   dispose() {
@@ -322,7 +333,8 @@ export class WorldView {
 
   buildStatic() {
     const L = this.level, R = rng(99);
-    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret');
+    // The maze gardens are drawn by mazeview.js.
+    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret' && c.kind !== 'mfloor' && c.kind !== 'mwall' && c.kind !== 'mouter');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
     const col = new THREE.Color();
@@ -477,25 +489,12 @@ export class WorldView {
     if (this.key === 'volcano') return;
     if (this.key === 'waterfall') return this.buildFallsCore();
     if (this.key !== 'storm' && this.key !== 'city') return this.buildCoreAlt();
-    const L = this.level, R = rng(5), city = this.key === 'city';
+    const L = this.level, city = this.key === 'city';
     const H = L.top - 1.2 + 40;
-    const win = canvasTex(256, 1024, (g, w, h) => {
-      g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
-      for (let y = 8; y < h; y += 22) {
-        for (let x = 6; x < w; x += 18) {
-          if (R() < 0.22) {
-            g.fillStyle = city ? `hsl(${[300, 200, 45][(R() * 3) | 0] + R() * 20},90%,${50 + R() * 20}%)`
-              : R() < 0.7 ? `hsl(${190 + R() * 30},80%,${45 + R() * 25}%)` : `hsl(${30 + R() * 20},90%,${50 + R() * 20}%)`;
-            g.fillRect(x, y, 10, 12);
-          }
-        }
-      }
-      g.fillStyle = 'rgba(63,240,208,0.35)';
-      g.fillRect(127, 0, 2, h);
-    });
-    win.wrapS = win.wrapT = THREE.RepeatWrapping;
-    win.repeat.set(10, H / 38);
-    const m = panelMat(0x262c38, { metalness: 0.55, roughness: 0.45, emissive: 0xffffff, emissiveMap: win, emissiveIntensity: 0.85 });
+    // Floors of offices (coreview.js): a tile is 6 bays by 12 floors, three tiles round.
+    const { map, glow } = facadeTex(city ? 41 : 5, city);
+    for (const t of [map, glow]) t.repeat.set(3, H / 42);
+    const m = panelMat(0xffffff, { map, metalness: 0.5, roughness: 0.4, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 0.9, pattern: 0 });
     const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R, H, 72, 1, true), m);
     core.position.y = (L.top - 1.2 - 40) / 2;
     this.add(core);
@@ -514,37 +513,21 @@ export class WorldView {
 
   // Sunny: a white lighthouse with red bands and warm windows. Forest: a giant bark trunk.
   buildCoreAlt() {
-    const L = this.level, R = rng(6), H = L.top - 1.2 + 40, sunny = this.key === 'sunny';
-    const tex = canvasTex(512, 1024, (g, w, h) => {
-      if (sunny) {
-        g.fillStyle = '#f2efe8'; g.fillRect(0, 0, w, h);
-        for (let y = 0; y < h; y += 16) for (let x = (y / 16) % 2 ? 0 : 20; x < w; x += 40) { g.fillStyle = `rgba(0,0,0,${0.03 + R() * 0.05})`; g.fillRect(x, y, 38, 14); }
-        g.fillStyle = '#c8322f'; for (let y = 0; y < h; y += 256) g.fillRect(0, y, w, 64);
-        for (let y = 112; y < h; y += 256) for (let x = 36; x < w; x += 128) {
-          g.fillStyle = '#2b3a4a'; g.fillRect(x, y, 60, 46);
-          g.fillStyle = '#8fc4e8'; g.fillRect(x + 5, y + 5, 23, 36); g.fillRect(x + 32, y + 5, 23, 36);
-          g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(x + 7, y + 7, 6, 16);
-        }
-      } else {
-        g.fillStyle = '#4a3624'; g.fillRect(0, 0, w, h);
-        for (let i = 0; i < 900; i++) {
-          const x = R() * w, y = R() * h, l = 40 + R() * 160;
-          g.strokeStyle = `rgba(${R() < 0.5 ? '20,12,6' : '120,90,60'},${0.15 + R() * 0.35})`;
-          g.lineWidth = 1 + R() * 4;
-          g.beginPath(); g.moveTo(x, y); g.bezierCurveTo(x + R() * 10 - 5, y + l / 3, x + R() * 10 - 5, y + l * 0.66, x + R() * 6 - 3, y + l); g.stroke();
-        }
-        for (let i = 0; i < 140; i++) { g.fillStyle = `rgba(90,140,60,${0.25 + R() * 0.4})`; g.beginPath(); g.ellipse(R() * w, R() * h, 6 + R() * 20, 4 + R() * 12, 0, 0, TAU); g.fill(); }
-      }
-    });
+    const L = this.level, H = L.top - 1.2 + 40, sunny = this.key === 'sunny';
+    // Textures from coreview.js. The lighthouse: a tile is a quarter of the way round and 30 m tall. The trunk: a third of
+    // the way round and 25 m tall, so the bark plates keep their shape.
+    const tex = sunny ? lighthouseTex(6) : barkTex(6);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(sunny ? 4 : 3, H / (sunny ? 60 : 30));
+    tex.repeat.set(sunny ? 4 : 3, H / (sunny ? 30 : 25));
     const m = new THREE.MeshStandardMaterial({ map: tex, roughness: sunny ? 0.55 : 0.9, metalness: 0 });
     if (!sunny) {
       // Side trees reuse the bark, wrapped less often round their thinner trunks.
+      // (their geometry scales its uvs to its height: one tile once round and 33 m up)
       const t2 = tex.clone();
-      t2.repeat.set(1, 40);
+      t2.repeat.set(1, 1);
       t2.needsUpdate = true;
       this.barkMat = new THREE.MeshStandardMaterial({ map: t2, roughness: 0.9, metalness: 0 });
+      this.barkTex = tex;
     }
     const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R * coreFlare(sunny ? 'sunny' : 'forest'), H, 72, 1, true), m);
     core.position.y = (L.top - 1.2 - 40) / 2;
@@ -1021,9 +1004,11 @@ export class WorldView {
     ]);
     const mm = panelMat(0x8a3ab0, { roughness: 0.5, metalness: 0.05, pattern: 0, emissive: 0x2a0a3a, emissiveIntensity: 1 });
     for (const m of L.monsters) {
-      const o = this.add(new THREE.Mesh(mg, mm));
+      // In the maze gardens, each map's own creature (mazeview.js).
+      const beast = m.mz !== undefined && MAZE_BEAST[this.key];
+      const o = this.add(beast ? new THREE.Mesh(modelGeo(beast), vegMat()) : new THREE.Mesh(mg, mm));
       this.anim.push(o);
-      this.monsters.push({ m, o, p: {} });
+      this.monsters.push({ m, o, p: {}, beast: !!beast });
     }
     if (this.key === 'city') return this.buildDrones(mm);
     const wing = new THREE.BufferGeometry();
@@ -1171,21 +1156,25 @@ export class WorldView {
     const T = this.level.trees;
     if (!T.length) return;
     const R = rng(91), kind = T[0].kind || 'tree';
-    const bark = kind === 'pylon' ? new THREE.MeshStandardMaterial({ color: 0x3a404c, roughness: 0.4, metalness: 0.7 })
-      : kind === 'stack' ? (this.rockMat || new THREE.MeshStandardMaterial({ color: 0x6a6a64, roughness: 0.95 }))
+    // Their own copies of the textures (coreview.js), wrapped once round: the geometry scales its uvs to its height.
+    const once = (t) => { const c = t.clone(); c.repeat.set(1, 1); c.needsUpdate = true; return c; };
+    const bark = kind === 'pylon' ? new THREE.MeshStandardMaterial({ map: steelTex(8), roughness: 0.42, metalness: 0.6 })
+      : kind === 'stack' ? (this.rockMat ? new THREE.MeshStandardMaterial({ map: once(this.rockMat.map), roughness: 0.92, metalness: 0 }) : new THREE.MeshStandardMaterial({ color: 0x6a6a64, roughness: 0.95 }))
       : (this.barkMat || new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }));
+    const tileH = kind === 'pylon' ? 16 : 33;
     this.sideMat = bark;
-    const leaf = new THREE.MeshStandardMaterial({ color: kind === 'stack' ? 0x4f8a3a : 0x3f7a30, roughness: 0.85, flatShading: true });
     const glow = new THREE.MeshBasicMaterial({ color: HDR(0x3ff0d0, 2.2) }), beacon = new THREE.MeshBasicMaterial({ color: HDR(0x9b7bff, 3) });
-    const blob = new THREE.IcosahedronGeometry(1, 1), knots = [], roots = [];
+    const knots = [], roots = [];
     for (const t of T) {
       // From the ground, or floating on a knot of roots (or rock, or a steel cone) above older route (level.js decides).
       const floating = t.base > 0, low = floating ? t.base + 3 : t.base, h = t.top - low;
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r, h, 28, 1, !floating), bark);
+      // The texture keeps its shape whatever the height: one tile once round and tileH up.
+      const bv = (g, len) => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * len / tileH); return g; };
+      const trunk = new THREE.Mesh(bv(new THREE.CylinderGeometry(t.r, t.r, h, 28, 1, !floating), h), bark);
       trunk.position.set(t.x, low + h / 2, t.z);
       this.add(trunk);
       if (!floating) {
-        const foot = new THREE.Mesh(new THREE.CylinderGeometry(t.r, t.r * 1.35, 6, 28, 1, true), bark);
+        const foot = new THREE.Mesh(bv(new THREE.CylinderGeometry(t.r, t.r * 1.35, 6, 28, 1, true), 6), bark);
         foot.position.set(t.x, t.base + 3, t.z);
         this.add(foot);
       } else {
@@ -1210,27 +1199,15 @@ export class WorldView {
         orb.position.set(t.x, t.top + 6.4, t.z);
         this.add(cap); this.add(rod); this.add(orb, false);
       } else if (kind === 'stack') {
-        // A mossy top and a thin fall pouring down one side of the rock.
-        for (let i = 0; i < 4; i++) {
-          const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 1.2 + R() * 1.2 : 0;
-          c.position.set(t.x + Math.cos(a) * rr2, t.top + 0.4 + R() * 0.6, t.z + Math.sin(a) * rr2);
-          c.scale.set(2.0 + R() * 0.8, 0.7 + R() * 0.4, 2.0 + R() * 0.8);
-          this.add(c);
-        }
+        // A thin fall pouring down one side of the rock (its mossy top is coreview.js's).
         const th = R() * TAU, fg = new THREE.CylinderGeometry(t.r + 0.08, t.r + 0.08, h, 10, 1, true, th, 0.5);
         fg.userData.len = 0.5;
         this.flowUV(fg, 'sheet', th);
         const fall = new THREE.Mesh(fg, this.sideFall || (this.sideFall = fallMat(this, { speed: 0.5 })));
         fall.position.set(t.x, low + h / 2, t.z);
         this.add(fall, false);
-      } else {
-        for (let i = 0; i < 6; i++) {
-          const c = new THREE.Mesh(blob, leaf), a = R() * TAU, rr2 = i ? 2.5 + R() * 2.5 : 0;
-          c.position.set(t.x + Math.cos(a) * rr2, t.top + 2.5 + R() * 2.5, t.z + Math.sin(a) * rr2);
-          c.scale.set(3.4 + R() * 1.6, 2.2 + R(), 3.4 + R() * 1.6);
-          this.add(c);
-        }
       }
+      // Trees get their crowns and branches in coreview.js.
     }
     // All the root knots of the map in two draws, however many trees float.
     const batch = (geo, list) => {
@@ -1547,22 +1524,7 @@ export class WorldView {
     return (this[key] = g);
   }
 
-  rockTex(seed) {
-    const R = rng(seed);
-    return canvasTex(512, 1024, (g, w, h) => {
-      g.fillStyle = '#6e685c'; g.fillRect(0, 0, w, h);
-      for (let i = 0; i < 1400; i++) { const sz = 4 + R() * 26; g.fillStyle = `rgba(${R() < 0.5 ? '40,36,30' : '160,150,130'},${0.08 + R() * 0.18})`; g.fillRect(R() * w, R() * h, sz, sz * (0.3 + R() * 0.6)); }
-      g.lineCap = 'round';
-      for (let i = 0; i < 110; i++) {
-        let x = R() * w, y = R() * h;
-        g.strokeStyle = `rgba(30,26,22,${0.3 + R() * 0.4})`; g.lineWidth = 1 + R() * 2.5;
-        g.beginPath(); g.moveTo(x, y);
-        for (let k = 0; k < 5; k++) { x += (R() - 0.5) * 30; y += 8 + R() * 26; g.lineTo(x, y); }
-        g.stroke();
-      }
-      for (let i = 0; i < 240; i++) { g.fillStyle = `rgba(${60 + R() * 40},${125 + R() * 60},${45 + R() * 30},${0.35 + R() * 0.4})`; g.beginPath(); g.ellipse(R() * w, R() * h, 6 + R() * 30, 4 + R() * 14, 0, 0, TAU); g.fill(); }
-    });
-  }
+  rockTex(seed) { return rockTexture(seed); }
 
   // The climb goes round a mossy rock spire with waterfalls pouring down it into a plunge pool.
   buildFallsCore() {
@@ -1865,18 +1827,15 @@ export class WorldView {
   buildCity() {
     const L = this.level;
     if (this.key === 'city') {
-      const R = rng(23), H = L.top + 20;
-      for (const t of L.towers) {
-        const tex = canvasTex(256, 1024, (g, w, h) => {
-          g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
-          for (let y = 6; y < h; y += 16) for (let x = 6; x < w; x += 14) {
-            if (R() < 0.42) { g.fillStyle = `hsl(${[45, 200, 300][(R() * 3) | 0]},${60 + R() * 30}%,${40 + R() * 30}%)`; g.fillRect(x, y, 8, 9); }
-          }
-          for (let k = 0; k < 5; k++) { g.fillStyle = `hsl(${R() * 360},100%,60%)`; g.fillRect(20 + R() * 120, R() * h, 90, 40); }
-        });
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(1, H / 60);
-        const m = new THREE.Mesh(BOXG, panelMat(0x1c2230, { metalness: 0.6, roughness: 0.4, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.1, pattern: 1 }));
+      const H = L.top + 20;
+      // Two sets of office floors (coreview.js), every other tower: four bays to a face, twelve floors to a tile.
+      const looks = [51, 52].map((seed) => {
+        const { map, glow } = facadeTex(seed, true);
+        for (const t of [map, glow]) t.repeat.set((L.towers[0] ? L.towers[0].half * 2 : 8.4) / 12.57, H / 42);
+        return panelMat(0xffffff, { map, metalness: 0.55, roughness: 0.4, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 1.0, pattern: 0 });
+      });
+      for (const [ti, t] of L.towers.entries()) {
+        const m = new THREE.Mesh(BOXG, looks[ti % 2]);
         m.scale.set(t.half * 2, H, t.half * 2);
         m.position.set(t.x, H / 2 - 20, t.z);
         m.rotation.y = -t.a;
@@ -2088,13 +2047,21 @@ export class WorldView {
         stretchTo(r.r, ax, d.py, az, bx, c.y + 0.25, bz);
       }
     }
+    if (!cam || cam.y < 60) updateStart(this, t);
     for (const e of this.monsters) {
       const m = e.m, near = !cam || Math.abs(m.y - cam.y) < 45;
       e.o.visible = near;
       if (!near) continue;
       const p = storm.monsterPos(m, t, e.p), o = e.o;
-      o.position.set(p.x, p.y, p.z);
       const dx = (m.bx - m.ax) * p.dir, dz = (m.bz - m.az) * p.dir;
+      if (e.beast) {
+        // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned.
+        const walk = p.stunned ? 0 : t * 9 + m.i;
+        o.position.set(p.x, m.y - 0.65 + Math.abs(Math.sin(walk)) * 0.05, p.z);
+        o.rotation.set(0, dx || dz ? Math.atan2(dx, dz) : o.rotation.y, p.stunned ? Math.sin(t * 25) * 0.25 : Math.sin(walk) * 0.06, 'YXZ');
+        continue;
+      }
+      o.position.set(p.x, p.y, p.z);
       o.rotation.set(0, Math.atan2(dx, dz), p.stunned ? Math.sin(t * 25) * 0.3 : 0, 'YXZ');
       const sq = p.stunned ? 0.6 : 1 + 0.08 * Math.sin(t * 9 + m.i);
       o.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));

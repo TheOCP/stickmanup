@@ -24,7 +24,7 @@ function cleanLobby(l) {
 function cleanGame(g) {
   if (!g || typeof g !== 'object') return null;
   return Object.assign(g, {
-    map: inList(g.map, MAPS), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls),
+    map: inList(g.map, MAPS), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls), mz: count(g.mz),
     pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {},
   });
 }
@@ -373,6 +373,7 @@ export class Session {
       case 'S':
         if (m.f !== undefined) m.f = count(m.f);
         if (m.cp !== undefined) m.cp = count(m.cp);
+        if (m.mz !== undefined) m.mz = count(m.mz);
         for (const k in m.p) {
           const slot = +k, p = this.players.get(slot);
           if (p && slot !== this.slot) this.push(p, m.t, m.p[k]);
@@ -382,6 +383,8 @@ export class Session {
       case 'ev':
         if (!m.e || typeof m.e !== 'object') break;
         if (m.e.falls !== undefined) m.e.falls = count(m.e.falls);
+        if (m.e.mz !== undefined) m.e.mz = count(m.e.mz);
+        if (m.e.k === 'maze') m.e.v = count(m.e.v);
         if (m.e.t !== undefined) m.e.t = num(m.e.t);
         this.emit('event', m.e);
         break;

@@ -4,7 +4,7 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, MAPS, zoneAt, pathsOf } from './level.js';
+import { DIFFS, MAPS, zoneAt, pathsOf, applyMaze } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
@@ -18,7 +18,7 @@ const hit = { nx: 0, ny: 0, nz: 0, d: 0 };
 export function feedGame(g) {
   const players = [];
   for (const [s, p] of g.s.players) players.push({ s, name: String(p.name || ''), color: g.colorOf(s), look: p.look || null, role: p.role || '' });
-  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], me: g.slot, players, ct: coinBits(g) };
+  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], mz: g.mz, me: g.slot, players, ct: coinBits(g) };
 }
 
 // The coins already taken, one bit each: a few hundred letters even for a whole climb.
@@ -48,7 +48,7 @@ export function feedState(g, paused) {
   for (const [s, v] of g.vis || []) {
     if (s !== g.slot && g.s.players.has(s)) p.push([s, r3(v.x), r3(v.y), r3(v.z), r3(v.vx), r3(v.vy), r3(v.vz), r3(v.yaw || 0), v.flags | 0, r3(v.reel || 0), r3(v.charge || 0), emote(s), r3(v.elev || 0)]);
   }
-  const m = { t: 's', T: r3(g.time), f: g.falls, p };
+  const m = { t: 's', T: r3(g.time), f: g.falls, mz: g.mz, p };
   if (g.feedShots && g.feedShots.length) m.sh = g.feedShots.splice(0).map((a) => a.map((v) => (typeof v === 'number' ? r3(v) : v)));
   const j = g.jumpPack();
   if (j.length) m.j = j;
@@ -143,6 +143,7 @@ export class Spectator {
       for (const c of this.L.crumbles) { c.crumble.st = 0; c.crumble.t = 0; c.on = true; }
       app.view.resetDoors();
       this.doors = new Set();
+      this.mz = -1;
       const custom = ['cps', 'haz', 'rope'].some((k) => rules[k] !== undefined && rules[k] !== diff);
       this.storm.sec = pathsOf(diff, custom);
       app.view.setSecrets(this.storm.sec);
@@ -166,6 +167,7 @@ export class Spectator {
       }
     }
     if (g.ct !== undefined) this.coinTaken = coinSet(g.ct, this.L.coins.length);
+    this.setMaze(g.mz);
     const noCord = !!g.noCord, seen = new Map();
     for (const p of Array.isArray(g.players) ? g.players.slice(0, 4) : []) {
       if (!p || !Number.isInteger(p.s) || p.s < 0 || p.s > 3) continue;
@@ -199,6 +201,13 @@ export class Spectator {
     this.hooks.team(this);
   }
 
+  // The maze gardens' walls, the way the climb has them now.
+  setMaze(v) {
+    if (!Number.isInteger(v) || v < 0 || v === this.mz || !this.L) return;
+    this.mz = v;
+    if (this.L.mazes && this.L.mazes.length) { applyMaze(this.L, v); this.app.view.setMaze(v); }
+  }
+
   // Where everyone is right now.
   state(m) {
     const T = +m.T;
@@ -208,6 +217,7 @@ export class Spectator {
     const off = T - performance.now() / 1000;
     this.clock = this.clock === null || Math.abs(off - this.clock) > 1 ? off : this.clock + (off - this.clock) * 0.05;
     this.falls = Number.isInteger(m.f) && m.f >= 0 ? m.f : 0;
+    if (m.mz !== this.mz) this.setMaze(m.mz);
     this.held = !!m.z;
     this.won = !!m.w;
     if (Array.isArray(m.j)) this.jump = m.j.slice(0, 80); else this.jump = [];

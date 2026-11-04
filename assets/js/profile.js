@@ -2,7 +2,7 @@
 import { store } from './util.js';
 import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
 import { WEAPON, FREE_WEAPON, WEAPONS } from './weapons.js';
-import { needOf, SUIT_RELICS, WEAPON_RELICS, VOID_WEAPON, opensOf } from './relics.js';
+import { needOf, SUIT_RELICS, MAZE_RELIC_IDS, WEAPON_RELICS, VOID_WEAPON, opensOf, MAP_KEYS } from './relics.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
@@ -18,7 +18,9 @@ const saveNow = () => { clearTimeout(timer); timer = 0; store.set('profile', P);
 const saveSoon = () => { if (!timer) timer = setTimeout(saveNow, 900); };
 export const flushProfile = saveNow;
 
-export const RELIC_COUNT = SUIT_RELICS.length;
+// Every relic there is: the hidden suits (paths and maze gardens), the epic vaults and the legendary weapons.
+const ALL_SUITS = [...SUIT_RELICS, ...MAZE_RELIC_IDS];
+export const RELIC_COUNT = ALL_SUITS.length + MAP_KEYS.length + WEAPON_RELICS.length;
 
 // First run on this version: what you had picked in Settings becomes your suit.
 export function initProfile(oldColor) {
@@ -138,11 +140,11 @@ export function myLook() {
 
 
 export const hasRelic = (id) => P.relics.includes(id);
-export const relicsFound = () => P.relics.filter((r) => SUIT_RELICS.includes(r)).length;
+export const relicsFound = () => P.relics.filter((r) => ALL_SUITS.includes(r)).length;
 // How many of each kind of hidden place you found: [found, how many there are].
 export const relicCounts = () => {
   const n = (sfx) => P.relics.filter((r) => r.endsWith(sfx)).length;
-  return { suit: [relicsFound(), RELIC_COUNT], epic: [n(':e'), 6], weapon: [n(':w'), WEAPON_RELICS.length] };
+  return { suit: [relicsFound(), ALL_SUITS.length], epic: [n(':e'), MAP_KEYS.length], weapon: [n(':w'), WEAPON_RELICS.length] };
 };
 // A relic picked up: what to tell the climber, or null if it was found before.
 export function foundRelic(id) {

@@ -5,7 +5,7 @@
 import './sim/env.js';
 import zlib from 'node:zlib';
 import { parentPort } from 'node:worker_threads';
-import { generateLevel, MAPS, secretOn } from './sim/level.js';
+import { generateLevel, MAPS, secretOn, applyMaze } from './sim/level.js';
 import { World } from './sim/physics.js';
 import { Game } from './sim/game.js';
 import * as cloud from './sim/cloud.js';
@@ -77,7 +77,7 @@ function makeGame(run, head) {
   const roster = Array.isArray(head.roster) && head.mode !== 'solo' ? head.roster.filter((s) => Number.isInteger(s) && s >= 0 && s < 8).slice(0, 8) : [0];
   const s = new FakeSession(head.mode === 'solo' ? 'solo' : 'replay', head.mode === 'solo' ? 0 : head.slot | 0, roster);
   const g = {
-    map: run.map, diff: run.diff, rules: run.rules, t0: 0, base: head.t, cp: head.cp | 0, falls: head.falls | 0,
+    map: run.map, diff: run.diff, rules: run.rules, t0: 0, base: head.t, cp: head.cp | 0, falls: head.falls | 0, mz: head.mz | 0,
     doors: Array.isArray(head.doors) ? head.doors : [], stuns: Array.isArray(head.stuns) ? head.stuns : [],
     pos: Array.isArray(head.pos) && head.pos.every(Number.isFinite) ? { [s.slot]: head.pos } : null,
     noCord: !!head.noCord, pcp: head.pcp || {},
@@ -134,7 +134,7 @@ function othersFor(live) {
 }
 
 // ---------------------------------------------------------------- the shared level
-// Several climbs of one map share its level in here, so floors that crumbled and doors that opened are put back per climb.
+// Several climbs of one map share its level in here, so floors that crumbled, doors that opened and maze walls are put back per climb.
 function swapIn(live) {
   const g = live.game, L = g.L;
   for (const d of L.doors) d.col.on = !g.doors.has(d.i);
@@ -145,6 +145,8 @@ function swapIn(live) {
     c.on = s ? s[2] : true;
   });
   for (const c of L.cols) if (c.kind === 'secret') c.on = secretOn(c, g.storm.sec);
+  // The maze gardens stand the way this climb last left them.
+  if (L.mazes && L.mazes.length) applyMaze(L, g.mz | 0);
   g.W.setTime(live.lastT);
   profile.sink.relics = live.relics;
   cloud.sink.coin = (i) => { live.coins.push(i); };
@@ -236,7 +238,7 @@ function shotInTime(live, gun) {
 
 function snapshot(live) {
   const g = live.game, m = g.me;
-  return { seq: ++live.snapSeq, t: g.simT, cp: g.cp, falls: g.falls, doors: [...g.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...g.coinTaken], stuns: [...g.storm.stun].map(([k, v]) => [k, v.from, v.until]), foundRelics: [...live.relics], tick: live.tick };
+  return { seq: ++live.snapSeq, t: g.simT, cp: g.cp, falls: g.falls, mz: g.mz, doors: [...g.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...g.coinTaken], stuns: [...g.storm.stun].map(([k, v]) => [k, v.from, v.until]), foundRelics: [...live.relics], tick: live.tick };
 }
 
 function act(live, a, snaps, quiet) {
@@ -437,10 +439,10 @@ function freshGame(run, chunk) {
   if (head.mode === 'solo') {
     // A climb alone starts at the bottom, or from what the server itself saw at a save.
     const from = run.snapshot;
-    if (from) return makeGame(run, { mode: 'solo', slot: 0, t: from.t, cp: from.cp, falls: from.falls, doors: from.doors, pos: from.pos, coins: from.coins, stuns: [], foundRelics: from.foundRelics, saves: from.seq });
+    if (from) return makeGame(run, { mode: 'solo', slot: 0, t: from.t, cp: from.cp, falls: from.falls, mz: from.mz, doors: from.doors, pos: from.pos, coins: from.coins, stuns: [], foundRelics: from.foundRelics, saves: from.seq });
     return makeGame(run, { mode: 'solo', slot: 0, t: 0, cp: 0, falls: 0, doors: [], pos: null, coins: [], stuns: [], saves: 0 });
   }
-  return makeGame(run, { mode: head.mode, slot: head.slot, roster: head.roster, t: Number.isFinite(head.t) ? head.t : 0, cp: head.cp, falls: head.falls, doors: head.doors, pos: head.pos, coins: head.coins, stuns: head.stuns, noCord: head.noCord, pcp: head.pcp, saves: 0 });
+  return makeGame(run, { mode: head.mode, slot: head.slot, roster: head.roster, t: Number.isFinite(head.t) ? head.t : 0, cp: head.cp, falls: head.falls, mz: head.mz, doors: head.doors, pos: head.pos, coins: head.coins, stuns: head.stuns, noCord: head.noCord, pcp: head.pcp, saves: 0 });
 }
 
 function handle(m) {

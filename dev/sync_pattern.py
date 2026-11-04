@@ -4,7 +4,10 @@ import re
 from pathlib import Path
 root = Path(__file__).resolve().parent.parent
 js = (root / 'assets/js/pattern.js').read_text()
-glsl = js[js.index('`') + 1:js.rindex('`')].strip('\n')
+# Only the PATTERN_GLSL block: other parts of pattern.js (noiseGlsl) use backticks too.
+head = 'export const PATTERN_GLSL = `'
+start_js = js.index(head) + len(head)
+glsl = js[start_js:js.index('`', start_js)].strip('\n')
 java_path = root / 'src/io/stickmanup/gl/NRender.java'
 java = java_path.read_text()
 start = java.index('    static final String PATTERN = ""')

@@ -95,12 +95,66 @@ export const GEAR = {
   sunrays: () => spikes(12, 0.22, 0.2, 0.2, 0xffe88a, 0xffc040, 2.6, 0.03),
   antlers: () => { const out = []; for (const s of [-1, 1]) { out.push(cyl(0.016, 0.022, 0.28, s * 0.14, 0.28, 0, 0xc0ff70, 0, -s * 0.4, 0xc0ff70, 1.2)); out.push(cyl(0.012, 0.016, 0.13, s * 0.2, 0.32, 0.05, 0xc0ff70, 0.6, -s * 0.5, 0xc0ff70, 1.2)); out.push(cyl(0.012, 0.016, 0.12, s * 0.13, 0.3, 0.05, 0xc0ff70, 0.6, s * 0.5, 0xc0ff70, 1.2)); } return out; },
   flames: () => { const out = []; for (let i = 0; i < 9; i++) { const a = (i / 9) * 6.283, h = 0.2 + (i % 3) * 0.1; out.push(cone(0.06, h, Math.sin(a) * 0.15, 0.17 + h / 2, Math.cos(a) * 0.15, 0xffc040, 0, 0, 0xff6a10, 3)); } out.push(cone(0.08, 0.44, 0, 0.36, 0, 0xfff060, 0, 0, 0xffa020, 3.2)); return out; },
-  // Owner extras. The hood is open at the front so the eyes show.
-  hood: () => [
-    part(new THREE.SphereGeometry(0.245, 18, 12, Math.PI * 0.86, Math.PI * 1.28, 0, Math.PI * 0.82), M(0, 0.015, -0.012), 0x070b09),
-    tor(0.205, 0.009, 0, -0.005, 0.04, 0x0a5a24, 0.25, 0, 0x20e060, 0.55, 1, 1.05),
-    cone(0.1, 0.16, 0, 0.18, -0.2, 0x070b09, -1.0),
-  ],
+  // Owner extras. The Hacker's hood: open at the front so the eyes show, two rings of light round the face, a mask over the
+  // mouth with slits of light, code lines glowing over it with nodes where they end, a port with a ring of light on each
+  // side and an aerial. hood_halo (zeros and ones going round the head) and hood_crown (shards of light turning the other
+  // way above it) go with it.
+  hood: () => {
+    const ink = 0x070b09, dim = 0x0a5a24, G = 0x20ff60, hot = 0x8dffb4, R = 0.25, cy = 0.015, cz = -0.012, out = [
+      part(new THREE.SphereGeometry(0.245, 22, 14, Math.PI * 0.86, Math.PI * 1.28, 0, Math.PI * 0.82), M(0, cy, cz), ink),
+      cone(0.1, 0.16, 0, 0.18, -0.2, ink, -1.0),
+      tor(0.205, 0.011, 0, -0.005, 0.04, dim, 0.25, 0, G, 1.8, 1, 1.05),
+      tor(0.223, 0.0045, 0, -0.005, 0.03, dim, 0.25, 0, hot, 2.4, 1, 1.05),
+      ball(0.209, Math.PI / 2 - 0.95, 1.9, Math.PI * 0.62, Math.PI * 0.27, 0x0b120e),
+    ];
+    // Code lines from the back of the neck over the top, and across the back of the head, each ending in a node.
+    for (const x of [-0.16, -0.08, 0.08, 0.16]) {
+      const r = Math.sqrt(R * R - x * x), a0 = -0.35, a1 = Math.PI / 2 + 0.12;
+      out.push(part(new THREE.TorusGeometry(r, 0.0045, 5, 26, a1 - a0), M(x, cy, cz, 1, 1, 1, 0, Math.PI / 2, a0), dim, G, 1.3));
+      out.push(sph(0.013, x, cy + r * Math.sin(a0), cz - r * Math.cos(a0), hot, 1, 1, 1, G, 3.4));
+    }
+    for (const z of [-0.07, -0.15]) {
+      const r = Math.sqrt(R * R - z * z);
+      out.push(part(new THREE.TorusGeometry(r, 0.004, 5, 26, Math.PI - 0.5), M(0, cy, cz + z, 1, 1, 1, 0, 0, 0.25), dim, G, 1.2));
+    }
+    // The mask's slits.
+    for (const x of [-0.07, -0.035, 0, 0.035, 0.07]) {
+      const y = -0.12, z = Math.sqrt(0.212 * 0.212 - x * x - y * y);
+      out.push(box(0.011, 0.055, 0.008, x, y, z, hot, -Math.asin(y / 0.212), Math.atan2(x, z), 0, G, 2.3));
+    }
+    // A port on each side with a ring of light, and an aerial on the right with a light at its tip.
+    for (const s of [-1, 1]) {
+      out.push(cyl(0.058, 0.064, 0.05, s * 0.245, 0, -0.03, ink, 0, Math.PI / 2));
+      out.push(tor(0.05, 0.008, s * 0.272, 0, -0.03, dim, 0, Math.PI / 2, G, 3.2));
+      out.push(sph(0.018, s * 0.276, 0, -0.03, hot, 1, 1, 1, G, 3.6));
+    }
+    out.push(cyl(0.006, 0.009, 0.24, 0.27, 0.13, -0.07, ink, -0.35, -0.3), sph(0.022, 0.3055, 0.2377, -0.1093, hot, 1, 1, 1, G, 4));
+    return out;
+  },
+  hood_halo: () => {
+    const R = 0.37, tilt = 0.14, y0 = 0.03, hot = 0x9dffc0, G = 0x40ff70, dim = 0x0a5a24, out = [tor(R, 0.0035, 0, y0, 0, dim, Math.PI / 2 + tilt, 0, G, 2.6)];
+    const bits = '01101001110100';
+    for (let i = 0; i < bits.length; i++) {
+      const a = (i / bits.length) * Math.PI * 2, x = Math.sin(a) * R, z = Math.cos(a) * R * Math.cos(tilt), y = y0 - Math.cos(a) * R * Math.sin(tilt);
+      out.push(bits[i] === '1' ? box(0.016, 0.07, 0.01, x, y, z, hot, 0, a, 0, G, 3.2) : tor(0.025, 0.0075, x, y, z, hot, 0, a, G, 3.2, 0.72, 1));
+    }
+    const R2 = 0.44, t2 = -0.32;
+    out.push(tor(R2, 0.003, 0, 0, 0, dim, Math.PI / 2 + t2, 0, G, 2.2));
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + 0.3, x = Math.sin(a) * R2, z = Math.cos(a) * R2 * Math.cos(t2), y = -Math.cos(a) * R2 * Math.sin(t2);
+      out.push(box(0.022, 0.022, 0.022, x, y, z, hot, a, a * 1.7, 0, G, 3));
+    }
+    return out;
+  },
+  hood_crown: () => {
+    const hot = 0xc8ffd8, G = 0x40ff70, out = [tor(0.2, 0.003, 0, 0.36, 0, 0x0a5a24, Math.PI / 2, 0, G, 2.4)];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      out.push(part(new THREE.OctahedronGeometry(0.03, 0), M(Math.sin(a) * 0.2, 0.36 + (i % 2) * 0.03, Math.cos(a) * 0.2, 0.8, 2.2, 0.8, 0, a - Math.PI / 2, -0.35), hot, G, 3.4));
+    }
+    out.push(part(new THREE.OctahedronGeometry(0.045, 0), M(0, 0.44, 0, 1, 1.6, 1), hot, G, 4));
+    return out;
+  },
   // ShortGG: dark hair with a soft fringe and two buns, a pink gaming headset with little ears.
   hairgg: () => [
     part(new THREE.SphereGeometry(0.214, 18, 12, Math.PI * 0.92, Math.PI * 1.16, 0, Math.PI * 0.72), M(0, 0.005, -0.01), 0x1c1420),
@@ -758,6 +812,8 @@ for (const [at, ids] of Object.entries(EPIC_AT)) {
   }
 }
 GEAR_ANIM.planets = 'spin';
+GEAR_ANIM.hood_halo = 'spin';
+GEAR_ANIM.hood_crown = 'rev';
 // Taller than a hat: the shop draws the climber smaller so they fit on the card.
 export const GEAR_TALL = new Set(['balloons', 'sashimono', 'discoball', 'cloud_back', 'parasol']);
 

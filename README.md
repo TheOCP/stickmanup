@@ -50,7 +50,7 @@ smaller platforms, more obstacles, and everything moves faster.
 gusts on Storm Tower (GRAB on), a wave of water running round the Waterfall rock (jump it or GRAB on), laser strikes in
 the Neon Skyline aimed at where you stand (keep moving out of the red rings), cannonballs from a pirate ship on Sunny
 Isles (out of the orange rings), a quake in the Magma Chimney that throws you at every shock (jump just before it) and a
-bee swarm chasing you through the Wild Forest (outrun it). None of it reaches into a maze garden.
+bee swarm chasing you through the Wild Forest (outrun it, or raise your SHIELD as it reaches you to drive it off). None of it reaches into a maze garden.
 
 **Each map plays its own way.** Every map has its own hard jumps from the second zone up, more of them higher up: long
 running leaps over 4 m onto small landings, rows of stepping stones hardly bigger than your feet, and ledges almost as

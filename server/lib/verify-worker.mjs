@@ -245,7 +245,8 @@ function act(live, a, snaps, quiet) {
   const g = live.game, me = g.me, L = g.L, solo = g.solo;
   switch (a[1]) {
     case 's':
-      if (L.mapKey !== 'storm' || !me.raiseShield()) live.soft++;
+      // SHIELD works on Storm Tower and in the Wild Forest (game.js SHIELD_MAPS).
+      if ((L.mapKey !== 'storm' && L.mapKey !== 'forest') || !me.raiseShield()) live.soft++;
       break;
     case 'g': {
       const anchor = L.anchors[a[2]];

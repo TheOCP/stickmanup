@@ -130,6 +130,9 @@ const G = {
     return g;
   })(),
   spark: new THREE.OctahedronGeometry(0.06, 0),
+  // The Hacker's trail: a zero and a one.
+  bit0: new THREE.TorusGeometry(0.05, 0.013, 4, 12).scale(0.72, 1, 1),
+  bit1: new THREE.BoxGeometry(0.024, 0.12, 0.024),
 };
 
 // ---------------------------------------------------------------- materials for skins (made once each, when first worn)
@@ -218,10 +221,38 @@ function legendMat(S) {
           col = mix(uB, uA, 0.5 + 0.5 * sin(u.y * 26.0 + u.x * 9.0)) * 0.7;
           col += uC * pow(max(0.0, sin((u.y * 3.0 + u.x) * 3.2 - uT * 2.2)), 18.0) * 1.6;
         } else if (uMode < 5.5) {
-          // Thin falling code on a black suit; the head stays black inside the hood so only the eyes show.
-          float cx = floor(u.x * 92.0), sp = 1.0 + h21(vec2(cx, 1.0)) * 2.0, y = u.y * 74.0 + uT * sp * 5.0, cell = floor(y);
-          float tail = fract(-y / 26.0 + h21(vec2(cx, 2.0))), glyph = step(0.4, h21(vec2(cx, cell) + floor(uT * 7.0))) * step(0.5, fract(u.x * 92.0));
-          col = uA + (uB * glyph * pow(tail, 5.0) * 0.8 + uC * glyph * step(0.97, tail) * 0.9) * step(u.y, 0.74);
+          // The Hacker: a black screen of a suit with code raining down it in two layers, each glyph a little grid of lit
+          // cells that keeps changing as it falls, white hot at the head of each stream. Under it circuit traces with data
+          // running along them, a fine raster, a scan line sweeping up, and now and then a glitch that tears it sideways for a
+          // moment. The head stays dark inside the hood, so only the eyes show. (Every h21 here is given whole numbers: on
+          // Android it reads them from a texture.)
+          float head = step(0.74, u.y), gt = floor(uT * 5.0), gOn = step(0.93, h21(vec2(gt, 4.0)));
+          float band = floor(u.y * 26.0 + gt * 7.0), tear = gOn * step(0.55, h21(vec2(band, gt))) * (h21(vec2(band, gt + 9.0)) - 0.5) * 0.2;
+          vec2 q = vec2(u.x + tear, u.y);
+          vec3 rain = vec3(0.0);
+          for (int L = 0; L < 2; L++) {
+            float fl = float(L), cols = fl < 0.5 ? 44.0 : 76.0, rows = fl < 0.5 ? 30.0 : 52.0;
+            float cx = floor(q.x * cols), sp = (0.55 + h21(vec2(cx, 1.0 + fl * 7.0)) * 1.3) * (1.0 - fl * 0.35);
+            float y = q.y * rows + uT * sp * 5.5 + h21(vec2(cx, 3.0 + fl)) * 60.0, cell = floor(y);
+            vec2 gg = (vec2(fract(q.x * cols), fract(y)) - vec2(0.16, 0.1)) / vec2(0.68, 0.8);
+            float inside = step(0.0, gg.x) * step(gg.x, 0.999) * step(0.0, gg.y) * step(gg.y, 0.999);
+            float gk = floor(uT * (1.5 + 7.0 * h21(vec2(cell, cx + 11.0))));
+            float lit = step(0.42, h21(floor(gg * vec2(3.0, 5.0)) + vec2(cx * 3.0 + gk * 5.0, cell * 5.0 + fl * 101.0))) * inside;
+            float len = 9.0 + h21(vec2(cx, 5.0 + fl)) * 20.0, s = fract(cell / len + h21(vec2(cx, 6.0 + fl)));
+            float tail = pow(max(0.0, 1.0 - s / 0.8), 2.0), hd = step(s, 1.05 / len);
+            rain += lit * (uB * tail * (1.15 - fl * 0.6) + vec3(0.7, 1.0, 0.82) * hd * (2.4 - fl * 1.1) + uC * tail * tail * 0.35);
+          }
+          vec2 cg = q * vec2(20.0, 15.0), ci = floor(cg), cf = fract(cg);
+          float hx = step(0.5, h21(ci + 13.0)), vy = step(0.62, h21(ci + 29.0));
+          float tr = max(hx * (1.0 - smoothstep(0.03, 0.08, abs(cf.y - 0.5))), vy * (1.0 - smoothstep(0.03, 0.08, abs(cf.x - 0.5))));
+          float pulse = pow(fract((cg.x + cg.y) * 0.1 - uT * 0.7 + h21(ci)), 10.0);
+          float raster = 0.8 + 0.2 * step(0.5, fract(u.y * 150.0));
+          float scan = pow(max(0.0, 1.0 - abs(fract(u.y * 0.55 - uT * 0.24) - 0.5) * 12.0), 2.0);
+          col = (uA + uB * tr * (0.16 + pulse * 1.5) + rain) * raster + uC * scan * 0.8;
+          col += gOn * step(0.001, abs(tear)) * vec3(0.35, 1.0, 0.9) * 0.9;
+          col *= 0.9 + 0.1 * sin(uT * 3.1);
+          col += uC * pow(1.0 - fr, 2.2) * 0.75;
+          col = mix(col, uA + uC * scan * 0.12, head);
         } else if (uMode < 6.5) {
           // Aurora: curtains of light rising and swaying.
           float w = fbm(vec2(u.x * 5.0 + uT * 0.12, u.y * 1.2 - uT * 0.25));
@@ -284,8 +315,40 @@ function legendMat(S) {
         if (uMode > 5.5) col += uC * pow(max(0.0, 1.0 - abs(fract(u.y * 0.7 - uT * 0.3) - 0.5) * 9.0), 3.0) * 0.4;
         vec3 N = N0;
         col *= 0.72 + 0.34 * max(N.y * 0.5 + 0.5, 0.0);
-        col += uC * pow(1.0 - fr, 2.6) * (abs(uMode - 5.0) < 0.5 ? 0.05 : 0.32);
+        col += uC * pow(1.0 - fr, 2.6) * (abs(uMode - 5.0) < 0.5 ? 0.0 : 0.32);
         gl_FragColor = vec4(min(col, vec3(4.0)), 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+}
+
+// The ribbon of data behind The Hacker: rows of code streaming away from the climber, bright down the middle, fading with age.
+// uv.x is how old that part is (0 at the climber, 1 at the end), uv.y across.
+const RIB_N = 36, RIB_LIFE = 0.55, CODE_BITS = 40;
+function ribbonMat() {
+  return new THREE.ShaderMaterial({
+    fog: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uT: { value: 0 }, uC: { value: new THREE.Color(0x40ff70) } }]),
+    vertexShader: `#include <fog_pars_vertex>
+      varying vec2 vUv;
+      void main(){ vUv = uv; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `#include <fog_pars_fragment>
+      uniform float uT; uniform vec3 uC; varying vec2 vUv;
+      ${noiseGlsl()}
+      void main(){
+        float age = vUv.x, edge = 1.0 - abs(vUv.y - 0.5) * 2.0;
+        float fade = pow(1.0 - age, 1.4) * smoothstep(0.0, 0.06, age + 0.01);
+        float rows = 6.0, ry = floor(vUv.y * rows), x = age * 30.0 - uT * (8.0 + h21(vec2(ry, 1.0)) * 6.0), cell = floor(x);
+        vec2 g = (vec2(fract(x), fract(vUv.y * rows)) - 0.15) / 0.7;
+        float inside = step(0.0, g.x) * step(g.x, 0.999) * step(0.0, g.y) * step(g.y, 0.999);
+        float bit = step(0.5, h21(floor(g * 3.0) + vec2(cell * 3.0 + floor(uT * 9.0) * 13.0, ry * 7.0))) * inside * step(0.3, h21(vec2(cell, ry + 40.0)));
+        float core = pow(max(edge, 0.0), 4.0);
+        vec3 col = uC * (bit * 1.8 + core * 0.7) + vec3(0.75, 1.0, 0.85) * pow(max(edge, 0.0), 14.0) * 0.9;
+        gl_FragColor = vec4(col, fade * min(1.0, bit * 0.9 + core * 0.8 + 0.08));
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         #include <fog_fragment>
@@ -407,6 +470,7 @@ export class Stickman {
     this.capeA = 0;
     this.shader = null;
     this.trail = null;
+    this.trails = {};
     this.lookKey = '';
     // The weapon: rides on the climber and comes to the hands when aiming. Made when first carried.
     this.weapon = null;
@@ -539,22 +603,58 @@ export class Stickman {
       this.cape.material = mat;
       this.cape.visible = true;
     } else if (this.cape) this.cape.visible = false;
-    // Legendary trail.
+    // Legendary trail: sparkles, or for The Hacker falling code and a ribbon of data (trailFx 'code'). Each kind is made once
+    // and kept, like everything else here.
     if (S.trail) {
-      if (!this.trail) {
-        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
-        mat.userData.live = true;
-        const im = new THREE.InstancedMesh(G.spark, mat, 12);
-        im.frustumCulled = false;
-        im.userData.fastIM = true;
-        this.trailZero(im);
-        this.scene.add(im);
-        this.trail = { im, mat, i: 0, acc: 0, p: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, life: 0 })) };
-      }
-      this.trail.mat.color.set(S.trail).multiplyScalar(2.4);
-      this.trail.im.visible = this.g.visible;
-    } else if (this.trail) { this.trail.im.visible = false; this.trail.off = true; }
-    if (this.trail) this.trail.off = !S.trail;
+      const fx = S.trailFx === 'code' ? 'code' : 'spark';
+      if (this.trail && this.trail.fx !== fx) this.trailVis(this.trail, false);
+      const T = (this.trail = this.trails[fx] || (this.trails[fx] = fx === 'code' ? this.codeTrail() : this.sparkTrail()));
+      T.off = false;
+      for (const m of T.tint) m.color.set(S.trail).multiplyScalar(2.4);
+      if (T.uC) T.uC.value.set(S.trail);
+      this.trailVis(T, this.g.visible);
+    } else if (this.trail) { this.trailVis(this.trail, false); this.trail.off = true; }
+  }
+
+  trailVis(T, on) { for (const o of T.parts) o.visible = on; }
+
+  sparkTrail() {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
+    mat.userData.live = true;
+    const im = new THREE.InstancedMesh(G.spark, mat, 12);
+    im.frustumCulled = false;
+    im.userData.fastIM = true;
+    this.trailZero(im);
+    this.scene.add(im);
+    return { fx: 'spark', parts: [im], tint: [mat], im, i: 0, acc: 0, p: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, life: 0 })) };
+  }
+
+  // The Hacker's: zeros and ones dropping off the climber like the code on the suit, flipping as they fall, and a ribbon of
+  // data streaming out behind, two crossed strips so it shows from every side.
+  codeTrail() {
+    const bits = (geo) => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false });
+      mat.userData.live = true;
+      const im = new THREE.InstancedMesh(geo, mat, CODE_BITS);
+      im.frustumCulled = false;
+      im.userData.fastIM = true;
+      this.trailZero(im);
+      this.scene.add(im);
+      return im;
+    };
+    const im0 = bits(G.bit0), im1 = bits(G.bit1), geo = new THREE.BufferGeometry(), V = RIB_N * 4, idx = [];
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(V * 3), 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(V * 2), 2));
+    for (let i = 0; i + 1 < RIB_N; i++) for (const o of [0, 2]) { const a = i * 4 + o, b = a + 4; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    geo.setIndex(idx);
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
+    geo.userData.live = true;
+    const mat = ribbonMat(), ribbon = new THREE.Mesh(geo, mat);
+    ribbon.frustumCulled = false;
+    ribbon.renderOrder = 2;
+    this.scene.add(ribbon);
+    return { fx: 'code', parts: [im0, im1, ribbon], tint: [im0.material, im1.material], uC: mat.uniforms.uC, uT: mat.uniforms.uT, im0, im1, geo, i: 0, acc: 0,
+      p: Array.from({ length: CODE_BITS }, () => ({ x: 0, y: 0, z: 0, vy: 0, life: 0, max: 1, one: false, r: 0, s: 1 })), pts: [], pool: [], empty: false };
   }
 
   trailZero(im) {
@@ -564,9 +664,10 @@ export class Stickman {
   }
 
   // Sparkles left behind while moving.
-  trailStep(dt, x, y, z, moving) {
+  trailStep(dt, x, y, z, moving, t) {
     const T = this.trail;
     if (!T || T.off) return;
+    if (T.fx === 'code') return this.codeStep(T, dt, x, y, z, moving, t);
     T.acc += dt;
     if (moving && T.acc > 0.06) {
       T.acc = 0;
@@ -584,6 +685,74 @@ export class Stickman {
     });
     if (any || T.was) T.im.instanceMatrix.needsUpdate = true;
     T.was = any;
+  }
+
+  codeStep(T, dt, x, y, z, moving, t) {
+    // Seen through the climber's own eyes (a maze garden) nothing new is left: it would fall right across the view.
+    const on = moving && this.g.visible;
+    T.acc += dt;
+    if (on && T.acc > 0.03) {
+      T.acc = 0;
+      for (let k = 0; k < 2; k++) {
+        const q = T.p[T.i];
+        T.i = (T.i + 1) % T.p.length;
+        q.x = x + (Math.random() - 0.5) * 0.8; q.y = y - 0.25 + Math.random() * 1.15; q.z = z + (Math.random() - 0.5) * 0.8;
+        q.vy = -(0.7 + Math.random() * 1.8); q.life = q.max = 0.8 + Math.random() * 0.6; q.one = Math.random() < 0.5; q.r = Math.random() * 6.283; q.s = 0.7 + Math.random() * 0.7;
+      }
+    }
+    const m = Stickman.m4 || (Stickman.m4 = new THREE.Matrix4()), Z = Stickman.m0 || (Stickman.m0 = new THREE.Matrix4().makeScale(0, 0, 0));
+    const sv = Stickman.sv || (Stickman.sv = new THREE.Vector3());
+    let any = false;
+    for (let i = 0; i < T.p.length; i++) {
+      const q = T.p[i];
+      let k = 0;
+      if (q.life > 0) {
+        q.life -= dt; q.y += q.vy * dt; q.r += dt * 2.5; any = true;
+        // Now and then a digit flips, like the code on the suit.
+        if (Math.random() < dt * 5) q.one = !q.one;
+        k = Math.max(0, Math.min(1, (q.max - q.life) * 14, q.life / 0.35)) * q.s;
+      }
+      m.makeRotationY(q.r).scale(sv.set(k, k, k)).setPosition(q.x, q.y, q.z);
+      T.im1.setMatrixAt(i, q.one && k > 0 ? m : Z);
+      T.im0.setMatrixAt(i, !q.one && k > 0 ? m : Z);
+    }
+    if (any || T.was) { T.im0.instanceMatrix.needsUpdate = true; T.im1.instanceMatrix.needsUpdate = true; }
+    T.was = any;
+    this.ribbonStep(T, dt, x, y, z, on);
+    T.uT.value = (t || 0) % 3600;
+  }
+
+  // The ribbon follows where the chest has been for the last half second, narrowing towards its end.
+  ribbonStep(T, dt, x, y, z, on) {
+    const P = T.pts, cy = y + 0.3;
+    // A respawn or a teleport: start again rather than draw a streak across the map.
+    if (P.length && Math.abs(x - P[0].x) + Math.abs(cy - P[0].y) + Math.abs(z - P[0].z) > 4) { for (const p of P) T.pool.push(p); P.length = 0; }
+    for (const p of P) p.a += dt;
+    while (P.length && (P[P.length - 1].a > RIB_LIFE || P.length > RIB_N)) T.pool.push(P.pop());
+    if (on && (!P.length || Math.hypot(x - P[0].x, cy - P[0].y, z - P[0].z) > 0.1)) {
+      const p = T.pool.pop() || {};
+      p.x = x; p.y = cy; p.z = z; p.a = 0;
+      P.unshift(p);
+      if (P.length > RIB_N) T.pool.push(P.pop());
+    }
+    if (!P.length && T.empty) return;
+    T.empty = !P.length;
+    const pos = T.geo.attributes.position.array, uv = T.geo.attributes.uv.array, n = P.length;
+    for (let i = 0; i < RIB_N; i++) {
+      const live = i < n, p = n ? P[Math.min(i, n - 1)] : null, px = p ? p.x : x, py = p ? p.y : cy, pz = p ? p.z : z;
+      const a = n ? P[Math.max(0, Math.min(i, n - 1) - 1)] : null, b = n ? P[Math.min(i + 1, n - 1)] : null;
+      let dx = a && b ? a.x - b.x : 0, dz = a && b ? a.z - b.z : 1;
+      const l = Math.hypot(dx, dz) || 1;
+      dx /= l; dz /= l;
+      const u = live ? Math.min(1, p.a / RIB_LIFE) : 1, w = live ? 0.26 * (1 - u * 0.65) : 0, o = i * 12, k = i * 8;
+      pos[o] = px; pos[o + 1] = py + w; pos[o + 2] = pz;
+      pos[o + 3] = px; pos[o + 4] = py - w; pos[o + 5] = pz;
+      pos[o + 6] = px - dz * w; pos[o + 7] = py; pos[o + 8] = pz + dx * w;
+      pos[o + 9] = px + dz * w; pos[o + 10] = py; pos[o + 11] = pz - dx * w;
+      uv[k] = u; uv[k + 1] = 1; uv[k + 2] = u; uv[k + 3] = 0; uv[k + 4] = u; uv[k + 5] = 1; uv[k + 6] = u; uv[k + 7] = 0;
+    }
+    T.geo.attributes.position.needsUpdate = true;
+    T.geo.attributes.uv.needsUpdate = true;
   }
 
   // The player's chosen colour (body and head).
@@ -844,7 +1013,8 @@ export class Stickman {
         const f = Math.sin(t * (ground ? 2.2 : 8)), a = 0.28 + f * (ground ? 0.1 : 0.32);
         m.userData.l.rotation.set(0, a, f * 0.12);
         m.userData.r.rotation.set(0, -a, -f * 0.12);
-      } else m.rotation.y = (t * 1.3) % 6.2832;
+      } else if (an === 'rev') m.rotation.y = -((t * 2.2) % 6.2832);
+      else m.rotation.y = (t * 1.3) % 6.2832;
     }
     if (this.cape && this.cape.visible) {
       // Streams out behind when running or falling, sways a little when standing.
@@ -852,7 +1022,7 @@ export class Stickman {
       this.capeA += (want - this.capeA) * Math.min(1, dt * 7);
       this.cape.rotation.x = this.capeA;
     }
-    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5);
+    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5, t);
     this.shield.visible = !!(flags & F.SHIELD);
     if (this.shield.visible) this.shieldMat.opacity = 0.22 + Math.sin(t * 20) * 0.06;
     // Contact shadow on the floor below, fading with height.
@@ -870,11 +1040,11 @@ export class Stickman {
     this.emote = null;
     this.g.visible = false;
     this.blob.visible = false;
-    if (this.trail) this.trail.im.visible = false;
+    if (this.trail) this.trailVis(this.trail, false);
   }
 
   show() {
     this.g.visible = true;
-    if (this.trail && !this.trail.off) this.trail.im.visible = true;
+    if (this.trail && !this.trail.off) this.trailVis(this.trail, true);
   }
 }

@@ -19,7 +19,7 @@ import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keep
 import * as live from './live.js';
 import { initFriends, openFriends, friendBadge, endSpectate, watchPlayer, joinPlayerRoom } from './friends.js';
 import { initTerminal, openTerminal, termSay, close as closeTerminal, seen as termSeen } from './terminal.js';
-import { Game } from './game.js';
+import { Game, SHIELD_MAPS } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
 import { SUIT, resolveLook, plainLook, ROLE_TAGS, roleInfo, tagColor } from './skins.js';
@@ -139,7 +139,7 @@ const putXY = (el, x, y) => {
 
 // What the HUD shows for each map's event, while it is coming and while it is on.
 const EV_WARN = { gust: 'GUST INCOMING', wave: 'WAVE INCOMING', laser: 'LASERS INCOMING', cannon: 'CANNONS INCOMING', quake: 'QUAKE INCOMING', bees: 'BEES INCOMING' };
-const EV_ON = { gust: 'GUST! GRAB ON', wave: 'WAVE! JUMP OR GRAB ON', laser: 'LASERS! KEEP MOVING', cannon: 'CANNONS! GET OUT OF THE RINGS', quake: 'QUAKE! JUMP WHEN IT SHAKES', bees: 'BEES! RUN!' };
+const EV_ON = { gust: 'GUST! GRAB ON', wave: 'WAVE! JUMP OR GRAB ON', laser: 'LASERS! KEEP MOVING', cannon: 'CANNONS! GET OUT OF THE RINGS', quake: 'QUAKE! JUMP WHEN IT SHAKES', bees: 'BEES! RUN OR SHIELD!' };
 const ui = (app.ui = {
   coins(n, pop) {
     const el = hudEl('#hCoins');
@@ -203,7 +203,10 @@ const ui = (app.ui = {
     putText(hudEl('#hZone span'), `${Math.max(0, Math.round(me.y - PR - 2))} m of ${Math.round(L.top - 2)} m · ${DIFFS[g.diff].name}`);
     putHtml(hudEl('#hTime'), fmtTime(T) + (g.falls ? `<small>${g.falls} fall${g.falls > 1 ? 's' : ''}</small>` : ''));
     let warn = '', cls = '';
+    // The swarm close enough for the shield to drive it off.
+    const bees = g.bees, beesNear = !!bees && !bees.gone && Math.hypot(me.x - bees.x, me.y - bees.y, me.z - bees.z) < 7 && me.shieldCd <= 0;
     if (thunder && thunder.warn > 0 && !(me.flags & 128)) { warn = 'LIGHTNING! SHIELD!'; cls = 'g'; }
+    else if (beesNear && !(me.flags & 128)) { warn = 'BEES! SHIELD NOW!'; cls = 'g'; }
     else if (ev && ev.on) { warn = EV_ON[ev.kind]; cls = 'g'; }
     else if (ev && ev.warn > 0) { warn = EV_WARN[ev.kind]; cls = 'w'; }
     else {
@@ -229,12 +232,12 @@ const ui = (app.ui = {
     const db = hudEl('#bDash');
     putVar(db, '--v', (me.dashReady ? 1 - me.dashCd / PC.DASH_CD : 0).toFixed(2));
     db.classList.toggle('used', !me.dashReady);
-    const sb = hudEl('#bShield'), stormy = L.mapKey === 'storm';
-    sb.classList.toggle('on', stormy);
-    if (stormy) {
+    const sb = hudEl('#bShield'), shieldy = SHIELD_MAPS.has(L.mapKey);
+    sb.classList.toggle('on', shieldy);
+    if (shieldy) {
       putVar(sb, '--v', (1 - me.shieldCd / 2.2).toFixed(2));
       sb.classList.toggle('ready', me.shieldCd <= 0);
-      sb.classList.toggle('alert', !!thunder && thunder.warn > 0 && me.shieldCd <= 0);
+      sb.classList.toggle('alert', ((!!thunder && thunder.warn > 0) || beesNear) && me.shieldCd <= 0);
     }
     putVar(rb0, '--v', me.charge.toFixed(2));
     putVar(rb0, '--o', me.charge > 0 ? '1' : '0');
@@ -1511,6 +1514,7 @@ function howTo(back) {
     <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides shove you back down, so run up them and jump the inner tubes rolling at you. Launch slides whoosh you down a chute and throw you onto a higher ledge. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run or SHOOT them first.</div>
     <div><b>Map events</b>From about 400 m up, every map sends its own trouble now and then, and the HUD warns you first. Storm Tower: gusts blow you about, so GRAB. Waterfall: a wave runs round the rock, so jump it or GRAB. Neon Skyline: laser strikes aim at you, so keep moving out of the red rings. Sunny Isles: the pirate ship fires cannonballs, so get out of the orange rings. Magma Chimney: a quake throws you up at every shock, so jump just before it. Wild Forest: a bee swarm chases you, so outrun it. Inside a maze garden none of it can reach you.</div>
+    <div><b>Bees</b>Can't outrun the swarm? Tap SHIELD just as it reaches you and it drives the bees off. The shield works on Storm Tower against lightning and in the Wild Forest against the bees.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>

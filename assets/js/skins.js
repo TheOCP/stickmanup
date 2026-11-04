@@ -754,7 +754,7 @@ export const LEGENDS = [
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
 // server to check it against.)
 export const OWNERS = [
-  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x020604, b: 0x12c040, c: 0x70ffa0 }, trail: 0x40ff70, face: 'hacker', gear: ['hood'], hint: 'Only for TheOCP.' }),
+  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x020604, b: 0x12c040, c: 0x70ffa0 }, trail: 0x40ff70, trailFx: 'code', face: 'hacker', gear: ['hood', 'hood_halo', 'hood_crown'], hint: 'Only for TheOCP.' }),
   s('o_shortgg', 'GG Girl', 4, -1, { tab: 'legend', team: ['owner', 'admin'], c: 0xff6aa8, p: paintFn.fengish, face: 'cute', gear: ['hairgg', 'headset', 'hemgg'], trail: 0xff8ac0, glow: 0.22, hint: 'Only for ShortGG.' }),
 ];
 
@@ -806,7 +806,22 @@ export const FACES = [
   f('monster', 'Monster', 2, 1100, (g) => { dot(g, LX, EY, 13, '#ffe040'); dot(g, RX, EY, 13, '#ffe040'); g.fillStyle = '#0c0d12'; g.fillRect(LX - 3, EY - 12, 6, 24); g.fillRect(RX - 3, EY - 12, 6, 24); }, (g, i) => { g.fillStyle = '#0c0d12'; g.beginPath(); g.moveTo(24, 16); g.quadraticCurveTo(64, 62, 104, 16); g.closePath(); g.fill(); g.fillStyle = '#ffffff'; for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(34 + k * 11, 19); g.lineTo(44 + k * 11, 19); g.lineTo(39 + k * 11, 30); g.fill(); } }, { still: true }),
   f('pumpkin', 'Jack o Lantern', 2, 900, (g) => { for (const x of [LX, RX]) { g.fillStyle = '#ffd02a'; g.beginPath(); g.moveTo(x, 18); g.lineTo(x + 16, 46); g.lineTo(x - 16, 46); g.fill(); } }, (g) => { g.fillStyle = '#ffd02a'; g.beginPath(); g.moveTo(18, 14); g.lineTo(34, 24); g.lineTo(46, 14); g.lineTo(64, 26); g.lineTo(82, 14); g.lineTo(94, 24); g.lineTo(110, 14); g.quadraticCurveTo(64, 72, 18, 14); g.fill(); }, { glow: 1.5, still: true }),
   // Owner faces.
-  f('hacker', 'Hacker', 4, -1, (g) => { dot(g, LX, 36, 10, '#40ff70'); dot(g, RX, 36, 10, '#40ff70'); line(g, '#40ff70', 4, [[20, 22], [48, 28]]); line(g, '#40ff70', 4, [[108, 22], [80, 28]]); }, () => {}, { glow: 2.6, still: true, hidden: true }),
+  // Eyes that burn through the dark of the hood: slanted blades of light with a white hot core, a visor line between them,
+  // hard brows, and code dripping from under each eye.
+  f('hacker', 'Hacker', 4, -1, (g) => {
+    g.save();
+    g.shadowColor = '#40ff70'; g.shadowBlur = 12;
+    line(g, 'rgba(64,255,112,0.6)', 2, [[6, 37], [122, 37]], false);
+    for (const [x, s] of [[LX, 1], [RX, -1]]) {
+      const blade = (k, c) => { g.fillStyle = c; g.beginPath(); g.moveTo(x - s * 18 * k, 37 - 8 * k); g.lineTo(x + s * 16 * k, 37 - 2 * k); g.lineTo(x + s * 13 * k, 37 + 5 * k); g.lineTo(x - s * 15 * k, 37 + 3 * k); g.closePath(); g.fill(); };
+      blade(1, '#40ff70');
+      blade(0.55, '#e4fff0');
+      line(g, '#40ff70', 4, [[x - s * 20, 19], [x + s * 14, 28]]);
+      for (let k = 0; k < 4; k++) { g.globalAlpha = 1 - k * 0.22; g.fillStyle = '#40ff70'; g.fillRect(x - 3 + (k % 2) * 6 - s * 4, 47 + k * 4, 3, 3); }
+      g.globalAlpha = 1;
+    }
+    g.restore();
+  }, () => {}, { glow: 2.6, still: true, hidden: true }),
 ];
 export const FACE = Object.fromEntries(FACES.map((x) => [x.id, x]));
 
@@ -882,7 +897,23 @@ function legendStill(p, g, S, A, B, C) {
   const walk = (n, step) => { const out = []; let x = R() * TEX, y = R() * TEX; for (let i = 0; i < n; i++) { out.push([x, y]); x += (R() - 0.5) * step; y += (R() - 0.3) * step; } return out; };
   switch (S.mode) {
     case 2: paintFn.rainbow(p); break;
-    case 5: { p.all(A); g.fillStyle = C; for (let i = 0; i < 240; i++) g.fillRect(((R() * 48) | 0) * 10.7, R() * TEX, 7, 9 + R() * 16); break; }
+    case 5: {
+      // Streams of little glyphs, white at the head and fading up behind it, over a fine raster.
+      const u = TEX / 128;
+      p.all(A);
+      g.fillStyle = 'rgba(64,255,112,0.06)';
+      for (let y = 0; y < TEX; y += 4 * u) g.fillRect(0, y, TEX, u);
+      for (let i = 0; i < 70; i++) {
+        const x = ((R() * 40) | 0) * (TEX / 40), len = 4 + ((R() * 9) | 0), y0 = R() * TEX;
+        for (let k = 0; k < len; k++) {
+          g.globalAlpha = (1 - k / len) * 0.95;
+          g.fillStyle = k === 0 ? '#e4fff0' : k < 2 ? C : B;
+          for (let b = 0; b < 4; b++) if (R() > 0.35) g.fillRect(x + (b % 2) * 4 * u, y0 - k * 11 * u + ((b / 2) | 0) * 4 * u, 3 * u, 3 * u);
+        }
+      }
+      g.globalAlpha = 1;
+      break;
+    }
     case 6: { p.vgrad(B, A); g.globalAlpha = 0.45; for (let i = 0; i < 16; i++) { g.fillStyle = i % 3 ? C : B; g.fillRect(R() * TEX, R() * TEX * 0.4, 6 + R() * 18, TEX * 0.6); } g.globalAlpha = 1; break; }
     case 7: { p.all(A); for (let i = 0; i < 26; i++) { const w = walk(7, 70); line(B, 7, w); line(C, 2.5, w); } break; }
     case 8: { p.vgrad(B, A); for (let i = 0; i < 70; i++) { const x = R() * TEX, y = R() * TEX, r = 18 + R() * 30; g.fillStyle = R() > 0.5 ? A : B; g.globalAlpha = 0.6; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.globalAlpha = 1; g.strokeStyle = C; g.lineWidth = 1.5; g.stroke(); } break; }

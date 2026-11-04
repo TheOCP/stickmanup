@@ -17,6 +17,10 @@ import { myLook } from './profile.js';
 // Near enough to count as having got to the top. The rerun (server/lib/verify-worker.mjs, case 'win') asks the same.
 const nearTop = (b, L, rope) => Math.hypot(b.x, b.z) < L.summit.r + rope * 3 && b.y > L.top - rope * 4;
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
+// Where SHIELD does something: Storm Tower (it takes a lightning strike) and the Wild Forest (it drives the bee swarm off).
+export const SHIELD_MAPS = new Set(['storm', 'forest']);
+// How close the swarm must be for a raised shield to drive it off. It flies 4.4 m a second and the shield is up for one.
+const BEE_SHIELD_R = 3.2;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
 // What a maze garden's creature does to you, by map.
@@ -316,7 +320,7 @@ export class Game {
 
     // Abilities are taps, handled once per frame. A shot only ever leaves while aiming: hold SHOOT and let go, or hold the aim
     // button and pull the trigger. Automatic weapons keep firing for as long as it is held.
-    if (inp.shield && this.L.mapKey === 'storm' && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
+    if (inp.shield && SHIELD_MAPS.has(this.L.mapKey) && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
     if (inp.act && this.action) this.perform(this.action, T);
     const ready = this.aiming && this.aimT >= AIM_READY, gun = (this.gun = weaponOf(myLook().w));
     this.aiming = this.me.aim = !!inp.aim && !this.me.hook;
@@ -808,8 +812,15 @@ export class Game {
         this.zapKnock(Math.cos(a) * 3.2, 7.5, Math.sin(a) * 3.2, 'quake');
       }
     } else if (ev.kind === 'bees') {
-      const B = (this.bees = beeStep(this.bees, ev, me.x, me.y, me.z, STEP, calm));
-      if (B && !B.gone && Math.hypot(me.x - B.x, me.y + 0.3 - B.y, me.z - B.z) < BEE_R) {
+      const B = (this.bees = beeStep(this.bees, ev, me.x, me.y, me.z, STEP, calm)), d = B && !B.gone ? Math.hypot(me.x - B.x, me.y + 0.3 - B.y, me.z - B.z) : 99;
+      if (me.shield > 0 && d < BEE_SHIELD_R) {
+        // A raised shield: the bees bounce off it and the swarm scatters.
+        B.gone = true;
+        this.app.sound.shield();
+        this.app.ui.haptic('tick');
+        this.app.ui.toast('Your shield drove the bees off!', 'good');
+        this.app.fx.blast(this.slot, B.x, B.y, B.z, { beam: '', blast: 2.4 });
+      } else if (d < BEE_R) {
         B.gone = true;
         const dx = me.x - B.x, dz = me.z - B.z, d = Math.hypot(dx, dz) || 1;
         this.zapKnock((dx / d) * 6, 4.5, (dz / d) * 6, 'bees');

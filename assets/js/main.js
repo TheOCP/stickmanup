@@ -1896,7 +1896,7 @@ function gfxTrouble(why) {
   restartApp('Fixing graphics for this phone...');
 }
 
-const health = { t: performance.now(), beat: 0, white: 0, rb: null, px: new Uint8Array(4), since: performance.now(), healthy: false, frames: 0 };
+const health = { t: performance.now(), beat: 0, white: 0, rb: null, since: performance.now(), healthy: false, frames: 0 };
 
 // Once a second: tell the Android watchdog the game is alive, with a summary for diagnostics.
 function heartbeat(now) {
@@ -1911,30 +1911,65 @@ function heartbeat(now) {
   }));
 }
 
+// Read the drawing buffer: catches broken render output (the native probe sees the real screen). The five pixels are
+// copied on the GPU into a buffer, and picked up a frame or more later, once the GPU says it is done. Reading them
+// straight away made the game wait for the GPU to finish everything it had queued, every 4 seconds: on a fast PC
+// that cost a few frames each time (144 fps dropping to the 130s now and then).
+const SPOTS = [[0.15, 0.2], [0.85, 0.2], [0.5, 0.5], [0.15, 0.8], [0.85, 0.8]];
+const readback = { buf: null, sync: null, at: 0, px: new Uint8Array(SPOTS.length * 4) };
+
 function checkGpu() {
   const R = app.renderer, now = performance.now();
-  if (R.lost || app.restarting || R.native) return;
+  if (R.lost) { readback.buf = readback.sync = null; return; }
+  if (app.restarting || R.native) return;
   if (!health.healthy && now - health.since > 20000 && !health.white) {
     health.healthy = true;
     if (N && N.healthy) N.healthy();
   }
+  const gl = R.r.getContext(), rb = readback;
+  if (rb.sync) {
+    if (gl.getSyncParameter(rb.sync, gl.SYNC_STATUS) !== gl.SIGNALED) {
+      // Never came back: forget it and ask again next time.
+      if (now - rb.at > 5000) { gl.deleteSync(rb.sync); rb.sync = null; }
+      return;
+    }
+    gl.deleteSync(rb.sync);
+    rb.sync = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, rb.buf);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, rb.px);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    judgePixels(rb.px);
+    return;
+  }
   if (now - health.t < (health.white ? 800 : 4000)) return;
   health.t = now;
-  // Read the drawing buffer: catches broken render output (the native probe sees the real screen).
-  const gl = R.r.getContext();
   R.r.setRenderTarget(null);
-  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, cols = [];
+  if (!rb.buf) {
+    rb.buf = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, rb.buf);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, rb.px.length, gl.STREAM_READ);
+  } else gl.bindBuffer(gl.PIXEL_PACK_BUFFER, rb.buf);
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  SPOTS.forEach(([x, y], i) => gl.readPixels((x * w) | 0, (y * h) | 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, i * 4));
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  rb.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  rb.at = now;
+  gl.flush();
+}
+
+function judgePixels(px) {
+  const cols = [];
   let white = 0, black = 0;
-  for (const [x, y] of [[0.15, 0.2], [0.85, 0.2], [0.5, 0.5], [0.15, 0.8], [0.85, 0.8]]) {
-    gl.readPixels((x * w) | 0, (y * h) | 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, health.px);
-    const p = health.px;
-    cols.push(((p[0] << 16) | (p[1] << 8) | p[2]).toString(16));
-    if (p[0] > 235 && p[1] > 235 && p[2] > 235) white++;
-    if (p[0] < 4 && p[1] < 4 && p[2] < 4) black++;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    cols.push(((r << 16) | (g << 8) | b).toString(16));
+    if (r > 235 && g > 235 && b > 235) white++;
+    if (r < 4 && g < 4 && b < 4) black++;
   }
   health.rb = cols.join(' ');
-  health.white = white === 5 || black === 5 ? health.white + 1 : 0;
-  if (health.white >= 3) gfxTrouble(white === 5 ? 'render buffer white' : 'render buffer black');
+  const n = px.length / 4;
+  health.white = white === n || black === n ? health.white + 1 : 0;
+  if (health.white >= 3) gfxTrouble(white === n ? 'render buffer white' : 'render buffer black');
 }
 
 // Behind the menus: the team on the dock, see titleshow.js.

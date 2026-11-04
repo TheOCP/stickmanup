@@ -4,12 +4,12 @@
 //   storm  - 'spiral': round and round the tower, counter-clockwise
 //   sunny  - 'switchback': back and forth across the lighthouse in two lanes, turning at the ends
 //   forest - 'trees': clockwise round the giant trunk, with branch walks out to side trees and up around them
-import { makeBox, makeCyl, BOX } from './physics.js';
+import { makeBox, makeCyl, BOX, aabb, toLocal } from './physics.js';
 import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 18;
+export const LEVEL_VERSION = 19;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -2273,9 +2273,31 @@ export function generateLevel(mapId = 0) {
     } else if (zone > 0) {
       // Zone gate: a wide three-quarter ring that doubles as a safety net and checkpoint.
       const rIn = 7.0, rOut = 16.5, rm = 11.75, span = TAU * 0.72;
+      // The ring goes on the way the route is heading. Right after a zigzag turns, the steps just climbed lie that way,
+      // and need() leaves the last few pieces out (they are the way up to it): the ring lay right over those steps, too
+      // low to jump from or get out from under (0.7 m on the Waterfall). Then it goes the other way, and the route on
+      // from it too. Under means part of the top of something built in the last stretch is under the ring with less than
+      // 2.2 m between them.
+      const startAt = (d) => cur.th + d * (cur.sx / 2 + 1.1) / cur.r;
+      const underRing = (d) => {
+        const y = cur.y + 0.9, a0 = startAt(d), C = out.cols;
+        for (let i = C.length - 1; i >= Math.max(0, C.length - 60); i--) {
+          const c = C[i], m = c.m;
+          if (c.t !== BOX || c.dyn || c.hy >= 1.5 || c.kind === 'door' || c.maxy > y || c.miny < y - 7) continue;
+          for (const u of [-0.8, 0, 0.8]) for (const v of [-0.8, 0, 0.8]) {
+            const lx = u * c.hx, lz = v * c.hz;
+            const x = c.x + lx * m[0] + c.hy * m[3] + lz * m[6] - CX, wy = c.y + lx * m[1] + c.hy * m[4] + lz * m[7], z = c.z + lx * m[2] + c.hy * m[5] + lz * m[8] - CZ;
+            const r = Math.hypot(x, z);
+            if (r < rIn || r > rOut || y - 1.2 - wy >= 2.2) continue;
+            if (((((Math.atan2(z, x) - a0) * d) % TAU) + TAU) % TAU < span) return true;
+          }
+        }
+        return false;
+      };
+      if (underRing(DIR) && !underRing(-DIR)) DIR = -DIR;
       let th0;
       for (let k = 0; k < 40; k++) {
-        th0 = cur.th + DIR * (cur.sx / 2 + 1.1) / cur.r;
+        th0 = startAt(DIR);
         let worst = -1e9;
         for (let a = 0; a <= span; a += 0.1) worst = Math.max(worst, needAt(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9), shortNeed(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9));
         if (worst <= 0) break;
@@ -2456,6 +2478,34 @@ export function generateLevel(mapId = 0) {
 
   // Nothing on the island grows through a pier.
   out.decor = out.decor.filter((d) => d.y > 1.5 || d.k === 'fountain' || !onPier(d.x, d.z, 1.0));
+
+  // A pillar is a column hanging 6 m under its top, but only its top was kept a head's height clear of the route below.
+  // Over a walkway, a beam, a zone ring or the start dock the column could end just over your head, or lower: you hit it
+  // on every jump there, or could not get past at all (the Wild Forest's start, Magma Chimney's dock and first ring). Each
+  // column now stops well clear of anything you stand on under it.
+  {
+    const ROOM = 2.8, MIN = 1.2, o = {};
+    const floors = out.cols.filter((s) => !s.dyn && s.kind !== 'door' && (s.t === BOX ? s.hy < 1.5 : s.kind === 'pillar'));
+    for (const c of out.cols) {
+      if (c.kind !== 'pillar' || c.t === BOX) continue;
+      const top = c.y + c.hh;
+      let low = c.y - c.hh;
+      for (const s of floors) {
+        if (s === c || s.maxy + ROOM <= low || s.maxy >= top) continue;
+        if (s.t === BOX) {
+          toLocal(s, c.x, s.y, c.z, false, o);
+          if (Math.abs(o.x) >= s.hx + c.r || Math.abs(o.z) >= s.hz + c.r) continue;
+        } else if (Math.hypot(s.x - c.x, s.z - c.z) >= s.r + c.r) continue;
+        low = s.maxy + ROOM;
+      }
+      low = Math.min(low, top - MIN);
+      if (low > c.y - c.hh + 1e-6) {
+        c.hh = (top - low) / 2;
+        c.y = c.py = top - c.hh;
+        aabb(c);
+      }
+    }
+  }
 
   applyMaze(out, 0);
   // The way up, in order, for the arrow that points along it (main.js): where each piece of the route is. Big footprints

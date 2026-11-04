@@ -8,7 +8,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 16;
+export const LEVEL_VERSION = 17;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -174,11 +174,13 @@ function hardened(z, t) {
 
 // ---------------------------------------------------------------- maze gardens
 // Every checkpoint that is a platform of its own (the one halfway up each zone, and the rooftop pads in the city) is a
-// walled garden with a maze in it: N x N cells, the checkpoint in the first cell, the way on out of the far side, and a
-// porch with a fence each side in front of both ways out, so nobody walks round the outside. The inner walls change every
-// time the team goes back to a checkpoint (applyMaze, from game.js), so the way through has to be found again. The walls
-// are slick (no wall jumps, nothing to grab) and higher than any jump.
-export const MAZE_CELL = 2.6, MAZE_WALL_H = 2.6, MAZE_WALL_T = 0.3, MAZE_RIM = 1.6;
+// walled garden with a maze in it: N x N cells, the checkpoint in the first cell, the way on out of the far side. It is
+// closed: solid all round the outside up to a roof, with a raised edge round the roof, and open only in a doorway at each
+// end, so nobody walks round it, jumps or gets thrown over it (a sling reaches about 4.7 m), or sees the way from above;
+// inside, the camera goes to the climber's eyes (game.js). The inner walls change every time the team goes back to a
+// checkpoint (applyMaze, from game.js), so the way through has to be found again. Every wall is slick: no wall jumps,
+// nothing to grab. The pond, trees and animals live on the roof.
+export const MAZE_CELL = 2.4, MAZE_WALL_H = 4.4, MAZE_WALL_T = 0.3, MAZE_RIM = 1.6, MAZE_ROOF = 0.5, MAZE_EDGE = 1.1;
 // How many legendary relics hide in each map's mazes (relic ids map:m0, map:m1; skins.js says what each one opens).
 export const MAZE_RELICS = { storm: 2, sunny: 2, forest: 1, volcano: 2, city: 2, waterfall: 2 };
 
@@ -222,7 +224,7 @@ export function mazeLayout(m, v) {
   if (m.lv === v) return m.lw;
   const N = m.N, R = rng((m.seed ^ Math.imul(v + 1, 0x9e3779b1)) >>> 0), a = m.ej * N + m.ei, b = m.xj * N + m.xi;
   let best = null, bestD = -1;
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < 14; k++) {
     const w = carveMaze(N, R, a), d = mazeDist(N, w, a)[b];
     if (d > bestD) { best = w; bestD = d; }
   }
@@ -339,6 +341,8 @@ export function generateLevel(mapId = 0) {
   // it overlaps from above: it must sit q.h above anything below it, and HEAD below anything above it.
   // (The last few metres of route are its own neighbours and are skipped.) Negative = no conflict.
   const RECENT = 14;
+  // The last maze garden laid, and (while guard looks ahead) the one beside us, which it leaves out.
+  let mazeRec = null, besideMaze = null;
   function need(x, z, hx, hz, ry, y) {
     let m = -1e9;
     const a = { x, z, hx, hz, c: Math.cos(ry), s: Math.sin(ry), rad: Math.hypot(hx, hz) };
@@ -347,7 +351,7 @@ export function generateLevel(mapId = 0) {
       const B = buckets[k];
       if (!B) continue;
       for (const q of B) {
-        if (q.y + q.h <= y || q.y - y >= HEAD || q.y + q.h <= m || q.pl > pathLen - RECENT) continue;
+        if (q.y + q.h <= y || q.y - y >= HEAD || q.y + q.h <= m || q.pl > pathLen - RECENT || q === besideMaze) continue;
         const dx = q.x - x, dz = q.z - z, rr2 = q.rad + a.rad + 0.3;
         if (dx * dx + dz * dz > rr2 * rr2 || !overlap(a, q, 0.3)) continue;
         m = q.y + q.h;
@@ -448,21 +452,55 @@ export function generateLevel(mapId = 0) {
     return Object.assign({}, p, { th: th0, r: Math.hypot(p.x - CX, p.z - CZ) });
   }
   // Stepping platforms in a straight line from cur to a landing at (tx, tz), rising to height ty.
+  // Does a square footprint (half size h) at height y sit over or under one of the last few pieces of route, too close to
+  // stand or jump between them? (Beside one at about the same height is fine.)
+  function clashRecent(x, z, h, ry, y, skip) {
+    const a = { x, z, hx: h, hz: h, c: Math.cos(ry), s: Math.sin(ry), rad: h * Math.SQRT2 };
+    for (let i = recs.length - 1; i >= 0; i--) {
+      const q = recs[i];
+      if (q.pl < pathLen - RECENT - 4) break;
+      if (q === skip || (skip && q.x === skip.x && q.z === skip.z) || Math.abs(q.y - y) < 0.35 || Math.abs(q.y - y) > HEAD) continue;
+      const dx = q.x - x, dz = q.z - z, r2 = q.rad + a.rad + 0.3;
+      if (dx * dx + dz * dz < r2 * r2 && overlap(a, q, 0.3)) return true;
+    }
+    return false;
+  }
   function walkTo(cur, tx, tz, ty) {
     const dx = tx - cur.x, dz = tz - cur.z, d = Math.hypot(dx, dz), ux = dx / d, uz = dz / d, ry = Math.atan2(-uz, ux);
-    let at = cur, y = cur.y;
+    let at = cur, y = cur.y, ci = 0;
     const left = () => Math.hypot(tx - at.x, tz - at.z);
-    for (let n = 0; n < 14; n++) {
+    // Climbing in place goes round a square: to the side, on, the other side, back. The step right above any step is then
+    // four steps (4 m) up, never two: it used to zigzag, and you hit your head on the step above the one you stood on.
+    const turns = [[-uz, ux], [ux, uz], [uz, -ux], [-ux, -uz]];
+    for (let n = 0; n < 18; n++) {
+      const L = left(), vx = (tx - at.x) / L, vz = (tz - at.z) / L, sa = support(at, vx, vz), high = ty - y < 1.1;
       // The landing (3 x 3) comes once the gap to it is jumpable and the height has been reached.
-      const gapToLanding = left() - support(at, ux, uz) - 1.5, last = gapToLanding < 2.0 && ty - y < 1.1;
-      const s = last ? 3.0 : rr(2.0, 2.5), g = rr(1.4, 1.9), off = support(at, ux, uz) + g + s / 2;
-      // Out of room but still too low: step sideways-up in place (a little staircase) before going on.
-      const climb = !last && left() - off < 3.5;
-      const x = last ? tx : climb ? at.x - uz * (s + g) * (n % 2 ? 1 : -1) * 0.5 + ux * 0.2 : at.x + ux * off;
-      const z = last ? tz : climb ? at.z + ux * (s + g) * (n % 2 ? 1 : -1) * 0.5 + uz * 0.2 : at.z + uz * off;
-      const remain = Math.max(1, Math.ceil(left() / 4.2));
+      const gapToLanding = L - sa - 1.5;
+      let last = gapToLanding < 2.0 && high, s = last ? 3.0 : rr(2.0, 2.5), off = sa + rr(1.4, 1.9) + s / 2, climb = false, far = false;
+      // No room for a whole step before the landing. Still too low: a little staircase up in place first. High enough: a
+      // smaller step in the middle, or with no room for that either, the landing, not much higher (that used to climb too).
+      if (!last && L - off < 3.5) {
+        if (!high) climb = true;
+        else if (gapToLanding < 3.4) { last = true; s = 3.0; far = true; }
+        else { s = Math.min(s, Math.max(1.6, gapToLanding - 2.2)); off = sa + (gapToLanding - s) / 2 + s / 2; }
+      }
+      const [cx, cz] = turns[ci % 4];
+      if (climb) ci++;
+      const coff = support(at, cx, cz) + rr(1.0, 1.3) + s / 2;
+      let x = last ? tx : climb ? at.x + cx * coff : at.x + vx * off;
+      let z = last ? tz : climb ? at.z + cz * coff : at.z + vz * off;
+      const remain = Math.max(1, Math.ceil(L / 4.2));
       const y0 = y;
-      y = last ? Math.max(y - 0.4, Math.min(y + 1.05, ty)) : Math.min(y + 1.05, y + Math.max(-0.4, climb ? 1.0 : (ty - y) / remain));
+      y = last ? Math.max(y - 0.4, Math.min(y + (far ? 0.4 : 1.05), ty)) : Math.min(y + 1.05, y + Math.max(-0.4, climb ? 1.0 : (ty - y) / remain));
+      // Not right over or under the last few pieces either (the clearance test leaves those out): a step out over the hop
+      // just made blocked that jump. Turned a little either way until it is clear.
+      if (!last && clashRecent(x, z, s / 2, ry, y, at)) {
+        const ox = x - at.x, oz = z - at.z;
+        for (const a of [0.5, -0.5, 1.0, -1.0, 1.5, -1.5]) {
+          const c = Math.cos(a), sn = Math.sin(a), nx = at.x + ox * c - oz * sn, nz = at.z + ox * sn + oz * c;
+          if (!clashRecent(nx, nz, s / 2, ry, y, at)) { x = nx; z = nz; break; }
+        }
+      }
       // Clear of older route when that is still an easy step up.
       const nd = need(x, z, s / 2, s / 2, ry, y);
       if (nd > 0 && (nd <= 0.6 || y + nd - y0 <= 1.3)) y += nd + 0.01;
@@ -1332,12 +1370,21 @@ export function generateLevel(mapId = 0) {
     maze(cur, N, cpo, shift = 0) {
       const C = MAZE_CELL, S = N * C, RIM = MAZE_RIM, F = S + 2 * RIM, half = F / 2, H = MAZE_WALL_H, T = MAZE_WALL_T;
       const inward = ROUTE === 'crater', so = inward ? -1 : 1;
-      // How far the garden's side nearest the route is from the middle the route goes round: about as far as where we
-      // are, so the way in comes up right ahead (shift tries a little further in or out), never into the middle column
-      // and, in the crater, never into its wall.
-      const up = S / 2 + RIM / 2, wp = Math.sqrt(Math.max(0, cur.r * cur.r - up * up)) + so * (RIM + C / 2) * -1 + shift;
+      // A landing straight out in front of the way in, one short hop from the porch: the route comes in at an angle, and
+      // this keeps the platform before it clear of the garden.
+      const sIn = rr(2.3, 2.6), gIn = rr(1.1, 1.4), uIn = S / 2 + RIM + gIn + sIn / 2, wIn = RIM + C / 2;
+      // How far the garden's side nearest the route is from the middle the route goes round: so that landing is as far
+      // out as we are (shift tries a little further in or out), never into the middle column and, in the crater, never
+      // into its wall.
+      const wp = Math.sqrt(Math.max(0, cur.r * cur.r - uIn * uIn)) - so * wIn + shift;
       const d0 = inward ? Math.min(MAIN.hi + 1.6, wp)
         : Math.max(ROUTE === 'towers' ? TBAND.lo + 0.2 : Math.max(MAIN.lo, coreRadius(MAP.key, cur.y) + CORE_SKIN + 0.7), wp);
+      // A big garden's way in can't be that close to the middle: out to it in short hops first (in, in the crater).
+      const rIn = Math.hypot(d0 + so * wIn, uIn), lead = [], pl0 = pathLen;
+      for (let q = 0; q < 8 && Math.abs(rIn - cur.r) > 0.9; q++) {
+        cur = T0.gap(cur, { r: cur.r + clamp(rIn - cur.r, -2.0, 2.0), g: rr(1.1, 1.5), dy: rr(0, 0.25), size: [rr(2.4, 2.9), rr(2.2, 2.6)], surf: null, nosign: true });
+        lead.push(cur);
+      }
       // f: the way the route goes; n: toward the route's side of the garden.
       const frame = (thc) => {
         const rx = Math.cos(thc), rz = Math.sin(thc), dc = d0 + so * half, fx = -rz * DIR, fz = rx * DIR;
@@ -1346,10 +1393,7 @@ export function generateLevel(mapId = 0) {
       const at = (f, u, w) => [f.x + f.fx * u + f.nx * w, f.z + f.fz * u + f.nz * w];
       const rowW = (j) => ((N - 1) / 2 - j) * C;
       const je = 0, jx = N > 4 && R() < 0.5 ? 1 : 0;
-      // A landing straight out in front of the way in, one short hop from the porch: the route comes in at an angle, and
-      // this keeps the platform before it clear of the garden.
-      const sIn = rr(2.3, 2.6), gIn = rr(1.1, 1.4);
-      const landIn = (f) => { const [x, z] = at(f, -(S / 2 + RIM + gIn + sIn / 2), rowW(je)); return { x, z, ry: f.ry, sx: sIn, sz: sIn }; };
+      const landIn = (f) => { const [x, z] = at(f, -uIn, rowW(je)); return { x, z, ry: f.ry, sx: sIn, sz: sIn }; };
       // Turn the garden round the middle until that landing is one hop ahead of where we are.
       const g = rr(1.2, 1.7), hx = -Math.sin(cur.th) * DIR, hz = Math.cos(cur.th) * DIR;
       const gapAt = (thc) => {
@@ -1361,9 +1405,12 @@ export function generateLevel(mapId = 0) {
       if (gapAt(hi) < g) return null;
       for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (gapAt(mid) < g) lo = mid; else hi = mid; }
       const f = frame((lo + hi) / 2), ry = f.ry;
-      // Where we jump from must not reach into it.
-      const cry = cur.ry ?? -(cur.th + Math.PI / 2);
-      if (overlap({ x: cur.x, z: cur.z, hx: cur.sx / 2, hz: cur.sz / 2, c: Math.cos(cry), s: Math.sin(cry) }, { x: f.x, z: f.z, hx: half, hz: half, c: Math.cos(ry), s: Math.sin(ry) }, 0.3)) return null;
+      // Where we jump from, and the hops out to it, must not reach into it.
+      const gbox = { x: f.x, z: f.z, hx: half, hz: half, c: Math.cos(ry), s: Math.sin(ry) };
+      for (const q of [cur, ...lead]) {
+        const cry = q.ry ?? -(q.th + Math.PI / 2);
+        if (overlap({ x: q.x, z: q.z, hx: q.sx / 2, hz: q.sz / 2, c: Math.cos(cry), s: Math.sin(cry) }, gbox, 0.3)) return null;
+      }
       const li = landIn(f), lth = Math.atan2(li.z - CZ, li.x - CX);
       const pIn = plat(lth, Math.hypot(li.x - CX, li.z - CZ), cur.y + rr(-0.1, 0.3), sIn, sIn, { dry: ry + lth + Math.PI / 2, nosign: true });
       const y = pIn.y + rr(0, 0.3), k = out.mazes.length;
@@ -1373,7 +1420,7 @@ export function generateLevel(mapId = 0) {
         const [x, z] = at(f, u, w);
         return add(makeBox(x, yc, z, hu, hy, hw, 0, ry, 0), kind, Object.assign({ mz: k }, extra));
       };
-      const WALL = { slick: true, solidCam: false, solidRope: false, surf: 'ice' };
+      const WALL = { slick: true, solidCam: true, solidRope: false, surf: 'ice' };
       mz.floor = box(0, 0, half, 0.35, half, y - 0.35, 'mfloor', { surf: null });
       const yc = y + H / 2, hl = C / 2 + T / 2;
       for (let j = 0; j < N; j++) for (let i = 0; i < N - 1; i++) mz.walls[edgeV(N, i, j)] = box((i + 1 - N / 2) * C, rowW(j), T / 2, H / 2, hl, yc, 'mwall', WALL);
@@ -1390,19 +1437,37 @@ export function generateLevel(mapId = 0) {
       face(-S / 2, je);
       face(S / 2, jx);
       for (const w of [S / 2, -S / 2]) box(0, w, S / 2 + T / 2, H / 2, T / 2, yc, 'mouter', WALL);
-      // A fence each side of both porches, across the rim.
-      for (const [u, j] of [[-(S / 2 + RIM / 2), je], [S / 2 + RIM / 2, jx]]) for (const s2 of [-1, 1]) box(u, rowW(j) + (s2 * C) / 2, RIM / 2 + T / 2, H / 2, T / 2, yc, 'mouter', WALL);
+      // Round the outside, solid up to the roof, so nobody walks round it: the two long sides (corners and all), then the
+      // two ends, open only in the doorway, as wide as a corridor.
+      const e0 = S / 2 + T / 2, rw = (half - e0) / 2, mid = (half + e0) / 2;
+      for (const s2 of [-1, 1]) box(0, s2 * mid, half, H / 2, rw, yc, 'mrim', WALL);
+      for (const [s2, j] of [[-1, je], [1, jx]]) {
+        const lo = rowW(j) - C / 2 + T / 2, hi = rowW(j) + C / 2 - T / 2;
+        for (const [a, b] of [[-e0, lo], [hi, e0]]) if (b - a > 0.05) box(s2 * mid, (a + b) / 2, rw, H / 2, (b - a) / 2, yc, 'mrim', WALL);
+      }
+      // The roof over all of it, doorways too, and a raised edge round the roof: nothing gets in from above or over the top.
+      box(0, 0, half, MAZE_ROOF / 2, half, y + H + MAZE_ROOF / 2, 'mroof', WALL);
+      const ey = y + H + MAZE_ROOF + MAZE_EDGE / 2, et = 0.18;
+      for (const s2 of [-1, 1]) {
+        box(0, s2 * (half - et), half, MAZE_EDGE / 2, et, ey, 'mrim', WALL);
+        box(s2 * (half - et), 0, et, MAZE_EDGE / 2, half - 2 * et, ey, 'mrim', WALL);
+      }
       const [cx, cz] = mazeCell(mz, 0, je);
       checkpoint(Math.atan2(cz - CZ, cx - CX), Math.hypot(cx - CX, cz - CZ), y, Object.assign({ maze: k }, cpo));
       [mz.rx, mz.rz] = mazeCell(mz, mz.ri, mz.rj);
       // Creatures prowl its corridors: a new corridor each time the maze changes (applyMaze).
-      for (let q = 0; q < (N >= 5 && zone >= 5 ? 2 : 1); q++) {
+      for (let q = 0; q < (N >= 8 ? 3 : N >= 6 ? 2 : 1); q++) {
         mz.mons.push(out.monsters.length);
         out.monsters.push({ i: out.monsters.length, ax: mz.rx, az: mz.rz, bx: mz.rx, bz: mz.rz, y: y + 0.65, per: 4, ph: R(), r: 0.6, zone, mz: k });
       }
       out.mazes.push(mz);
-      // Nothing may pass over it lower than its walls and a head's room above them.
-      recBox(f.x, f.z, half, half, ry, y, H + HEAD);
+      // Nothing may pass over it lower than its roof edge and a head's room above that.
+      mazeRec = recBox(f.x, f.z, half, half, ry, y, H + MAZE_ROOF + MAZE_EDGE + HEAD);
+      // Nothing later may come back within a jump or a dash of the way here at about its height: that would be a way
+      // round. Each piece of it keeps a wide space round it that only the route after the garden has to respect
+      // (well above it or well below), never what was there before.
+      const before = recs.filter((q) => q.pl >= pl0 - 15 && q !== mazeRec && !q.guard);
+      for (const q of before) recBox(q.x, q.z, q.hx + 5, q.hz + 5, Math.atan2(q.s, q.c), q.y - 0.6, 3.4).guard = true;
       pathLen += S * 1.6;
       // The way on: a landing straight out from the far porch.
       const [px, pz] = at(f, S / 2 + RIM / 2, rowW(jx));
@@ -1410,7 +1475,25 @@ export function generateLevel(mapId = 0) {
       const s = rr(2.3, 2.7), [lx, lz] = at(f, S / 2 + RIM + rr(1.2, 1.6) + s / 2, rowW(jx)), th = Math.atan2(lz - CZ, lx - CX);
       const land = plat(th, Math.hypot(lx - CX, lz - CZ), y + rr(-0.1, 0.3), s, s, { dry: ry + th + Math.PI / 2, nosign: true });
       mz.land = land.col;
-      return land;
+      // The landing is further from the middle than the route usually runs. Back to it in short hops, each only as far in
+      // as stays clear of the garden: a piece back in its lane right away would be a long jump, and cut in over the
+      // garden's corner (it took a lift up over the roof).
+      const lane = (r) => clamp(r, rLo(3), Math.max(rLo(3), BAND.hi));
+      const hits = (t, r, hx, hz) => { const [x, z] = polar(t, r), a = -(t + Math.PI / 2); return overlap({ x, z, hx, hz, c: Math.cos(a), s: Math.sin(a) }, gbox, 0.6); };
+      const clearAhead = (p) => {
+        for (const r of [lane(p.r - 1.6), lane(p.r), lane(p.r + 1.6)]) for (let d = 0; d <= 9; d += 0.5) if (hits(p.th + (DIR * (p.sx / 2 + d)) / r, r, 1.9, 1.7)) return false;
+        return true;
+      };
+      let p = land;
+      for (let q = 0; q < 9; q++) {
+        const dr = lane(p.r) - p.r;
+        if (Math.abs(dr) < 0.9 && clearAhead(p)) break;
+        const sx = rr(2.4, 2.9), sz = rr(2.2, 2.6), g2 = rr(1.1, 1.5);
+        let r = p.r + clamp(dr, -1.3, 1.3);
+        if (hits(thetaFor(p, g2, r, sx, sz), r, sx / 2, sz / 2)) r = p.r;
+        p = T0.gap(p, { r, g: g2, dy: rr(0, 0.25), size: [sx, sz], surf: null, nosign: true });
+      }
+      return p;
     },
     // A wide platform patrolled by a monster that knocks robots off. Time it, GRAB, or SHOOT to stun it.
     monster(cur) {
@@ -1674,7 +1757,7 @@ export function generateLevel(mapId = 0) {
         const B = buckets[k];
         if (!B) continue;
         for (const r of B) {
-          if (r === q || r.pl >= q.pl - RECENT) continue;
+          if (r === q || r.pl >= q.pl - RECENT || q.guard) continue;
           const lo = r.y <= q.y ? r : q, hi = lo === r ? q : r;
           if (hi.y - lo.y >= lo.h - 0.01) continue;
           const dx = r.x - q.x, dz = r.z - q.z, rr2 = r.rad + q.rad;
@@ -1747,25 +1830,33 @@ export function generateLevel(mapId = 0) {
     return false;
   }
   function place(fn, at) {
+    let lift = 0;
     for (let k = 0; k < 6; k++) {
       const snap = snapshot(), res = fn(), raise = badness(snap.recs), hit = buried(snap.n.cols) || blocksShaft(snap.n.cols, snap.n.moves);
       if (raise <= 0 && !hit) return res;
       restore(snap);
       // Cut into a tall solid: try a plain hop along the way first. A little too close to older route: a few steps up.
-      // Anything more, or that failed too: a lift.
-      fn = raise <= 0 && k === 0 ? () => T.gap(at)
-        : raise > 0 && raise <= 4.5 && k === 0 ? () => T.stairs(at, Math.ceil(raise / 0.95) + 1)
-        : () => T.lift(at, Math.min(18, Math.max(raise, 1) + 1.2));
+      // Anything more, or that failed too: a lift, each try higher by what the last one still lacked.
+      if (raise <= 0 && k === 0) fn = () => T.gap(at);
+      else if (raise > 0 && raise <= 4.5 && k === 0) fn = () => T.stairs(at, Math.ceil(raise / 0.95) + 1);
+      else {
+        lift = Math.min(18, lift ? lift + Math.max(raise, 0.5) + 0.3 : Math.max(raise, 1) + 1.2);
+        const h = lift;
+        fn = () => T.lift(at, h);
+      }
     }
     return fn();
   }
 
-  // A maze garden for a checkpoint, as big as fits: 6, 5, then 4 cells a side. If older route is too close below, a few
-  // steps up first. Answers the landing after it, or null if none fits (the caller makes a plain pad instead).
+  // A maze garden for a checkpoint, as big as fits: up to 7 cells a side low down and 8 from the fourth zone up, then
+  // smaller. If older route is too close below, a few steps up first. Answers the landing after it, or null if none fits
+  // (the caller makes a plain pad instead).
   function mazeAt(at, cpo) {
+    const top = zone >= 3 ? 8 : 7, sizes = [];
+    for (let N = top; N >= 4; N--) for (const shift of N > 5 ? [0, 1.5] : [0, 1.5, -1.5]) sizes.push([N, shift]);
     for (let step = 0; step < 5; step++) {
       let raise = 0;
-      for (const [N, shift] of [[6, 0], [6, 1.5], [5, 0], [5, 1.5], [5, -1.5], [4, 0], [4, 1.5], [4, -1.5]]) {
+      for (const [N, shift] of sizes) {
         const snap = snapshot(), res = T.maze(at, N, cpo, shift);
         if (res) {
           const r2 = badness(snap.recs), bu = buried(snap.n.cols), bs = blocksShaft(snap.n.cols, snap.n.moves);
@@ -1809,13 +1900,16 @@ export function generateLevel(mapId = 0) {
     return 'gap';
   }
 
-  // Look ~1.4 rad ahead; if the layer below would be too close, climb stairs first.
+  // Look ~1.4 rad ahead; if the layer below would be too close, climb stairs first. (A maze garden just left is beside
+  // the way on, not below it: it used to put a needless lift right after every maze.)
   function guard(cur, span = 2.4, extra = 0.6) {
     let worst = -1e9;
     const sp = Math.min(span, 18 / Math.max(3, cur.r));
+    besideMaze = mazeRec && Math.abs(mazeRec.y - cur.y) < 2.5 ? mazeRec : null;
     for (let d = 0.1; d <= sp; d += 0.1) {
       for (const dr of [-1, 0, 1]) worst = Math.max(worst, needAt(cur.th + DIR * d, Math.max(BAND.lo + 1, cur.r + dr), 3.6, 3.6, cur.y - extra));
     }
+    besideMaze = null;
     // A big climb needed soon is done in one go with a lift; small ones with a few stairs.
     if (worst > 4.5) return T.lift(cur, Math.min(9, worst + 1.4));
     return worst > 0 ? T.stairs(cur, Math.ceil(worst / 0.9) + 2) : null;
@@ -1841,7 +1935,20 @@ export function generateLevel(mapId = 0) {
   // Lines over platforms and arcs over gaps, every so often along the route. Only on things that stay put.
   function buildCoins() {
     const CR = rng(MAP.seed ^ 0xc0115), list = (out.coins = []);
-    const push = (x, y, z) => list.push({ i: list.length, x, y, z, ph: CR() * TAU });
+    // Never inside or touching anything: a wall, a post, a door, a branch, a tree or a mushroom.
+    const near = out.cols.map((c) => [c, (c.miny + c.maxy) / 2, (c.maxy - c.miny) / 2 + 1]);
+    const solid = (c, x, y, z) => {
+      if (c.t !== BOX) { const r = Math.hypot(x - c.x, z - c.z) - (c.r || 0), dy = Math.abs(y - c.y) - c.hh; return Math.max(r, dy) < 0.5; }
+      const ex = x - c.x, ey = y - c.y, ez = z - c.z, m = c.m;
+      const lx = Math.abs(ex * m[0] + ey * m[1] + ez * m[2]) - c.hx, ly = Math.abs(ex * m[3] + ey * m[4] + ez * m[5]) - c.hy, lz = Math.abs(ex * m[6] + ey * m[7] + ez * m[8]) - c.hz;
+      return Math.hypot(Math.max(lx, 0), Math.max(ly, 0), Math.max(lz, 0)) + Math.min(Math.max(lx, ly, lz), 0) < 0.5;
+    };
+    const free = (x, y, z) => {
+      for (const [c, cy, ext] of near) if (Math.abs(cy - y) < ext && solid(c, x, y, z)) return false;
+      for (const d of out.decor) if ((d.k === 'tree' || d.k === 'mushroom') && y > d.y - 0.5 && y < d.y + 6 && Math.hypot(d.x - x, d.z - z) < 1.1) return false;
+      return true;
+    };
+    const push = (x, y, z) => { const ph = CR() * TAU; if (free(x, y, z)) list.push({ i: list.length, x, y, z, ph }); };
     const ok = (c) => (c.kind === 'plat' || c.kind === 'beam') && c.t === BOX && !c.dyn && !c.blink && !c.trap && !c.crumble;
     const P = out.cols.filter(ok);
     // A little line off the start so nobody misses what these are.
@@ -2084,7 +2191,8 @@ export function generateLevel(mapId = 0) {
       if (g) { cur = g; continue; }
       if (!midDone && cur.y > mid) {
         const mz = mazeAt(at, { mid: true });
-        if (mz) cur = mz;
+        // Sunny: a whole leg on from the garden before turning back, not straight back along its side.
+        if (mz) { cur = mz; if (ROUTE === 'switchback') newLeg(cur); }
         else {
           cur = place(() => T.gap(at, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at);
           checkpoint(cur.th, cur.r, cur.y, { mid: true });
@@ -2245,10 +2353,19 @@ export function generateLevel(mapId = 0) {
   // (the maze gardens) are left out, so in a maze it points at the way out.
   out.route = [];
   for (const q of recs) {
-    if (q.tag === 'secret' || q.rad > 6) continue;
+    if (q.tag === 'secret' || q.guard || q.rad > 6) continue;
     const p = out.route[out.route.length - 1];
     if (p && Math.hypot(q.x - p[0], q.y - p[1], q.z - p[2]) < 1.5) continue;
     out.route.push([q.x, q.y, q.z]);
+  }
+  // A beam or a moving platform is recorded after the platform it leads to: back in between, so the way up goes in the
+  // order you climb it (the arrow pointed back at a beam for a moment once you were across it).
+  {
+    const R3 = out.route, d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    for (let i = 1; i + 1 < R3.length; i++) {
+      const a = R3[i - 1], b = R3[i], c = R3[i + 1];
+      if (d(a, c) < d(a, b) && d(a, c) + d(c, b) < d(a, b) * 1.25) { R3[i] = c; R3[i + 1] = b; i++; }
+    }
   }
   // The UP HERE sign on the dock: a few steps from where everyone starts, toward the first piece of the route and in from
   // it toward the middle, clear of everything. Its post is solid.

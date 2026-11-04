@@ -5,7 +5,7 @@
 // Signing in happens in the phone's browser, never in the game. The browser comes back to the app with a one time code,
 // and only this copy of the game can use it, because only it knows the secret it started with (see server/lib/auth.js).
 import { store } from './util.js';
-import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun } from './profile.js';
+import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun, lookFromAccount, lookStamp } from './profile.js';
 import { DIFFS } from './level.js';
 import { itemKey, setRoleTable } from './skins.js';
 import { Recorder, toBase64, fromBase64, deflate } from './replay.js';
@@ -16,6 +16,8 @@ export const SERVER = 'https://pointdesk.net:47810';
 const N = window.Native;
 import { DESK, IS_WEB } from './platform.js';
 const PUSH_AFTER = 30000;
+// Something new to wear goes off sooner, so the next phone you pick up has it on.
+const LOOK_AFTER = 3000;
 const REPORT_AFTER = 12000;
 const RUN_MAX_AGE = 24 * 3600000;
 const PENDING_MAX = 15 * 60000;
@@ -26,6 +28,8 @@ let needsTerms = false;
 let ban = store.get('banInfo', null);
 let muted = false;
 let timer = 0;
+let timerAt = 0;
+let lookSent = 0;
 let lastSent = '';
 let lastSync = 0;
 let busy = null;
@@ -144,6 +148,10 @@ export async function finishLogin(code) {
   await report();
   flushProfile();
   store.set('guest', { profile: snapshot(), best: store.get('best2', {}), solo: store.get('save.solo', null) });
+  // What the account was last seen wearing, on whichever phone, comes on here.
+  muted = true;
+  lookFromAccount();
+  muted = false;
   acct = { server: p.server, token: r.json.token, user: r.json.user, rev: 0 };
   needsTerms = !r.json.user.tosOk;
   store.set('account', acct);
@@ -187,7 +195,12 @@ window.SMU_authCode = (code) => { finishLogin(code); };
 
 // Ask again if the terms changed. Called at startup.
 export async function start() {
-  store.watch = (k) => { if (!muted && (k === 'profile' || k === 'best2' || k === 'save.solo')) soon(); };
+  lookSent = lookStamp();
+  store.watch = (k) => {
+    if (muted || (k !== 'profile' && k !== 'best2' && k !== 'save.solo')) return;
+    const t = k === 'profile' ? lookStamp() : lookSent;
+    if (t !== lookSent) { lookSent = t; soon(LOOK_AFTER); } else soon();
+  };
   if (N && N.authPending) {
     const c = N.authPending();
     if (c) await finishLogin(c);
@@ -267,9 +280,11 @@ export function mergeData(a, b) {
   return { v: 1, profile: mergeRecords(a.profile || {}, b.profile || {}), best, solo: h(a.solo) >= h(b.solo) ? a.solo || null : b.solo || null };
 }
 
-function soon() {
-  if (!account() || isGuest() || needsTerms || timer) return;
-  timer = setTimeout(() => { timer = 0; push(); }, PUSH_AFTER);
+function soon(ms = PUSH_AFTER) {
+  if (!account() || isGuest() || needsTerms || (timer && Date.now() + ms >= timerAt)) return;
+  clearTimeout(timer);
+  timerAt = Date.now() + ms;
+  timer = setTimeout(() => { timer = 0; push(); }, ms);
 }
 
 // Send what is here, over the version last seen. If another phone got there first, merge the two and go again.

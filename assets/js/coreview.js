@@ -277,7 +277,7 @@ export function clearance(L, o = {}) {
     grow(c.minx - mv, c.miny - mv, c.minz - mv, c.maxx + mv, c.maxy + mv + 4.2, c.maxz + mv);
   }
   for (const q of L.recs || []) {
-    if (o.skipRec && o.skipRec(q)) continue;
+    if (q.guard || (o.skipRec && o.skipRec(q))) continue;
     const ex = Math.abs(q.c) * q.hx + Math.abs(q.s) * q.hz, ez = Math.abs(q.s) * q.hx + Math.abs(q.c) * q.hz;
     grow(q.x - ex, q.y, q.z - ez, q.x + ex, q.y + q.h, q.z + ez);
   }

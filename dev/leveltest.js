@@ -10,6 +10,8 @@ for (const M of MAPS) {
   const R = L.recs, bad = [];
   for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) {
     const a = R[i], b = R[j];
+    // The space kept round the way to a maze garden binds only what was placed after it.
+    if ((a.guard && b.pl < a.pl) || (b.guard && a.pl < b.pl)) continue;
     const lo = a.y <= b.y ? a : b, hi = lo === a ? b : a;
     // The lower one needs its clear height above it (HEAD for floors, less for hooks and door frames).
     if (Math.abs(a.pl - b.pl) <= 14 || hi.y - lo.y >= Math.min(lo.h, hi === lo ? HEAD : HEAD) - 0.01 && hi.y - lo.y >= lo.h - 0.01) continue;

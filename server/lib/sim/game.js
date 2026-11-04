@@ -5,7 +5,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn, applyMaze } from './level.js';
+import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -1005,7 +1005,6 @@ export class Game {
     const g = me.grounded && me.ground;
     if (g && g.crumble && g.crumble.st === 0) { this.crumble(g.crumble.i); this.s.toHost({ k: 'crumble', i: g.crumble.i }); }
     if (g && g.kind === 'mfloor') {
-      this.mazeT = me.time;
       if (!this.mazeSeen) { this.mazeSeen = true; this.app.ui.toast('A maze! It changes every time you go back to a checkpoint', ''); }
     }
     const z = zoneAt(L, me.y);
@@ -1224,8 +1223,11 @@ export class Game {
     // A scoped weapon looks through its sight: the view goes to the eye, narrows, and turns slower to match.
     const sk = (this.scopeK = damp(this.scopeK, this.aiming && gunNow.scope ? 1 : 0, 13, dt));
     const c = this.cam, [dx, dy] = app.input.takeCam(this.aiming, zoomed ? gunNow.zoom / 48 : 1), ak = (this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 12, dt));
+    // Inside a maze garden the view goes to the eyes, aiming or not: walls and a roof all round, and nobody sees the way
+    // from above. Out through a doorway it comes back.
+    const fk = (this.fpK = damp(this.fpK || 0, this.mazeAround(me) ? 1 : 0, 9, dt));
     c.yaw -= dx;
-    c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak), 1.25);
+    c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak) - 0.75 * fk * (1 - ak), 1.25);
     if (dx || dy) this.camTouched = T;
     this.assistCamera(dt, T, ak);
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
@@ -1239,13 +1241,15 @@ export class Game {
     const cam = R.camera;
     cam.position.set(px + ox * c.d, Math.max(0.8, py + oy * c.d), pz + oz * c.d);
     cam.lookAt(px, py, pz);
-    if (sk > 0.01) {
+    const ek = Math.max(sk, fk);
+    if (ek > 0.01) {
       const ex = me.x - ox * 0.18, ey = me.y + 1.02 - oy * 0.18, ez = me.z - oz * 0.18;
-      cam.position.set(cam.position.x + (ex - cam.position.x) * sk, cam.position.y + (ey - cam.position.y) * sk, cam.position.z + (ez - cam.position.z) * sk);
+      cam.position.set(cam.position.x + (ex - cam.position.x) * ek, cam.position.y + (ey - cam.position.y) * ek, cam.position.z + (ez - cam.position.z) * ek);
       cam.lookAt(cam.position.x - ox * 6, cam.position.y - oy * 6, cam.position.z - oz * 6);
     }
-    if (sk >= 0.72) { myRig.g.visible = false; this.hidMe = true; } else if (this.hidMe) { myRig.g.visible = true; this.hidMe = false; }
-    const fov = (66 + clamp(-me.vy - 12, 0, 20) * 0.5) * (1 - ak) + aimFov * ak;
+    if (ek >= 0.72) { myRig.g.visible = false; this.hidMe = true; } else if (this.hidMe) { myRig.g.visible = true; this.hidMe = false; }
+    let fov = (66 + clamp(-me.vy - 12, 0, 20) * 0.5) * (1 - ak) + aimFov * ak;
+    fov += (74 - fov) * fk * (1 - ak);
     if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4 + (zoomed ? 12 : 0), dt); cam.updateProjectionMatrix(); }
 
     // Weather, sky and sound.
@@ -1300,6 +1304,17 @@ export class Game {
     if (app.ui.nav) app.ui.nav(this);
   }
 
+  // The maze garden a climber is inside, under its roof (the doorways too), or null.
+  mazeAround(b) {
+    const feet = b.y - PR;
+    for (const m of this.L.mazes || []) {
+      if (feet < m.y - 0.8 || feet > m.y + MAZE_WALL_H - 0.3) continue;
+      const ex = b.x - m.x, ez = b.z - m.z;
+      if (Math.abs(ex * m.fx + ez * m.fz) < m.half + 0.05 && Math.abs(ex * m.nx + ez * m.nz) < m.half + 0.05) return m;
+    }
+    return null;
+  }
+
   // Camera assist: while you run and leave the camera alone, it swings round behind you. Aim assist:
   // while aiming, the crosshair is pulled gently onto a target that is already close to it.
   assistCamera(dt, T, ak) {
@@ -1308,9 +1323,8 @@ export class Game {
     const F = S.camFollow ?? 1;
     // Bouncing between walls the speed flips side to side every moment: the camera stays still until you are out.
     const bouncing = me.kickT !== undefined && me.time - me.kickT < 0.9;
-    // In a maze garden it looks down from higher up, so the walls don't hide the way.
-    const maze = this.mazeT !== undefined && me.time - this.mazeT < 1.2, pitchTo = maze ? 0.82 : 0.32;
-    if (maze && F > 0.01 && !this.aiming && c.pitch < pitchTo - 0.05 && T - (this.camTouched || -9) > 1.5) c.pitch += (pitchTo - c.pitch) * Math.min(1, dt * 1.4);
+    // Through the eyes in a maze garden: level, looking a little down at the way ahead.
+    const pitchTo = (this.fpK || 0) > 0.5 ? 0.1 : 0.32;
     if (F > 0.01 && !this.aiming && !me.hook && !bouncing && T - (this.camTouched || -9) > 0.9 - Math.min(F, 2) * 0.2) {
       const sp = Math.hypot(me.vx, me.vz);
       if (sp > 1.5) {

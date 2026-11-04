@@ -4,7 +4,7 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm } from './storm.js';
-import { DIFFS, MAPS, zoneAt, pathsOf, applyMaze } from './level.js';
+import { DIFFS, MAPS, zoneAt, pathsOf, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
@@ -320,7 +320,20 @@ export class Spectator {
     const cam = R.camera;
     cam.position.set(c.x + ox * c.d, Math.max(0.8, c.y + oy * c.d), c.z + oz * c.d);
     cam.lookAt(c.x, c.y, c.z);
-    const fov = 66 + clamp(-me.vy - 12, 0, 20) * 0.5;
+    // In a maze garden, through their eyes (as they see it): the walls and the roof would only get in the way.
+    let inMaze = false;
+    for (const m of L.mazes || []) {
+      const feet = me.y - PR, ex = me.x - m.x, ez = me.z - m.z;
+      if (feet > m.y - 0.8 && feet < m.y + MAZE_WALL_H - 0.3 && Math.abs(ex * m.fx + ez * m.fz) < m.half + 0.05 && Math.abs(ex * m.nx + ez * m.nz) < m.half + 0.05) inMaze = true;
+    }
+    const fk = (this.fpK = damp(this.fpK || 0, inMaze ? 1 : 0, 9, dt)), rig = this.robots.get(this.focus);
+    if (fk > 0.01) {
+      const ex = me.x - ox * 0.18, ey = me.y + 1.02 - oy * 0.18, ez = me.z - oz * 0.18;
+      cam.position.set(cam.position.x + (ex - cam.position.x) * fk, cam.position.y + (ey - cam.position.y) * fk, cam.position.z + (ez - cam.position.z) * fk);
+      cam.lookAt(cam.position.x - ox * 6, cam.position.y - oy * 6, cam.position.z - oz * 6);
+    }
+    if (rig && fk >= 0.72) rig.g.visible = false;
+    const fov = 66 + clamp(-me.vy - 12, 0, 20) * 0.5 + (74 - 66) * fk;
     if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4, dt); cam.updateProjectionMatrix(); }
 
     const zi = zoneAt(L, me.y), last = L.zones[L.zones.length - 1], eye = clamp((me.y - last.y0) / (L.top - last.y0), 0, 1), gust = this.storm.gust(T, zi);

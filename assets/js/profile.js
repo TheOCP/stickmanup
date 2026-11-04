@@ -55,17 +55,25 @@ export function mergeRecords(a, b) {
   for (const m of Object.keys(runs)) { runs[m].sort(better); runs[m].length = Math.min(runs[m].length, KEEP); }
   const totals = {};
   for (const k of ['falls', 'climbs']) totals[k] = Math.max(count(a.totals && a.totals[k]), count(b.totals && b.totals[k]));
-  return { eq: cleanLook(a.eq) || cleanLook(b.eq), runs, totals };
+  // What you wear: whichever was picked last, on any phone. When neither says when (picked before this was kept), the
+  // second one: the account's copy, as cloud.js puts it.
+  const ea = cleanLook(a.eq), eb = cleanLook(b.eq), ta = count(a.eqT), tb = count(b.eqT), useA = !!ea && (!eb || ta > tb);
+  return { eq: useA ? ea : eb, eqT: useA ? ta : eb ? tb : 0, runs, totals };
 }
-export const recordsOf = (o) => ({ eq: o.eq || null, runs: o.runs || {}, totals: o.totals || {} });
+export const recordsOf = (o) => ({ eq: o.eq || null, eqT: count(o.eqT), runs: o.runs || {}, totals: o.totals || {} });
 export function setRecords(o) {
   if (!o || typeof o !== 'object') return;
   const m = mergeRecords(o, o);
   P.runs = m.runs;
   P.totals = m.totals;
-  if (m.eq) P.eq = m.eq;
+  // What the account has is checked against what is yours by setWallet, which only goes by the server's word.
+  if (m.eq) { P.eq = m.eq; P.eqT = m.eqT; }
   saveNow();
 }
+// Signing in: the look the account has comes on, not what was worn here before.
+export function lookFromAccount() { P.eqT = 0; saveNow(); }
+// When you last picked something to wear, so cloud.js can send it off soon.
+export const lookStamp = () => count(P.eqT);
 // The server's word on the money and on your flag. `extra` is what was earned here and hasn't reached it yet.
 export function setWallet(w, extra = 0) {
   P.coins = count(w.coins) + extra;
@@ -96,6 +104,7 @@ export function restore(o) {
   P.runs = m.runs;
   P.totals = m.totals;
   P.eq = m.eq || { s: FREE_SUIT, f: 'smile', h: 'none' };
+  P.eqT = m.eqT;
   saveNow();
 }
 
@@ -127,7 +136,7 @@ export function buy(item) {
 }
 
 const SLOT = { suit: 's', face: 'f', hat: 'h', weapon: 'w' };
-export function equip(item) { P.eq[SLOT[item.kind]] = item.id; saveNow(); }
+export function equip(item) { P.eq[SLOT[item.kind]] = item.id; P.eqT = Math.max(Date.now(), count(P.eqT) + 1); saveNow(); }
 export const worn = (item) => (item.kind === 'weapon' ? myLook().w === item.id : P.eq[SLOT[item.kind]] === item.id);
 
 // What to send out and show: your picks, with the team suits only with the right flag.

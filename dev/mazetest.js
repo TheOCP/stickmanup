@@ -1,9 +1,10 @@
 // Can a real climber get through every maze garden, whichever way its walls stand, and is there no way over a wall?
 // Runs the game's own physics with a small autopilot: from the checkpoint, along the way through to the far porch, then the
-// hop onto the landing. Then, in the checkpoint's cell, it runs and jumps at every wall round it for a while.
-import { generateLevel, MAPS, applyMaze, mazePath, mazeCell, mazeLayout, MAZE_CELL, MAZE_RIM, MAZE_WALL_H } from '../assets/js/level.js';
-import { World } from '../assets/js/physics.js';
-import { Body, PR } from '../assets/js/player.js';
+// hop onto the landing. Then, in the checkpoint's cell, it runs and jumps at every wall round it for a while. And there is
+// no way round it (nothing before it within a jump of anything after it) and no way over its roof.
+import { generateLevel, MAPS, applyMaze, mazePath, mazeCell, mazeLayout, MAZE_CELL, MAZE_RIM, MAZE_WALL_H, MAZE_ROOF, MAZE_EDGE } from '../assets/js/level.js';
+import { World, BOX } from '../assets/js/physics.js';
+import { Body, PR, PC } from '../assets/js/player.js';
 
 const dt = 1 / 120, none = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false };
 let failed = 0, runs = 0;
@@ -37,8 +38,15 @@ function hop(b, to, env, world) {
   return false;
 }
 
+// Edge to edge, how far apart two footprints are.
+const top = (c) => c.y + (c.t === BOX ? c.hy : c.hh);
+function corners(c) { if (c.t !== BOX) return [[c.x, c.z]]; const m = c.m, o = []; for (const [sx, sz] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) o.push([c.x + m[0] * c.hx * sx + m[6] * c.hz * sz, c.z + m[2] * c.hx * sx + m[8] * c.hz * sz]); return o; }
+function off(c, x, z) { if (c.t !== BOX) return Math.max(0, Math.hypot(x - c.x, z - c.z) - c.r); const m = c.m, ex = x - c.x, ez = z - c.z; return Math.hypot(Math.max(0, Math.abs(ex * m[0] + ez * m[2]) - c.hx), Math.max(0, Math.abs(ex * m[6] + ez * m[8]) - c.hz)); }
+const gap = (a, b) => Math.min(...corners(a).map(([x, z]) => off(b, x, z)), ...corners(b).map(([x, z]) => off(a, x, z)));
+
 for (const M of MAPS) {
   const L = generateLevel(M.id), world = new World(L.cols);
+  const cols = L.cols.filter((c) => !c.secret && c.mz === undefined && c.kind !== 'wall' && c.kind !== 'secret');
   const env = { world, others: [], wind: null, grip: 1, maxReel: 4, zips: [] };
   let ok = 0, n = 0, walls = 0, over = 0;
   for (const m of L.mazes) {
@@ -82,6 +90,19 @@ for (const M of MAPS) {
       }
       if (through || top > MAZE_WALL_H - 0.05) { over++; failed++; console.log(`${M.key} maze ${m.i}: got over or through a wall (feet up to ${top.toFixed(2)} m)`); }
     }
+    // No way round: nothing laid before the way in is within a jump or a dash of anything laid after the way out (a lift
+    // counts from the bottom of its ride), unless it is well above it.
+    const iIn = cols.indexOf(m.landIn), iOut = cols.indexOf(m.land);
+    const near = (c) => Math.abs(top(c) - m.y) < 6;
+    const before = cols.slice(Math.max(0, iIn - 120), iIn + 1).filter(near), after = cols.slice(iOut, iOut + 250).filter(near);
+    for (const a of before) for (const b of after) {
+      if (Math.hypot(a.x - b.x, a.z - b.z) > 30) continue;
+      const low = b.dyn && b.dyn.k === 'pp' ? Math.min(b.dyn.ay, b.dyn.by) + b.hy : top(b), dy = low - top(a), g = gap(a, b);
+      if (dy < 2.5 && dy > -6 && g + Math.max(0, dy) * 2 < 7) { failed++; console.log(`${M.key} maze ${m.i}: from a ${a.kind} before it to a ${b.kind} after it is ${g.toFixed(2)} m, ${dy.toFixed(2)} m up: a way round`); }
+    }
+    // No way over: the raised edge round the roof is higher than a launch pad would throw you from the way in.
+    const padUp = (PC.PAD * PC.PAD) / (2 * -PC.G), edge = m.y + MAZE_WALL_H + MAZE_ROOF + MAZE_EDGE, from = top(m.landIn);
+    if (from + padUp > edge - 0.1) { failed++; console.log(`${M.key} maze ${m.i}: a pad from the way in reaches ${(from + padUp).toFixed(2)}, the roof edge is at ${edge.toFixed(2)}`); }
   }
   console.log(`${M.key}: ${L.mazes.length} mazes, ${ok} of ${n} walked through, ${walls} walls tried, ${over} crossed`);
 }

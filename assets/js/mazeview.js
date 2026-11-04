@@ -1,15 +1,16 @@
 // The maze gardens (level.js, maze), drawn in each map's style: a floor with a paved way through, walls (clipped hedges in
 // the forest, sandstone on the beach, basalt columns with lava between them on the volcano, neon lit metal and concrete at
-// night, mossy ruins by the waterfall), posts with a lamp, an urn or a topiary ball on top, trees and plants round the rim,
-// a pond (lava on the volcano) with stones round it, small animals, and a shrine where a legendary relic waits. Only the
-// inner walls ever change: showMaze puts them the way the colliders now have them (level.js applyMaze).
+// night, mossy ruins by the waterfall), posts where they meet, and over it all a roof with a lamp over every cell. Outside
+// it is a solid block with pilasters and a lit frame round each doorway, and on the roof, behind its raised edge, a garden:
+// trees and plants, a pond (lava on the volcano) with stones round it, small animals. A shrine inside, where a legendary
+// relic waits. Only the inner walls ever change: showMaze puts them the way the colliders now have them (level.js applyMaze).
 import * as THREE from 'three';
 import { HDR, mat4 } from './worldview.js';
 import { patMat, shapeGeo, modelGeo, vegMat, swarm, detail, FLORA, pickWeighted } from './scenery.js';
-import { MAZE_CELL, MAZE_WALL_H, MAZE_WALL_T, MAZE_RIM } from './level.js';
+import { MAZE_CELL, MAZE_WALL_H, MAZE_WALL_T, MAZE_RIM, MAZE_ROOF } from './level.js';
 import { TAU, rng } from './util.js';
 
-const C = MAZE_CELL, H = MAZE_WALL_H, T = MAZE_WALL_T, RIM = MAZE_RIM, LEN = C + T, PH = H + 0.28;
+const C = MAZE_CELL, H = MAZE_WALL_H, T = MAZE_WALL_T, RIM = MAZE_RIM, ROOF = MAZE_ROOF, LEN = C + T, PH = H + 0.28;
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 const BOXG = new THREE.BoxGeometry(1, 1, 1);
 
@@ -129,9 +130,10 @@ export function buildMazes(view) {
   const low = detail() === 0, R = rng(2718), col = new THREE.Color();
   const wGeo = wallGeo(st.wall), wMat = patMat(st.pat, st.col), gGeo = st.glow ? glowGeo(st.wall) : null;
   const gMat = st.glow ? new THREE.MeshBasicMaterial({ color: HDR(0xffffff, view.glowK) }) : null;
-  const postMat = patMat(st.post[0], st.post[1]);
+  const lampMat = new THREE.MeshBasicMaterial({ color: HDR(0xffffff, view.glowK) });
+  const postMat = patMat(st.post[0], st.post[1]), lampCol = st.glow ? null : 0xffe2a8;
   // Things for the whole map, drawn as one instanced mesh each.
-  const outer = [], outerGlow = [], posts = [], floors = [], paths = [], unders = [], curbs = [], beds = [];
+  const outer = [], outerGlow = [], posts = [], floors = [], paths = [], unders = [], beds = [], blocks = [], trims = [], lamps = [], pilasters = [];
   // Plants and props: per model and height band, like the islands (scenery.js).
   const inst = new Map();
   const put = (model, m, tint = null) => { const y = m.elements[13], k = model + '|' + Math.floor(y / 50); if (!inst.has(k)) inst.set(k, { model, y, list: [] }); inst.get(k).list.push([m, tint]); };
@@ -140,23 +142,22 @@ export function buildMazes(view) {
     const N = m.N, S = N * C, half = m.half, y = m.y, ry = m.ry, glowCol = st.glow ? st.glow[m.i % st.glow.length] : 0;
     const P = (u, w) => [m.x + m.fx * u + m.nx * w, m.z + m.fz * u + m.nz * w];
     const rowW = (j) => ((N - 1) / 2 - j) * C, colU = (i) => (i - (N - 1) / 2) * C;
-    const F = mz(L, m), f = F.zone;
-    // The floor, the paved way through (and out over both porches) and what hangs underneath.
+    const F = mz(L, m), f = F.zone, top = y + H + ROOF, lamp = lampCol ?? glowCol;
+    // The floor, the paved way through (and out through both doorways) and what hangs underneath.
     floors.push(mat4(m.x, y - 0.35, m.z, half * 2, 0.7, half * 2, 0, ry, 0));
     paths.push(mat4(m.x, y - 0.025, m.z, S + 0.1, 0.06, S + 0.1, 0, ry, 0));
     for (const [u, j] of [[-(S / 2 + RIM / 2), m.ej], [S / 2 + RIM / 2, m.xj]]) { const [x, z] = P(u, rowW(j)); paths.push(mat4(x, y - 0.025, z, RIM + 0.1, 0.06, C - T, 0, ry, 0)); }
     const ugc = st.under[2], sy = st.under[3];
     unders.push([mat4(m.x, y - 0.64 - 0.5 * sy, m.z, half * 2, sy, half * 2, 0, ry, 0), ugc]);
-    // A low kerb round the edge, open where the porches are.
-    const e = half - 0.08;
-    for (const s of [-1, 1]) { const [x, z] = P(0, s * e); curbs.push(mat4(x, y + 0.06, z, half * 2, 0.12, 0.16, 0, ry, 0)); }
-    for (const [s, jp] of [[-1, m.ej], [1, m.xj]]) {
-      const w0 = rowW(jp) + C / 2 - T / 2, w1 = rowW(jp) - C / 2 + T / 2;
-      for (const [a, b] of [[w0, half], [-half, w1]]) { if (b - a < 0.1) continue; const [x, z] = P(s * e, (a + b) / 2); curbs.push(mat4(x, y + 0.06, z, 0.16, 0.12, b - a, 0, ry, 0)); }
-    }
-    // The walls: the inner ones change (one mesh for this maze), the outside and the fences never do.
+    // The walls: the inner ones change (one mesh for this maze), the outside never does.
     const inner = m.walls.map((c) => wallMatrices(c)[0]);
-    for (const c of L.cols) if (c.kind === 'mouter' && c.mz === m.i) for (const w of wallMatrices(c)) { outer.push(w); if (st.glow) outerGlow.push([w, glowCol]); }
+    for (const c of L.cols) {
+      if (c.mz !== m.i) continue;
+      if (c.kind === 'mouter') for (const w of wallMatrices(c)) { outer.push(w); if (st.glow) outerGlow.push([w, glowCol]); }
+      // The solid round the outside and the raised edge round the roof, and the roof itself (a garden on top).
+      else if (c.kind === 'mrim') (c.y > y + H ? trims : blocks).push(c.y > y + H ? [mat4(c.x, c.y, c.z, c.hx * 2, c.hy * 2, c.hz * 2, 0, c.ry, 0), st.post[1]] : mat4(c.x, c.y, c.z, c.hx * 2, c.hy * 2, c.hz * 2, 0, c.ry, 0));
+      else if (c.kind === 'mroof') floors.push(mat4(c.x, c.y, c.z, c.hx * 2, c.hy * 2, c.hz * 2, 0, c.ry, 0));
+    }
     const iw = new THREE.InstancedMesh(wGeo, wMat, inner.length);
     inner.forEach((w, k) => { iw.setMatrixAt(k, m.walls[k].on ? w : ZERO); iw.setColorAt(k, col.setHSL(0, 0, 0.9 + ((k * 37) % 19) / 100)); });
     view.add(iw);
@@ -169,29 +170,56 @@ export function buildMazes(view) {
       view.band(y).near.push(ig);
     }
     view.mazes.push({ m, inner, iw, ig });
-    // Posts on every corner, and at the far ends of the porch fences.
+    // Posts on every corner inside, up into the roof, and a lamp under the roof over every cell.
     for (let k = 0; k <= N; k++) for (let l = 0; l <= N; l++) { const [x, z] = P((k - N / 2) * C, (N / 2 - l) * C); posts.push([x, y, z]); }
-    for (const [s, jp] of [[-1, m.ej], [1, m.xj]]) for (const d of [-1, 1]) { const [x, z] = P(s * (half - 0.1), rowW(jp) + (d * C) / 2); posts.push([x, y, z]); }
-    // Round the rim: trees on the corners and along the side away from the camera's usual place, small plants elsewhere,
-    // and a pond along the other side with stones round it.
-    const corner = S / 2 + RIM / 2, small = (x, z, k = 1) => { const sc = (0.6 + R() * 0.5) * k; put(pickWeighted(f.small, R), mat4(x, y, z, sc, sc, sc, 0, R() * TAU, 0)); };
-    const tree = (x, z, k) => { const sc = k * (0.8 + R() * 0.3); tint.setHSL(0, 0, 0.85 + R() * 0.3); put(pickWeighted(f.trees, R), mat4(x, y, z, sc, sc, sc, 0, R() * TAU, 0), tint.getHex()); };
-    for (const su of [-1, 1]) { const [x, z] = P(su * corner, corner); tree(x, z, 0.85); }
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const [x, z] = P(colU(i), rowW(j)); lamps.push([mat4(x, y + H - 0.03, z, 0.42, 0.05, 0.42, 0, ry, 0), lamp]); }
+    // Outside: a pilaster at every cell along each face, a moulding round the top, and a lit frame round each doorway.
+    for (const s of [-1, 1]) for (let k = 0; k <= N; k++) {
+      const a = (k - N / 2) * C;
+      for (const [u, w] of [[a, s * half], [s * half, a]]) {
+        // Not beside a doorway: that has its own frame.
+        if (Math.abs(w) < half && Math.abs(a - rowW(s < 0 ? m.ej : m.xj)) < C / 2 + 0.01) continue;
+        const [x, z] = P(u, w);
+        pilasters.push(mat4(x, y + H / 2, z, 0.5, H, 0.5, 0, ry, 0));
+      }
+    }
+    for (const su of [-1, 1]) for (const sw of [-1, 1]) { const [x, z] = P(su * (half - 0.1), sw * (half - 0.1)); pilasters.push(mat4(x, y + H / 2, z, 0.7, H, 0.7, 0, ry, 0)); }
+    for (const s of [-1, 1]) {
+      const [x, z] = P(0, s * (half + 0.06)), [x2, z2] = P(s * (half + 0.06), 0);
+      trims.push([mat4(x, top - 0.12, z, half * 2 + 0.24, 0.24, 0.12, 0, ry, 0), st.post[1]], [mat4(x2, top - 0.12, z2, 0.12, 0.24, half * 2 + 0.24, 0, ry, 0), st.post[1]]);
+    }
+    for (const [s, jp] of [[-1, m.ej], [1, m.xj]]) {
+      const w = rowW(jp), dw = (C - T) / 2 + 0.27;
+      for (const d of [-1, 1]) { const [x, z] = P(s * (half + 0.08), w + d * dw); pilasters.push(mat4(x, y + H / 2, z, 0.5, H, 0.5, 0, ry, 0)); }
+      const [x, z] = P(s * (half + 0.1), w);
+      trims.push([mat4(x, y + H - 0.25, z, 0.3, 0.5, C - T + 0.9, 0, ry, 0), st.post[1]]);
+      lamps.push([mat4(x - m.fx * s * 0.16, y + H - 0.56, z - m.fz * s * 0.16, 0.06, 0.08, C - T - 0.2, 0, ry, 0), lamp]);
+    }
+    // The roof garden: trees on the corners, plants round the edge and dotted over it, a pond along one side with stones
+    // round it, small animals and things flying about.
+    const corner = S / 2 + RIM / 2, small = (x, z, k = 1) => { const sc = (0.6 + R() * 0.5) * k; put(pickWeighted(f.small, R), mat4(x, top, z, sc, sc, sc, 0, R() * TAU, 0)); };
+    const tree = (x, z, k) => { const sc = k * (0.8 + R() * 0.3); tint.setHSL(0, 0, 0.85 + R() * 0.3); put(pickWeighted(f.trees, R), mat4(x, top, z, sc, sc, sc, 0, R() * TAU, 0), tint.getHex()); };
+    for (const su of [-1, 1]) { const [x, z] = P(su * corner, corner); tree(x, z, 0.7); }
     for (const su of [-1, 1]) { const [x, z] = P(su * corner, -corner); small(x, z, 1.2); }
     for (let i = 0; i < N; i++) {
       const [x, z] = P(colU(i) + (R() - 0.5) * 0.8, corner + (R() - 0.5) * 0.3);
-      if (i % 2 && !low) tree(x, z, 0.6); else small(x, z);
+      if (i % 2 && !low) tree(x, z, 0.5); else small(x, z);
     }
-    for (const [su, jp] of [[-1, m.ej], [1, m.xj]]) for (let j = 0; j < N; j++) {
-      if (j === jp || (low && j % 2)) continue;
+    for (const su of [-1, 1]) for (let j = 0; j < N; j++) {
+      if (low && j % 2) continue;
       const [x, z] = P(su * corner, rowW(j) + (R() - 0.5) * 0.6);
       small(x, z);
     }
+    for (let i = 1; i < N - 1; i++) for (let j = 1; j < N - 1; j++) {
+      if (R() > (low ? 0.12 : 0.3)) continue;
+      const [x, z] = P(colU(i) + (R() - 0.5) * 1.2, rowW(j) + (R() - 0.5) * 1.2);
+      small(x, z, 0.9);
+    }
     // The pond: two to three cells long along the outer side, in the middle.
     const pl = Math.min(3, N - 2) * C - 0.5, pw = RIM - 0.55, pu = (R() - 0.5) * (S - pl - C) * 0.5, [px, pz] = P(pu, -corner);
-    beds.push([mat4(px, y + 0.012, pz, pl + 0.1, 0.02, pw + 0.1, 0, ry, 0), st.pond.bed]);
+    beds.push([mat4(px, top + 0.012, pz, pl + 0.1, 0.02, pw + 0.1, 0, ry, 0), st.pond.bed]);
     const water = new THREE.Mesh(new THREE.PlaneGeometry(pl, pw).rotateX(-Math.PI / 2), view.waterMat({ speed: 0.03, alpha: st.pond.alpha, color: st.pond.color, foam: st.pond.foam }));
-    water.position.set(px, y + 0.035, pz);
+    water.position.set(px, top + 0.035, pz);
     water.rotation.y = ry;
     view.add(water, false);
     view.band(y).near.push(water);
@@ -201,10 +229,10 @@ export function buildMazes(view) {
       const q = side === 0 ? per : side === 1 ? per - pl : side === 2 ? per - pl - pw : per - 2 * pl - pw;
       const u = side === 0 ? -pl / 2 + q : side === 1 ? pl / 2 : side === 2 ? pl / 2 - q : -pl / 2, w = side === 0 ? pw / 2 : side === 1 ? pw / 2 - q : side === 2 ? -pw / 2 : -pw / 2 + q;
       const [x, z] = P(pu + u * 1.04, -corner + w * 1.1), sc = 0.35 + R() * 0.25;
-      put('rocks', mat4(x, y, z, sc, sc * 0.8, sc, 0, R() * TAU, 0));
+      put('rocks', mat4(x, top, z, sc, sc * 0.8, sc, 0, R() * TAU, 0));
     }
-    if (st.pond.lily && !low) for (let k = 0; k < 3; k++) { const [x, z] = P(pu + (R() - 0.5) * (pl - 0.6), -corner + (R() - 0.5) * (pw - 0.4)); put(k ? 'lilypad' : 'lotus', mat4(x, y + 0.04, z, 1, 1, 1, 0, R() * TAU, 0)); }
-    if (st.pond.lily) for (const s of [-1, 1]) { const [x, z] = P(pu + s * (pl / 2 + 0.2), -corner); put('reeds', mat4(x, y, z, 0.7, 0.7, 0.7, 0, R() * TAU, 0)); }
+    if (st.pond.lily && !low) for (let k = 0; k < 3; k++) { const [x, z] = P(pu + (R() - 0.5) * (pl - 0.6), -corner + (R() - 0.5) * (pw - 0.4)); put(k ? 'lilypad' : 'lotus', mat4(x, top + 0.04, z, 1, 1, 1, 0, R() * TAU, 0)); }
+    if (st.pond.lily) for (const s of [-1, 1]) { const [x, z] = P(pu + s * (pl / 2 + 0.2), -corner); put('reeds', mat4(x, top, z, 0.7, 0.7, 0.7, 0, R() * TAU, 0)); }
     // The relic's shrine (there whenever the hidden paths are, like the relic).
     const rel = (L.relics || []).find((r) => r.maze === m.i);
     if (rel) {
@@ -214,22 +242,21 @@ export function buildMazes(view) {
       sh.visible = false;
       (view.secretParts ||= []).push({ sec: 'hard', o: sh });
     }
-    // Animals: one kind on the rim, little fliers over the walls.
+    // Animals: one kind walking about the roof garden, little fliers over it.
     if (!low) {
       const walkers = [], [wk, wt, mode] = st.walk;
-      for (let k = 0; k < 4; k++) {
-        // Along the side with the trees, and the two sides with the porches (never the pond's).
-        const [x, z] = k < 2 ? P(colU((R() * N) | 0), corner) : P((k % 2 ? 1 : -1) * corner, rowW((R() * N) | 0));
-        walkers.push({ x, y: y + 0.02, z, ph: R(), R: 0.5, sp: 0.4 + R() * 0.3, amp: mode === 3 ? 0.3 : 0, sz: wk === 'frog' || wk === 'rabbit' ? 1.3 : 1.1, tint: wt });
+      for (let k = 0; k < 5; k++) {
+        const [x, z] = k < 2 ? P(colU((R() * N) | 0), corner) : k < 4 ? P((k % 2 ? 1 : -1) * corner, rowW((R() * N) | 0)) : P(colU((R() * N) | 0), rowW((R() * N) | 0));
+        walkers.push({ x, y: top + 0.02, z, ph: R(), R: 0.5, sp: 0.4 + R() * 0.3, amp: mode === 3 ? 0.3 : 0, sz: wk === 'frog' || wk === 'rabbit' ? 1.3 : 1.1, tint: wt });
       }
       swarm(view, wk, walkers, { mode, side: wk === 'crab' ? Math.PI / 2 : 0, light: view.key === 'storm' ? 0.6 : view.key === 'city' ? 0.8 : 1, glow: view.key === 'volcano' ? 0.2 : 0 });
       const [ft, fg, fs] = st.fly, fl = [];
       const cols = [0xff9a3d, 0x5ab8ff, 0xffe066, 0xff6ab8, 0xb48cff, 0xffffff];
-      for (let k = 0; k < 7; k++) { const [x, z] = P((R() - 0.5) * S, (R() - 0.5) * S); fl.push({ x, y: y + 1.6 + R() * 1.6, z, ph: R(), R: 0.8 + R() * 1.2, sp: 0.6 + R() * 0.5, amp: 0.6, sz: fs, tint: ft ?? cols[(R() * cols.length) | 0] }); }
+      for (let k = 0; k < 7; k++) { const [x, z] = P((R() - 0.5) * S, (R() - 0.5) * S); fl.push({ x, y: top + 0.8 + R() * 1.6, z, ph: R(), R: 0.8 + R() * 1.2, sp: 0.6 + R() * 0.5, amp: 0.6, sz: fs, tint: ft ?? cols[(R() * cols.length) | 0] }); }
       swarm(view, 'butterfly', fl, { mode: 1, flap: fg ? 30 : 22, light: fg ? 0.4 : 1.15, glow: fg });
     }
   }
-  // The shared meshes.
+  // The shared meshes. The roof doesn't darken the way through underneath it: it is lit like outside, with its lamps.
   const many = (geo, mat, list, shadow = true, colors = null) => {
     if (!list.length) return null;
     const im = new THREE.InstancedMesh(geo, mat, list.length);
@@ -237,16 +264,19 @@ export function buildMazes(view) {
     view.add(im, shadow);
     return im;
   };
-  many(BOXG, patMat(st.rim[0], st.rim[1]), floors);
+  const fl = many(BOXG, patMat(st.rim[0], st.rim[1]), floors, false);
+  if (fl) fl.receiveShadow = true;
   many(BOXG, patMat(st.path[0], st.path[1]), paths, false);
   many(shapeGeo(st.under[0]), patMat(st.under[1]), unders);
-  many(BOXG, postMat, curbs, false);
+  const bl = many(BOXG, patMat(st.pat, st.col), blocks, false);
+  if (bl) bl.receiveShadow = true;
+  many(BOXG, postMat, pilasters);
+  many(BOXG, patMat(st.post[0]), trims, false);
+  many(BOXG, lampMat, lamps, false);
   many(BOXG, patMat(0), beds, false);
   many(wGeo, wMat, outer);
   if (st.glow) many(gGeo, gMat, outerGlow, false);
   many(postGeo(st.wall), postMat, posts.map(([x, y, z]) => mat4(x, y, z, 1, 1, 1, 0, 0, 0)));
-  const caps = posts.map(([x, y, z], i) => mat4(x, y + PH, z, 1, 1, 1, 0, (i * 1.7) % TAU, 0));
-  for (const m of caps) put(st.cap, m);
   const mat = vegMat();
   for (const { model, y, list } of inst.values()) {
     const im = new THREE.InstancedMesh(modelGeo(model), mat, list.length);

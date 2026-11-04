@@ -58,19 +58,26 @@ they never get in the way of a jump, an obstacle or a maze. The storm and city t
 windows and steel fins, the lighthouse real stonework, and the waterfall's rock ledges moss, ferns and hanging ivy.
 
 **Maze gardens.** Every checkpoint that is a platform of its own (the one halfway up each zone, and the rooftop pads in
-the city) is a walled garden with a maze in it, built in the map's style: metal walls with glowing trims in the storm,
+the city) is a closed garden with a maze in it, built in the map's style: metal walls with glowing trims in the storm,
 sandstone on the beach, clipped hedges in the forest, basalt columns with lava between them in the volcano, neon and
-concrete in the city and mossy ruins by the waterfall. Trees and plants of the zone grow round it, there is a pond (lava
-in the volcano) with stones round it, and small animals walk and fly about. A creature prowls the corridors: a storm
-crab, a scorpion, a wild boar, a fire imp, a robot dog or a crocodile. If it reaches you it throws you, and a shot
-paralyses it like any monster. The walls are too high to jump and too slick to grab, and every time the whole team goes
-back to a checkpoint they change, so the way through has to be found again. Eleven mazes hide a legendary relic in the
-cell furthest from the way in.
+concrete in the city and mossy ruins by the waterfall. It has a roof with lamps under it, so nobody can look over the
+walls to find the way, and the only ways in and out are the two doorways. Inside, the camera goes to first person. The
+roof is a garden: trees and plants of the zone, a pond (lava in the volcano) with stones round it, and small animals
+walking and flying about, behind a raised edge too high to get onto. A creature prowls the corridors: a storm crab, a
+scorpion, a wild boar, a fire imp, a robot dog or a crocodile. If it reaches you it throws you, and a shot paralyses it
+like any monster. The mazes are up to seven cells across (eight higher up), each laid out for the longest way through of many tries, the walls are
+too high to jump and too slick to grab, and every time the whole team goes back to a checkpoint they change, so the way
+through has to be found again. There is no way round: a short run of hops leads to the way in, and the climb goes on from
+the far side, out of reach of anything before it. Eleven mazes hide a legendary relic in the cell furthest from the way
+in.
 
 **The way up.** At the foot of every climb an UP HERE sign in the map's style, with a big glowing arrow over it, points
 at the first piece of the route, and the dock has plants and props along both edges. During a climb a small arrow under
-the clock points the way on. It follows the route in order, so it never points at a part that is closer but further
-on, and in a maze it points at the way out. Settings can turn it off.
+the clock points the way on. It knows where on the climb you are from the platform you stand on, so after a fall, back
+at a checkpoint or off on a hidden path it points the way on from where you are now. It follows the route in order, so
+it never points at a part that is closer but further on, and it turns with the camera: up on the arrow is away from
+you or higher, down is back toward the camera. In front of a maze it points at the way in, inside at the way out (it
+doesn't solve the maze for you). Settings can turn it off.
 
 Two kinds of section need the new moves. Gaps too wide to jump have glowing arrows in the air: jump, then DASH across.
 Shafts between two high walls have orange rungs up the walls: bounce up with wall jumps and out over the lower wall.
@@ -160,7 +167,9 @@ THIS WAY: small stones over wide gaps, with swinging weights and spikes on the w
 path behind a LEGENDARY sign, with smaller stones, wider gaps and presses too, leads to the map's legendary weapon.
 Legendary suits found before this update stay yours.
 
-Your other climbers see what you wear. The records keep your best climbs on every map: how high you got, on which
+Your other climbers see what you wear. Signed in, what you wear and the weapon you picked are kept on your account, so
+they come on by themselves when you sign in on another phone, a PC or the web, and whatever you pick last on any of them
+wins. The records keep your best climbs on every map: how high you got, on which
 difficulty, how many falls, how long and how many coins.
 
 **Every map looks different**

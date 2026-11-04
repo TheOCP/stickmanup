@@ -3,6 +3,7 @@ import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
 import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
+import { NavPath } from './navpath.js';
 import { EMOTES } from './emotes.js';
 import { World } from './physics.js';
 import { WorldView, setSimple, setThin } from './worldview.js';
@@ -241,28 +242,38 @@ const ui = (app.ui = {
       putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
     }
   },
-  // The arrow under the clock that shows the way up (Settings can turn it off). It follows the route in the order it was
-  // laid (level.js route): where on it the climber is, then a few steps further along, so it never points at a part of
-  // the climb that is closer but further on. In a maze garden that means the way out.
+  // The arrow under the clock that shows the way up (Settings can turn it off). navpath.js works out where on the climb you
+  // are and the next place to go; here it turns into a direction on the screen: from where the climber is drawn to where
+  // that place is drawn, so up means further away or higher, and down means back toward the camera.
   nav(g) {
-    const el = this.navEl || (this.navEl = $('#hNav')), P = g.L.route, me = g.me;
-    if (!settings.nav || g.won || !P || !P.length || g.aiming) { if (!el.hidden) el.hidden = true; return; }
-    const feet = me.y - 0.42, sc = (p) => Math.hypot(p[0] - me.x, p[2] - me.z) + Math.abs(p[1] - feet) * 2;
-    let k = this.navL === P ? this.navK : -1, best = 1e9, bi = 0;
-    const scan = (lo, hi) => { for (let i = lo; i < hi; i++) { const s = sc(P[i]); if (s < best) { best = s; bi = i; } } };
-    if (k >= 0) scan(Math.max(0, k - 25), Math.min(P.length, k + 60));
-    // Lost (just started, went back to a checkpoint, off on a hidden path): look along all of it, now and then.
-    const now = performance.now();
-    if ((k < 0 || best > 14) && now - (this.navScan || 0) > 400) { this.navScan = now; best = 1e9; scan(0, P.length); }
-    this.navL = P; this.navK = k = best < 1e9 ? bi : Math.max(0, k);
-    let t = k + 1;
-    while (t < P.length - 1 && t < k + 8 && Math.hypot(P[t][0] - me.x, P[t][1] - feet, P[t][2] - me.z) < 3.5) t++;
-    const p = P[Math.min(t, P.length - 1)], v = this.navV || (this.navV = new THREE.Vector3());
-    v.set(p[0], p[1] + 0.8, p[2]).project(app.renderer.camera);
-    let x = v.x, y = v.y;
-    if (v.z > 1) { x = -x; y = -y; }
-    const a = Math.atan2(x, y), was = this.navA ?? a, d = Math.atan2(Math.sin(a - was), Math.cos(a - was));
-    this.navA = was + d * 0.25;
+    const el = this.navEl || (this.navEl = $('#hNav')), me = g.me;
+    if (!settings.nav || g.won || g.aiming || !g.L.route) { if (!el.hidden) el.hidden = true; return; }
+    const N = g.L.navPath || (g.L.navPath = new NavPath(g.L));
+    N.update(me);
+    const p = N.target(me);
+    if (!p) { if (!el.hidden) el.hidden = true; return; }
+    const cam = app.renderer.camera, A = this.navP || (this.navP = new THREE.Vector3()), T = this.navQ || (this.navQ = new THREE.Vector3());
+    A.set(me.x, me.y + 0.2, me.z).applyMatrix4(cam.matrixWorldInverse);
+    T.set(p.x, p.y + 0.9, p.z).applyMatrix4(cam.matrixWorldInverse);
+    let a = null;
+    const zc = -0.8;
+    if (A.z < zc) {
+      // Behind the camera: where the way there passes just in front of it, which is drawn on the right side of the screen.
+      if (T.z > zc) T.lerpVectors(A, T, (A.z - zc) / (A.z - T.z));
+      A.applyMatrix4(cam.projectionMatrix);
+      T.applyMatrix4(cam.projectionMatrix);
+      const dx = (T.x - A.x) * window.innerWidth, dy = (T.y - A.y) * window.innerHeight;
+      if (Math.hypot(dx, dy) > 8) a = Math.atan2(dx, dy);
+    }
+    // Too close to the line of sight to tell on the screen: which way it is seen from above, turned with the camera.
+    if (a === null) {
+      const yaw = Math.atan2(-cam.matrixWorld.elements[8], -cam.matrixWorld.elements[10]), b = Math.atan2(p.x - me.x, p.z - me.z);
+      a = Math.hypot(p.x - me.x, p.z - me.z) < 0.5 ? 0 : -(b - yaw);
+    }
+    const now = performance.now(), dt = Math.min(0.1, (now - (this.navT || now)) / 1000);
+    this.navT = now;
+    const was = this.navA ?? a, d = Math.atan2(Math.sin(a - was), Math.cos(a - was));
+    this.navA = was + d * (1 - Math.exp(-dt * 14));
     if (el.hidden) el.hidden = false;
     const tf = `translateX(-50%) rotate(${this.navA.toFixed(3)}rad)`;
     if (el.__tf !== tf) { el.__tf = tf; el.style.transform = tf; }

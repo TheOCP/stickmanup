@@ -181,6 +181,18 @@ export default [
   ["Monster", "Monstruo", "Monstro", "Monstre", "Monster", "Монстр", "Canavar"],
   ["Jack o Lantern", "Calabaza de Halloween", "Abóbora de Halloween", "Citrouille d'Halloween", "Halloween Kürbis", "Светильник Джека", "Cadılar Bayramı kabağı"],
   ["Hacker", "Hacker", "Hacker", "Hacker", "Hacker", "Хакер", "Hacker"],
+  // Hair
+  ["No Hair", "Sin peinado", "Sem cabelo", "Sans coiffure", "Keine Haare", "Без причёски", "Saçsız"],
+  ["Short Crop", "Pelo corto", "Cabelo curto", "Cheveux courts", "Kurzhaar", "Короткая стрижка", "Kısa saç"],
+  ["Side Swoop", "Flequillo de lado", "Franja de lado", "Mèche sur le côté", "Seitenscheitel", "Чёлка набок", "Yana tarama"],
+  ["Ponytail", "Coleta", "Rabo de cavalo", "Queue de cheval", "Pferdeschwanz", "Хвостик", "At kuyruğu"],
+  ["Spiky", "De punta", "Espetado", "Hérissé", "Stachelfrisur", "Ёжик", "Dikenli"],
+  ["Long Hair", "Pelo largo", "Cabelo comprido", "Cheveux longs", "Lange Haare", "Длинные волосы", "Uzun saç"],
+  ["Purple Bob", "Melena morada", "Chanel roxo", "Carré violet", "Lila Bob", "Фиолетовое каре", "Mor küt saç"],
+  ["Space Buns", "Moños espaciales", "Coques espaciais", "Chignons de l'espace", "Space Buns", "Два пучка", "Uzay topuzları"],
+  ["Curls", "Rizos", "Cachos", "Boucles", "Locken", "Кудри", "Bukleler"],
+  ["Braids", "Trenzas", "Tranças", "Tresses", "Zöpfe", "Косички", "Örgüler"],
+  ["Neon Spikes", "Pinchos de neón", "Espetos neon", "Pointes néon", "Neonstacheln", "Неоновые шипы", "Neon dikenler"],
   // Hats
   ["No Hat", "Sin sombrero", "Sem chapéu", "Sans chapeau", "Kein Hut", "Без шляпы", "Şapkasız"],
   ["Baseball Cap", "Gorra de béisbol", "Boné de beisebol", "Casquette", "Baseballkappe", "Бейсболка", "Beyzbol şapkası"],

@@ -29,6 +29,7 @@ import { TitleShow } from './titleshow.js';
 import { startLang, tr, LANG_NAMES } from './i18n.js';
 import { Fx } from './fx.js';
 import { ViewGun } from './viewgun.js';
+import { EventFx } from './evfx.js';
 import { PR, PC, F } from './player.js';
 import { store, fmtTime, clamp } from './util.js';
 
@@ -136,6 +137,9 @@ const putXY = (el, x, y) => {
   if (el.__y !== b) { el.__y = b; el.style.top = b + 'px'; }
 };
 
+// What the HUD shows for each map's event, while it is coming and while it is on.
+const EV_WARN = { gust: 'GUST INCOMING', wave: 'WAVE INCOMING', laser: 'LASERS INCOMING', cannon: 'CANNONS INCOMING', quake: 'QUAKE INCOMING', bees: 'BEES INCOMING' };
+const EV_ON = { gust: 'GUST! GRAB ON', wave: 'WAVE! JUMP OR GRAB ON', laser: 'LASERS! KEEP MOVING', cannon: 'CANNONS! GET OUT OF THE RINGS', quake: 'QUAKE! JUMP WHEN IT SHAKES', bees: 'BEES! RUN!' };
 const ui = (app.ui = {
   coins(n, pop) {
     const el = hudEl('#hCoins');
@@ -191,7 +195,7 @@ const ui = (app.ui = {
     $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
   },
-  hud(g, { T, zone, gust, thunder }) {
+  hud(g, { T, zone, ev, thunder }) {
     // A phone short of time gets half as many of these.
     if (auto && auto.thin && (this.hudSkip = !this.hudSkip)) return;
     const me = g.me, L = app.level, Z = L.zones[zone];
@@ -200,8 +204,8 @@ const ui = (app.ui = {
     putHtml(hudEl('#hTime'), fmtTime(T) + (g.falls ? `<small>${g.falls} fall${g.falls > 1 ? 's' : ''}</small>` : ''));
     let warn = '', cls = '';
     if (thunder && thunder.warn > 0 && !(me.flags & 128)) { warn = 'LIGHTNING! SHIELD!'; cls = 'g'; }
-    else if (gust && gust.on) { warn = 'GUST! GRAB ON'; cls = 'g'; }
-    else if (gust && gust.warn > 0) { warn = 'GUST INCOMING'; cls = 'w'; }
+    else if (ev && ev.on) { warn = EV_ON[ev.kind]; cls = 'g'; }
+    else if (ev && ev.warn > 0) { warn = EV_WARN[ev.kind]; cls = 'w'; }
     else {
       for (const r of L.rods) {
         if (Math.abs(r.y - me.y) > 4 || Math.hypot(r.x - me.x, r.z - me.z) > r.rad + 1.5) continue;
@@ -1497,6 +1501,7 @@ function howTo(back) {
     <div><b>Neon Skyline</b>Climb round a skyscraper, then cross to the next one over a sky bridge or with a GRAPPLE zipline. Conveyor belts carry you along, drones patrol (SHOOT stuns them) and laser gates switch on and off.</div>
     <div><b>Waterfall</b>Climb a mossy rock with waterfalls pouring down it. Water slides shove you back down, so run up them and jump the inner tubes rolling at you. Launch slides whoosh you down a chute and throw you onto a higher ledge. Fish leap across the bridges along the water arcs, fountains launch you up when they spout, and lazy rivers carry you toward the edge.</div>
     <div><b>Wild Forest</b>Monsters patrol wide ledges and bats circle the gaps. Time your run or SHOOT them first.</div>
+    <div><b>Map events</b>From about 400 m up, every map sends its own trouble now and then, and the HUD warns you first. Storm Tower: gusts blow you about, so GRAB. Waterfall: a wave runs round the rock, so jump it or GRAB. Neon Skyline: laser strikes aim at you, so keep moving out of the red rings. Sunny Isles: the pirate ship fires cannonballs, so get out of the orange rings. Magma Chimney: a quake throws you up at every shock, so jump just before it. Wild Forest: a bee swarm chases you, so outrun it. Inside a maze garden none of it can reach you.</div>
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
@@ -1710,6 +1715,7 @@ function boot() {
   app.pool = makePool(app.renderer.scene);
   app.fx = new Fx(app.renderer.scene);
   app.viewGun = new ViewGun(app.renderer.scene);
+  app.evfx = new EventFx(app.renderer.scene);
   app.input = new Input($('#touch'));
   app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
   app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };

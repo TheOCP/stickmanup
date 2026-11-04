@@ -6,7 +6,7 @@ import { F } from './player.js';
 import { EMOTE } from './emotes.js';
 import { COLORS } from './colors.js';
 import { COL_W, COL_BACK, COL_ARMS, ARM_W, TEX, FIG_TOP, FIG_H, BODY_W, ARM_SPAN, FACE_W, FACE_H, drawFace, paintSuit, paintLit, LIT_K, paintCape, suitIsDark } from './skins.js';
-import { gearGeo, gearGeoMirror, gearMat, gunInfo, GEAR_AT, GEAR_ANIM } from './gear.js';
+import { gearGeo, gearGeoMirror, gearMat, gunInfo, GEAR_AT, GEAR_ANIM, HAIR_TOP, HAT_ON_HAIR, coverOf } from './gear.js';
 import { BEAMS } from './weapons.js';
 
 const HDR = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
@@ -492,9 +492,15 @@ export class Stickman {
     this.eyesP.visible = this.mouthP.visible = !classic;
     this.faceStill = !!L.face.still;
     if (!classic) { this.eyesP.material = faceMat(L.face, 'eyes', light); this.mouthP.material = faceMat(L.face, 'mouth', light); }
-    // Hat and the suit's own extras.
-    const want = new Set(S.gear || []);
-    if (L.hat.id !== 'none') want.add(L.hat.id);
+    // Hat, hair and the suit's own extras. Picked hair takes the place of a suit's own. A hat hides the hair's top layer
+    // (or all of it, for a closed helmet) and sits a little bigger on what is left.
+    const want = new Set(S.gear || []), hatId = L.hat.id !== 'none' ? L.hat.id : null, picked = L.hair && L.hair.id !== 'none' ? L.hair.id : null;
+    let hair = picked;
+    for (const id of want) if (HAIR_TOP[id]) { want.delete(id); hair = hair || id; }
+    let cover = coverOf(hatId);
+    for (const id of want) if (coverOf(id) === 'all') cover = 'all';
+    if (hair && cover !== 'all') { want.add(hair); if (!cover) want.add(HAIR_TOP[hair]); }
+    if (hatId) want.add(hatId);
     for (const [id, m] of this.gear) m.visible = want.has(id);
     for (const id of want) {
       if (this.gear.has(id)) continue;
@@ -518,6 +524,7 @@ export class Stickman {
       }
       this.gear.set(id, m);
     }
+    if (hatId) this.gear.get(hatId).scale.setScalar(hair && cover !== 'all' ? HAT_ON_HAIR : 1);
     // Cape: flags always have one, a few costumes too.
     const spec = S.flag || S.cape;
     this.capeShader = null;

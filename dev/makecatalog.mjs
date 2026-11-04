@@ -9,17 +9,17 @@ import { fileURLToPath } from 'node:url';
 const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
 const { generateLevel, MAPS, DIFFS } = await import('../assets/js/level.js');
-const { SUITS, FACES, HATS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
+const { SUITS, FACES, HATS, HAIRS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
 const { WEAPONS } = await import('../assets/js/weapons.js');
 const { needOf, SUIT_RELICS } = await import('../assets/js/relics.js');
 
 const items = {}, names = {}, need = {}, relicSuits = {}, kinds = {};
-// What each thing is, for the bot's /catalog to list by kind: suit, legendary, face, hat, emote or weapon (and epic for
+// What each thing is, for the bot's /catalog to list by kind: suit, legendary, face, hat, hair, emote or weapon (and epic for
 // the epic suits, faces and hats).
 const KIND = new Map();
-for (const [list, k] of [[SUITS, 'suit'], [LEGENDS, 'legend'], [FACES, 'face'], [HATS, 'hat'], [EMOTES, 'emote'], [WEAPONS, 'weapon']]) for (const it of list) KIND.set(it, k);
-for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...EMOTES, ...WEAPONS]) {
+for (const [list, k] of [[SUITS, 'suit'], [LEGENDS, 'legend'], [FACES, 'face'], [HATS, 'hat'], [HAIRS, 'hair'], [EMOTES, 'emote'], [WEAPONS, 'weapon']]) for (const it of list) KIND.set(it, k);
+for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...HAIRS, ...EMOTES, ...WEAPONS]) {
   // Free things everybody has already. All the rest can be given by the bot, except the team suits: those go with a flag.
   if (it.price === 0) continue;
   const key = itemKey(it);

@@ -40,10 +40,27 @@ smaller platforms, more obstacles, and everything moves faster.
 * **Neon Skyline**: a ring of skyscrapers round a central spire at sunset. Climb round one tower, cross to the next
   over a sky bridge or by zipline, and work your way round the ring to the top. Conveyor belts, drones and laser
   gates.
-* **Waterfall**: a water paradise. Climb a mossy rock with waterfalls pouring down it into a clear lagoon, past
+* **Waterfall**: a water paradise. Zigzag up the face of a mossy rock in two lanes, short legs back and forth, with
+  waterfalls pouring down it into a clear lagoon, past
   palms, lily pads, fountains and far off cliffs with their own falls. Fight up water slides while inner tubes roll
   down at you, fly off launch slides onto higher ledges, dodge
   fish leaping across the bridges, ride fountains up and keep your footing on lazy rivers.
+
+**Each map's own trouble.** From about 400 m up every map sends its own event now and then, and the HUD warns you first:
+gusts on Storm Tower (GRAB on), a wave of water running round the Waterfall rock (jump it or GRAB on), laser strikes in
+the Neon Skyline aimed at where you stand (keep moving out of the red rings), cannonballs from a pirate ship on Sunny
+Isles (out of the orange rings), a quake in the Magma Chimney that throws you at every shock (jump just before it) and a
+bee swarm chasing you through the Wild Forest (outrun it). None of it reaches into a maze garden.
+
+**Each map plays its own way.** Every map has its own hard jumps from the second zone up, more of them higher up: long
+running leaps over 4 m onto small landings, rows of stepping stones hardly bigger than your feet, and ledges almost as
+high as a jump goes, in a different mix on each map (high steps on Storm Tower, stones on Sunny Isles and by the
+Waterfall, leaps in the Wild Forest and between the skyscrapers). Outside the forest each map's own creature patrols wide
+ledges too: storm crabs, scorpions, fire imps, robot dogs and crocodiles, while the forest keeps its monsters.
+
+**No shortcuts.** Nothing on the route is within a jump and a dash of a piece of it more than 30 m of route further on,
+unless it is too high above it to reach. The level builder lifts anything that would be one, and `dev/shortcuttest.js`
+checks every map.
 
 Every map also has grapple hooks over wide gaps and doors that open when you shoot their target. The route
 does not just circle: it rides lifts up and turns back the other way, and takes long detours out to floating
@@ -66,10 +83,12 @@ your arms and your weapon in view: it sways as you run, comes up when you aim an
 roof is a garden: trees and plants of the zone, a pond (lava in the volcano) with stones round it, and small animals
 walking and flying about, behind a raised edge too high to get onto. A creature prowls the corridors: a storm crab, a
 scorpion, a wild boar, a fire imp, a robot dog or a crocodile. If it reaches you it throws you, and a shot paralyses it
-like any monster. The mazes are up to seven cells across (eight higher up), each laid out for the longest way through of many tries, the walls are
+like any monster (two to four of them, more in bigger mazes). The mazes are up to seven cells across (eight higher
+up), each laid out for the longest, most winding way through of 48 tries, the walls are
 too high to jump and too slick to grab, and every time the whole team goes back to a checkpoint they change, so the way
 through has to be found again. There is no way round: a short run of hops leads to the way in, and the climb goes on from
-the far side, out of reach of anything before it. Eleven mazes hide a legendary relic in the cell furthest from the way
+the far side, out of reach of anything before it: you have to go through. Inside a maze nothing of the map's events,
+the storm's lightning or its rain reaches you. Eleven mazes hide a legendary relic in the cell furthest from the way
 in.
 
 **The way up.** At the foot of every climb an UP HERE sign in the map's style, with a big glowing arrow over it, points
@@ -159,6 +178,9 @@ Spend them in the shop:
   fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
   Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest path, and the Void
   Cannon opens once all six are found.
+* **Hair:** a tab of its own: short crop, side swoop, ponytail, spiky, long hair, a purple bob, space buns, curls,
+  braids and glowing neon spikes. Hats sit on top of the hair, never through it, and every hat sits on the head at a
+  slant without covering the eyes; a helmet that covers the whole head hides the hair under it.
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
   the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
 
@@ -259,7 +281,8 @@ send a request. Once it is accepted you can see which friends are online and, wh
 height, time, falls and who they climb with. Tap Watch to follow their climb live (it works for solo climbs too), or Join
 if their room has a free spot. Anyone who would rather not be watched can turn that off on the same screen, and a climber is
 told which friends are watching (the team can watch any climb without showing up, see [The team](#the-team)). Watching shows the climb as it is: the shots flying, the coins still hanging, and climbers riding
-lifts and ziplines without sinking into the floor. Both people need the game server.
+lifts and ziplines without sinking into the floor. In a maze garden you see through their eyes, looking exactly where they
+look, with their arms and weapon in view. Both people need the game server.
 
 Friends can join a climb that is already running.
 
@@ -338,6 +361,8 @@ To play or debug in a desktop browser, serve the `assets` folder with any static
   * `detmath.js`: maths that comes out exactly the same on a phone and on a server
   * `render.js`, `worldview.js`, `stickman.js`: sky, sun, sea, weather, the maps and the animated stickmen with their emotes
   * `viewgun.js`: your arms and weapon in front of the camera when the view goes to first person in a maze
+  * `evfx.js`: what each map's event looks like: the wave, laser and cannon marks, cannonballs, beams, blasts, the
+    quake's shock ring and the bee swarms (storm.js has what they do)
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray
   * `mirror.js` streams the scene to the native renderer

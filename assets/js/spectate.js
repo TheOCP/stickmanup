@@ -3,7 +3,7 @@
 import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
-import { Storm } from './storm.js';
+import { Storm, QUAKE_AT, markShots, beeStep } from './storm.js';
 import { DIFFS, MAPS, zoneAt, pathsOf, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
@@ -48,7 +48,8 @@ export function feedState(g, paused) {
   for (const [s, v] of g.vis || []) {
     if (s !== g.slot && g.s.players.has(s)) p.push([s, r3(v.x), r3(v.y), r3(v.z), r3(v.vx), r3(v.vy), r3(v.vz), r3(v.yaw || 0), v.flags | 0, r3(v.reel || 0), r3(v.charge || 0), emote(s), r3(v.elev || 0)]);
   }
-  const m = { t: 's', T: r3(g.time), f: g.falls, mz: g.mz, p };
+  // c: where this phone's camera looks, so whoever watches through the climber's eyes (in a maze) sees what they see.
+  const m = { t: 's', T: r3(g.time), f: g.falls, mz: g.mz, p, c: [r3(g.cam.yaw), r3(g.cam.pitch)] };
   if (g.feedShots && g.feedShots.length) m.sh = g.feedShots.splice(0).map((a) => a.map((v) => (typeof v === 'number' ? r3(v) : v)));
   const j = g.jumpPack();
   if (j.length) m.j = j;
@@ -197,6 +198,8 @@ export class Spectator {
     }
     for (const lk of this.links) lk.mesh.setColors(seen.get(lk.a).color, seen.get(lk.b).color);
     if (!this.ready || !seen.has(this.focus)) this.focus = seen.has(g.me) ? g.me : slots[0];
+    // The climber whose phone this comes from: the only one whose camera is known.
+    this.sender = Number.isInteger(g.me) ? g.me : -1;
     this.ready = true;
     this.hooks.team(this);
   }
@@ -227,7 +230,8 @@ export class Spectator {
     this.lastT = T;
     const p = new Map();
     for (const a of m.p.slice(0, 4)) if (goodRow(a)) p.set(a[0], a);
-    this.frames.push({ t: T, p });
+    const c = Array.isArray(m.c) && m.c.length === 2 && m.c.every((v) => Number.isFinite(v) && Math.abs(v) < 1e6) ? [m.c[0], clamp(m.c[1], -1.6, 1.6)] : null;
+    this.frames.push({ t: T, p, c });
     if (this.frames.length > KEEP) this.frames.shift();
   }
 
@@ -254,6 +258,26 @@ export class Spectator {
     o.vx = s[4]; o.vy = s[5]; o.vz = s[6]; o.yaw = s[7]; o.flags = s[8] | 0; o.reel = s[9]; o.charge = s[10];
     o.elev = Number.isFinite(s[12]) ? clamp(s[12], -1.6, 1.6) : 0;
     return o;
+  }
+
+  // Where someone looks at time t. For the climber on the phone this comes from, its camera (older versions don't send
+  // it); for anyone else, the way they face.
+  lookOf(slot, o, t) {
+    if (slot === this.sender) {
+      let a = null, b = null;
+      for (let i = this.frames.length - 1; i >= 0; i--) {
+        const fr = this.frames[i];
+        if (!fr.c) continue;
+        if (fr.t <= t) { a = fr; break; }
+        b = fr;
+      }
+      if (a && b) {
+        const k = clamp((t - a.t) / (b.t - a.t || 1), 0, 1), turn = Math.atan2(Math.sin(b.c[0] - a.c[0]), Math.cos(b.c[0] - a.c[0]));
+        return { yaw: a.c[0] + turn * k, pitch: a.c[1] + (b.c[1] - a.c[1]) * k };
+      }
+      if (a || b) { const f = a || b; return { yaw: f.c[0], pitch: f.c[1] }; }
+    }
+    return { yaw: (o.yaw || 0) + Math.PI, pitch: -(o.elev || 0) };
   }
 
   emoteOf(slot) {
@@ -287,6 +311,15 @@ export class Spectator {
       r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, fl, o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
     }
     this.playShots(T);
+    // The map's event after each of them (lasers, cannonballs, bees), worked out here the way their phones do.
+    const evM = this.evMarks || (this.evMarks = new Map()), evB = this.evBees || (this.evBees = new Map());
+    for (const [slot, o] of this.vis) {
+      const ev = this.storm.event(T, zoneAt(L, o.y)), calm = this.inMaze(o);
+      if (!evM.has(slot)) evM.set(slot, new Map());
+      markShots(this.storm, evM.get(slot), ev, o.x, o.y - PR, o.z, T, calm);
+      evB.set(slot, beeStep(evB.get(slot), ev, o.x, o.y, o.z, dt, calm));
+    }
+    for (const slot of evM.keys()) if (!this.vis.has(slot)) { evM.delete(slot); evB.delete(slot); }
     for (const lk of this.links) {
       const A = this.vis.get(lk.a), B = this.vis.get(lk.b);
       if (!A || !B) { lk.mesh.mesh.visible = false; continue; }
@@ -303,13 +336,25 @@ export class Spectator {
     const c = this.cam;
     if (this.snap) { this.snap = false; c.x = me.x; c.y = me.y + 0.8; c.z = me.z; c.yaw = Math.atan2(me.x, me.z) || 0.6; }
     const [dx, dy] = app.input.takeCam(false);
-    c.yaw -= dx;
-    c.pitch = clamp(c.pitch + dy, -0.3, 1.25);
-    if (dx || dy) this.touched = now;
-    // Left alone, the camera comes round behind whoever it follows.
-    if (now - this.touched > 3 && Math.hypot(me.vx, me.vz) > 2) {
-      const want = Math.atan2(-me.vx, -me.vz) - c.yaw;
-      c.yaw += Math.atan2(Math.sin(want), Math.cos(want)) * Math.min(1, dt * 0.8);
+    // In a maze garden, through their eyes, looking where they look (the walls and the roof would only get in the way).
+    const inMaze = this.inMaze(me);
+    const fk = (this.fpK = damp(this.fpK || 0, inMaze ? 1 : 0, 9, dt)), rig = this.robots.get(this.focus);
+    if (inMaze) {
+      // They turn the view, not the finger here: it follows them the shortest way round.
+      const lk = this.lookOf(this.focus, me, T), k = Math.min(1, dt * 22);
+      c.yaw += Math.atan2(Math.sin(lk.yaw - c.yaw), Math.cos(lk.yaw - c.yaw)) * k;
+      c.pitch += (clamp(lk.pitch, -1.05, 1.25) - c.pitch) * k;
+      this.touched = now;
+    } else {
+      c.yaw -= dx;
+      // Looking up from the eyes is allowed further than round the back; out of a maze that eases back.
+      c.pitch = clamp(c.pitch + dy, -0.3 - 0.75 * fk, 1.25);
+      if (dx || dy) this.touched = now;
+      // Left alone, the camera comes round behind whoever it follows.
+      if (now - this.touched > 3 && Math.hypot(me.vx, me.vz) > 2) {
+        const want = Math.atan2(-me.vx, -me.vz) - c.yaw;
+        c.yaw += Math.atan2(Math.sin(want), Math.cos(want)) * Math.min(1, dt * 0.8);
+      }
     }
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
     c.y = damp(c.y, me.y + 0.8, me.vy < -14 ? 14 : 7, dt);
@@ -321,25 +366,43 @@ export class Spectator {
     const cam = R.camera;
     cam.position.set(c.x + ox * c.d, Math.max(0.8, c.y + oy * c.d), c.z + oz * c.d);
     cam.lookAt(c.x, c.y, c.z);
-    // In a maze garden, through their eyes (as they see it): the walls and the roof would only get in the way.
-    let inMaze = false;
-    for (const m of L.mazes || []) {
-      const feet = me.y - PR, ex = me.x - m.x, ez = me.z - m.z;
-      if (feet > m.y - 0.8 && feet < m.y + MAZE_WALL_H - 0.3 && Math.abs(ex * m.fx + ez * m.fz) < m.half + 0.05 && Math.abs(ex * m.nx + ez * m.nz) < m.half + 0.05) inMaze = true;
-    }
-    const fk = (this.fpK = damp(this.fpK || 0, inMaze ? 1 : 0, 9, dt)), rig = this.robots.get(this.focus);
     if (fk > 0.01) {
-      const ex = me.x - ox * 0.18, ey = me.y + 1.02 - oy * 0.18, ez = me.z - oz * 0.18;
-      cam.position.set(cam.position.x + (ex - cam.position.x) * fk, cam.position.y + (ey - cam.position.y) * fk, cam.position.z + (ez - cam.position.z) * fk);
+      // Their eyes, where the game puts them. Updates come 12 times a second, so the eyes glide between them instead of
+      // stepping (a jump back to a checkpoint is not glided).
+      const ex = me.x - ox * 0.18, ey = me.y + 1.02 - oy * 0.18, ez = me.z - oz * 0.18, E = this.eye || (this.eye = { x: ex, y: ey, z: ez });
+      if (Math.abs(E.x - ex) + Math.abs(E.y - ey) + Math.abs(E.z - ez) > 3) { E.x = ex; E.y = ey; E.z = ez; }
+      else { E.x = damp(E.x, ex, 24, dt); E.y = damp(E.y, ey, 24, dt); E.z = damp(E.z, ez, 24, dt); }
+      // Nearly there is there: what is left of the camera round the back would only shake.
+      const k = fk > 0.99 ? 1 : fk;
+      cam.position.set(cam.position.x + (E.x - cam.position.x) * k, cam.position.y + (E.y - cam.position.y) * k, cam.position.z + (E.z - cam.position.z) * k);
       cam.lookAt(cam.position.x - ox * 6, cam.position.y - oy * 6, cam.position.z - oz * 6);
-    }
+    } else this.eye = null;
     if (rig && fk >= 0.72) rig.g.visible = false;
     // Their gun, as they see it (main.js draws it with viewgun.js).
     if (rig) this.view = { weapon: rig.weapon, aim: !!(me.flags & F.AIM), speed: Math.hypot(me.vx, me.vz), ground: !!(me.flags & F.GROUND), shot: T - (this.shotAt.get(this.focus) ?? -9), world: W, rig };
-    const fov = 66 + clamp(-me.vy - 12, 0, 20) * 0.5 + (74 - 66) * fk;
-    if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4, dt); cam.updateProjectionMatrix(); }
+    // Wider through the eyes, and narrowed while they aim, the way their own screen is.
+    const ak = (this.aimK = damp(this.aimK || 0, inMaze && me.flags & F.AIM ? 1 : 0, 12, dt)), gun = rig && rig.weapon ? weaponOf(rig.weapon.id) : null;
+    let fov = 66 + clamp(-me.vy - 12, 0, 20) * 0.5;
+    fov += (74 - fov) * fk;
+    fov += (Math.min(48, gun ? gun.zoom : 48) - fov) * ak;
+    if (Math.abs(cam.fov - fov) > 0.1) { cam.fov = damp(cam.fov, fov, 4 + 12 * ak, dt); cam.updateProjectionMatrix(); }
 
-    const zi = zoneAt(L, me.y), last = L.zones[L.zones.length - 1], eye = clamp((me.y - last.y0) / (L.top - last.y0), 0, 1), gust = this.storm.gust(T, zi);
+    const zi = zoneAt(L, me.y), last = L.zones[L.zones.length - 1], eye = clamp((me.y - last.y0) / (L.top - last.y0), 0, 1);
+    // Their map's event, none inside a maze garden: the storm's gust blows the weather, app.evfx draws the rest.
+    const ev = inMaze ? null : this.storm.event(T, zi), gust = ev && ev.kind === 'gust' ? ev : null;
+    R.indoor = inMaze;
+    for (const m of app.evfx.frame(T, dt, this.storm, ev, me.y - PR, me.x, me.z, [...this.evMarks.values()], [...this.evBees.values()])) {
+      const cd = Math.hypot(cam.position.x - m.x, cam.position.y - m.y, cam.position.z - m.z);
+      if (cd < 70) { if (m.kind === 'laser') app.sound.zap(); else app.sound.thunder(4 + cd * 0.4); }
+    }
+    if (ev && ev.kind === 'quake' && ev.on) {
+      let q = 0;
+      for (let i = 0; i < QUAKE_AT.length; i++) {
+        q = Math.max(q, Math.exp(-Math.abs(ev.u - QUAKE_AT[i]) * 7));
+        if (ev.u >= QUAKE_AT[i] && this.quakeHeard !== ev.k * 10 + i) { this.quakeHeard = ev.k * 10 + i; app.sound.thunder(6); }
+      }
+      cam.position.x += (Math.random() - 0.5) * 0.22 * q; cam.position.y += (Math.random() - 0.5) * 0.22 * q; cam.position.z += (Math.random() - 0.5) * 0.22 * q;
+    }
     this.wind.x = this.wind.z = 0;
     if (gust && gust.on) {
       const r = Math.hypot(me.x, me.z) || 1;
@@ -349,13 +412,13 @@ export class Spectator {
     R.update(dt, cam.position, L.zones[zi], eye, this.wind);
     R.shadowFocus(me.x, me.y, me.z);
     this.bgBolt -= dt;
-    if (this.bgBolt <= 0 && L.mapKey === 'storm') {
+    if (this.bgBolt <= 0 && L.mapKey === 'storm' && !inMaze) {
       this.bgBolt = (2 + Math.random() * 7) * (1 - zi * 0.08) * (1 + eye * 3);
       const a = Math.random() * Math.PI * 2, r = 90 + Math.random() * 260;
       R.bolt(me.x + Math.cos(a) * r, Math.max(0, me.y - 60 + Math.random() * 50), me.z + Math.sin(a) * r, 2.2);
       app.sound.thunder(r);
     }
-    app.sound.ambient(0.2 + (me.y / L.top) * 0.6 + (gust && gust.on ? 0.8 : 0), false, 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
+    app.sound.ambient(0.2 + (me.y / L.top) * 0.6 + (ev && (ev.kind === 'gust' || ev.kind === 'wave') && ev.on ? 0.8 : 0), false, 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     app.view.update(T - STEP, dt, this.storm, 1);
     app.pool.coins.update(dt, T, L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, L.coinB);
@@ -371,6 +434,15 @@ export class Spectator {
       for (const [s, v] of this.vis) marks.push([s, clamp(v.y / L.top, 0, 1) * 100]);
       this.hooks.info({ name: p ? p.name : '', map: MAPS[this.map].name, diff: DIFFS[this.diff].name, T: Math.max(0, T), h: Math.max(0, Math.round(me.y - PR - 2)), top: Math.round(L.top - 2), falls: this.falls, held: this.held, won: this.won, marks });
     }
+  }
+
+  // Inside a maze garden (where nothing of the map's event reaches).
+  inMaze(o) {
+    for (const m of this.L.mazes || []) {
+      const feet = o.y - PR, ex = o.x - m.x, ez = o.z - m.z;
+      if (feet > m.y - 0.8 && feet < m.y + MAZE_WALL_H - 0.3 && Math.abs(ex * m.fx + ez * m.fz) < m.half + 0.05 && Math.abs(ex * m.nx + ez * m.nz) < m.half + 0.05) return true;
+    }
+    return false;
   }
 
   // Every shot whose moment has come: the streak of light, its sound and its blast.
@@ -434,6 +506,8 @@ export class Spectator {
     this.jrigs.clear();
     this.links = [];
     app.fx.clear();
+    app.evfx.clear();
+    this.R.indoor = false;
     app.view.setSecrets(false);
     if (this.L) {
       for (const d of this.L.doors) d.col.on = true;

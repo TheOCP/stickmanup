@@ -147,6 +147,7 @@ export class Sound {
   pad() { this.tone(180, 900, 0.3, 'sine', 0.35); this.tone(360, 1800, 0.25, 'triangle', 0.1); }
   sling() { if (!this.ctx) return; const t = this.ctx.currentTime, f = this.filter('bandpass', 400, 2), g = this.gain(0, this.sfxG); f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3200, t + 0.35); this.burst(0.4, this.chain(f, g)); this.env(g, t, 0.02, 0.6, 0.35); }
   zap() { this.tone(1800, 200, 0.25, 'sawtooth', 0.25); this.noiseHit('highpass', 2500, 0.3, 0.5); }
+  buzz(v = 1) { this.tone(205, 215, 0.4, 'sawtooth', 0.045 * v); this.tone(410, 430, 0.4, 'square', 0.018 * v, 0.02); }
   slip() { this.tone(500, 180, 0.3, 'sawtooth', 0.12); }
   splash() { this.noiseHit('lowpass', 900, 1.0, 0.7); this.noiseHit('bandpass', 2400, 0.4, 0.25, 0.05); }
   ui() { this.tone(1100, 1250, 0.04, 'sine', 0.12); }

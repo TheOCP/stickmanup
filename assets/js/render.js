@@ -538,7 +538,9 @@ export class Renderer {
     this.rainU.uTime.value = wt;
     this.rainU.uCam.value.copy(cam);
     this.rainU.uWind.value.set(3 + wind.x * 0.6, 1 + wind.z * 0.6);
-    this.rainU.uAmt.value = 1 - this.eye * 0.75;
+    // Under a maze garden's roof (indoor, set by the climb and the watch screen) no rain falls.
+    this.inK = (this.inK || 0) + ((this.indoor ? 1 : 0) - (this.inK || 0)) * Math.min(1, dt * 6);
+    this.rainU.uAmt.value = (1 - this.eye * 0.75) * (1 - this.inK);
     const TH = this.theme, E = TH.key === 'storm' ? this.eye : 0;
 
     if (zone) {

@@ -834,6 +834,16 @@ export const HATS = [
 ];
 export const HAT = Object.fromEntries(HATS.map((x) => [x.id, x]));
 
+// ---------------------------------------------------------------- hair (the shapes are in gear.js)
+const hr = (id, name, r, price) => ({ id, name, r, price, kind: 'hair', tab: 'hair' });
+export const HAIRS = [
+  hr('none', 'No Hair', 0, 0),
+  hr('hr_short', 'Short Crop', 0, 120), hr('hr_swoop', 'Side Swoop', 0, 150), hr('hr_pony', 'Ponytail', 0, 180),
+  hr('hr_spiky', 'Spiky', 1, 280), hr('hr_long', 'Long Hair', 1, 300), hr('hr_bob', 'Purple Bob', 1, 300), hr('hr_buns', 'Space Buns', 1, 320),
+  hr('hr_curly', 'Curls', 1, 320), hr('hr_braids', 'Braids', 1, 340), hr('hr_neon', 'Neon Spikes', 1, 650),
+];
+export const HAIR = Object.fromEntries(HAIRS.map((x) => [x.id, x]));
+
 // ---------------------------------------------------------------- painting
 const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
@@ -922,8 +932,8 @@ export function suitIsDark(suit) {
 }
 const lumOf = (x) => (0.3 * ((x >> 16) & 255) + 0.59 * ((x >> 8) & 255) + 0.11 * (x & 255)) / 255;
 
-// What someone is wearing, from their saved picks: { s, f, h } ids. Anything unknown falls back to the free
-// look, and the team suits only work with a flag from the server.
+// What someone is wearing, from their saved picks: { s, f, h, r, w } ids (suit, face, hat, hair, weapon). Anything unknown
+// falls back to the free look, and the team suits only work with a flag from the server.
 export function resolveLook(look, role) {
   const l = look || {};
   let suit = SUIT[l.s] || SUIT[FREE_SUIT];
@@ -932,19 +942,20 @@ export function resolveLook(look, role) {
   const fid = l.f && l.f !== 'smile' ? l.f : suit.face || 'smile', hid = l.h && l.h !== 'none' ? l.h : suit.hat || 'none';
   const face = FACE[fid] || FACE.smile, hat = HAT[hid] || HAT.none;
   const weapon = typeof l.w === 'string' && Object.hasOwn(WEAPON, l.w) ? WEAPON[l.w] : WEAPON[FREE_WEAPON];
-  return { suit, face, hat, weapon, key: suit.id + '|' + face.id + '|' + hat.id + '|' + weapon.id };
+  const hair = typeof l.r === 'string' && Object.hasOwn(HAIR, l.r) ? HAIR[l.r] : HAIR.none;
+  return { suit, face, hat, hair, weapon, key: suit.id + '|' + face.id + '|' + hat.id + '|' + hair.id + '|' + weapon.id };
 }
 // A plain stickman in one colour (the extra climbers on the title screen).
 const PLAINS = new Map();
 export function plainLook(c) {
-  if (!PLAINS.has(c)) PLAINS.set(c, { suit: { id: 'plain' + c, c }, face: FACE.smile, hat: HAT.none, key: 'plain' + c });
+  if (!PLAINS.has(c)) PLAINS.set(c, { suit: { id: 'plain' + c, c }, face: FACE.smile, hat: HAT.none, hair: HAIR.none, key: 'plain' + c });
   return PLAINS.get(c);
 }
 const known = (table, id) => typeof id === 'string' && Object.hasOwn(table, id);
 // What marks a thing as yours. Some faces and hats are named like a suit ('santa' is both), and owning one is not owning
 // the other.
 export const itemKey = (it) => ((it.kind === 'face' || it.kind === 'hat') && Object.hasOwn(SUIT, it.id) ? it.kind + ':' + it.id : it.id);
-export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none', w: known(WEAPON, l.w) ? l.w : FREE_WEAPON } : null);
+export const cleanLook = (l) => (l && typeof l === 'object' ? { s: known(SUIT, l.s) ? l.s : FREE_SUIT, f: known(FACE, l.f) ? l.f : 'smile', h: known(HAT, l.h) ? l.h : 'none', r: known(HAIR, l.r) ? l.r : 'none', w: known(WEAPON, l.w) ? l.w : FREE_WEAPON } : null);
 // The flags someone can have. A name means nothing: only the server says who has which (server/lib/rooms.js).
 export const ROLE_TAGS = { owner: 'OWNER', admin: 'ADMIN', mod: 'MOD' };
 // Roles can be made on the server (Friend, VIP, Family, or anything): it says each one's tag and colour (live.js).

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
-import { Storm } from './storm.js';
+import { Storm, QUAKE_AT, WAVE_H, BEE_R, LASER_R, CANNON_R, markShots, beeStep } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
@@ -97,6 +97,10 @@ export class Game {
     this.gun = weaponOf(myLook().w);
     this.action = null;
     this.zaps = new Map(); // slot -> { k, x, y, z, struck } lightning aimed at each climber (storm map)
+    this.evMarks = new Map(); // the marks of the lasers and cannonballs aimed at me (storm.js shots), by event and shot
+    this.evOther = new Map(); // slot -> the same for the others, from where they are seen (only to draw)
+    this.bees = null; // the swarm after me: { k, x, y, z, gone }
+    this.beesOther = new Map(); // slot -> the swarm after someone else (only to draw)
     // Each map's level objects are reused between games: close doors and mend floors from last time.
     for (const d of this.L.doors) d.col.on = true;
     for (const c of this.L.crumbles) { c.crumble.st = 0; c.crumble.t = 0; c.on = true; }
@@ -362,7 +366,8 @@ export class Game {
     const S = this.storm;
     for (const c of this.L.blinks) { c.on = !S.on(c.blink) || S.blink(c.blink, t).on; if (!c.on && me.anchorCol === c) me.release(); }
     for (const c of this.L.traps) { c.on = !S.on(c.trap) || !S.trap(c.trap, t).open; if (!c.on && me.anchorCol === c) me.release(); }
-    const zone = zoneAt(this.L, me.y);
+    // No gusts inside a maze garden.
+    const zone = this.mazeAround(me) ? -1 : zoneAt(this.L, me.y);
     this.env.wind = (b, o) => this.storm.wind(b, o, t, zone);
     if (this.rec && !this.solo && !this.noCord) for (const o of this.others) if (Math.abs(o.x - me.x) + Math.abs(o.y - me.y) + Math.abs(o.z - me.z) < 4) this.rec.partner(1, o.slot, o);
     me.step(STEP, inp, this.env);
@@ -384,6 +389,7 @@ export class Game {
     if (this.solo || this.s.isHost) this.jumpAI(t, STEP);
     this.jumpHits(t);
     this.hazards(t);
+    this.mapEvent(t);
     for (const e of me.events) this.bodyEvent(e);
     me.events.length = 0;
     this.checks();
@@ -467,7 +473,8 @@ export class Game {
     for (const m of L.monsters) {
       if (Math.abs(m.y - me.y) > 3 || Math.abs(m.ax - me.x) + Math.abs(m.az - me.z) > 14) continue;
       const p = this.storm.monsterPos(m, t, tmpP);
-      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, m.mz !== undefined ? 'maze' : 'monster');
+      // Outside the forest every map's monsters are its own creature (the same as in its maze gardens).
+      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, m.mz !== undefined || L.mapKey !== 'forest' ? 'maze' : 'monster');
     }
     for (const b of L.bats) {
       if (!this.storm.on(b) || Math.abs(b.cy - me.y) > 3 || Math.abs(b.cx - me.x) + Math.abs(b.cz - me.z) > 12) continue;
@@ -734,29 +741,73 @@ export class Game {
     for (const [J, r] of this.jrigs) if (!used.has(r)) { r.hide(); this.jrigs.delete(J); }
   }
 
+  // The map's own event (storm.js) on my climber. Nothing of it reaches into a maze garden: no marks are put down there and
+  // nothing lands, washes or shakes anyone inside one.
+  mapEvent(t) {
+    const me = this.me, S = this.storm, ev = S.event(t, zoneAt(this.L, me.y)), calm = !!this.mazeAround(me), feet = me.y - PR;
+    if (!ev || ev.kind === 'gust') return;
+    if (ev.kind === 'wave') {
+      // The water just behind the front washes you along with it, unless you are holding on or in the air above it.
+      if (calm || me.anchored || me.ride || !S.inWave(ev, me.x, me.z)) return;
+      if (feet - this.W.floorBelow(me.x, me.y, me.z, 30) > WAVE_H) return;
+      const r = Math.hypot(me.x, me.z) || 1, ux = me.x / r, uz = me.z / r;
+      this.zapKnock(-uz * ev.sign * 8 + ux * 3, 3.5, ux * ev.sign * 8 + uz * 3, 'wave');
+    } else if (ev.kind === 'laser' || ev.kind === 'cannon') {
+      if (markShots(S, this.evMarks, ev, me.x, feet, me.z, t, calm)) { this.app.sound.warn(); this.app.ui.haptic('tick'); }
+      for (const m of this.evMarks.values()) {
+        if (m.struck || t < m.at) continue;
+        m.struck = true;
+        const R = m.kind === 'laser' ? LASER_R : CANNON_R, dx = me.x - m.x, dz = me.z - m.z, d = Math.hypot(dx, dz);
+        if (calm || d > R || Math.abs(feet - m.y) > 2.5) continue;
+        const a = hash(m.key * 13 + 7000) * Math.PI * 2, nx = d > 0.2 ? dx / d : Math.cos(a), nz = d > 0.2 ? dz / d : Math.sin(a);
+        this.zapKnock(nx * 7, m.kind === 'laser' ? 5 : 7, nz * 7, m.kind);
+      }
+    } else if (ev.kind === 'quake') {
+      // Three shocks: feet on the ground get thrown, anyone in the air or holding on rides it out.
+      for (let i = 0; i < QUAKE_AT.length; i++) {
+        const at = ev.start + QUAKE_AT[i];
+        if (at <= t - STEP || at > t || calm || !me.grounded || me.anchored) continue;
+        const a = hash(ev.k * 11 + i + 5000) * Math.PI * 2;
+        this.knockCd = 0;
+        this.zapKnock(Math.cos(a) * 3.2, 7.5, Math.sin(a) * 3.2, 'quake');
+      }
+    } else if (ev.kind === 'bees') {
+      const B = (this.bees = beeStep(this.bees, ev, me.x, me.y, me.z, STEP, calm));
+      if (B && !B.gone && Math.hypot(me.x - B.x, me.y + 0.3 - B.y, me.z - B.z) < BEE_R) {
+        B.gone = true;
+        const dx = me.x - B.x, dz = me.z - B.z, d = Math.hypot(dx, dz) || 1;
+        this.zapKnock((dx / d) * 6, 4.5, (dz / d) * 6, 'bees');
+      }
+    }
+  }
+
   zapKnock(vx, vy, vz, src, name) {
     if (this.knockCd > 0) return;
     this.knockCd = 0.8;
     const k = this.storm.k;
     if (this.me.knock(vx * k, vy * k, vz * k, 0.5)) {
-      this.app.sound[src === 'laser' ? 'zap' : 'bonk']();
+      this.app.sound[src === 'laser' ? 'zap' : src === 'wave' ? 'splash' : 'bonk']();
       this.app.ui.haptic('heavy');
       if (src === 'laser') this.app.ui.flash('#ff3050');
-      if (src === 'geyser') this.app.ui.flash('#ff7a1a');
-      this.app.ui.toast(name ? name + '!' : { arrow: 'Hit by an arrow!', laser: 'Zapped by a laser!', geyser: 'Blasted by the eruption!', rock: 'Flattened by a boulder!' }[src] || 'Ouch!', 'bad');
+      if (src === 'geyser' || src === 'cannon') this.app.ui.flash('#ff7a1a');
+      if (src === 'wave') this.app.ui.flash('#40c8ff');
+      this.app.ui.toast(name ? name + '!' : { arrow: 'Hit by an arrow!', laser: 'Zapped by a laser!', geyser: 'Blasted by the eruption!', rock: 'Flattened by a boulder!', wave: 'Washed away by the wave!', cannon: 'Hit by a cannonball!', quake: 'Thrown by the quake!', bees: 'Stung by the bees!' }[src] || 'Ouch!', 'bad');
     }
   }
 
   // Lightning aimed at a climber: it marks the spot when the warning starts and strikes there.
   zap(slot, th, pos, mine) {
     let z = this.zaps.get(slot);
+    // Inside a maze garden the lightning can't find you: no mark when it would start, no strike if you got in since.
+    const calm = !!this.mazeAround(pos);
     if (th.warn > 0 && (!z || z.k !== th.k)) {
-      z = { k: th.k, x: pos.x, y: pos.y - PR, z: pos.z, struck: false };
+      z = { k: th.k, x: pos.x, y: pos.y - PR, z: pos.z, struck: calm };
       this.zaps.set(slot, z);
-      if (mine) { this.app.sound.warn(); this.app.ui.haptic('tick'); }
+      if (mine && !calm) { this.app.sound.warn(); this.app.ui.haptic('tick'); }
     }
     if (!z || z.k !== th.k || z.struck || this.simT < th.strikeAt) return;
     z.struck = true;
+    if (calm) return;
     const cam = this.R.camera.position, cd = Math.hypot(cam.x - z.x, cam.y - z.y, cam.z - z.z);
     if (cd < 90) { this.R.bolt(z.x, z.y, z.z, 1.3); this.app.sound.thunder(cd * 0.4); }
     if (!mine) return;
@@ -1194,7 +1245,13 @@ export class Game {
       r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(o.x, o.y, o.z, 30), o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
       const th = this.storm.thunder(T, slot);
       if (th) this.zap(slot, th, o, false);
+      // The lasers, cannonballs and bees after them, from where they are seen (their own phone does the hitting).
+      const evO = this.storm.event(T, zoneAt(this.L, o.y)), calmO = !!this.mazeAround(o);
+      if (!this.evOther.has(slot)) this.evOther.set(slot, new Map());
+      markShots(this.storm, this.evOther.get(slot), evO, o.x, o.y - PR, o.z, T, calmO);
+      this.beesOther.set(slot, beeStep(this.beesOther.get(slot), evO, o.x, o.y, o.z, dt, calmO));
     }
+    for (const slot of this.evOther.keys()) if (!this.vis || !this.vis.get(slot)) { this.evOther.delete(slot); this.beesOther.delete(slot); }
     this.drawJumpers(dt, T);
     const pos = (slot) => (slot === this.slot ? me : this.vis && this.vis.get(slot));
     // Cords are draped visually (beads settle over ledges) but only the straight line pulls.
@@ -1255,23 +1312,49 @@ export class Game {
     const zi = zoneAt(this.L, me.y), zone = this.L.zones[zi];
     const last = this.L.zones[this.L.zones.length - 1];
     const eye = clamp((me.y - last.y0) / (this.L.top - last.y0), 0, 1);
-    const gust = this.storm.gust(T, zi);
+    // The map's event where I am (none inside a maze garden): the storm's gust blows the weather about, the rest is drawn
+    // by app.evfx.
+    const indoor = !!this.mazeAround(me), ev = indoor ? null : this.storm.event(T, zi), gust = ev && ev.kind === 'gust' ? ev : null;
+    R.indoor = indoor;
     this.wind.x = this.wind.z = 0;
     if (gust && gust.on) {
       const r = Math.hypot(me.x, me.z) || 1;
       this.wind.x = gust.radial ? (me.x / r) * gust.str : (-me.z / r) * gust.sign * gust.str;
       this.wind.z = gust.radial ? (me.z / r) * gust.str : (me.x / r) * gust.sign * gust.str;
     }
+    if (app.evfx) {
+      for (const m of app.evfx.frame(T, dt, this.storm, ev, me.y - PR, me.x, me.z, [this.evMarks, ...this.evOther.values()], [this.bees, ...this.beesOther.values()])) {
+        const cd = Math.hypot(cam.position.x - m.x, cam.position.y - m.y, cam.position.z - m.z);
+        if (cd < 70) { if (m.kind === 'laser') app.sound.zap(); else app.sound.thunder(4 + cd * 0.4); }
+      }
+    }
+    // The swarm after me buzzes louder the closer it gets.
+    const B = this.bees;
+    if (B && !B.gone && (this.buzzT = (this.buzzT || 0) - dt) <= 0) {
+      const bd = Math.hypot(me.x - B.x, me.y - B.y, me.z - B.z);
+      this.buzzT = 0.38;
+      if (bd < 14) app.sound.buzz(1 - bd / 14);
+    }
+    // The quake shakes the view at each shock, and rumbles.
+    if (ev && ev.kind === 'quake' && ev.on) {
+      let q = 0;
+      for (let i = 0; i < QUAKE_AT.length; i++) {
+        q = Math.max(q, Math.exp(-Math.abs(ev.u - QUAKE_AT[i]) * 7));
+        if (ev.u >= QUAKE_AT[i] && this.quakeHeard !== ev.k * 10 + i) { this.quakeHeard = ev.k * 10 + i; app.sound.thunder(6); app.ui.haptic('heavy'); }
+      }
+      cam.position.x += (Math.random() - 0.5) * 0.22 * q; cam.position.y += (Math.random() - 0.5) * 0.22 * q; cam.position.z += (Math.random() - 0.5) * 0.22 * q;
+    }
     R.update(dt, cam.position, zone, eye, this.wind);
     R.shadowFocus(me.x, me.y, me.z);
     this.bgBolt -= dt;
-    if (this.bgBolt <= 0 && this.L.mapKey === 'storm') {
+    if (this.bgBolt <= 0 && this.L.mapKey === 'storm' && !indoor) {
       this.bgBolt = (2 + Math.random() * 7) * (1 - zi * 0.08) * (1 + eye * 3);
       const a = Math.random() * Math.PI * 2, r = 90 + Math.random() * 260;
       R.bolt(me.x + Math.cos(a) * r, Math.max(0, me.y - 60 + Math.random() * 50), me.z + Math.sin(a) * r, 2.2);
       app.sound.thunder(r);
     }
-    app.sound.ambient(0.2 + (me.y / this.L.top) * 0.6 + (gust && gust.on ? 0.8 : gust && gust.warn ? gust.warn * 0.4 : 0), me.reel > 0.05 && app.input.btn.reel, me.charge,
+    const roar = ev && (ev.kind === 'gust' || ev.kind === 'wave') ? (ev.on ? 0.8 : ev.warn * 0.4) : 0;
+    app.sound.ambient(0.2 + (me.y / this.L.top) * 0.6 + roar, me.reel > 0.05 && app.input.btn.reel, me.charge,
       this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, this.L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     // One step back in time, the same moment the climber is drawn at: standing on a moving platform stays exact.
@@ -1289,7 +1372,8 @@ export class Game {
       this.reelMode = this.cordMode();
       this.nearRelic = null;
       for (const r of this.L.relics) if (!hasRelic(r.id) && pathOn(r.kind, this.diff, this.custom) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
-      app.ui.hud(this, { T, zone: zi, gust, thunder: this.storm.thunder(T, this.slot) });
+      const z0 = this.zaps.get(this.slot), th0 = this.storm.thunder(T, this.slot);
+      app.ui.hud(this, { T, zone: zi, ev, thunder: th0 && !(z0 && z0.k === th0.k && z0.struck) && !this.mazeAround(me) ? th0 : null });
     }
     // Crosshair turns red over a target (checked ~12 times a second while aiming).
     if (this.aiming) {
@@ -1382,6 +1466,8 @@ export class Game {
     for (const r of this.robots.values()) r.hide();
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.app.fx.clear();
+    if (this.app.evfx) this.app.evfx.clear();
+    this.R.indoor = false;
     this.robots.clear();
     this.links = [];
     this.s.close();

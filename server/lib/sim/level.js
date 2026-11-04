@@ -9,7 +9,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 17;
+export const LEVEL_VERSION = 18;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -106,7 +106,7 @@ export const MAPS = [
   },
   {
     id: 5, key: 'waterfall', name: 'Waterfall', desc: 'A water paradise round a giant waterfall. Run up water slides, dodge leaping fish and ride the fountains.',
-    seed: 41269, core: 'falls', pattern: 2, accent: '#3fe0ff', route: 'spiral',
+    seed: 41269, core: 'falls', pattern: 2, accent: '#3fe0ff', route: 'zigzag',
     zones: [
       Z('Lagoon Beach', 'Splash your way up', 100, 0x3fe0ff, 0xe6dcc0, 0xa6e4f0, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { leapingFish: 2, fountainLift: 2, gap: 5, stairs: 2, pillars: 2, beam: 2, crates: 1, bob: 1 }),
       Z('Lily Lagoon', 'Floating pads and jumping fish', 208, 0x7cf0a0, 0xd8eedc, 0xa8e8e0, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { leapingFish: 3, lilyPads: 1, fountainLift: 2, gap: 4, bob: 3, pad: 2, mover: 2, grapple: 1, swing: 1 }),
@@ -131,6 +131,33 @@ export const JUMPER = {
   city: { name: 'Street punk', look: { c: 0x2a2440, g: 0xff4fd8 } },
   waterfall: { name: 'Splash bully', look: { c: 0x1a5a8a, g: 0x7fe8ff } },
 };
+
+// The hard jumps each map likes (template weights, added to every zone from the second one up, doubled from the fifth):
+// long leaps, stepping stones and ledges as high as a jump goes, in a different mix on every map.
+const HARD_JUMPS = {
+  storm: { highstep: 1.5, tiny: 0.8 },
+  sunny: { tiny: 1.5, leap: 1 },
+  forest: { leap: 1.5, highstep: 1 },
+  volcano: { tiny: 1.2, highstep: 1.2 },
+  city: { leap: 1.8, highstep: 0.6 },
+  waterfall: { tiny: 1.6, leap: 0.8 },
+};
+
+// No shortcuts: how far (edge to edge) a jump with a dash at the end reaches onto something dy higher (movetest.js measures
+// the jumps; a dash adds about 1.6 m). From SHORT_UP up nothing is reached. Nothing on the route may be within this of a
+// piece more than SHORT_SKIP metres of route earlier, so nobody skips a stretch (dev/shortcuttest.js).
+export const SHORT_SKIP = 30, SHORT_UP = 2.4;
+const JUMP_REACH = [[-1.5, 6.15], [-1, 5.9], [-0.5, 5.65], [0, 5.4], [0.5, 5.05], [1, 4.65], [1.5, 4.15], [2, 3.45], [SHORT_UP, 0]];
+export const shortcutReach = (dy) => {
+  if (dy >= SHORT_UP) return 0;
+  if (dy <= JUMP_REACH[0][0]) return JUMP_REACH[0][1] + 1.6;
+  for (let i = 1; i < JUMP_REACH.length; i++) if (dy <= JUMP_REACH[i][0]) { const [a, ga] = JUMP_REACH[i - 1], [b, gb] = JUMP_REACH[i]; return ga + ((gb - ga) * (dy - a)) / (b - a) + 1.6; }
+  return 0;
+};
+// Footprints you stand on, for the shortcut check: not the space kept round mazes, a whole maze garden (closed, with a roof
+// too high to get onto), the hidden ways to relics, or hooks and frames up in the air. Long beams and wide obstacle decks
+// count like any platform.
+export const standsOn = (q) => !q.guard && !(q.tag === 'maze' && q.rad > 6) && q.h >= 3 && q.tag !== 'secret';
 
 // Height (world y, the floor is at 2) where jumpers start on every difficulty.
 const JUMP_ALL = 502;
@@ -219,13 +246,13 @@ function mazeDist(N, walls, a) {
   }
   return d;
 }
-// Which inner walls stand in variant v of a maze (1 = a wall), by edge. Of a few mazes made from the variant, the one
-// with the longest way from the checkpoint to the way out.
+// Which inner walls stand in variant v of a maze (1 = a wall), by edge. Of many mazes made from the variant, the one
+// with the longest way from the checkpoint to the way out: a long winding way, never a quick run along one side.
 export function mazeLayout(m, v) {
   if (m.lv === v) return m.lw;
   const N = m.N, R = rng((m.seed ^ Math.imul(v + 1, 0x9e3779b1)) >>> 0), a = m.ej * N + m.ei, b = m.xj * N + m.xi;
   let best = null, bestD = -1;
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < 48; k++) {
     const w = carveMaze(N, R, a), d = mazeDist(N, w, a)[b];
     if (d > bestD) { best = w; bestD = d; }
   }
@@ -299,12 +326,16 @@ export function generateLevel(mapId = 0) {
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [], usedObs = [], obsZone = [];
+  // Where each lift waits at the bottom: only checked against the space kept round the way into a maze garden (see badness).
+  const lows = [];
   const TOPS = topObstacles(MAP.key);
   let TAG = 'start';
   let zone = 0, ZD = ZONE_LIST[0], ZW = ZD.tpl, zonePlats = 0, lastY = 2;
   // Route frame: platforms are placed in polar coordinates around (CX, CZ), going round in direction DIR,
   // with centres between BAND.lo (+ half the platform depth) and BAND.hi.
   const ROUTE = MAP.route || 'spiral', MAIN = ROUTE === 'crater' ? { lo: 10.0, hi: 16.5 } : { lo: 7.5, hi: 14.2 };
+  // Back and forth in two lanes: long legs round the lighthouse (switchback), short ones up the face of the falls (zigzag).
+  const SWITCH = ROUTE === 'switchback' || ROUTE === 'zigzag';
   let CX = 0, CZ = 0, DIR = ROUTE === 'trees' || ROUTE === 'crater' ? -1 : 1, BAND = MAIN, pathLen = 0, lastP = null;
   const intro = { grapple: false, door: false, monster: false, dash: false, chimney: false };
 
@@ -361,6 +392,22 @@ export function generateLevel(mapId = 0) {
     return m - y;
   }
   const needAt = (th, r, sx, sz, y) => { const [x, z] = polar(th, r); return need(x, z, sx / 2, sz / 2, -(th + Math.PI / 2), y); };
+  // How far a footprint at height y must rise not to be a shortcut from route laid long before (see badness).
+  function shortNeed(th, r, sx, sz, y) {
+    const [x, z] = polar(th, r), ry = -(th + Math.PI / 2), a = { x, z, hx: sx / 2, hz: sz / 2, c: Math.cos(ry), s: Math.sin(ry), rad: Math.hypot(sx, sz) / 2 };
+    let m = -1e9;
+    for (let k = Math.max(0, Math.floor((y - 4) / 4) - 1); k <= Math.floor((y + 4) / 4) + 1; k++) {
+      const B = buckets[k];
+      if (!B) continue;
+      for (const q of B) {
+        if (q.pl >= pathLen - SHORT_SKIP || !standsOn(q) || y - q.y >= SHORT_UP || y - q.y <= -3.5) continue;
+        const g = shortcutReach(y - q.y), dx = q.x - x, dz = q.z - z, rr2 = q.rad + a.rad + g;
+        if (dx * dx + dz * dz > rr2 * rr2 || !overlap(a, q, g)) continue;
+        m = Math.max(m, q.y + SHORT_UP + 0.05 - y);
+      }
+    }
+    return m;
+  }
 
   function plat(th, r, y, sx, sz, o = {}) {
     const t = o.thick || 0.7;
@@ -443,7 +490,7 @@ export function generateLevel(mapId = 0) {
   let legStart = 0, legLen = 0, legN = 0, sinceTurn = 99;
   function newLeg(p) {
     legStart = p.th;
-    legLen = (legN % 2 ? 1.9 : 2.7) + rr(-0.2, 0.2);
+    legLen = ROUTE === 'zigzag' ? (legN % 2 ? 1.2 : 1.55) + rr(-0.12, 0.12) : (legN % 2 ? 1.9 : 2.7) + rr(-0.2, 0.2);
     legN++;
     sinceTurn = 0;
   }
@@ -1126,7 +1173,7 @@ export function generateLevel(mapId = 0) {
     gap(cur, o = {}) {
       const [sx, sz] = o.size || size();
       // The short hops that tie sections together widen with the zone too, but a dash gap is exactly as wide as asked.
-      const g = o.g !== undefined ? (o.dash ? o.g : o.g * (ZD.wide || 1)) : rr(ZD.gap[0], ZD.gap[1]);
+      const g = o.g !== undefined ? (o.dash || o.exact ? o.g : o.g * (ZD.wide || 1)) : rr(ZD.gap[0], ZD.gap[1]);
       const dy = o.dy !== undefined ? o.dy : g > 3.2 ? rr(-0.4, 0.45) : g > 2.3 ? rr(-0.3, 0.8) : rr(-0.3, 1.15);
       const r = o.r !== undefined ? o.r : nextR(cur, sz);
       const p = plat(thetaFor(cur, g, r, sx, sz), r, cur.y + dy, sx, sz, o);
@@ -1134,6 +1181,35 @@ export function generateLevel(mapId = 0) {
       const dx = p.x - cur.x, dz = p.z - cur.z, d = Math.hypot(dx, dz);
       out.hops.push({ g: d - support(cur, dx / d, dz / d) - support(p, dx / d, dz / d), dy: p.y - cur.y, zone, dash: !!o.dash });
       return p;
+    },
+    // ---------- the hard jumps: each map has its own favourites (HARD_JUMPS) ----------
+    // A long running jump: well over 4 m to a small landing, from firm ground. Take off from the very edge.
+    leap(cur) {
+      const c0 = cur.col;
+      if (!c0 || c0.surf || c0.dyn || c0.crumble || c0.blink || c0.trap || c0.conv) cur = T.gap(cur, { surf: null, g: rr(1.2, 1.7), dy: rr(-0.1, 0.3), size: [rr(2.6, 3.0), rr(2.2, 2.6)] });
+      // A run up along the route, then the jump.
+      cur = T.gap(cur, { surf: null, g: rr(1.2, 1.6), dy: rr(0, 0.3), size: [rr(3.4, 4.0), rr(2.0, 2.4)] });
+      const n = zone >= 4 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        cur = T.gap(cur, { surf: null, exact: true, g: rr(4.3, 4.7), dy: rr(-0.45, 0.05), size: [rr(1.8, 2.2), rr(1.8, 2.2)] });
+        if (i < n - 1) cur = T.gap(cur, { surf: null, g: rr(1.0, 1.4), dy: rr(0, 0.3), size: [rr(3.2, 3.8), rr(2.0, 2.4)] });
+      }
+      return T.gap(cur, { g: rr(1.2, 1.8) });
+    },
+    // Stepping stones: a row of pads hardly bigger than your feet, far apart and up and down. Land, steady, jump again.
+    tiny(cur) {
+      const n = 4 + ((R() * 2) | 0);
+      for (let i = 0; i < n; i++) {
+        const s = rr(1.0, 1.25);
+        cur = T.gap(cur, { surf: null, exact: true, g: rr(2.4, 3.2), dy: rr(-0.35, 0.65), size: [s, s] });
+      }
+      return T.gap(cur, { g: rr(1.3, 1.9), size: [rr(2.6, 3.0), rr(2.4, 2.8)] });
+    },
+    // Ledges almost as high as a jump goes: only a full jump, held all the way up, gets you onto the next one.
+    highstep(cur) {
+      const n = 3 + ((R() * 2) | 0);
+      for (let i = 0; i < n; i++) cur = T.gap(cur, { surf: null, exact: true, g: rr(1.3, 2.1), dy: rr(1.45, 1.65), size: [rr(2.0, 2.4), rr(1.8, 2.2)] });
+      return T.gap(cur, { g: rr(1.2, 1.8), dy: rr(-0.2, 0.3) });
     },
     // Too wide for a jump (the furthest one clears about 5.4 m on the flat): jump, then DASH in the air.
     dashgap(cur) {
@@ -1298,6 +1374,8 @@ export function generateLevel(mapId = 0) {
       const c = makeBox(x, cur.y - 0.3, z, s / 2, 0.3, s / 2, 0, ry, 0);
       c.dyn = { k: 'pp', ax: x, ay: cur.y - 0.3, az: z, bx: x, by: cur.y + H - 0.3, bz: z, per: rr(6, 8), ph: R() };
       add(c, 'lift', { surf: ZD.ice ? 'ice' : null });
+      // Where it waits at the bottom must not come back within reach of the way into a maze garden either.
+      lows.push({ x, z, hx: s / 2, hz: s / 2, c: Math.cos(ry), s: Math.sin(ry), rad: s / Math.SQRT2, y: cur.y - 0.3, h: 1.2, pl: pathLen });
       out.decor.push({ k: 'cage', x, z, y0: cur.y - 1, y1: cur.y + H + 1.5, s: s + 0.5, ry });
       const top = { th, r, y: cur.y + H, sx: s, sz: s, x, z, ry };
       rec(top);
@@ -1457,7 +1535,7 @@ export function generateLevel(mapId = 0) {
       checkpoint(Math.atan2(cz - CZ, cx - CX), Math.hypot(cx - CX, cz - CZ), y, Object.assign({ maze: k }, cpo));
       [mz.rx, mz.rz] = mazeCell(mz, mz.ri, mz.rj);
       // Creatures prowl its corridors: a new corridor each time the maze changes (applyMaze).
-      for (let q = 0; q < (N >= 8 ? 3 : N >= 6 ? 2 : 1); q++) {
+      for (let q = 0; q < (N >= 8 ? 4 : N >= 6 ? 3 : 2); q++) {
         mz.mons.push(out.monsters.length);
         out.monsters.push({ i: out.monsters.length, ax: mz.rx, az: mz.rz, bx: mz.rx, bz: mz.rz, y: y + 0.65, per: 4, ph: R(), r: 0.6, zone, mz: k });
       }
@@ -1469,7 +1547,8 @@ export function generateLevel(mapId = 0) {
       // (well above it or well below), never what was there before.
       const before = recs.filter((q) => q.pl >= pl0 - 15 && q !== mazeRec && !q.guard);
       for (const q of before) recBox(q.x, q.z, q.hx + 5, q.hz + 5, Math.atan2(q.s, q.c), q.y - 0.6, 3.4).guard = true;
-      pathLen += S * 1.6;
+      // The way through counts as a long piece of route: nothing after it may be within a jump of anything before it.
+      pathLen += Math.max(S * 1.6, SHORT_SKIP + 2);
       // The way on: a landing straight out from the far porch.
       const [px, pz] = at(f, S / 2 + RIM / 2, rowW(jx));
       lastP = { x: px, z: pz };
@@ -1706,7 +1785,7 @@ export function generateLevel(mapId = 0) {
       cur = reframe(cur);
       BAND = { lo: rOut - 2.2, hi: rOut + 1.2 };
       // Out there it now and then runs back the other way for a while.
-      if (ROUTE !== 'switchback' && R() < 0.4) DIR = -DIR;
+      if (!SWITCH && R() < 0.4) DIR = -DIR;
       for (let k = 0, n = 3 + ((R() * 4) | 0); k < n; k++) cur = T[['gap', 'gap', 'pillars', 'bob', 'crumble', 'tilt', 'stairs'][(R() * 7) | 0]](cur);
       DIR = dir0;
       BAND = saved;
@@ -1732,7 +1811,7 @@ export function generateLevel(mapId = 0) {
   function snapshot() {
     const n = {};
     for (const k of LISTS) n[k] = out[k].length;
-    return { n, recs: recs.length, used: usedObs.length, pathLen, lastP, lastY, zonePlats, plats: out.plats, intro: Object.assign({}, intro),
+    return { n, recs: recs.length, lows: lows.length, used: usedObs.length, pathLen, lastP, lastY, zonePlats, plats: out.plats, intro: Object.assign({}, intro),
       CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn, tower, visitStart, visitLaps };
   }
   function restore(q) {
@@ -1742,15 +1821,32 @@ export function generateLevel(mapId = 0) {
       b.splice(b.lastIndexOf(r), 1);
     }
     recs.length = q.recs;
+    lows.length = q.lows;
     usedObs.length = q.used;
     obsZone.length = q.used;
     ({ pathLen, lastP, lastY, zonePlats, CX, CZ, DIR, BAND, legStart, legLen, legN, sinceTurn, tower, visitStart, visitLaps } = q);
     out.plats = q.plats;
     Object.assign(intro, q.intro);
   }
-  // How far the new footprints (from index `from`) would have to rise to clear everything older.
-  function badness(from) {
+  // How far the new footprints (from index `from`, and the new lifts' bottom stops from lowFrom) would have to rise to clear
+  // everything older.
+  function badness(from, lowFrom = lows.length) {
     let raise = 0;
+    for (let i = lowFrom; i < lows.length; i++) {
+      const q = lows[i];
+      for (let k = Math.max(0, Math.floor((q.y - tallest) / 4) - 1); k <= Math.floor((q.y + HEAD) / 4) + 1; k++) {
+        const B = buckets[k];
+        if (!B) continue;
+        for (const r of B) {
+          if (!r.guard || r.pl >= q.pl - RECENT) continue;
+          const lo = r.y <= q.y ? r : q, hi = lo === r ? q : r;
+          if (hi.y - lo.y >= lo.h - 0.01) continue;
+          const dx = r.x - q.x, dz = r.z - q.z, rr2 = r.rad + q.rad;
+          if (dx * dx + dz * dz > rr2 * rr2 || !overlap(r, q, 0)) continue;
+          raise = Math.max(raise, r.y + r.h - q.y + 0.05);
+        }
+      }
+    }
     for (let i = from; i < recs.length; i++) {
       const q = recs[i];
       // Down as far as the tallest footprint reaches (a wall jump shaft keeps 11 m clear above it), up one HEAD.
@@ -1759,6 +1855,11 @@ export function generateLevel(mapId = 0) {
         if (!B) continue;
         for (const r of B) {
           if (r === q || r.pl >= q.pl - RECENT || q.guard) continue;
+          // A shortcut: within a jump (and a dash) of route laid long before, and not high enough above it. Up it goes.
+          if (r.pl < q.pl - SHORT_SKIP && q.y - r.y < SHORT_UP && q.y - r.y > -3.5 && standsOn(q) && standsOn(r)) {
+            const g = shortcutReach(q.y - r.y), dx = r.x - q.x, dz = r.z - q.z, rr2 = r.rad + q.rad + g;
+            if (dx * dx + dz * dz <= rr2 * rr2 && overlap(r, q, g)) raise = Math.max(raise, r.y + SHORT_UP - q.y + 0.05);
+          }
           const lo = r.y <= q.y ? r : q, hi = lo === r ? q : r;
           if (hi.y - lo.y >= lo.h - 0.01) continue;
           const dx = r.x - q.x, dz = r.z - q.z, rr2 = r.rad + q.rad;
@@ -1833,7 +1934,7 @@ export function generateLevel(mapId = 0) {
   function place(fn, at) {
     let lift = 0;
     for (let k = 0; k < 6; k++) {
-      const snap = snapshot(), res = fn(), raise = badness(snap.recs), hit = buried(snap.n.cols) || blocksShaft(snap.n.cols, snap.n.moves);
+      const snap = snapshot(), res = fn(), raise = badness(snap.recs, snap.lows), hit = buried(snap.n.cols) || blocksShaft(snap.n.cols, snap.n.moves);
       if (raise <= 0 && !hit) return res;
       restore(snap);
       // Cut into a tall solid: try a plain hop along the way first. A little too close to older route: a few steps up.
@@ -1860,7 +1961,7 @@ export function generateLevel(mapId = 0) {
       for (const [N, shift] of sizes) {
         const snap = snapshot(), res = T.maze(at, N, cpo, shift);
         if (res) {
-          const r2 = badness(snap.recs), bu = buried(snap.n.cols), bs = blocksShaft(snap.n.cols, snap.n.moves);
+          const r2 = badness(snap.recs, snap.lows), bu = buried(snap.n.cols), bs = blocksShaft(snap.n.cols, snap.n.moves);
           if (r2 <= 0 && !bu && !bs) return res;
           raise = Math.max(raise, r2);
         }
@@ -2046,7 +2147,8 @@ export function generateLevel(mapId = 0) {
           const ph0 = ph;
           let good = true;
           for (let k = 0; k < plan.hops && good; k++) {
-            const last = k === plan.hops - 1, size = last ? plan.end : sr(plan.size[0], plan.size[1]), half = size / 2, gap = sr(plan.g[0], plan.g[1]);
+            // The first gap stays at the short end: on the way back it is a jump up from a small stone, with little run up.
+            const last = k === plan.hops - 1, size = last ? plan.end : sr(plan.size[0], plan.size[1]), half = size / 2, g0 = sr(plan.g[0], plan.g[1]), gap = k === 0 ? Math.min(g0, plan.g[0] + 0.25) : g0;
             // The first hop drops out of sight below the platform; the rest wander a little, and the long ones bend
             // round whatever is in the way instead of giving up.
             const dy = k === 0 ? sr(-1.0, -0.7) : last ? sr(0.2, 0.5) : sr(plan.dy[0], plan.dy[1]);
@@ -2128,7 +2230,7 @@ export function generateLevel(mapId = 0) {
   checkpoint(0.12, 12.5, 2, { start: true, normal: true });
   out.signs.push({ x: Math.cos(0.12) * 17.5, y: 4.6, z: Math.sin(0.12) * 17.5, text: SIGNS[0] });
   let cur = virt(0.12 + DIR * 0.38, 12.5, 2, 2.4, 6);
-  if (ROUTE === 'switchback') { BAND = LANES.outer; newLeg(cur); }
+  if (SWITCH) { BAND = LANES.outer; newLeg(cur); }
   let nextExc = 0, sinceRev = 0, sinceDet = 0, nextJump = 52, jumpN = 0;
   if (ROUTE === 'towers') {
     // Off the dock and over to the nearest skyscraper.
@@ -2147,6 +2249,12 @@ export function generateLevel(mapId = 0) {
     // A zone's own template list can also name obstacles to make them more common there (they add up).
     ZW = Object.assign({}, zoneObstacles(MAP.key, zone, ZONE_LIST.length));
     for (const k in ZD.tpl) ZW[k] = (ZW[k] || 0) + ZD.tpl[k];
+    // Each map's own hard jumps and its own creature on the ledges, from the second zone up and more of them higher up.
+    if (zone >= 1) {
+      const more = zone >= 4 ? 2 : 1;
+      for (const k in HARD_JUMPS[MAP.key] || {}) ZW[k] = (ZW[k] || 0) + HARD_JUMPS[MAP.key][k] * more;
+      if (MAP.key !== 'forest') ZW.monster = (ZW.monster || 0) + (zone >= 3 ? 1.5 : 1);
+    }
     // Fewer free rides the higher you go, and more of the moves that take skill.
     if (ZW.lift) ZW.lift *= 0.4;
     if (zone >= 1) ZW.dashgap = zone >= 4 ? 2 : 1;
@@ -2169,7 +2277,7 @@ export function generateLevel(mapId = 0) {
       for (let k = 0; k < 40; k++) {
         th0 = cur.th + DIR * (cur.sx / 2 + 1.1) / cur.r;
         let worst = -1e9;
-        for (let a = 0; a <= span; a += 0.1) worst = Math.max(worst, needAt(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9));
+        for (let a = 0; a <= span; a += 0.1) worst = Math.max(worst, needAt(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9), shortNeed(th0 + DIR * a, rm, 2, rOut - rIn, cur.y + 0.9));
         if (worst <= 0) break;
         const at = cur, n = Math.ceil(worst) + 1;
         cur = place(() => T.stairs(at, n), at);
@@ -2181,7 +2289,7 @@ export function generateLevel(mapId = 0) {
       cur = virt(th0 + DIR * (span - 1.1 / rm), rm, y, 2.2, rOut - rIn);
       lastP = cur;
       pathLen += span * rm;
-      if (ROUTE === 'switchback') newLeg(cur);
+      if (SWITCH) newLeg(cur);
     }
     out.zones.push(zi);
     nextExc = zi.y0 + 12;
@@ -2193,7 +2301,7 @@ export function generateLevel(mapId = 0) {
       if (!midDone && cur.y > mid) {
         const mz = mazeAt(at, { mid: true });
         // Sunny: a whole leg on from the garden before turning back, not straight back along its side.
-        if (mz) { cur = mz; if (ROUTE === 'switchback') newLeg(cur); }
+        if (mz) { cur = mz; if (SWITCH) newLeg(cur); }
         else {
           cur = place(() => T.gap(at, { size: [4.6, 4.0], g: 1.4, dy: 0.4, surf: null }), at);
           checkpoint(cur.th, cur.r, cur.y, { mid: true });
@@ -2206,9 +2314,9 @@ export function generateLevel(mapId = 0) {
       if (g2) { cur = g2; continue; }
       sinceTurn++;
       // Sunny: the last stretch below the summit runs in the outer lane, clear of the summit disc.
-      if (ROUTE === 'switchback' && finalStretch() && BAND === LANES.inner) { cur = place(() => T.turn(at), at); continue; }
+      if (SWITCH && finalStretch() && BAND === LANES.inner) { cur = place(() => T.turn(at), at); continue; }
       // Sunny: turn round at the end of each leg. Forest: now and then a trip out to a side tree.
-      if (ROUTE === 'switchback' && DIR * (cur.th - legStart) > legLen && !finalStretch()) { cur = place(() => T.turn(at), at); continue; }
+      if (SWITCH && DIR * (cur.th - legStart) > legLen && !finalStretch()) { cur = place(() => T.turn(at), at); continue; }
       if (ROUTE === 'towers') {
         // Done with this tower once round far enough and facing the next one: cross over.
         const nt = TOWERS[(tower + 1) % TOWERS.length], face = Math.atan2(nt.z - CZ, nt.x - CX);
@@ -2236,12 +2344,12 @@ export function generateLevel(mapId = 0) {
       else {
         // Big sweeping things stay away from the switchback turns, where the other lane is close by.
         let k = pickTpl();
-        if (ROUTE === 'switchback' && (k === 'spinner' || k === 'fan') && (sinceTurn < 4 || BAND === LANES.inner)) k = 'mover';
+        if (SWITCH && (k === 'spinner' || k === 'fan') && (sinceTurn < 4 || BAND === LANES.inner)) k = 'mover';
         if ((ROUTE === 'towers' || ROUTE === 'crater') && (k === 'spinner' || k === 'fan')) k = 'mover';
         // Wander instead of only circling: now and then turn back after a lift, or detour outward.
         if ((ROUTE === 'spiral' || ROUTE === 'crater' || ROUTE === 'trees') && sinceRev > 8 && R() < 0.16) { k = 'reverse'; sinceRev = 0; }
         else if (ROUTE === 'crater' && sinceDet > 14 && zone > 0 && R() < 0.1) { k = 'across'; sinceDet = 0; }
-        else if ((ROUTE === 'spiral' || ROUTE === 'crater' || ROUTE === 'switchback') && sinceDet > 10 && zone > 0 && R() < 0.13) { k = 'detour'; sinceDet = 0; }
+        else if ((ROUTE === 'spiral' || ROUTE === 'crater' || SWITCH) && sinceDet > 10 && zone > 0 && R() < 0.13) { k = 'detour'; sinceDet = 0; }
         sinceRev++; sinceDet++;
         const kk = k;
         cur = place(() => (T[kk] ? T[kk](at) : T.obs(at, kk)), at);
@@ -2252,7 +2360,7 @@ export function generateLevel(mapId = 0) {
 
   // Summit: a disc capping the core, reached from one last ledge.
   zone = ZONE_LIST.length - 1;
-  if (ROUTE === 'switchback' && BAND === LANES.inner) cur = T.turn(cur);
+  if (SWITCH && BAND === LANES.inner) cur = T.turn(cur);
   if (ROUTE === 'towers') {
     // From the last tower over to the central spire, whose roof is the summit.
     // Starts higher if the way over would pass too close above older route. If it would cut through a tower at any
@@ -2264,7 +2372,7 @@ export function generateLevel(mapId = 0) {
         const snap = snapshot();
         cur = walkTo(from, Math.cos(b) * 12.5, Math.sin(b) * 12.5, from.y + 1 + k * 1.5);
         if (n === 15 && k === 7) { over = true; break; }
-        if (badness(snap.recs) <= 0 && !buried(snap.n.cols)) { over = true; break; }
+        if (badness(snap.recs, snap.lows) <= 0 && !buried(snap.n.cols)) { over = true; break; }
         restore(snap);
       }
       if (!over) { const at = from; from = place(() => T.gap(at, { g: rr(1.0, 1.6), dy: rr(0.1, 0.5), surf: null }), at); }

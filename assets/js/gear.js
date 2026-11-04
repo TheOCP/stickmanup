@@ -14,47 +14,81 @@ const cone = (r, h, x, y, z, c, rx = 0, rz = 0, glow, gk) => part(new THREE.Cone
 const box = (w, h, d, x, y, z, c, rx = 0, ry = 0, rz = 0, glow, gk) => part(new THREE.BoxGeometry(w, h, d), M(x, y, z, 1, 1, 1, rx, ry, rz), c, glow, gk);
 const tor = (R, r, x, y, z, c, rx = Math.PI / 2, ry = 0, glow, gk, sx = 1, sz = 1) => part(new THREE.TorusGeometry(R, r, 7, 22), M(x, y, z, sx, 1, sz, rx, ry, 0), c, glow, gk);
 
-const band = (c) => [tor(0.195, 0.024, 0, 0.09, 0, c), box(0.03, 0.09, 0.12, 0.03, 0.09, -0.24, c, 0.5, 0, -0.5), box(0.03, 0.09, 0.12, -0.03, 0.09, -0.24, c, 0.5, 0, 0.5)];
 const spikes = (n, r, y, h, c, glow, gk, w = 0.04) => {
   const out = [];
   for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; out.push(cone(w, h, Math.sin(a) * r, y, Math.cos(a) * r, c, Math.cos(a) * 0.35, -Math.sin(a) * 0.35, glow, gk)); }
   return out;
 };
 
+// Hats sit on a slant, like real ones: high over the forehead so the eyes stay clear, lower at the back of the head. Each
+// is drawn upright and then tipped back. fit(r, front, back) cuts a ball of radius r round the head's centre so the cut is
+// at height front over the forehead and at height back behind: e is the cut's height and w its radius, both upright.
+const fit = (r, yf, yb) => { const a = Math.acos(yf / r), b = Math.acos(yb / r), th = (a + b) / 2; return { r, th, a: (a - b) / 2, e: r * Math.cos(th), w: r * Math.sin(th) }; };
+const tip = (f, parts) => { const R = new THREE.Matrix4().makeRotationX(f.a); return parts.flat().map((p) => Object.assign({}, p, { m: R.clone().multiply(p.m) })); };
+// The top of the hat: the ball above the cut, taller with sy.
+const shell = (f, c, sy = 1, glow, gk) => part(new THREE.SphereGeometry(f.r, 26, 10, 0, Math.PI * 2, 0, f.th), M(0, f.e * (1 - sy), 0, 1, sy, 1), c, glow, gk);
+// A ring round the ball, u above the cut and o further out.
+const rim = (f, t, c, u = 0, o = 0, glow, gk) => tor(Math.sqrt(f.r * f.r - (f.e + u) ** 2) + o, t, 0, f.e + u, 0, c, Math.PI / 2, 0, glow, gk);
+// A band hugging the ball from the cut up by h, t thick.
+const cuff = (f, h, t, c, u = 0) => { const y0 = f.e + u, at = (y) => Math.sqrt(Math.max(0, f.r * f.r - y * y)) + t; return part(new THREE.CylinderGeometry(at(y0 + h), at(y0), h, 28, 1, true), M(0, y0 + h / 2, 0), c); };
+// A brim round the cut out to radius R: flat, or rising by lift towards its edge (falling when lift is below 0).
+const brim = (f, R, c, lift = 0, t = 0.018) => lift ? part(new THREE.CylinderGeometry(lift > 0 ? R : f.w, lift > 0 ? f.w : R, Math.abs(lift), 30, 1, true), M(0, f.e + lift / 2, 0), c) : part(new THREE.CylinderGeometry(R, R, t, 30), M(0, f.e - t / 2, 0), c);
+// The peak of a cap: out L past the forehead and W wide, hanging down a little.
+const peak = (f, L, W, c, droop = 0.14, span = 0.9) => part(new THREE.CylinderGeometry(1, 1, 0.016, 22, 1, false, -span, span * 2),
+  new THREE.Matrix4().makeTranslation(0, f.e - 0.008, f.w).multiply(new THREE.Matrix4().makeRotationX(droop - f.a)).multiply(new THREE.Matrix4().makeTranslation(0, 0, -f.w)).multiply(new THREE.Matrix4().makeScale(W, 1, f.w + L)), c);
+// An arch over the top of the head from side to side (or from front to back with fb), from angle a0 to a1 (0 is the right
+// side or the back, PI the left side or the front), so no band ever runs under the chin.
+const over = (R, t, a0, a1, c, z = 0, fb = false, glow, gk) => part(new THREE.TorusGeometry(R, t, 8, 30, a1 - a0), M(0, 0, z, 1, 1, 1, 0, fb ? Math.PI / 2 : 0, a0), c, glow, gk);
+// A piece of a ball: phi round the head (PI/2 is the front), theta down from the top.
+const ball = (r, p0, pl, t0, tl, c, y = 0, glow, gk) => part(new THREE.SphereGeometry(r, 28, 12, p0, pl, t0, tl), M(0, y, 0), c, glow, gk);
+
+const band = (c) => { const f = fit(0.2, 0.112, 0.045); return tip(f, [cuff(f, 0.04, 0.012, c), rim(f, 0.012, c, 0.0, 0.012), rim(f, 0.012, c, 0.04, 0.012), sph(0.026, 0, f.e + 0.02, -f.w - 0.016, c, 1, 0.8, 0.7),
+  box(0.03, 0.11, 0.012, 0.03, f.e - 0.035, -f.w - 0.04, c, 0.35, 0, -0.35), box(0.03, 0.11, 0.012, -0.03, f.e - 0.035, -f.w - 0.04, c, 0.35, 0, 0.35)]); };
+const CAP = fit(0.212, 0.125, -0.01);
+const cap = (c, peakC, rimC = peakC) => tip(CAP, [shell(CAP, c), rim(CAP, 0.009, rimC), peak(CAP, 0.13, 0.2, peakC)]);
+
 export const GEAR = {
-  cap: () => [dome(0.208, 0, 0.03, 0, 0xd82a2a), box(0.24, 0.018, 0.17, 0, 0.055, 0.25, 0xb01a1a, -0.08), sph(0.02, 0, 0.235, 0, 0xffffff)],
-  beanie: () => [dome(0.212, 0, 0.03, 0, 0x2a5ad8, 1, 1.05, 1), tor(0.205, 0.028, 0, 0.05, 0, 0xe8e8f0), sph(0.05, 0, 0.27, 0, 0xffffff)],
+  cap: () => [...cap(0xd82a2a, 0xb01a1a), ...tip(CAP, [sph(0.02, 0, CAP.r, 0, 0xffffff)])],
+  beanie: () => { const f = fit(0.214, 0.13, -0.02); return tip(f, [shell(f, 0x2a5ad8, 1.14), cuff(f, 0.05, 0.014, 0xe8e8f0), rim(f, 0.014, 0xe8e8f0, 0.003, 0.006), sph(0.05, 0, f.e * (1 - 1.14) + f.r * 1.14 + 0.035, 0, 0xffffff)]); },
   band_red: () => band(0xd82a2a),
   band_blue: () => band(0x2a6ad8),
-  bucket: () => [dome(0.205, 0, 0.05, 0, 0xd8c79a), cyl(0.205, 0.3, 0.07, 0, 0.03, 0, 0xc8b78a)],
-  cowboy: () => [cyl(0.34, 0.36, 0.022, 0, 0.09, 0, 0x8a5a2a), dome(0.19, 0, 0.09, 0, 0x8a5a2a, 1, 1.05, 1.1), tor(0.185, 0.018, 0, 0.115, 0, 0x3a2412), tor(0.33, 0.025, 0, 0.1, 0, 0x7a4a1e)],
-  tophat: () => [cyl(0.29, 0.29, 0.02, 0, 0.13, 0, 0x14161c), cyl(0.175, 0.17, 0.3, 0, 0.28, 0, 0x14161c), cyl(0.176, 0.175, 0.055, 0, 0.17, 0, 0xc01a2a)],
+  bucket: () => { const f = fit(0.212, 0.14, 0.02); return tip(f, [shell(f, 0xd8c79a, 0.92), brim(f, f.w + 0.085, 0xc8b78a, -0.035), tor(f.w + 0.085, 0.01, 0, f.e - 0.035, 0, 0xc8b78a), rim(f, 0.012, 0xb8a77a, 0.006)]); },
+  cowboy: () => { const f = fit(0.205, 0.135, 0.05); return tip(f, [shell(f, 0x8a5a2a, 1.45), rim(f, 0.018, 0x3a2412, 0.014, 0.004), brim(f, 0.35, 0x8a5a2a, 0.035), brim(f, f.w + 0.02, 0x8a5a2a), tor(0.35, 0.016, 0, f.e + 0.035, 0, 0x7a4a1e)]); },
+  tophat: () => { const f = fit(0.2, 0.15, 0.08); return tip(f, [part(new THREE.CylinderGeometry(0.175, 0.17, 0.3, 26), M(0, f.e + 0.15, 0), 0x14161c), part(new THREE.CylinderGeometry(0.28, 0.28, 0.02, 30), M(0, f.e, 0), 0x14161c), part(new THREE.CylinderGeometry(0.173, 0.172, 0.055, 26, 1, true), M(0, f.e + 0.04, 0, 1.012, 1, 1.012), 0xc01a2a)]); },
   party: () => [cone(0.13, 0.36, 0, 0.32, 0, 0xff4fb4), sph(0.04, 0, 0.5, 0, 0xffe14a), tor(0.1, 0.012, 0, 0.26, 0, 0x4f8bff), tor(0.06, 0.012, 0, 0.36, 0, 0xb6ff4a)],
-  viking: () => [dome(0.214, 0, 0.03, 0, 0x8a96a8), tor(0.21, 0.022, 0, 0.04, 0, 0x6a4a22), cone(0.05, 0.22, 0.24, 0.19, 0, 0xf0ead8, 0, -0.75), cone(0.05, 0.22, -0.24, 0.19, 0, 0xf0ead8, 0, 0.75), box(0.03, 0.17, 0.03, 0, 0.1, 0.21, 0x6a4a22)],
-  chef: () => [cyl(0.2, 0.19, 0.12, 0, 0.14, 0, 0xfafafa), sph(0.13, -0.09, 0.27, 0, 0xffffff), sph(0.13, 0.09, 0.27, 0, 0xffffff), sph(0.13, 0, 0.3, 0.07, 0xffffff), sph(0.13, 0, 0.3, -0.07, 0xffffff)],
-  santa: () => [cone(0.2, 0.36, 0.01, 0.28, -0.05, 0xc81e1e, -0.55), tor(0.2, 0.05, 0, 0.09, 0, 0xfafafa), sph(0.055, 0, 0.4, -0.2, 0xfafafa)],
-  pirate: () => [dome(0.21, 0, 0.05, 0, 0x14161c, 1.05, 0.9, 1), box(0.56, 0.11, 0.05, 0, 0.14, 0.13, 0x14161c, -0.25), box(0.56, 0.11, 0.05, 0, 0.14, -0.13, 0x14161c, 0.25), box(0.05, 0.11, 0.3, 0.26, 0.13, 0, 0x14161c, 0, 0, 0.2), box(0.05, 0.11, 0.3, -0.26, 0.13, 0, 0x14161c, 0, 0, -0.2), sph(0.035, 0, 0.17, 0.17, 0xf0ead8)],
-  propeller: () => [dome(0.208, 0, 0.03, 0, 0x4f8bff), box(0.24, 0.018, 0.17, 0, 0.055, 0.25, 0xffe14a, -0.08), cyl(0.012, 0.012, 0.08, 0, 0.27, 0, 0x3a3a3a), box(0.38, 0.012, 0.05, 0, 0.31, 0, 0xff5050, 0, 0.4), box(0.05, 0.012, 0.38, 0, 0.312, 0, 0xb6ff4a, 0, 0.4), sph(0.02, 0, 0.32, 0, 0xffe14a)],
-  bunny: () => [cyl(0.05, 0.04, 0.34, 0.09, 0.32, -0.02, 0xfafafa, 0, -0.14), cyl(0.05, 0.04, 0.34, -0.09, 0.32, -0.02, 0xfafafa, 0, 0.14), cyl(0.028, 0.022, 0.25, 0.092, 0.32, 0.018, 0xffb0c8, 0, -0.14), cyl(0.028, 0.022, 0.25, -0.092, 0.32, 0.018, 0xffb0c8, 0, 0.14), tor(0.2, 0.012, 0, 0.1, 0, 0x3a3a48)],
+  viking: () => { const f = fit(0.214, 0.125, -0.02); return [...tip(f, [shell(f, 0x8a96a8), rim(f, 0.022, 0x6a4a22, 0.004), over(f.r + 0.004, 0.014, Math.PI / 2 - f.th, Math.PI / 2 + f.th, 0x6a4a22, 0, true),
+    cone(0.05, 0.22, 0.235, f.e + 0.12, 0, 0xf0ead8, 0, -0.75), cone(0.05, 0.22, -0.235, f.e + 0.12, 0, 0xf0ead8, 0, 0.75)]), box(0.026, 0.075, 0.014, 0, 0.088, 0.198, 0x6a4a22, -0.28)]; },
+  chef: () => { const f = fit(0.205, 0.13, 0.05); return tip(f, [part(new THREE.CylinderGeometry(f.w + 0.03, f.w + 0.014, 0.13, 28), M(0, f.e + 0.065, 0), 0xfafafa), sph(0.12, -0.09, f.e + 0.17, 0, 0xffffff), sph(0.12, 0.09, f.e + 0.17, 0, 0xffffff), sph(0.12, 0, f.e + 0.19, 0.08, 0xffffff), sph(0.12, 0, f.e + 0.19, -0.08, 0xffffff), sph(0.11, 0, f.e + 0.23, 0, 0xffffff)]); },
+  santa: () => { const f = fit(0.212, 0.135, 0.0); return tip(f, [shell(f, 0xc81e1e), cone(0.19, 0.34, 0, f.e + 0.15, -0.04, 0xc81e1e, -0.35), rim(f, 0.042, 0xfafafa, 0.012, 0.012), sph(0.055, 0, f.e + 0.33, -0.115, 0xfafafa)]); },
+  pirate: () => { const f = fit(0.212, 0.13, 0.0); return tip(f, [shell(f, 0x14161c, 1.1), brim(f, 0.33, 0x14161c, 0.1), brim(f, f.w + 0.01, 0x14161c), tor(0.33, 0.012, 0, f.e + 0.1, 0, 0xd8b040), sph(0.04, 0, f.e + 0.06, 0.29, 0xf0ead8, 1, 1, 0.6), box(0.1, 0.014, 0.01, 0, f.e + 0.015, 0.285, 0xf0ead8, 0, 0, 0.6), box(0.1, 0.014, 0.01, 0, f.e + 0.015, 0.285, 0xf0ead8, 0, 0, -0.6)]); },
+  propeller: () => [...cap(0x4f8bff, 0xffe14a), cyl(0.012, 0.012, 0.08, 0, 0.245, 0, 0x3a3a3a), box(0.38, 0.012, 0.05, 0, 0.285, 0, 0xff5050, 0, 0.4), box(0.05, 0.012, 0.38, 0, 0.287, 0, 0xb6ff4a, 0, 0.4), sph(0.02, 0, 0.295, 0, 0xffe14a)],
+  bunny: () => [cyl(0.05, 0.04, 0.34, 0.09, 0.36, -0.02, 0xfafafa, 0, -0.14), cyl(0.05, 0.04, 0.34, -0.09, 0.36, -0.02, 0xfafafa, 0, 0.14), cyl(0.028, 0.022, 0.25, 0.092, 0.36, 0.018, 0xffb0c8, 0, -0.14), cyl(0.028, 0.022, 0.25, -0.092, 0.36, 0.018, 0xffb0c8, 0, 0.14), over(0.212, 0.012, 0.15, Math.PI - 0.15, 0x3a3a48, -0.02)],
   catears: () => [cone(0.075, 0.14, 0.12, 0.2, 0, 0x1e1e26, 0, -0.35), cone(0.075, 0.14, -0.12, 0.2, 0, 0x1e1e26, 0, 0.35), cone(0.04, 0.09, 0.122, 0.195, 0.03, 0xff8ab0, 0, -0.35), cone(0.04, 0.09, -0.122, 0.195, 0.03, 0xff8ab0, 0, 0.35)],
-  phones: () => [tor(0.215, 0.018, 0, 0.02, 0, 0x22242c, 0, 0), cyl(0.08, 0.08, 0.06, 0.215, 0, 0, 0x22242c, 0, Math.PI / 2), cyl(0.08, 0.08, 0.06, -0.215, 0, 0, 0x22242c, 0, Math.PI / 2), cyl(0.05, 0.05, 0.065, 0.218, 0, 0, 0x3ff0d0, 0, Math.PI / 2, 0x3ff0d0, 1.2), cyl(0.05, 0.05, 0.065, -0.218, 0, 0, 0x3ff0d0, 0, Math.PI / 2, 0x3ff0d0, 1.2)],
+  phones: () => [over(0.226, 0.018, 0.22, Math.PI - 0.22, 0x22242c), cyl(0.08, 0.08, 0.06, 0.215, 0, 0, 0x22242c, 0, Math.PI / 2), cyl(0.08, 0.08, 0.06, -0.215, 0, 0, 0x22242c, 0, Math.PI / 2), cyl(0.05, 0.05, 0.065, 0.218, 0, 0, 0x3ff0d0, 0, Math.PI / 2, 0x3ff0d0, 1.2), cyl(0.05, 0.05, 0.065, -0.218, 0, 0, 0x3ff0d0, 0, Math.PI / 2, 0x3ff0d0, 1.2)],
   mohawk: () => [0, 1, 2, 3, 4, 5, 6].map((i) => { const a = -0.9 + i * 0.42; return cone(0.05, 0.2, 0, Math.cos(a) * 0.25, -Math.sin(a) * 0.25, 0xff2ad8, -a); }),
-  afro: () => [sph(0.3, 0, 0.2, -0.1, 0x2a1a10), sph(0.19, 0.18, 0.1, -0.09, 0x2a1a10), sph(0.19, -0.18, 0.1, -0.09, 0x2a1a10), sph(0.15, 0, 0.17, 0.06, 0x2a1a10, 1.3, 0.6, 1)],
-  grad: () => [dome(0.205, 0, 0.03, 0, 0x14161c, 1, 0.8, 1), box(0.48, 0.022, 0.48, 0, 0.19, 0, 0x14161c, 0, 0.78), cyl(0.008, 0.008, 0.18, 0.2, 0.11, 0.05, 0xffd24a), sph(0.02, 0, 0.21, 0, 0xffd24a)],
-  police: () => [dome(0.208, 0, 0.05, 0, 0x16245c, 1.1, 0.7, 1.1), tor(0.2, 0.024, 0, 0.06, 0, 0x101828), box(0.25, 0.018, 0.13, 0, 0.05, 0.22, 0x0c0d12, -0.25), box(0.05, 0.05, 0.015, 0, 0.13, 0.215, 0xffd24a, -0.2)],
-  sombrero: () => [cyl(0.44, 0.46, 0.022, 0, 0.1, 0, 0xc8983a), tor(0.44, 0.024, 0, 0.12, 0, 0xc01a2a), cyl(0.09, 0.18, 0.24, 0, 0.23, 0, 0xc8983a), tor(0.16, 0.018, 0, 0.14, 0, 0x2a8a3a), tor(0.3, 0.012, 0, 0.115, 0, 0x2a8a3a)],
-  firehelm: () => [dome(0.214, 0, 0.03, 0, 0xc81e1e), cyl(0.27, 0.28, 0.02, 0, 0.05, -0.04, 0xc81e1e), box(0.05, 0.09, 0.2, 0, 0.21, 0.06, 0xffd24a, 0.45)],
-  beret: () => [sph(0.22, 0.02, 0.15, 0, 0x8a1a2a, 1.08, 0.38, 1.08), sph(0.016, 0.02, 0.24, 0, 0x8a1a2a)],
+  afro: () => [sph(0.3, 0, 0.2, -0.1, 0x2a1a10), sph(0.19, 0.18, 0.1, -0.09, 0x2a1a10), sph(0.19, -0.18, 0.1, -0.09, 0x2a1a10), sph(0.15, 0, 0.19, 0.05, 0x2a1a10, 1.3, 0.6, 1)],
+  grad: () => [...tip(CAP, [shell(CAP, 0x14161c), rim(CAP, 0.008, 0x0c0d12)]), box(0.46, 0.022, 0.46, 0, 0.222, 0, 0x14161c, 0, 0.78), cyl(0.008, 0.008, 0.16, 0.22, 0.15, 0.05, 0xffd24a), sph(0.022, 0.22, 0.065, 0.05, 0xffd24a, 1, 1.4, 1), sph(0.02, 0, 0.236, 0, 0xffd24a)],
+  police: () => { const f = CAP; return tip(f, [shell(f, 0x101828), cuff(f, 0.05, 0.012, 0x101828), sph(0.235, 0, f.e + 0.09, 0.005, 0x16245c, 1, 0.4, 1), peak(f, 0.12, 0.19, 0x0c0d12, 0.22), box(0.05, 0.05, 0.015, 0, f.e + 0.075, f.w + 0.02, 0xffd24a, -0.25)]); },
+  sombrero: () => { const f = fit(0.205, 0.14, 0.07); return tip(f, [part(new THREE.CylinderGeometry(0.09, f.w + 0.012, 0.25, 26), M(0, f.e + 0.125, 0), 0xc8983a), brim(f, 0.44, 0xc8983a, 0.03), brim(f, f.w + 0.03, 0xc8983a), tor(0.44, 0.024, 0, f.e + 0.03, 0, 0xc01a2a), tor(f.w + 0.006, 0.018, 0, f.e + 0.03, 0, 0x2a8a3a), tor(0.3, 0.012, 0, f.e + 0.012, 0, 0x2a8a3a)]); },
+  firehelm: () => { const f = fit(0.214, 0.13, -0.01); return tip(f, [shell(f, 0xc81e1e, 1.06), rim(f, 0.012, 0xa01414, 0.004), part(new THREE.CylinderGeometry(0.27, 0.28, 0.02, 30), M(0, f.e - 0.01, -0.05, 1, 1, 1.05), 0xc81e1e), over(f.r * 1.03, 0.016, Math.PI / 2 - f.th, Math.PI / 2 + f.th, 0xc81e1e, 0, true), box(0.1, 0.1, 0.014, 0, f.e + 0.075, f.w - 0.004, 0xffd24a, -0.42)]); },
+  beret: () => { const f = fit(0.212, 0.135, 0.02); return tip(f, [shell(f, 0x8a1a2a), rim(f, 0.012, 0x6a1020, 0.004), sph(0.235, 0.025, f.e + 0.075, 0, 0x8a1a2a, 1.06, 0.36, 1.04), sph(0.016, 0.025, f.e + 0.165, 0, 0x8a1a2a)]); },
   crown: () => [cyl(0.19, 0.17, 0.09, 0, 0.17, 0, 0xffc830), ...spikes(8, 0.175, 0.255, 0.1, 0xffc830, 0, 0, 0.035), sph(0.022, 0, 0.17, 0.18, 0xe02040, 1, 1, 1, 0xe02040, 1.5), sph(0.022, 0.18, 0.17, 0, 0x3060ff, 1, 1, 1, 0x3060ff, 1.5), sph(0.022, -0.18, 0.17, 0, 0x30d060, 1, 1, 1, 0x30d060, 1.5)],
-  wizard: () => [cyl(0.32, 0.34, 0.02, 0, 0.09, 0, 0x2a1a7a), cone(0.19, 0.5, 0, 0.34, -0.02, 0x2a1a7a, -0.12), tor(0.19, 0.016, 0, 0.12, 0, 0xffd24a), sph(0.03, 0, 0.42, 0.11, 0xffd24a, 1, 1, 1, 0xffd24a, 1.4)],
-  knight: () => [sph(0.222, 0, 0.015, 0, 0xa8b2c0), box(0.34, 0.04, 0.1, 0, 0.04, 0.19, 0x10141c), box(0.03, 0.17, 0.05, 0, -0.06, 0.215, 0x8a94a4), cone(0.03, 0.2, 0, 0.3, -0.02, 0xc02a2a), box(0.03, 0.14, 0.2, 0, 0.26, -0.06, 0xc02a2a)],
+  wizard: () => { const f = fit(0.205, 0.14, 0.06); return tip(f, [brim(f, 0.33, 0x2a1a7a, 0.012), brim(f, f.w + 0.02, 0x2a1a7a), cone(f.w + 0.012, 0.5, 0, f.e + 0.25, -0.03, 0x2a1a7a, -0.12), tor(f.w + 0.004, 0.016, 0, f.e + 0.03, 0, 0xffd24a), sph(0.03, 0, f.e + 0.32, 0.11, 0xffd24a, 1, 1, 1, 0xffd24a, 1.4)]); },
+  // Open at the front, so the face shows: a brow band, a thin nose guard between the eyes, cheek plates.
+  knight: () => { const r = 0.222, t0 = Math.acos(0.125 / r), t1 = Math.acos(-0.11 / r), o = 0.22 * Math.PI; return [ball(r, 0, Math.PI * 2, 0, t0, 0xa8b2c0), ball(r, Math.PI / 2 + o, Math.PI * 2 - 2 * o, t0, t1 - t0, 0xa8b2c0),
+    tor(Math.sqrt(r * r - 0.125 * 0.125) + 0.004, 0.016, 0, 0.125, 0, 0x8a94a4), box(0.024, 0.075, 0.014, 0, 0.088, 0.21, 0x8a94a4, -0.28), over(r + 0.004, 0.014, 0.1, Math.PI - 0.1, 0x8a94a4, 0, true), cone(0.03, 0.2, 0, 0.3, -0.02, 0xc02a2a), box(0.03, 0.14, 0.2, 0, 0.26, -0.06, 0xc02a2a)]; },
   halo: () => [tor(0.19, 0.022, 0, 0.32, 0, 0xfff4b0, Math.PI / 2, 0, 0xffe88a, 2.4)],
   devil: () => [cone(0.05, 0.2, 0.14, 0.21, 0.02, 0xc01a1a, 0, -0.45, 0xc01a1a, 0.5), cone(0.05, 0.2, -0.14, 0.21, 0.02, 0xc01a1a, 0, 0.45, 0xc01a1a, 0.5)],
   antenna: () => [cyl(0.01, 0.01, 0.2, 0.09, 0.27, 0, 0x8a96a8, 0, -0.25), cyl(0.01, 0.01, 0.2, -0.09, 0.27, 0, 0x8a96a8, 0, 0.25), sph(0.035, 0.117, 0.375, 0, 0x40e8ff, 1, 1, 1, 0x40e8ff, 2), sph(0.035, -0.117, 0.375, 0, 0xff5050, 1, 1, 1, 0xff5050, 2)],
-  samurai: () => [dome(0.216, 0, 0.03, 0, 0x1a1a22), cyl(0.3, 0.33, 0.04, 0, 0.0, -0.05, 0x1a1a22, -0.4), box(0.05, 0.22, 0.015, 0.09, 0.27, 0.15, 0xd8b040, 0, 0, -0.45), box(0.05, 0.22, 0.015, -0.09, 0.27, 0.15, 0xd8b040, 0, 0, 0.45), sph(0.03, 0, 0.15, 0.2, 0xc01a2a)],
-  astro: () => [sph(0.265, 0, 0.0, 0, 0xeef0f4), sph(0.2, 0, 0.0, 0.1, 0x10141c, 1, 0.82, 1), tor(0.2, 0.03, 0, -0.17, 0, 0xc8ccd4), box(0.05, 0.06, 0.03, 0.2, 0.14, 0.11, 0xe0702a)],
-  shroom: () => [sph(0.31, 0, 0.11, 0, 0xd82a2a, 1, 0.55, 1), sph(0.05, 0.14, 0.26, 0.07, 0xfafafa), sph(0.045, -0.13, 0.25, 0.1, 0xfafafa), sph(0.05, 0, 0.27, -0.13, 0xfafafa), sph(0.04, 0.23, 0.17, -0.05, 0xfafafa), sph(0.04, -0.22, 0.17, -0.07, 0xfafafa)],
-  flowers: () => { const out = [tor(0.19, 0.014, 0, 0.12, 0, 0x3a8a3a)], c = [0xff7ab0, 0xffe14a, 0xffffff, 0xff5a5a, 0xa66bff, 0x6ac8ff]; for (let i = 0; i < 10; i++) { const a = (i / 10) * 6.283; out.push(sph(0.042, Math.sin(a) * 0.195, 0.125, Math.cos(a) * 0.195, c[i % 6])); out.push(sph(0.016, Math.sin(a) * 0.21, 0.135, Math.cos(a) * 0.21, 0xffd24a)); } return out; },
+  samurai: () => { const f = fit(0.216, 0.125, 0.0), o = 0.32 * Math.PI; return [...tip(f, [shell(f, 0x1a1a22), rim(f, 0.014, 0x8a1a1a, 0.004),
+    part(new THREE.CylinderGeometry(f.w + 0.008, 0.29, 0.08, 28, 1, true, o, Math.PI * 2 - 2 * o), M(0, f.e - 0.04, 0), 0x1a1a22), part(new THREE.CylinderGeometry(0.28, 0.335, 0.07, 28, 1, true, o, Math.PI * 2 - 2 * o), M(0, f.e - 0.1, 0), 0x22222c)]),
+    box(0.045, 0.22, 0.012, 0.085, 0.27, 0.16, 0xd8b040, 0, 0, -0.45), box(0.045, 0.22, 0.012, -0.085, 0.27, 0.16, 0xd8b040, 0, 0, 0.45), sph(0.03, 0, 0.152, 0.17, 0xc01a2a)]; },
+  // A space helmet with its visor pushed up and the front open, so the face shows.
+  astro: () => { const r = 0.255, t0 = Math.acos(0.15 / r), t1 = Math.acos(-0.15 / r), t2 = Math.PI * 0.8, o = 0.3 * Math.PI; return [ball(r, 0, Math.PI * 2, 0, t0, 0xeef0f4), ball(r, Math.PI / 2 + o, Math.PI * 2 - 2 * o, t0, t1 - t0, 0xeef0f4), ball(r, 0, Math.PI * 2, t1, t2 - t1, 0xeef0f4),
+    ball(r + 0.008, Math.PI / 2 - o - 0.04, 2 * o + 0.08, 0.32, t0 - 0.3, 0x1c2430), tor(r * Math.sin(t2) + 0.004, 0.03, 0, r * Math.cos(t2), 0, 0xc8ccd4), box(0.05, 0.06, 0.03, 0.242, 0.06, 0.07, 0xe0702a, 0, 1.29)]; },
+  shroom: () => { const f = fit(0.212, 0.13, 0.04); return tip(f, [part(new THREE.SphereGeometry(0.3, 26, 10, 0, Math.PI * 2, 0, Math.PI / 2), M(0, f.e, 0, 1, 0.62, 1), 0xd82a2a), part(new THREE.CylinderGeometry(0.3, 0.3, 0.01, 30), M(0, f.e, 0), 0xf0e0c8),
+    sph(0.05, 0.14, f.e + 0.15, 0.07, 0xfafafa), sph(0.045, -0.13, f.e + 0.15, 0.1, 0xfafafa), sph(0.05, 0, f.e + 0.17, -0.13, 0xfafafa), sph(0.04, 0.23, f.e + 0.08, -0.05, 0xfafafa), sph(0.04, -0.22, f.e + 0.08, -0.07, 0xfafafa), sph(0.035, 0.05, f.e + 0.18, 0.0, 0xfafafa)]); },
+  flowers: () => { const f = fit(0.2, 0.13, 0.06), R = f.w + 0.012, out = [tor(R, 0.014, 0, f.e, 0, 0x3a8a3a)], c = [0xff7ab0, 0xffe14a, 0xffffff, 0xff5a5a, 0xa66bff, 0x6ac8ff]; for (let i = 0; i < 10; i++) { const a = (i / 10) * 6.283; out.push(sph(0.042, Math.sin(a) * (R + 0.006), f.e + 0.005, Math.cos(a) * (R + 0.006), c[i % 6])); out.push(sph(0.016, Math.sin(a) * (R + 0.022), f.e + 0.015, Math.cos(a) * (R + 0.022), 0xffd24a)); } return tip(f, out); },
   // Legendary extras: lit from inside.
   l_crown: () => [cyl(0.2, 0.17, 0.11, 0, 0.17, 0, 0xffd24a, 0, 0, 0xffa020, 1.2), ...spikes(8, 0.18, 0.28, 0.17, 0xfff0a0, 0xffc040, 2.6, 0.04), sph(0.03, 0, 0.17, 0.19, 0xff2040, 1, 1, 1, 0xff2040, 3)],
   bolt: () => { const out = []; for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.283; out.push(box(0.03, 0.2, 0.012, Math.sin(a) * 0.26, 0.2, Math.cos(a) * 0.26, 0xdfffff, 0, a, 0.5, 0x7fd8ff, 3)); } return out; },
@@ -69,14 +103,14 @@ export const GEAR = {
   ],
   // ShortGG: dark hair with a soft fringe and two buns, a pink gaming headset with little ears.
   hairgg: () => [
-    part(new THREE.SphereGeometry(0.224, 18, 12, Math.PI * 0.92, Math.PI * 1.16, 0, Math.PI * 0.72), M(0, 0.005, -0.01), 0x1c1420),
+    part(new THREE.SphereGeometry(0.214, 18, 12, Math.PI * 0.92, Math.PI * 1.16, 0, Math.PI * 0.72), M(0, 0.005, -0.01), 0x1c1420),
     sph(0.11, 0, 0.13, 0.12, 0x1c1420, 1.75, 0.5, 0.62),
     sph(0.055, -0.15, 0.09, 0.14, 0x1c1420, 0.8, 1.15, 0.6), sph(0.055, 0.15, 0.09, 0.14, 0x1c1420, 0.8, 1.15, 0.6),
     sph(0.085, 0.15, 0.21, -0.06, 0x241a2a), sph(0.085, -0.15, 0.21, -0.06, 0x241a2a),
     sph(0.07, 0.19, -0.14, -0.05, 0x1c1420, 0.8, 2.4, 0.8), sph(0.07, -0.19, -0.14, -0.05, 0x1c1420, 0.8, 2.4, 0.8),
   ],
   headset: () => [
-    tor(0.232, 0.016, 0, 0.035, -0.015, 0xffffff, 0, 0),
+    over(0.236, 0.016, 0.12, Math.PI - 0.12, 0xffffff, -0.015),
     cyl(0.078, 0.078, 0.05, 0.23, 0.02, 0, 0xffffff, 0, Math.PI / 2), cyl(0.078, 0.078, 0.05, -0.23, 0.02, 0, 0xffffff, 0, Math.PI / 2),
     cyl(0.05, 0.05, 0.055, 0.233, 0.02, 0, 0xff6aa8, 0, Math.PI / 2, 0xff5aa0, 1.8), cyl(0.05, 0.05, 0.055, -0.233, 0.02, 0, 0xff6aa8, 0, Math.PI / 2, 0xff5aa0, 1.8),
     cone(0.05, 0.1, 0.1, 0.26, -0.01, 0xffffff, 0, -0.3), cone(0.05, 0.1, -0.1, 0.26, -0.01, 0xffffff, 0, 0.3),
@@ -87,6 +121,81 @@ export const GEAR = {
 };
 // Where each attaches when it isn't on the head: the hips, the back or the chest (both in the torso's own space, from the hips
 // up), a tail (on the hips, behind) or a pair of wings on the shoulder blades. Some move by themselves.
+// ---------------------------------------------------------------- hair
+// Hair comes in two layers. The first stays on under a hat: close to the head over the top, and anything that hangs below
+// where hats end (a fringe, a bob, a ponytail, long hair down the back). The second (id + '_top') is what a hat hides: buns,
+// spikes, curls and the fuller top. With hair on, the hat grows by HAT_ON_HAIR, so it sits on the hair and none of the first
+// layer can poke through it.
+export const HAT_ON_HAIR = 1.08;
+// The hair on the head: over the top down to the forehead at height top, and round the sides and the back down to low,
+// leaving the face open from temple to temple (o round from the front). Thin enough to stay under any hat.
+const scalp = (c, top = 0.132, low = -0.09, o = 0.3 * Math.PI, r = 0.214, glow, gk) => {
+  const t0 = Math.acos(top / r), t1 = Math.acos(low / r);
+  return [ball(r, 0, Math.PI * 2, 0, t0, c, 0, glow, gk), ball(r, Math.PI / 2 + o, Math.PI * 2 - 2 * o, t0, t1 - t0, c, 0, glow, gk)];
+};
+// More hair on top: the same ball lifted by dy (and moved back by dz), so it grows out of the hair below without a step.
+const puff = (c, dy, dz = 0, top = 0.14, r = 0.214, glow, gk) => part(new THREE.SphereGeometry(r, 26, 10, 0, Math.PI * 2, 0, Math.acos((top - dy) / r)), M(0, dy, dz), c, glow, gk);
+const crownOf = (c, r = 0.226, yf = 0.165, yb = 0.0, glow, gk) => { const f = fit(r, yf, yb); return tip(f, [shell(f, c, 1, glow, gk)]); };
+const lump = (r, x, y, z, c, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => part(new THREE.SphereGeometry(r, 12, 9), M(x, y, z, sx, sy, sz, rx, ry, rz), c);
+// Something built along +y, set d from the head's centre, pointing out: th down from the top, ph round from the front.
+const radial = (geo, th, ph, d, c, glow, gk) => {
+  const v = new THREE.Vector3(Math.sin(th) * Math.sin(ph), Math.cos(th), Math.sin(th) * Math.cos(ph));
+  return part(geo, new THREE.Matrix4().compose(v.clone().multiplyScalar(d), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v), new THREE.Vector3(1, 1, 1)), c, glow, gk);
+};
+// Locks of a fringe on the forehead, from x0 to x1, their middles at heights y0 to y1: they lie on the skin, so they stay
+// under a hat's edge.
+const fringeOf = (c, n, x0, x1, y0, y1, size = 0.045) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const k = n > 1 ? i / (n - 1) : 0.5, x = x0 + (x1 - x0) * k, y = y0 + (y1 - y0) * k, z = Math.sqrt(Math.max(0, 0.199 * 0.199 - x * x - y * y));
+    out.push(part(new THREE.SphereGeometry(size, 12, 8), new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(x, y, z).normalize()), new THREE.Vector3(1.25, 0.85, 0.4)), c));
+  }
+  return out;
+};
+const spikesOn = (c, rows, glow, gk) => { const out = []; for (const [th, n, len, w, off] of rows) for (let i = 0; i < n; i++) out.push(radial(new THREE.ConeGeometry(w, len, 8), th, ((i + off) / n) * Math.PI * 2, 0.19 + len / 2, c, glow, gk)); return out; };
+// A bob or long hair: the part of a ball below a slanted cut (which sits below every hat's edge), open over the face.
+const hangOf = (c, r, yf, yb, depth, open) => { const f = fit(r, yf, yb); return tip(f, [part(new THREE.SphereGeometry(r, 26, 8, Math.PI / 2 + open, Math.PI * 2 - 2 * open, f.th, depth), M(0, 0, 0), c)]); };
+const HAIRS = {
+  hr_short: (c = 0x5a3a22) => [[...scalp(c, 0.135, -0.07), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038)],
+    [puff(c, 0.01, -0.004), lump(0.06, 0.0, 0.19, 0.095, c, 1.7, 0.6, 1.2, 0.5), lump(0.055, 0.03, 0.21, 0.04, c, 1.7, 0.55, 1.3, 0.3)]],
+  hr_swoop: (c = 0x1c1c24) => [[...scalp(c), ...fringeOf(c, 5, -0.11, 0.12, 0.13, 0.098, 0.046)],
+    [puff(c, 0.012, -0.004), lump(0.07, -0.05, 0.2, 0.075, c, 2.0, 0.55, 1.0, 0.45, 0.45, -0.2), lump(0.065, 0.06, 0.18, 0.12, c, 1.8, 0.55, 0.9, 0.55, 0.5, -0.45), lump(0.055, 0.13, 0.13, 0.13, c, 1.3, 0.6, 0.8, 0.3, 0.9, -0.85)]],
+  hr_pony: (c = 0xc8541e) => [[...scalp(c), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038), tor(0.028, 0.012, 0, -0.07, -0.214, 0x2a8ad8, 0, 0),
+    sph(0.05, 0, -0.1, -0.245, c, 1, 1.15, 1), sph(0.047, 0, -0.17, -0.268, c, 0.95, 1.2, 0.95), sph(0.043, 0, -0.24, -0.276, c, 0.9, 1.25, 0.9), sph(0.037, 0, -0.31, -0.272, c, 0.85, 1.3, 0.85), cone(0.03, 0.08, 0, -0.37, -0.266, c, Math.PI)],
+    [puff(c, 0.01, -0.004)]],
+  hr_spiky: (c = 0xf2c84a) => [[...scalp(c)], [puff(c, 0.008), ...spikesOn(c, [[0.05, 1, 0.17, 0.05, 0], [0.4, 5, 0.17, 0.05, 0], [0.75, 7, 0.15, 0.045, 0.5]])]],
+  hr_long: (c = 0x6a3418) => [[...scalp(c, 0.132, -0.1), ...fringeOf(c, 5, -0.1, 0.1, 0.122, 0.122, 0.04), ...hangOf(c, 0.222, 0.06, -0.05, 0.45, 0.3 * Math.PI),
+    part(new THREE.CylinderGeometry(0.21, 0.2, 0.3, 22, 1, true, 0.4 * Math.PI, 1.2 * Math.PI), M(0, -0.2, -0.02), c), lump(0.05, 0.19, -0.11, 0.07, c, 0.6, 2.2, 0.75), lump(0.05, -0.19, -0.11, 0.07, c, 0.6, 2.2, 0.75)],
+    [...crownOf(c, 0.228, 0.165, 0.0)]],
+  hr_bob: (c = 0x7a4ac8) => [[...scalp(c), ...fringeOf(c, 6, -0.12, 0.12, 0.118, 0.118, 0.04), ...hangOf(c, 0.236, 0.11, -0.05, 0.62, 0.3 * Math.PI)],
+    [...crownOf(c, 0.232, 0.16, 0.0)]],
+  hr_buns: (c = 0xff7ab8) => [[...scalp(c), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038)],
+    [puff(c, 0.008), sph(0.085, 0.135, 0.205, -0.03, c), sph(0.085, -0.135, 0.205, -0.03, c), radial(new THREE.TorusGeometry(0.062, 0.013, 7, 22).rotateX(Math.PI / 2), 0.593, 1.789, 0.205, 0xffe14a), radial(new THREE.TorusGeometry(0.062, 0.013, 7, 22).rotateX(Math.PI / 2), 0.593, -1.789, 0.205, 0xffe14a)]],
+  hr_curly: (c = 0x3a2414) => {
+    const low = [], top = [];
+    for (let i = 0; i < 9; i++) { const a = Math.PI * 0.55 + (i / 8) * Math.PI * 0.9; low.push(sph(0.046, Math.sin(a) * 0.205, -0.07, Math.cos(a) * 0.205, c)); }
+    for (const [th, n, off] of [[0, 1, 0], [0.42, 6, 0], [0.8, 9, 0.5], [1.15, 8, 0.25]]) for (let i = 0; i < n; i++) top.push(radial(new THREE.SphereGeometry(0.058, 10, 8), th, ((i + off) / n) * Math.PI * 2, 0.205, c));
+    return [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.216), ...fringeOf(c, 4, -0.09, 0.09, 0.124, 0.124, 0.042), ...low], top];
+  },
+  hr_braids: (c = 0xe8c060) => {
+    const out = [];
+    for (const s of [-1, 1]) {
+      for (let k = 0; k < 6; k++) out.push(sph(0.034, s * (0.1 + k * 0.006) + (k % 2 ? 0.008 : -0.008) * s, -0.085 - k * 0.052, -0.2 - k * 0.006, c, 1, 1.15, 1));
+      out.push(tor(0.024, 0.009, s * 0.136, -0.4, -0.236, 0x30c070, Math.PI / 2), cone(0.026, 0.07, s * 0.136, -0.445, -0.236, c, Math.PI));
+    }
+    return [[...scalp(c), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038), ...out], [puff(c, 0.01, -0.004)]];
+  },
+  hr_neon: (c = 0x0c3a48) => [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0x20c8e8, 0.6)], [puff(c, 0.008, 0, 0.14, 0.214, 0x20c8e8, 0.6), ...spikesOn(0x40f0ff, [[0.05, 1, 0.19, 0.05, 0], [0.4, 5, 0.19, 0.05, 0], [0.75, 7, 0.16, 0.045, 0.5]], 0x40f0ff, 2.2)]],
+};
+export const HAIR_TOP = {};
+for (const [id, make] of Object.entries(HAIRS)) { GEAR[id] = () => make()[0]; GEAR[id + '_top'] = () => make()[1]; HAIR_TOP[id] = id + '_top'; }
+// The owner's hair keeps its shell and long locks under a hat; the fringe, side locks and buns go.
+{ const make = GEAR.hairgg; GEAR.hairgg = () => make().filter((p, i) => i === 0 || i > 5); GEAR.hairgg_top = () => make().filter((p, i) => i > 0 && i < 6); HAIR_TOP.hairgg = 'hairgg_top'; }
+// What a hat does to hair: 'all' hides it (closed helmets, the hood), 'top' hides the top layer, and the few that sit
+// around or beside the hair leave it.
+const LEAVES = new Set(['band_red', 'band_blue', 'halo', 'devil', 'antenna', 'catears', 'bunny', 'antlers', 'bolt', 'sunrays', 'phones', 'none']);
+export const coverOf = (id) => (id === 'knight' || id === 'astro' || id === 'hood' ? 'all' : LEAVES.has(id) || !id ? null : 'top');
+
 export const GEAR_AT = { hemgg: 'hips' };
 export const GEAR_ANIM = {};
 

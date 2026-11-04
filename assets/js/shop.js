@@ -1,7 +1,7 @@
 // The shop (and wardrobe) and the records screen. A real climber stands in the world on the left, wearing what you
 // tap, while the cards are on the right.
-import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
-import { gearTris, gunInfo, GEAR_AT, GEAR_TALL } from './gear.js';
+import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, HAIRS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
+import { gearTris, gunInfo, GEAR_AT, GEAR_TALL, HAIR_TOP } from './gear.js';
 import { coins, owned, unlocked, equip, worn, myLook, relicCounts, runsOf, totals } from './profile.js';
 import { whereOf } from './relics.js';
 import { buyItem } from './cloud.js';
@@ -104,14 +104,15 @@ function thumbFor(item) {
     drawFaceOn(g, face, light, X, Y, s);
     for (const id of [...(item.gear || []).filter((id) => !behind.includes(id)), ...(item.hat ? [item.hat] : [])]) drawHat(g, id, X, Y, s);
   } else {
-    // A face or hat on a big plain head.
-    const s = H / 0.78, X = W / 2, Y = (fy) => H * (item.kind === 'hat' ? 0.72 : 0.5) - (fy - 1.02) * s;
+    // A face, hat or hair on a big plain head.
+    const s = H / 0.78, X = W / 2, Y = (fy) => H * (item.kind === 'face' ? 0.5 : 0.72) - (fy - 1.02) * s;
     const gr = g.createRadialGradient(X - 8, Y(1.08), 6, X, Y(1.02), 0.2 * s);
     gr.addColorStop(0, '#9af4e2'); gr.addColorStop(1, '#3fcdb4');
     g.fillStyle = gr;
     g.beginPath(); g.arc(X, Y(1.02), 0.2 * s, 0, 7); g.fill();
     drawFaceOn(g, item.kind === 'face' ? item : FACES[0], false, X, Y, s);
     if (item.kind === 'hat' && item.id !== 'none') drawHat(g, item.id, X, Y, s);
+    if (item.kind === 'hair' && HAIR_TOP[item.id]) { const tris = [...gearTris(item.id), ...gearTris(HAIR_TOP[item.id])].sort((a, b) => a[6] - b[6]); drawTris(g, tris, X, Y, s, 1.02, 1); }
   }
   const u = c.toDataURL('image/png');
   THUMBS.set(key, u);
@@ -119,7 +120,7 @@ function thumbFor(item) {
 }
 
 // ---------------------------------------------------------------- the shop
-const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['emotes', 'Emotes'], ['weapons', 'Weapons'], ['legend', 'Legendary']];
+const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['hair', 'Hair'], ['emotes', 'Emotes'], ['weapons', 'Weapons'], ['legend', 'Legendary']];
 const HOLD_NAME = { pistol: 'Sidearm', smg: 'Submachine gun', shotgun: 'Shotgun', rifle: 'Rifle', sniper: 'Sniper rifle', heavy: 'Machine gun', launcher: 'Launcher' };
 // Bars that compare weapons at a glance.
 // Where something that isn't open yet is found.
@@ -148,6 +149,7 @@ const listFor = (tab) => {
   // What's hidden from the shop still shows for someone who was given it.
   if (tab === 'faces') return FACES.filter((f) => !f.hidden || owned(f));
   if (tab === 'hats') return HATS.filter((f) => !f.hidden || owned(f));
+  if (tab === 'hair') return HAIRS;
   if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
   if (tab === 'weapons') return WEAPONS;
   if (tab === 'legend') return [...OWNERS.filter((o) => owned(o)), ...LEGENDS];
@@ -158,7 +160,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   const { app, show, esc, ui, lookChanged } = ctx;
   let tab = startTab, sel = null, gridScroll = 0, drawTok = 0;
 
-  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : item.kind === 'weapon' ? { ...look, w: item.id } : { ...look, h: item.id });
+  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : item.kind === 'weapon' ? { ...look, w: item.id } : item.kind === 'hair' ? { ...look, r: item.id } : { ...look, h: item.id });
   const preview = () => {
     app.preview = { look: sel ? sameSlot(sel, myLook()) : myLook(), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null, aim: !!sel && sel.kind === 'weapon' };
   };

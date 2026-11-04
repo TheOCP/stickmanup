@@ -1005,8 +1005,8 @@ export class WorldView {
     ]);
     const mm = panelMat(0x8a3ab0, { roughness: 0.5, metalness: 0.05, pattern: 0, emissive: 0x2a0a3a, emissiveIntensity: 1 });
     for (const m of L.monsters) {
-      // In the maze gardens, each map's own creature (mazeview.js).
-      const beast = m.mz !== undefined && MAZE_BEAST[this.key];
+      // Each map's own creature (mazeview.js), in the maze gardens and on the ledges; the forest keeps its monsters outside.
+      const beast = (m.mz !== undefined || this.key !== 'forest') && MAZE_BEAST[this.key];
       const o = this.add(beast ? new THREE.Mesh(modelGeo(beast), vegMat()) : new THREE.Mesh(mg, mm));
       this.anim.push(o);
       this.monsters.push({ m, o, p: {}, beast: !!beast });

@@ -1,6 +1,6 @@
 // What this phone remembers about you: coins, what you own and wear, relics found and the record of your climbs.
 import { store } from './util.js';
-import { SUIT, FACE, HAT, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
+import { SUIT, FACE, HAT, HAIR, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
 import { WEAPON, FREE_WEAPON, WEAPONS } from './weapons.js';
 import { needOf, SUIT_RELICS, MAZE_RELIC_IDS, WEAPON_RELICS, VOID_WEAPON, opensOf, MAP_KEYS } from './relics.js';
 import { DIFFS } from './level.js';
@@ -88,6 +88,7 @@ export function setWallet(w, extra = 0) {
     if (!mine(SUIT[P.eq.s])) P.eq.s = FREE_SUIT;
     if (!mine(FACE[P.eq.f])) P.eq.f = 'smile';
     if (!mine(HAT[P.eq.h])) P.eq.h = 'none';
+    if (!mine(HAIR[P.eq.r])) P.eq.r = 'none';
   }
   saveNow();
 }
@@ -135,7 +136,7 @@ export function buy(item) {
   return true;
 }
 
-const SLOT = { suit: 's', face: 'f', hat: 'h', weapon: 'w' };
+const SLOT = { suit: 's', face: 'f', hat: 'h', hair: 'r', weapon: 'w' };
 export function equip(item) { P.eq[SLOT[item.kind]] = item.id; P.eqT = Math.max(Date.now(), count(P.eqT) + 1); saveNow(); }
 export const worn = (item) => (item.kind === 'weapon' ? myLook().w === item.id : P.eq[SLOT[item.kind]] === item.id);
 
@@ -144,7 +145,7 @@ export function myLook() {
   const e = P.eq || { s: FREE_SUIT, f: 'smile', h: 'none', w: FREE_WEAPON }, s = SUIT[e.s], gun = WEAPON[e.w];
   const suit = s && (!s.team || owned(s)) ? e.s : FREE_SUIT;
   // A weapon an admin took away again goes back in the box.
-  return { s: suit, f: FACE[e.f] ? e.f : 'smile', h: HAT[e.h] ? e.h : 'none', w: gun && owned(gun) ? e.w : FREE_WEAPON };
+  return { s: suit, f: FACE[e.f] ? e.f : 'smile', h: HAT[e.h] ? e.h : 'none', r: HAIR[e.r] ? e.r : 'none', w: gun && owned(gun) ? e.w : FREE_WEAPON };
 }
 
 

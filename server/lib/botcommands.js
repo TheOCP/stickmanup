@@ -53,7 +53,7 @@ const COMMANDS = [
   cmd('giveitem', 'Give an item to a player', PLAYER, ITEM, REASON(false)),
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
   cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 },
-    { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }] }, PAGE),
+    { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'hair', value: 'hair' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }] }, PAGE),
   cmd('giverelic', 'Give a player a relic, so what it opens can be bought', PLAYER, RELIC, REASON(false)),
   cmd('takerelic', 'Take a relic from a player', PLAYER, RELIC, REASON(false)),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),

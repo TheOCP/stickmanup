@@ -2,8 +2,19 @@
 import { hash, TAU } from './util.js';
 import { DIFFS } from './level.js';
 
-const GUST_SLOT = 18, GUST_LEN = 2.4, GUST_WARN = 1.6;
+const GUST_SLOT = 18, GUST_WARN = 1.6;
 const GUST_STR = { 4: 18, 5: 22, 6: 24 };
+// Each map's own trouble high up, in the zones where the storm's gusts blow (GUST_STR), on the same clock: the storm keeps
+// its gusts, a wave runs round the waterfall, the city locks lasers on you, the pirate ship off the islands fires its
+// cannons, the volcano quakes and the forest's bees come after you. None of it inside a maze garden (game.js).
+export const EVENT_OF = { storm: 'gust', waterfall: 'wave', city: 'laser', sunny: 'cannon', volcano: 'quake', forest: 'bees' };
+const EV_LEN = { gust: 2.4, wave: 4.0, laser: 4.3, cannon: 4.6, quake: 2.6, bees: 7.0 };
+// Lasers: four shots, each aimed where you are when its mark appears. Cannons: two volleys of three balls, one on you and
+// two beside. Quakes: three shocks, and only feet on the ground feel them.
+export const LASER_N = 4, LASER_GAP = 1.0, LASER_WARN = 0.9, LASER_R = 1.5;
+export const CANNON_V = 2, CANNON_N = 3, CANNON_GAP = 2.1, CANNON_WARN = 1.5, CANNON_R = 1.6, CANNON_OFF = 2.5;
+export const QUAKE_AT = [0.5, 1.3, 2.1];
+export const WAVE_BAND = 0.5, WAVE_H = 0.9, BEE_SPEED = 4.4, BEE_R = 0.9;
 
 function inBox(c, x, y, z) {
   const m = c.m, dx = x - c.x, dy = y - c.y, dz = z - c.z;
@@ -194,18 +205,48 @@ export class Storm {
     return this.on(f) && ((((t * this.hs * (f.sp || 1)) / f.per + f.ph) % 1) + 1) % 1 < 0.5;
   }
 
-  // Gust state for a zone at time t: { warn 0..1, on, sign, radial, str }.
-  gust(t, zone) {
-    const s = GUST_STR[zone];
-    if (!s) return null;
-    const k = Math.floor(t / GUST_SLOT), start = k * GUST_SLOT + 4 + hash(k) * 8, dt = t - start;
+  // The map's event in a zone at time t: { kind, k (which one), start, u (seconds since it started), len, warn 0..1 (the
+  // last moments before it), on, sign, radial, str, a0 }, or null where there is none.
+  event(t, zone) {
+    const kind = EVENT_OF[this.L.mapKey], s = GUST_STR[zone];
+    if (!kind || !s) return null;
+    const k = Math.floor(t / GUST_SLOT), start = k * GUST_SLOT + 4 + hash(k) * 8, u = t - start, len = EV_LEN[kind];
     return {
-      warn: dt < 0 && dt > -GUST_WARN ? 1 + dt / GUST_WARN : 0,
-      on: dt >= 0 && dt < GUST_LEN,
+      kind, k, start, u, len,
+      warn: u < 0 && u > -GUST_WARN ? 1 + u / GUST_WARN : 0,
+      on: u >= 0 && u < len,
       sign: hash(k + 1000) < 0.5 ? -1 : 1,
       radial: hash(k + 2000) < 0.35,
       str: s * this.k,
+      a0: hash(k + 3000) * TAU,
     };
+  }
+
+  // Gust state for a zone at time t (the storm only): { warn 0..1, on, sign, radial, str }.
+  gust(t, zone) {
+    const e = this.event(t, zone);
+    return e && e.kind === 'gust' ? e : null;
+  }
+
+  // The wave's front: the angle round the falls it has reached, and whether (x, z) is in the water just behind it.
+  waveFront(e) { return e.a0 + e.sign * TAU * (e.u / e.len); }
+  inWave(e, x, z) {
+    if (!e || e.kind !== 'wave' || !e.on) return false;
+    const d = ((((this.waveFront(e) - Math.atan2(z, x)) * e.sign) % TAU) + TAU) % TAU;
+    return d < WAVE_BAND;
+  }
+
+  // The aimed shots of a laser or cannon event: [{ id, mark (when its mark appears), at (when it lands), dx, dz (how far
+  // from the aim it lands) }].
+  shots(e) {
+    const out = [];
+    if (!e) return out;
+    if (e.kind === 'laser') for (let i = 0; i < LASER_N; i++) out.push({ id: i, mark: e.start + i * LASER_GAP, at: e.start + i * LASER_GAP + LASER_WARN, dx: 0, dz: 0 });
+    if (e.kind === 'cannon') for (let v = 0; v < CANNON_V; v++) for (let b = 0; b < CANNON_N; b++) {
+      const a = hash(e.k * 7 + v * 3 + b + 4000) * TAU, d = b ? CANNON_OFF : 0;
+      out.push({ id: v * CANNON_N + b, mark: e.start + v * CANNON_GAP, at: e.start + v * CANNON_GAP + CANNON_WARN, dx: Math.cos(a) * d, dz: Math.sin(a) * d });
+    }
+    return out;
   }
 
   // Wind acceleration at a robot's position.
@@ -223,4 +264,36 @@ export class Storm {
     }
     return out;
   }
+}
+
+// Puts down the marks of an event's aimed shots where a climber (x, z, feet at y) is when each mark appears, but not inside
+// a maze garden (calm), and forgets old ones. marks: key -> { key, kind, x, y, z, mark, at, struck }. Says whether a mark
+// went down right on them.
+export function markShots(S, marks, ev, x, y, z, t, calm) {
+  let mine = false;
+  if (ev && (ev.kind === 'laser' || ev.kind === 'cannon')) {
+    for (const sh of S.shots(ev)) {
+      const key = ev.k * 100 + sh.id;
+      if (marks.has(key) || calm || t < sh.mark || t >= sh.at) continue;
+      marks.set(key, { key, kind: ev.kind, x: x + sh.dx, y, z: z + sh.dz, mark: sh.mark, at: sh.at, struck: false });
+      if (!sh.dx && !sh.dz) mine = true;
+    }
+  }
+  for (const [key, m] of marks) if (t > m.at + 2 || t < m.mark - 1) marks.delete(key);
+  return mine;
+}
+
+// The swarm after a climber at (x, y, z): it comes out of the trees beside them when the event starts, flies after them a
+// little slower than they run, and gives up when the event is over or they get into a maze garden (calm).
+export function beeStep(B, ev, x, y, z, dt, calm) {
+  if (!ev || ev.kind !== 'bees') return B && B.gone ? B : null;
+  if ((!B || B.k !== ev.k) && ev.on && !calm) {
+    const a = hash(ev.k * 5 + 6000) * TAU;
+    B = { k: ev.k, x: x + Math.cos(a) * 7, y: y + 1.2, z: z + Math.sin(a) * 7, gone: false };
+  }
+  if (!B || B.k !== ev.k || B.gone) return B;
+  if (!ev.on || calm) { B.gone = true; return B; }
+  const dx = x - B.x, dy = y + 0.3 - B.y, dz = z - B.z, d = Math.hypot(dx, dy, dz) || 1, m = Math.min(d, BEE_SPEED * dt);
+  B.x += (dx / d) * m; B.y += (dy / d) * m; B.z += (dz / d) * m;
+  return B;
 }

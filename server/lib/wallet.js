@@ -269,7 +269,7 @@ class Wallet {
     // The team suits go with a flag from the bot.
     if (typeof look.s === 'string' && Object.hasOwn(catalog.team, look.s) && !catalog.team[look.s].includes(role)) return false;
     const key = (kind, x) => (Object.hasOwn(catalog.items, `${kind}:${x}`) ? `${kind}:${x}` : x);
-    const keys = [look.s, look.f && key('face', look.f), look.h && key('hat', look.h), look.w].filter((k) => typeof k === 'string');
+    const keys = [look.s, look.f && key('face', look.f), look.h && key('hat', look.h), look.r, look.w].filter((k) => typeof k === 'string');
     const w = this.load(id);
     return keys.every((k) => !Object.hasOwn(catalog.items, k) || w.own.includes(k));
   }

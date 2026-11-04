@@ -86,8 +86,9 @@ async ([map, diff, secs, cheat, o]) => {
   const t0 = performance.now();
   for (let f = 0; f < frames; f++) {
     if (o.script) {
-      inp.mx = inp.mz = 0; inp.jump = inp.jumpPressed = inp.grab = inp.reel = inp.dash = inp.act = inp.shield = inp.fire = false;
-      const shot = (kind, i) => { g.aimHit = () => ({ t: 1, x: g.me.x, y: g.me.y, z: g.me.z, kind, i }); inp.fire = true; };
+      inp.mx = inp.mz = 0; inp.jump = inp.jumpPressed = inp.grab = inp.reel = inp.dash = inp.act = inp.shield = inp.fire = inp.aim = false;
+      // A shot only leaves while aiming (and once the aim has settled), so aim first.
+      const shot = (kind, i) => { g.aimHit = () => ({ t: 1, x: g.me.x, y: g.me.y, z: g.me.z, kind, i }); g.aiming = true; g.aimT = 9; inp.aim = true; inp.fire = true; };
       if (o.script === 'grapple' && f === 20) { g.action = g.findAction(g.simT); inp.act = !!g.action; }
       if (o.script === 'door' && f === 20) shot('door', o.door);
       if (o.script === 'stun' && f === 20) shot('monster', 0);
@@ -217,7 +218,8 @@ with sync_playwright() as p:
         ('A relic that was never reached', 'relic', ('coins',)),
     ]:
         fresh()
-        caught(name, cheat, kinds)
+        # The forged door is the one furthest away: on a map with doors high up (the storm's only door is by the start).
+        caught(name, cheat, kinds, map_=3 if cheat == 'door' else 0)
     fresh()
     caught('One forged coin at a time', 'coin1', ('coins',), secs=70)
 

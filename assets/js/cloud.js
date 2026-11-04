@@ -274,8 +274,10 @@ export function mergeData(a, b) {
   for (const src of [b.best, a.best]) {
     for (const [k, t] of Object.entries(src && typeof src === 'object' ? src : {})) if (Number.isFinite(t) && t > 0 && (!best[k] || t < best[k])) best[k] = t;
   }
-  a = Object.assign({}, a, { solo: cleanSolo(a.solo) });
-  b = Object.assign({}, b, { solo: cleanSolo(b.solo) });
+  // A climb from before the team reset this checkpoint can't come back from another phone.
+  const gone = acct ? store.get('cpReset.' + acct.user.id, 0) : 0, keep = (s) => (s && gone && !(s.run && s.run.when > gone) ? null : s);
+  a = Object.assign({}, a, { solo: keep(cleanSolo(a.solo)) });
+  b = Object.assign({}, b, { solo: keep(cleanSolo(b.solo)) });
   const h = (s) => (s && s.pos ? s.pos[1] : -1);
   return { v: 1, profile: mergeRecords(a.profile || {}, b.profile || {}), best, solo: h(a.solo) >= h(b.solo) ? a.solo || null : b.solo || null };
 }
@@ -631,12 +633,27 @@ export const friendSearch = (q) => friendCall('/api/friends/search', { q });
 export const friendAct = (act, num) => friendCall('/api/friends/act', { act, num });
 export const friendWatch = (allow) => friendCall('/api/friends/watch', { allow });
 
+// The team reset this player's checkpoint (the resetcheckpoint command). Heard over the live socket or in the half minute
+// check, and acted on once on each phone: the saved climbs started before it go, and a climb going on goes back to the start.
+export function checkpointReset(at) {
+  if (!account() || !Number.isFinite(at) || at <= 0) return;
+  const key = 'cpReset.' + acct.user.id;
+  if (at <= store.get(key, 0)) return;
+  store.set(key, at);
+  for (const k of ['save.solo', 'save.mp']) {
+    const s = store.get(k, null);
+    if (s && !(s.run && s.run.when > at)) store.del(k);
+  }
+  emit('cpReset', at);
+}
+
 export async function checkStanding() {
   if (!serverUrl()) return;
   const c = probe ? probe() : null;
   const r = await call('/api/standing', { auth: !!account(), body: { device: deviceId(), climb: c || undefined }, timeout: 8000 });
   if (r.status !== 200) return;
   setBan(r.json.ban || null);
+  checkpointReset(r.json.cpReset);
   const list = Array.isArray(r.json.inbox) ? r.json.inbox.filter((m) => m && Number.isInteger(m.id) && typeof m.text === 'string') : [];
   if (!list.length) return;
   emit('inbox', list);

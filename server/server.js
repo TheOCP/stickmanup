@@ -298,7 +298,7 @@ async function route(req, res) {
     }
     const off = admin.banFor(user ? user.id : null, ip, device) || (user && user.device ? admin.banRow('device', user.device) : null);
     if (off) return json(res, 200, { ban: admin.showBan(off, user) });
-    return json(res, 200, { ban: null, inbox: user ? admin.inbox(user.id) : [] });
+    return json(res, 200, { ban: null, inbox: user ? admin.inbox(user.id) : [], cpReset: user ? user.cp_reset : 0 });
   }
 
   // Everything below needs an account.

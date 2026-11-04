@@ -1052,6 +1052,12 @@ cloud.on('inbox', (list) => {
   for (const m of list) inboxWaiting.push(m.text);
   nextInbox();
 });
+cloud.on('cpReset', (at) => {
+  const g = app.game;
+  // A climb started after the reset has nothing to do with it.
+  if (g && !(g.run.when > at)) g.resetCheckpoint();
+  if (app.screen === 'title') title();
+});
 cloud.on('dayLimit', () => ui.toast('Daily coin limit reached. More tomorrow!', 'bad'));
 cloud.on('terms', () => { if (app.screen === 'title') accountScreen(title); });
 let roleSeen = myRole();
@@ -1678,6 +1684,7 @@ function startLive() {
   });
   // Refused by the server: its own answer says why, and whether that means being banned.
   live.on('off', () => cloud.checkStanding());
+  live.on('cpreset', (m) => cloud.checkpointReset(m.at));
   let watchedBy = new Set();
   live.on('watchers', (m) => {
     const names = Array.isArray(m.names) ? m.names.map((x) => String(x).slice(0, 20)) : [], el = $('#hWatch');

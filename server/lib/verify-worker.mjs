@@ -80,7 +80,7 @@ function makeGame(run, head) {
     map: run.map, diff: run.diff, rules: run.rules, t0: 0, base: head.t, cp: head.cp | 0, falls: head.falls | 0, mz: head.mz | 0,
     doors: Array.isArray(head.doors) ? head.doors : [], stuns: Array.isArray(head.stuns) ? head.stuns : [],
     pos: Array.isArray(head.pos) && head.pos.every(Number.isFinite) ? { [s.slot]: head.pos } : null,
-    noCord: !!head.noCord, pcp: head.pcp || {},
+    noCord: !!head.noCord, pcp: head.pcp || {}, loose: Array.isArray(head.loose) ? head.loose : [],
   };
   const game = new Game(app, s, g);
   game.simT = head.t;
@@ -257,6 +257,8 @@ function act(live, a, snaps, quiet) {
     }
     case 'h': me.hop(); break;
     case 'r': if (solo) g.hostEvent({ k: 'restart' }, 0); break;
+    // The team reset this checkpoint: back to the start. Nothing to gain from it, so it needs no checking.
+    case 'x': if (solo) g.hostEvent({ k: 'resetcp' }, 0); break;
     case 't': {
       const t = a[2];
       if (!Number.isFinite(t)) return bad(live, 'bad', 20, 'The climb recording has an impossible time in it.');
@@ -331,8 +333,10 @@ function event(live, e) {
     case 'respawn': {
       const at = e.at ?? e.cp;
       if (!Number.isInteger(at) || !L.cps[at]) return bad(live, 'respawn', 30, 'Sent back to a checkpoint that does not exist.');
-      if (at > live.maxCp) return bad(live, 'respawn', 40, `Sent back to checkpoint ${at}, but only ${live.maxCp} has been reached.`);
-      if (e.only === null || e.only === undefined || e.only === g.slot) {
+      // Only what happens to this climber counts: someone else on their own checkpoint, or a team going back while this
+      // one is still catching up, moves nothing here.
+      if (e.only === g.slot || ((e.only === null || e.only === undefined) && !g.loose.has(g.slot))) {
+        if (at > live.maxCp) return bad(live, 'respawn', 40, `Sent back to checkpoint ${at}, but only ${live.maxCp} has been reached.`);
         const want = g.spawnPos(at, g.slot), p = e.pos && e.pos[g.slot];
         if (p && Math.hypot(p[0] - want[0], p[1] - want[1], p[2] - want[2]) > 0.5) return bad(live, 'respawn', 60, 'Respawned somewhere other than the checkpoint: a teleport.');
       }
@@ -342,7 +346,7 @@ function event(live, e) {
     case 'cp': {
       const c = Number.isInteger(e.i) && L.cps[e.i];
       if (!c) return bad(live, 'respawn', 30, 'Reached a checkpoint that does not exist.');
-      if (e.slot === undefined || e.slot === g.slot) {
+      if (e.slot === g.slot || (e.slot === undefined && !g.loose.has(g.slot))) {
         if (!nearCp(live, c)) return bad(live, 'respawn', 50, `Reached a checkpoint from ${m1(Math.hypot(me.x - c.x, me.y - c.y, me.z - c.z))} m away.`);
         if (e.i > live.maxCp) live.maxCp = e.i;
       }
@@ -362,6 +366,8 @@ function event(live, e) {
       // The summit counts for the team, but someone has to be near it. Here that is checked on this climber, or the partner on the cord.
       const l = live.lastPartner;
       const close = (b) => Math.hypot(b.x, b.z) < L.summit.r + g.rope * 3 && b.y > L.top - g.rope * 4;
+      // Without the cord, or still catching up, someone else got there. The climb ends, and game.js finish pays this one nothing.
+      if (!close(me) && (g.noCord || g.loose.has(g.slot))) { g.onEvent(e); break; }
       if (!close(me) && !(l && close(l))) return bad(live, 'win', 60, `Claimed the top from ${m1(L.top - me.y)} m below it.`);
       g.onEvent(e);
       break;
@@ -379,6 +385,13 @@ function event(live, e) {
     case 'crumble': case 'door': case 'stun':
       g.onEvent(e);
       break;
+    case 'loose': {
+      // Caught up with the team: their checkpoint counts as reached too, if this climber is anywhere near that high.
+      const was = g.loose.has(g.slot);
+      g.onEvent(e);
+      if (was && !g.loose.has(g.slot) && Number.isInteger(e.cp) && L.cps[e.cp] && L.cps[e.cp].y < me.y + g.rope * 3 + 45) live.maxCp = Math.max(live.maxCp, e.cp);
+      break;
+    }
   }
   return undefined;
 }
@@ -442,7 +455,7 @@ function freshGame(run, chunk) {
     if (from) return makeGame(run, { mode: 'solo', slot: 0, t: from.t, cp: from.cp, falls: from.falls, mz: from.mz, doors: from.doors, pos: from.pos, coins: from.coins, stuns: [], foundRelics: from.foundRelics, saves: from.seq });
     return makeGame(run, { mode: 'solo', slot: 0, t: 0, cp: 0, falls: 0, doors: [], pos: null, coins: [], stuns: [], saves: 0 });
   }
-  return makeGame(run, { mode: head.mode, slot: head.slot, roster: head.roster, t: Number.isFinite(head.t) ? head.t : 0, cp: head.cp, falls: head.falls, mz: head.mz, doors: head.doors, pos: head.pos, coins: head.coins, stuns: head.stuns, noCord: head.noCord, pcp: head.pcp, saves: 0 });
+  return makeGame(run, { mode: head.mode, slot: head.slot, roster: head.roster, t: Number.isFinite(head.t) ? head.t : 0, cp: head.cp, falls: head.falls, mz: head.mz, doors: head.doors, pos: head.pos, coins: head.coins, stuns: head.stuns, noCord: head.noCord, pcp: head.pcp, loose: head.loose, saves: 0 });
 }
 
 function handle(m) {

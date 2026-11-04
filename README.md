@@ -272,7 +272,9 @@ your shots throw your friends off the climb, and theirs throw you.
   WebRTC; the free [PeerJS](https://peerjs.com) server only introduces them. Some networks (often mobile data)
   don't allow that direct connection, so use the game server then.
 
-Friends can join a climb that is already running.
+Friends can join a climb that is already running. They start at the start of the map, not next to the host. Without the
+cord they climb on their own; on a tied team the cord ties on when they reach the others, and until then a fall only sends
+them back to their own checkpoint.
 
 ## Friends
 

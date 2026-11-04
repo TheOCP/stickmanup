@@ -82,6 +82,7 @@ function heardFrom(text) {
     case 'count': emit('count', m); break;
     case 'req': emit('req', m); break;
     case 'friend': emit('friend', m); break;
+    case 'cpreset': emit('cpreset', m); break;
     // Another phone is playing on this account: it keeps the socket, until this one is opened again.
     case 'replaced': replaced = true; break;
     // Banned, or the server is closed for now. The game finds out why from the server's own answer.

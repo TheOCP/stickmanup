@@ -71,6 +71,7 @@ const COMMANDS = [
   cmd('bans', 'Everyone who is banned, and why', PAGE),
   cmd('baninfo', 'Whether a player is banned, and their history', PLAYER),
   cmd('kick', 'Throw a player out of the room they are in', PLAYER, REASON(false)),
+  cmd('resetcheckpoint', 'Send a player back to the start of the map and forget their saved climb', PLAYER, REASON(false)),
   cmd('tell', 'Send a player a message in the game', PLAYER, { type: 3, name: 'text', description: 'The message', required: true, max_length: 300 }),
   // Anticheat
   cmd('flags', 'What was flagged lately, or for one player', { ...PLAYER, required: false }, COUNT),
@@ -114,7 +115,7 @@ const COMMANDS = [
 
 // Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
 const GROUPS = {
-  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell'],
+  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint'],
   coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'giverelic', 'takerelic', 'dailycap'],
   climbs: ['climbs', 'climb'],
   bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
@@ -786,6 +787,14 @@ const RUN = {
     const text = opt(d, 'text');
     ctx.s.admin.tell(u.id, `Message from ${ctx.game ? ctx.whoShort : 'the team'}: ${text}`);
     return done(ctx, 'tell', `${playerLine(u)}: ${text}`, `Sent to ${line(u)}. It shows in their game within about 30 seconds, or the next time they open it.`);
+  },
+  resetcheckpoint(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const said = opt(d, 'reason'), at = ctx.s.db.resetCheckpoint(u.id);
+    if (ctx.s.friends) ctx.s.friends.tell(u.id, { t: 'cpreset', at });
+    tell(ctx, u, 'The team reset your checkpoint: your climb starts again from the start of the map.', said);
+    return done(ctx, 'resetcheckpoint', `${playerLine(u)}: ${said || 'no reason given'}`, `Reset the checkpoint of ${line(u)}. If they are climbing they go back to the start of the map right away, or within about 30 seconds. If not, their saved climb is gone the next time they open the game. In a room with the cord they climb on their own until they reach the team again; if they are the host, the whole team goes back.${withWhy(said)}`);
   },
   giverelic(ctx, d) {
     const u = target(ctx, d);

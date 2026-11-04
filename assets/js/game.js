@@ -13,6 +13,8 @@ import { resolveLook, plainLook } from './skins.js';
 import { WEAPON, weaponOf } from './weapons.js';
 import { myLook } from './profile.js';
 
+// Near enough to count as having got to the top. The rerun (server/lib/verify-worker.mjs, case 'win') asks the same.
+const nearTop = (b, L, rope) => Math.hypot(b.x, b.z) < L.summit.r + rope * 3 && b.y > L.top - rope * 4;
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
@@ -57,10 +59,12 @@ export class Game {
     this.falls = Math.max(0, Math.floor(+g.falls) || 0);
     this.slot = session.slot;
     this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
+    // Who joined a tied team after the start and has not reached the others yet: not on the cord (see catchUp).
+    this.loose = new Set(Array.isArray(g.loose) ? g.loose.filter(Number.isInteger) : []);
     // Checkpoints: tied together, the team shares one. Without the cord everyone has their own; the host
-    // keeps track of them all by slot (pcp).
+    // keeps track of them all by slot (pcp), and of whoever is still catching up with a tied team.
+    this.pcp = Object.assign({}, g.pcp);
     if (this.noCord) {
-      this.pcp = Object.assign({}, g.pcp);
       if (this.pcp[this.slot] !== undefined) this.cp = this.pcp[this.slot];
       this.pcp[this.slot] = this.cp;
     }
@@ -145,12 +149,13 @@ export class Game {
     session.on('hostEvent', (e, from) => this.hostEvent(e, from));
     const lobbyRoster = session.h.roster;
     session.on('roster', (slot, joined) => {
+      if (!joined && session.isHost && this.loose.has(slot)) this.setLoose([...this.loose].filter((s) => s !== slot));
       this.syncRoster();
       if (lobbyRoster) lobbyRoster(slot, joined);
     });
     session.on('S', (m) => {
       if (m.f !== undefined) this.falls = m.f;
-      if (m.cp !== undefined && m.cp !== this.cp) { if (this.rec) this.rec.act('m', m.cp); this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
+      if (m.cp !== undefined && m.cp !== this.cp && !this.loose.has(this.slot)) { if (this.rec) this.rec.act('m', m.cp); this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
       if (m.mz !== undefined && m.mz !== this.mz) this.onEvent({ k: 'maze', v: m.mz });
       if (m.jp) this.jumpNet(m.jp);
     });
@@ -162,7 +167,8 @@ export class Game {
     this.syncRoster();
     app.view.setCheckpoints(this.cpl, this.cp);
     // From here on the climb is written down, starting with everything it started from.
-    this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t: this.simT, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
+    this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t: this.simT, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
+    if (this.loose.has(this.slot)) app.ui.toast('You start at the bottom. The cord ties on when you reach your team.', '');
   }
 
   get time() {
@@ -187,12 +193,39 @@ export class Game {
   }
 
   snapshot(slot) {
-    const m = this.me, stuns = [];
+    const stuns = [];
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
-    // A player joining a game without the cord starts with the host's checkpoint (they appear next to the host).
-    if (this.noCord && this.pcp[slot] === undefined) this.pcp[slot] = this.cp;
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, t0: this.t0, base: this.base, cp: this.noCord ? this.pcp[slot] : this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns,
-      pos: { [slot]: [m.x + 0.6, m.y + 1.2, m.z] } };
+    // Whoever joins starts at the start of the map, not next to the host. Without the cord they have their own checkpoints
+    // anyway. On a tied team they climb on their own until they reach the others (catchUp): a cord that long would drag
+    // them all over the map.
+    this.pcp[slot] = 0;
+    if (!this.noCord) this.setLoose([...this.loose, slot]);
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: 0, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns };
+  }
+
+  // The host says who isn't on the cord yet. The cord only goes between the others.
+  setLoose(list) {
+    this.s.toAll({ k: 'loose', s: [...new Set(list)], cp: this.cp });
+  }
+
+  // Someone catching up is tied on as soon as they reach anyone on the team, while the cord between them is still slack, so
+  // nobody gets yanked.
+  catchUp() {
+    const a = this.tmpL || (this.tmpL = {}), b = this.tmpM || (this.tmpM = {}), left = new Set(this.loose), reach = this.rope - 1.5;
+    const slots = [...this.s.players.keys()].sort((x, y) => x - y);
+    for (const s of this.loose) {
+      if (!this.latest(s, a)) continue;
+      // The cord goes between neighbours by slot, so those are the ones to be close to.
+      const tied = slots.filter((o) => !left.has(o)), hi = tied.findIndex((o) => o > s), lo = hi < 0 ? tied.length - 1 : hi - 1;
+      const near = (o) => { const q = o === this.slot ? this.me : this.latest(o, b); return !!q && Math.hypot(q.x - a.x, q.y - a.y, q.z - a.z) < reach; };
+      if ((lo >= 0 || hi >= 0) && (lo < 0 || near(tied[lo])) && (hi < 0 || near(tied[hi]))) left.delete(s);
+    }
+    if (left.size !== this.loose.size) this.setLoose([...left]);
+  }
+
+  // The team reset this climber's checkpoint (the resetcheckpoint command, main.js).
+  resetCheckpoint() {
+    if (!this.won) this.s.toHost({ k: 'resetcp' });
   }
 
   // A player's chosen colour (their slot colour if they haven't picked one).
@@ -223,8 +256,9 @@ export class Game {
     for (const [s, r] of this.robots) if (!this.s.players.has(s)) { r.hide(); this.robots.delete(s); }
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.links = [];
-    for (let i = 0; i + 1 < slots.length && !this.noCord; i++) {
-      const a = slots[i], b = slots[i + 1], mesh = pool.ropes[i];
+    const tied = slots.filter((s) => !this.loose.has(s));
+    for (let i = 0; i + 1 < tied.length && !this.noCord; i++) {
+      const a = tied[i], b = tied[i + 1], mesh = pool.ropes[i];
       mesh.setColors(this.colorOf(a), this.colorOf(b));
       this.links.push({ a, b, chain: new Chain(12), mesh, ten: 0, L: this.rope });
     }
@@ -277,6 +311,7 @@ export class Game {
         this.others.push(o);
       }
     }
+    if (this.loose.size && this.s.isHost && !(T < this.catchT)) { this.catchT = T + 0.25; this.catchUp(); }
 
     // Abilities are taps, handled once per frame. A shot only ever leaves while aiming: hold SHOOT and let go, or hold the aim
     // button and pull the trigger. Automatic weapons keep firing for as long as it is held.
@@ -1073,26 +1108,44 @@ export class Game {
     switch (e.k) {
       case 'splash':
       case 'restart': {
-        // Tied together by the cord, the whole team goes back. Without the cord, only the one who fell
+        // Tied together by the cord, the whole team goes back. Without the cord, or not on it yet, only the one who fell
         // (or asked to restart) does; everyone else keeps climbing.
-        const one = this.noCord && from !== undefined ? from : null, key = one === null ? 'team' : one;
+        const one = (this.noCord || this.loose.has(from)) && from !== undefined ? from : null, key = one === null ? 'team' : one;
         this.locks = this.locks || {};
         if (T < (this.locks[key] || 0)) return;
         this.locks[key] = T + 1.5;
         if (e.k === 'splash') this.falls++;
         if (this.cpl === 2 && one === null) this.cp = 0;
         // The whole team back at the checkpoint: the maze gardens change, so the way through has to be found again.
-        // (Without the cord one climber going back leaves them alone: the others may be inside one.)
-        if (one === null) this.mz++;
+        // (Without the cord one climber going back leaves them alone: the others may be inside one. So does a team going back
+        // while someone is still catching up.)
+        if (one === null && !this.loose.size) this.mz++;
         // Without the cord, the one who fell goes back to their own checkpoint.
         const cp = one === null ? this.cp : this.pcp[one] || 0, pos = {}, at = this.cpl === 2 ? 0 : cp;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
         this.s.toAll({ k: 'respawn', cp, at, pos, falls: this.falls, mz: this.mz, why: e.k, only: one });
         break;
       }
+      case 'resetcp': {
+        // Alone, or the host of a tied team (they all share one checkpoint): back to the start of the map, the whole team.
+        // Anyone else goes back alone, and on a tied team climbs on their own until they reach the others again.
+        if (this.rec && this.solo) this.rec.act('x');
+        const one = from === undefined || (from === this.slot && !this.noCord) ? null : from, pos = {};
+        if (one === null) {
+          this.cp = 0;
+          if (!this.loose.size) this.mz++;
+        } else {
+          this.pcp[one] = 0;
+          if (!this.noCord) this.setLoose([...this.loose, one]);
+        }
+        for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(0, slot);
+        this.s.toAll({ k: 'respawn', cp: 0, at: 0, pos, falls: this.falls, mz: this.mz, why: 'reset', only: one });
+        this.save();
+        break;
+      }
       case 'cp':
         if (!cpEnabled(this.L.cps[e.i], this.cpl)) break;
-        if (this.noCord && from !== undefined) {
+        if ((this.noCord || this.loose.has(from)) && from !== undefined) {
           // Only the player who got there moves on; everyone hears about it.
           if (e.i > (this.pcp[from] || 0)) { this.pcp[from] = e.i; this.s.toAll({ k: 'cp', i: e.i, slot: from }); this.save(); }
         } else if (e.i > this.cp) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
@@ -1111,7 +1164,7 @@ export class Game {
   onEvent(e) {
     const ui = this.app.ui;
     // With others, these come from elsewhere, so the rerun can't work them out and they get written down.
-    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff' || e.k === 'maze')) this.rec.act('e', e);
+    if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff' || e.k === 'maze' || e.k === 'loose')) this.rec.act('e', e);
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
@@ -1120,6 +1173,11 @@ export class Game {
           // Someone else went back (no cord). Forget their old track so they don't glide across the map.
           const pl = this.s.players.get(e.only);
           if (pl) { pl.samples.length = 0; if (e.why === 'splash') ui.toast(`${pl.name} fell and went back`, ''); }
+          break;
+        }
+        // The team went back, and I'm not on the cord yet: I climb on.
+        if ((e.only === null || e.only === undefined) && this.loose.has(this.slot)) {
+          for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
           break;
         }
         const p = (e.pos && e.pos[this.slot]) || this.spawnPos(e.at ?? e.cp, this.slot);
@@ -1134,7 +1192,7 @@ export class Game {
         Object.assign(this.cam, { yaw: this.startYaw(p[0], p[2], e.at ?? e.cp), x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.cpl, this.cp);
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
-        ui.toast(e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
+        ui.toast(e.why === 'reset' ? 'The team sent you back to the start of the map.' : e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
       }
       case 'cp':
@@ -1145,12 +1203,25 @@ export class Game {
           if (pl) ui.toast(`${pl.name} reached a checkpoint`, '');
           break;
         }
+        // The team's checkpoint isn't mine until I'm on the cord.
+        if (e.slot === undefined && this.loose.has(this.slot)) break;
         if (e.i > this.cp) { this.cp = e.i; this.app.view.setCheckpoints(this.cpl, this.cp); }
         for (const r of this.robots.values()) r.cheer();
         this.app.sound.checkpoint();
         ui.toast('Checkpoint reached', 'good');
         ui.haptic('tick');
         break;
+      case 'loose': {
+        const was = this.loose.has(this.slot);
+        this.loose = new Set(Array.isArray(e.s) ? e.s.filter(Number.isInteger) : []);
+        if (was && !this.loose.has(this.slot)) {
+          // Caught up: from here on the team's checkpoint is mine too.
+          if (Number.isInteger(e.cp) && this.L.cps[e.cp]) { this.cp = e.cp; this.cpSent.clear(); this.app.view.setCheckpoints(this.cpl, this.cp); }
+          ui.toast('You reached your team: the cord is on', 'good');
+        }
+        this.syncRoster();
+        break;
+      }
       case 'sling': if (e.to === this.slot) this.me.fling(e.v[0], e.v[1], e.v[2]); break;
       case 'maze': if (e.v !== this.mz) this.setMaze(e.v); break;
       case 'crumble': this.crumble(e.i); break;
@@ -1202,20 +1273,25 @@ export class Game {
     this.won = true;
     for (const r of this.robots.values()) r.cheer();
     store.del(this.solo ? 'save.solo' : 'save.mp');
+    // Without the cord, or still catching up, someone else can get to the top while this climber is nowhere near it. The climb
+    // ends for everyone, but the top and its bonus are only for those who are there. (The rerun checks the same.)
+    const far = (this.noCord || this.loose.has(this.slot)) && !nearTop(this.me, this.L, this.rope);
     // Best times only count when playing the difficulty's own rules (no custom rules).
     const custom = this.custom;
-    const bonus = this.D.summit, unlocked = [];
+    const bonus = far ? 0 : this.D.summit, unlocked = [];
     const counts = cloud.counting();
-    cloud.runWin(e.falls);
-    if (counts) addCoins(bonus);
+    if (!far) cloud.runWin(e.falls);
+    if (counts && bonus) addCoins(bonus);
     this.run.coins += bonus;
     // Easier custom rules don't count: otherwise Hardcore's bonus could be had with every checkpoint switched on.
-    const first = this.custom || !counts ? 0 : firstWin(this.diff, this.D.first);
+    const first = far || this.custom || !counts ? 0 : firstWin(this.diff, this.D.first);
     this.run.coins += first;
-    this.run.won = true;
-    this.run.h = Math.max(this.run.h, Math.min(1000, Math.round(this.L.top - 2)));
+    if (!far) {
+      this.run.won = true;
+      this.run.h = Math.max(this.run.h, Math.min(1000, Math.round(this.L.top - 2)));
+    }
     this.falls = e.falls;
-    if (this.hardcore) {
+    if (this.hardcore && !far) {
       const a = award('summit'), b = e.falls === 0 ? award('flawless') : null;
       if (a) unlocked.push(a.name);
       if (b) unlocked.push(b.name);
@@ -1223,9 +1299,9 @@ export class Game {
     this.noteRun();
     flushProfile();
     const key = this.map + ':' + this.diff + (custom ? ':custom' : ''), best = store.get('best2', {}), prev = best[key];
-    if (!prev || e.t < prev) { best[key] = e.t; store.set('best2', best); }
+    if (!far && (!prev || e.t < prev)) { best[key] = e.t; store.set('best2', best); }
     this.app.sound.win();
-    this.app.finish({ firstWin: first, time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: Math.min(prev || 1e9, e.t), record: !prev || e.t < prev, players: this.s.players.size, coins: this.run.coins, bonus, unlocked });
+    this.app.finish({ firstWin: first, time: e.t, falls: e.falls, diff: this.diff, map: this.map, best: far ? prev || 0 : Math.min(prev || 1e9, e.t), record: !far && (!prev || e.t < prev), players: this.s.players.size, coins: this.run.coins, bonus, unlocked });
   }
 
   // ----- per-frame visuals -----
@@ -1284,7 +1360,12 @@ export class Game {
     const fk = (this.fpK = damp(this.fpK || 0, this.mazeAround(me) ? 1 : 0, 9, dt));
     c.yaw -= dx;
     c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak) - 0.75 * fk * (1 - ak), 1.25);
-    if (dx || dy) this.camTouched = T;
+    // Only a real look holds the camera follow back. A hand resting on the mouse or a thumb resting on the screen sends tiny
+    // moves all the time, and counting those, the follow would hardly ever get a turn. They go both ways, so they cancel out.
+    const lookFade = Math.exp(-dt * 3);
+    this.lookX = clamp((this.lookX || 0) * lookFade + dx, -0.06, 0.06);
+    this.lookY = clamp((this.lookY || 0) * lookFade + dy, -0.06, 0.06);
+    if ((dx || dy) && Math.hypot(this.lookX, this.lookY) > 0.03) this.camTouched = T;
     this.assistCamera(dt, T, ak);
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
     c.y = damp(c.y, me.y + 0.8, me.vy < -14 || me.hook ? 14 : 7, dt);
@@ -1413,10 +1494,10 @@ export class Game {
       if (sp > 1.5) {
         let e = Math.atan2(-me.vx, -me.vz) - c.yaw;
         e = Math.atan2(Math.sin(e), Math.cos(e));
+        // Running straight at the camera: leave it, so it never whips round. (Checked before the next line, or weak settings
+        // would turn it after all, and with the controls following the camera you would run in circles.)
         // How far round it goes: weak settings only turn part of the way.
-        e *= Math.min(1, 0.35 + F * 0.65);
-        // Running straight at the camera: leave it, so it never whips round.
-        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
+        if (Math.abs(e) < 2.4) c.yaw += e * Math.min(1, 0.35 + F * 0.65) * Math.min(1, dt * 1.6 * F) * Math.min(1, sp / 5);
         c.pitch += (pitchTo - c.pitch) * Math.min(1, dt * 0.8 * F);
       }
     }

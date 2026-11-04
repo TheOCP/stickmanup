@@ -232,7 +232,12 @@ export class Input {
       if (KEY_BTN[e.code]) { const b = document.getElementById(KEY_BTN[e.code]); if (b) b.classList.remove('down'); }
       this.keys.delete(e.code);
     });
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => {
+      // A key or button let go in another window never reports it: aiming stayed on, and with it the camera follow stayed off.
+      if (this.keys.has('KeyR')) this.btn.aim = false;
+      this.keys.clear();
+      if (ON_PC) this.btn.aim = this.btn.fire = false;
+    });
     window.addEventListener('mousemove', (e) => {
       if (!this.enabled) return;
       if (ON_PC && document.pointerLockElement === this.layer) {

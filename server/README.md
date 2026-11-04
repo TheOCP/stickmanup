@@ -186,7 +186,7 @@ to use one. They work only in those channels because everyone there can read the
 those channels private. The bot gets every message in the channels it can see, but it only looks at the ones starting with `!`,
 and it stores none of them.
 
-* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer` `/tell`
+* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer` `/tell` `/resetcheckpoint`
 * **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/giverelic` `/takerelic` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits, and without its relic. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`. `/catalog` lists it all, 60 to a page (`page`), and can search by name or show one kind only (`kind`: suit, epic, legend, face, hat, emote or weapon).
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
@@ -194,7 +194,7 @@ and it stores none of them.
 * **Roles and permissions**: `/setrole` `/roles` `/newrole` `/editrole` `/delrole` `/roleperm` `/playerperm` `/perms`
 * **Live, in the game only**: `/vanish` `/watch` `/join` (on Discord they say to use the terminal)
 
-`/tell` sends a player a message that shows in their game. `/giverelic` gives a relic, so what it opens can be bought:
+`/resetcheckpoint` sends a player back to the start of the map and forgets their saved climb, right away if they are climbing. `/tell` sends a player a message that shows in their game. `/giverelic` gives a relic, so what it opens can be bought:
 one relic, every relic of a map (`storm`), or `all`. `/takerelic` takes them back.
 
 ### Flags in the game

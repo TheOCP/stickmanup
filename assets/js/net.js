@@ -4,7 +4,7 @@ import { LEVEL_VERSION, DIFFS, MAPS } from './level.js';
 import { validColor } from './colors.js';
 import { cleanLook, cleanRole } from './skins.js';
 
-export const PROTO = LEVEL_VERSION * 100 + 1;
+export const PROTO = LEVEL_VERSION * 100 + 2;
 
 // Whoever hosts a public room can be a complete stranger, and so can whoever joins yours. Nothing they send is believed:
 // whatever can reach the screen or your records is checked here, the one place every way of playing passes through.
@@ -25,7 +25,7 @@ function cleanGame(g) {
   if (!g || typeof g !== 'object') return null;
   return Object.assign(g, {
     map: inList(g.map, MAPS), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls), mz: count(g.mz),
-    pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {},
+    pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {}, loose: Array.isArray(g.loose) ? g.loose : [],
   });
 }
 const PREFIX = 'stickmanup-v1-';

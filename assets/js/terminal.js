@@ -3,7 +3,7 @@
 // they are doing, and buttons to watch them, join their room or see more. Nobody else ever sees any of this.
 import * as live from './live.js';
 import { roleInfo, roleKeys } from './skins.js';
-import { MAPS, DIFFS } from './level.js';
+import { MAPS, DIFFS, mapName } from './level.js';
 import { tr } from './i18n.js';
 
 let o = null, el = null, open = false, tab = 'cmd', hist = [], hi = -1, list = [], listErr = '', listT = null, sugs = [];
@@ -238,7 +238,7 @@ function pick(i) {
 
 // ---------------------------------------------------------------- everyone in the game
 function doing(p) {
-  const map = MAPS[p.map] ? MAPS[p.map].name : '', diff = DIFFS[p.diff] ? DIFFS[p.diff].name : '';
+  const map = mapName(p.map), diff = DIFFS[p.diff] ? DIFFS[p.diff].name : '';
   const room = p.room ? `${p.room.kind === 'online' ? 'Online room' : 'room'} ${p.room.code}` : '';
   if (p.st === 'climb') return [p.won ? 'At the top' : p.paused ? 'Paused' : 'Climbing', map, diff, `${p.h} of ${p.top} m`, p.solo ? 'Solo' : `${p.n}/4`, room].filter(Boolean).join(' · ');
   if (p.st === 'lobby') return ['In a lobby', map, diff, `${p.n}/4`, room].filter(Boolean).join(' · ');

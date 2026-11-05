@@ -8,6 +8,7 @@ import PLAY from './lang/play.js';
 import WORLD from './lang/world.js';
 import ITEMS from './lang/items.js';
 import TRAPS from './lang/traps.js';
+import CLIMBS from './lang/climbs.js';
 
 const COLUMNS = ['es', 'pt', 'fr', 'de', 'ru', 'tr'];
 export const LANG_NAMES = [['auto', 'Auto'], ['en', 'English'], ['es', 'Español'], ['pt', 'Português'], ['fr', 'Français'], ['de', 'Deutsch'], ['ru', 'Русский'], ['tr', 'Türkçe']];
@@ -88,7 +89,7 @@ export function startLang(pick) {
   const col = COLUMNS.indexOf(want) + 1;
   document.documentElement.lang = col ? want : 'en';
   if (!col) return;
-  for (const rows of [MENUS, PLAY, WORLD, ITEMS, TRAPS]) {
+  for (const rows of [MENUS, PLAY, WORLD, ITEMS, TRAPS, CLIMBS]) {
     for (const r of rows) {
       const key = tidy(r[0]), to = r[col];
       if (!to) continue;

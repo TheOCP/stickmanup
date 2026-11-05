@@ -20,6 +20,8 @@ const scrypt = (pass, salt) => new Promise((res, rej) => crypto.scrypt(pass, sal
 // What people can see of a name: no control characters or line breaks, a sensible length.
 const cleanText = (s, max) => String(s == null ? '' : s).normalize('NFC').replace(/[\p{C}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const small = (v) => (Number.isInteger(v) && v >= 0 && v < 64 ? v : 0);
+// Map numbers: the six worlds, the generated 100 to 199 and the holiday ones from 200 (assets/js/level.js mapDef).
+const mapNo = (v) => (Number.isInteger(v) && v >= 0 && v < 1000 ? v : 0);
 // Faster than anything in the game can go, with room to spare. Measured over a couple of seconds, since a bad connection
 // delivers things in bursts, and it has to go on: a respawn is one jump, not a pattern.
 const MAX_SPEED = 75;
@@ -238,7 +240,7 @@ class Rooms {
     if (ws.role === 'host' && ws.room) {
       const r = ws.room;
       if (m.t === 'info') {
-        r.map = small(m.map);
+        r.map = mapNo(m.map);
         r.diff = small(m.diff);
         r.started = !!m.started;
       } else if (m.t === 'kick') {
@@ -281,7 +283,7 @@ class Rooms {
     const hostName = cleanText(m.host, 14) || 'Climber';
     const room = {
       code, proto: m.proto, name: cleanText(m.name, 28) || `${hostName}'s climb`, hostName, pub: !!m.pub, salt, hash,
-      map: small(m.map), diff: small(m.diff), started: false, host: ws, peers: new Map(), nextId: 1, created: Date.now(),
+      map: mapNo(m.map), diff: small(m.diff), started: false, host: ws, peers: new Map(), nextId: 1, created: Date.now(),
     };
     this.rooms.set(code, room);
     this.ipRooms.set(ws.ip, mine + 1);

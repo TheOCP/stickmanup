@@ -53,7 +53,7 @@ const COMMANDS = [
   cmd('giveitem', 'Give an item to a player', PLAYER, ITEM, REASON(false)),
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
   cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 },
-    { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'hair', value: 'hair' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }] }, PAGE),
+    { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'hair', value: 'hair' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }, { name: 'graffiti', value: 'spray' }] }, PAGE),
   cmd('giverelic', 'Give a player a relic, so what it opens can be bought', PLAYER, RELIC, REASON(false)),
   cmd('takerelic', 'Take a relic from a player', PLAYER, RELIC, REASON(false)),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),
@@ -71,6 +71,7 @@ const COMMANDS = [
   cmd('bans', 'Everyone who is banned, and why', PAGE),
   cmd('baninfo', 'Whether a player is banned, and their history', PLAYER),
   cmd('kick', 'Throw a player out of the room they are in', PLAYER, REASON(false)),
+  cmd('clearsprays', 'Wipe all of a player\'s graffiti from every map', PLAYER, REASON(false)),
   cmd('resetcheckpoint', 'Send a player back to the start of the map and forget their saved climb', PLAYER, REASON(false)),
   cmd('tp', 'Move a climber: to a player, a height, the start or the top. That climb stops earning', PLAYER, { type: 3, name: 'to', description: 'A player, a height like 300m, start or top', required: true, max_length: 64 }, REASON(false)),
   cmd('tell', 'Send a player a message in the game', PLAYER, { type: 3, name: 'text', description: 'The message', required: true, max_length: 300 }),
@@ -93,6 +94,7 @@ const COMMANDS = [
   cmd('status', 'How the server is doing'),
   cmd('announce', 'Show a message to everyone in the game', { type: 3, name: 'text', description: 'The message. "off" removes it', required: true, max_length: 400 }, { type: 4, name: 'minutes', description: 'For how long (empty for until removed)', required: false, min_value: 1, max_value: 100000 }),
   cmd('maintenance', 'Stop sign ins, new climbs and rooms for a while', { type: 5, name: 'on', description: 'On or off', required: true }, { type: 3, name: 'message', description: 'What players are told', required: false, max_length: 300 }),
+  cmd('daily', "Pick today's climb for everyone, or let the date pick it again", { type: 3, name: 'map', description: 'Its number (0 to 5 the worlds, 100 to 199, 200 and up the holidays), its name, or auto', required: false, max_length: 40 }, { type: 4, name: 'days', description: 'For how many days (empty for until /daily auto)', required: false, min_value: 1, max_value: 365 }),
   cmd('logguests', 'Log new guests in the channel, or not', { type: 5, name: 'on', description: 'On or off', required: true }),
   cmd('backup', 'Make a backup of everything now'),
   cmd('audit', 'What the admins did lately', COUNT),
@@ -116,14 +118,14 @@ const COMMANDS = [
 
 // Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
 const GROUPS = {
-  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint', 'tp'],
+  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint', 'tp', 'clearsprays'],
   coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'giverelic', 'takerelic', 'dailycap'],
   climbs: ['climbs', 'climb'],
   bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
   anticheat: ['flags', 'suspects', 'clearflags', 'trust', 'untrust', 'anticheat', 'phone'],
   rooms: ['rooms', 'closeroom'],
   live: ['vanish', 'watch', 'join'],
-  server: ['status', 'announce', 'maintenance', 'logguests', 'backup', 'audit', 'admins', 'help'],
+  server: ['status', 'announce', 'maintenance', 'daily', 'logguests', 'backup', 'audit', 'admins', 'help'],
   staff: ['setrole', 'roles', 'newrole', 'editrole', 'delrole', 'roleperm', 'playerperm', 'perms'],
   discord: ['welcome', 'ticketsetup', 'ticketpanel', 'tickets', 'transcript', 'closeticket'],
 };
@@ -249,7 +251,7 @@ function done(ctx, cmdName, detail, text, o) {
 // The player hears about it in the game, with the reason.
 function tell(ctx, u, what, why) { ctx.s.admin.tell(u.id, why ? `${what} Reason: ${why}` : what); }
 const withWhy = (why) => (why ? ` Reason: ${esc(why)}` : ' No reason given.');
-function mapName(ctx, i) { const m = ctx.s.wallet.mapNames; return m[i] || String(i); }
+function mapName(ctx, i) { return ctx.s.wallet.mapLabel(i); }
 
 function playerText(ctx, u) {
   const a = ctx.s.admin, w = ctx.s.wallet.get(u.id), ban = a.banOf(u.id), score = a.score(u.id);
@@ -629,6 +631,22 @@ const RUN = {
     ctx.s.admin.setMaintenance(on ? msg : '');
     return done(ctx, 'maintenance', on ? `on: ${msg}` : 'off', on ? 'Maintenance is on: no new sign ins, climbs or rooms. Games already running carry on.' : 'Maintenance is off.');
   },
+  daily(ctx, d) {
+    const t = String(opt(d, 'map') || '').trim(), w = ctx.s.wallet, a = ctx.s.admin;
+    if (!t) {
+      const p = a.dailyPin;
+      return ctx.reply(p ? `Today's climb is set by hand: **${esc(w.mapLabel(p.id))}**${p.until ? `, until ${new Date(p.until).toUTCString()}` : ''}. /daily auto lets the date pick it again.` : "Today's climb goes by the date (a holiday's climb on its days). /daily with a map number or name sets one for everyone.");
+    }
+    if (/^(auto|off|date|none|clear)$/i.test(t)) {
+      a.setDaily(-1);
+      return done(ctx, 'daily', 'auto', "Today's climb goes by the date again. Players see it the next time they open the game or come back to it.");
+    }
+    const m = w.findMap(t);
+    if (!m) return ctx.reply(`There is no map "${esc(t)}". Give its number (0 to 5 for the six worlds, 100 to 199, 200 and up for the holiday ones) or its name.`, { color: 'bad' });
+    const days = opt(d, 'days');
+    a.setDaily(m.id, days);
+    return done(ctx, 'daily', `${w.mapLabel(m.id)}${days ? ` for ${days} days` : ''}`, `Today's climb is now **${esc(w.mapLabel(m.id))}** for everyone${days ? ` for ${days} day${days === 1 ? '' : 's'}` : ', until /daily auto'}. Players see it the next time they open the game or come back to it.`);
+  },
   logguests(ctx, d) {
     const on = opt(d, 'on');
     ctx.s.admin.setLogGuests(on);
@@ -823,6 +841,12 @@ const RUN = {
       ctx.bot.log('Admin', `**${esc(ctx.whoShort)}** used /tp\n${esc(note)}`);
       return `Moved ${line(u)} to ${line(o)}.${after}`;
     });
+  },
+  clearsprays(ctx, d) {
+    const u = target(ctx, d);
+    if (!u) return undefined;
+    const said = opt(d, 'reason'), n = ctx.s.sprays ? ctx.s.sprays.wipe(u.id) : 0;
+    return done(ctx, 'clearsprays', `${playerLine(u)}: ${said || 'no reason given'}`, `Wiped ${n} graffiti of ${line(u)}. Climbers see it gone on their next climb there.`);
   },
   resetcheckpoint(ctx, d) {
     const u = target(ctx, d);

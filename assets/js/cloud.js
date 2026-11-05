@@ -392,6 +392,29 @@ export async function refreshWallet() {
 }
 
 // Buying is the server's call, so it needs a connection. Answers what went wrong, or nothing.
+// Ghost racing (ghost.js, server/lib/ghosts.js): yours, your room's and your friends' best climbs of a map and difficulty.
+export async function fetchGhosts(map, diff, room) {
+  if (!account()) return [];
+  const r = await call(`/api/ghosts?map=${encodeURIComponent(map)}&diff=${encodeURIComponent(diff)}&room=${encodeURIComponent(room || '')}`, { auth: true });
+  return r.ok && Array.isArray(r.json.ghosts) ? r.json.ghosts : [];
+}
+export function postGhost(map, diff, g) {
+  if (!account()) return;
+  call('/api/ghost', { auth: true, body: { map, diff, won: g.won, t: g.t, h: g.h, data: g.data } });
+}
+
+// Graffiti kept on the server for a map (server/lib/sprays.js): the latest few of every climber. Nothing without a server.
+export async function fetchSprays(map, lv) {
+  if (!serverUrl()) return [];
+  const r = await call(`/api/sprays?map=${encodeURIComponent(map)}&lv=${encodeURIComponent(lv)}`);
+  return r.ok && Array.isArray(r.json.sprays) ? r.json.sprays : [];
+}
+// One of yours, to keep there. Only with an account: a guest's stays in the room it was sprayed in.
+export function postSpray(map, lv, s) {
+  if (!account()) return;
+  call('/api/spray', { auth: true, body: { map, lv, id: s.id, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz, r: s.r, w: s.w } });
+}
+
 export async function buyItem(item) {
   if (!account()) return 'Coins are kept on the game server. Open Account to get started.';
   const r = await call('/api/buy', { auth: true, body: { id: itemKey(item) } });
@@ -682,6 +705,8 @@ export async function checkNews() {
   const info = await getInfo();
   if (!info) return;
   emit('maintenance', info.maintenance || '');
+  // The day's climb, when the team picked it on the server (/daily); otherwise it goes by the date.
+  emit('daily', Number.isInteger(info.daily) ? info.daily : -1);
   if (info.announce && info.announce.id !== store.get('news.seen', '')) {
     store.set('news.seen', info.announce.id);
     emit('announce', info.announce.text);

@@ -233,14 +233,13 @@ export function buildMazes(view) {
     }
     if (st.pond.lily && !low) for (let k = 0; k < 3; k++) { const [x, z] = P(pu + (R() - 0.5) * (pl - 0.6), -corner + (R() - 0.5) * (pw - 0.4)); put(k ? 'lilypad' : 'lotus', mat4(x, top + 0.04, z, 1, 1, 1, 0, R() * TAU, 0)); }
     if (st.pond.lily) for (const s of [-1, 1]) { const [x, z] = P(pu + s * (pl / 2 + 0.2), -corner); put('reeds', mat4(x, top, z, 0.7, 0.7, 0.7, 0, R() * TAU, 0)); }
-    // The relic's shrine (there whenever the hidden paths are, like the relic).
-    const rel = (L.relics || []).find((r) => r.maze === m.i);
-    if (rel) {
+    // Each relic's shrine (there whenever the hidden paths are, like the relic; a hidden spot's only on its difficulty).
+    for (const rel of (L.relics || []).filter((r) => r.maze === m.i)) {
       const sh = new THREE.Mesh(modelGeo('shrine'), vegMat());
-      sh.position.set(m.rx, y, m.rz);
+      sh.position.set(rel.x, y, rel.z);
       view.add(sh, false);
       sh.visible = false;
-      (view.secretParts ||= []).push({ sec: 'hard', o: sh });
+      (view.secretParts ||= []).push({ sec: 'hard', o: sh, dv: rel.dv });
     }
     // Animals: one kind walking about the roof garden, little fliers over it.
     if (!low) {

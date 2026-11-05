@@ -1,7 +1,7 @@
 // Copied from assets/js by dev/makesim.mjs. Do not edit here.
 // Storm hazards driven purely by shared game time, so every phone sees the same strikes and gusts.
 import { hash, TAU } from './util.js';
-import { DIFFS } from './level.js';
+import { DIFFS, dvOn } from './level.js';
 
 const GUST_SLOT = 18, GUST_WARN = 1.6;
 const GUST_STR = { 4: 18, 5: 22, 6: 24 };
@@ -86,7 +86,8 @@ export class Storm {
     this.th = THUNDER[h] || THUNDER[1];
   }
   // The traps on a hidden path (o.sec) only exist while that path does: game.js sets which ones are there.
-  on(o) { return (o.sec === undefined || !!(this.sec && this.sec[o.sec])) && (o.lvl === undefined || o.lvl <= this.haz); }
+  // A hidden spot's traps only on the difficulty it is there on (o.dv).
+  on(o) { return (o.sec === undefined || !!(this.sec && this.sec[o.sec] && dvOn(o, this.sec))) && (o.lvl === undefined || o.lvl <= this.haz); }
 
   // Spinning bars (lasers, fire bars, branches...): angle of bar k at time t.
   laserAngle(l, t, k = 0) {

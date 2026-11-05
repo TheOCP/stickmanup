@@ -2,7 +2,7 @@
 const N = window.Native;
 
 // Goes up with each release, together with AndroidManifest.xml and MainActivity.java.
-export const APP_VERSION = '4.10.23';
+export const APP_VERSION = '4.10.24';
 
 export const DESK = window.Desktop || null;
 export const IS_WEB = !N && !DESK;

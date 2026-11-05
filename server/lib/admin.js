@@ -168,6 +168,14 @@ class Admin {
     return a && (!a.until || a.until > now()) ? { id: a.id, text: a.text } : null;
   }
   get maintenance() { return this.db.setting('maintenance') || ''; }
+  // The day's climb picked by the team (/daily): { id, until } or null when it goes by the date (assets/js/level.js dailyMap).
+  get dailyPin() {
+    try {
+      const p = JSON.parse(this.db.setting('daily') || 'null');
+      return p && Number.isInteger(p.id) && (!p.until || p.until > now()) ? p : null;
+    } catch (e) { return null; }
+  }
+  setDaily(id, days) { this.db.setSetting('daily', id >= 0 ? JSON.stringify({ id, until: days ? now() + days * 86400000 : 0 }) : ''); }
   setMaintenance(text) { this.db.setSetting('maintenance', text ? String(text).slice(0, 300) : ''); }
   get logGuests() { return this.db.setting('logGuests') !== '0'; }
   setLogGuests(on) { this.db.setSetting('logGuests', on ? '1' : '0'); }

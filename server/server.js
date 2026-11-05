@@ -20,6 +20,8 @@ const { Attest } = require('./lib/attest');
 const { Friends } = require('./lib/friends');
 const { Staff } = require('./lib/staff');
 const { Terminal } = require('./lib/terminal');
+const { Sprays } = require('./lib/sprays');
+const { Ghosts } = require('./lib/ghosts');
 
 const VERSION = require('./package.json').version;
 const env = process.env;
@@ -59,6 +61,7 @@ const admin = new Admin(db, wallet, env);
 const staff = new Staff(db, admin);
 if (db.setting('dayCap')) wallet.setDayCap(+db.setting('dayCap'));
 const verifier = new Verifier(db, wallet, admin, env);
+const sprays = new Sprays(db, wallet);
 const attest = new Attest(env);
 verifier.staff = staff;
 const rooms = verifier.rooms = new Rooms({
@@ -79,6 +82,7 @@ const rooms = verifier.rooms = new Rooms({
   needToken: () => admin.mode === 'enforce',
 });
 const friends = new Friends(db, admin, rooms, staff);
+const ghosts = new Ghosts(db, friends, rooms);
 const auth = new Auth(cfg, db, termsVersion, admin);
 admin.onBan = ({ userId, ip, reason }) => {
   const why = `You are banned from this server. Reason: ${reason}`;
@@ -88,7 +92,7 @@ admin.onBan = ({ userId, ip, reason }) => {
 const bot = new Bot({
   token: env.DISCORD_BOT_TOKEN || '', guild: env.DISCORD_BOT_GUILD || '', logChannel: env.DISCORD_BOT_LOG_CHANNEL || '', warnChannel: env.DISCORD_BOT_WARN_CHANNEL || '', admins: env.DISCORD_BOT_ADMINS || '',
   api: cfg.devUrls && cfg.devUrls.botApi, gateway: cfg.devUrls && cfg.devUrls.botGateway, registerEvery: +env.DISCORD_BOT_REGISTER_EVERY || 0,
-}, { db, wallet, admin, verifier, rooms, friends, staff, version: VERSION });
+}, { db, wallet, admin, verifier, rooms, friends, staff, sprays, version: VERSION });
 // The same commands, typed in the game by the team. Answers go back over the live socket.
 friends.terminal = new Terminal(bot.s, bot);
 
@@ -239,7 +243,11 @@ async function route(req, res) {
   if (!limits.api.take(ip)) return json(res, 429, { err: 'Too many requests' });
 
   if (method === 'GET' && p === '/api/info') {
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, roles: staff.table() });
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, daily: admin.dailyPin ? admin.dailyPin.id : undefined, roles: staff.table() });
+  }
+  // Graffiti on a map, for everyone (lib/sprays.js).
+  if (method === 'GET' && p === '/api/sprays') {
+    return json(res, 200, { sprays: sprays.list(Number(url.searchParams.get('map')), Number(url.searchParams.get('lv'))) });
   }
   if (method === 'GET' && p === '/api/rooms') {
     const proto = +url.searchParams.get('proto');
@@ -306,7 +314,7 @@ async function route(req, res) {
 
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/wallet' && method === 'GET') || (method === 'POST' && (p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT')) || (p === '/api/friends' && method === 'GET') || (method === 'POST' && (p === '/api/friends/search' || p === '/api/friends/act' || p === '/api/friends/watch'));
+  const known = (p === '/api/wallet' && method === 'GET') || (p === '/api/ghosts' && method === 'GET') || (method === 'POST' && (p === '/api/spray' || p === '/api/ghost' || p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT')) || (p === '/api/friends' && method === 'GET') || (method === 'POST' && (p === '/api/friends/search' || p === '/api/friends/act' || p === '/api/friends/watch'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
@@ -326,6 +334,24 @@ async function route(req, res) {
     return json(res, 200, { ok: true });
   }
   if (off) return json(res, 403, admin.showBan(off, user));
+  // Ghost racing (lib/ghosts.js).
+  if (p === '/api/ghosts') {
+    if (!limits.friends.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    return json(res, 200, { ghosts: ghosts.list(me.id, Number(url.searchParams.get('map')), Number(url.searchParams.get('diff')), url.searchParams.get('room') || '') });
+  }
+  if (p === '/api/ghost') {
+    if (!limits.save.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    const b = await readJson(req);
+    if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
+    const r = ghosts.put(me.id, b);
+    return json(res, r.status, r.err ? { err: r.err } : { kept: r.kept });
+  }
+  if (p === '/api/spray') {
+    const b = await readJson(req);
+    if (!b || typeof b !== 'object') return json(res, 400, { err: 'Bad request' });
+    const r = sprays.add(me.id, b);
+    return json(res, r.status, r.err ? { err: r.err } : { ok: true });
+  }
   // Friends. What a friend can see of someone is decided in lib/friends.js, never by the phone asking.
   if (p.startsWith('/api/friends')) {
     if (!limits.friends.take(me.id)) return json(res, 429, { err: 'Too many requests. Try again later.' });

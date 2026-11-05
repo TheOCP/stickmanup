@@ -3,7 +3,7 @@
 import * as cloud from './cloud.js';
 import * as live from './live.js';
 import { Spectator } from './spectate.js';
-import { MAPS, DIFFS } from './level.js';
+import { MAPS, DIFFS, mapName } from './level.js';
 import { css, COLORS } from './colors.js';
 import { fmtTime, clamp } from './util.js';
 import { ON_PC } from './platform.js';
@@ -45,7 +45,7 @@ function agoText(ms) {
   return `Last seen ${Math.floor(min / 1440)} d ago`;
 }
 function status(f) {
-  const map = MAPS[f.map] ? MAPS[f.map].name : '', diff = DIFFS[f.diff] ? DIFFS[f.diff].name : '';
+  const map = mapName(f.map), diff = DIFFS[f.diff] ? DIFFS[f.diff].name : '';
   if (f.st === 'climb') {
     const word = f.won ? 'Reached the top!' : f.paused ? 'Paused' : 'Climbing';
     return { dot: 'climb', a: `${word} · ${map} · ${diff}`, b: `${f.h} m of ${f.top} m · ${fmtTime(f.T)} · ${fallsText(f.f)} · ${f.solo ? 'Solo' : `${f.n}/4 climbers`}`, pct: f.top ? clamp(f.h / f.top, 0, 1) * 100 : 0 };

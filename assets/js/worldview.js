@@ -2,7 +2,7 @@
 // (body + glowing edge trim) so the phone draws the whole tower in few draw calls.
 import * as THREE from 'three';
 import { BOX } from './physics.js';
-import { CORE_R, coreFlare, cpEnabled, secretOn } from './level.js';
+import { CORE_R, coreFlare, cpEnabled, secretOn, dvOn } from './level.js';
 import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
@@ -222,7 +222,7 @@ export class WorldView {
       return b;
     };
     for (const r of courses) {
-      const sec = r.kind === 'epic' ? 'open' : 'hard', keep = (o) => { o.visible = false; this.secretParts.push({ sec, o }); return o; };
+      const sec = r.kind === 'epic' ? 'open' : 'hard', keep = (o) => { o.visible = false; this.secretParts.push({ sec, o, dv: r.dv }); return o; };
       courseStones(this, r, keep);
       courseDecor(this, r, keep);
       // The vault: four pillars with fire on top, a glowing ring on the floor and a pedestal under the relic.
@@ -285,7 +285,7 @@ export class WorldView {
   // sec: which hidden paths this climb has ({ hard, open }, level.js ALL_SECRETS), or nothing for none.
   setSecrets(sec) {
     this.secNow = sec;
-    for (const p of this.secretParts || []) p.o.visible = !!sec && !!sec[p.sec];
+    for (const p of this.secretParts || []) p.o.visible = !!sec && !!sec[p.sec] && dvOn(p, sec);
     for (const c of this.level.cols) if (c.kind === 'secret') c.on = secretOn(c, sec);
     for (const d of this.dyn) if (d.c.kind === 'secret') { d.off = !secretOn(d.c, sec); d.mesh.visible = !d.off; }
     this.markRelics(this.relicHas);
@@ -298,7 +298,7 @@ export class WorldView {
     for (const b of this.relicBeams || []) {
       if (b.part) continue;
       const r = L.relics.find((q) => q.id === b.id);
-      b.o.visible = !!r && !!sec && !!sec[r.kind === 'epic' ? 'open' : 'hard'] && !(has && has(b.id));
+      b.o.visible = !!r && !!sec && !!sec[r.kind === 'epic' ? 'open' : 'hard'] && dvOn(r, sec) && !(has && has(b.id));
     }
   }
 

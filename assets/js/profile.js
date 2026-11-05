@@ -2,7 +2,7 @@
 import { store } from './util.js';
 import { SUIT, FACE, HAT, HAIR, LEGENDS, FREE_SUIT, cleanLook, cleanRole, itemKey } from './skins.js';
 import { WEAPON, FREE_WEAPON, WEAPONS } from './weapons.js';
-import { needOf, SUIT_RELICS, MAZE_RELIC_IDS, WEAPON_RELICS, VOID_WEAPON, opensOf, MAP_KEYS } from './relics.js';
+import { needOf, SUIT_RELICS, MAZE_RELIC_IDS, WEAPON_RELICS, VOID_WEAPON, opensOf, SPOT_RELICS, relicIn, spotThing } from './relics.js';
 import { DIFFS } from './level.js';
 
 const P = Object.assign({ coins: 0, earned: 0, own: [], eq: null, relics: [], ach: [], runs: {}, totals: {} }, store.get('profile', {}));
@@ -18,9 +18,9 @@ const saveNow = () => { clearTimeout(timer); timer = 0; store.set('profile', P);
 const saveSoon = () => { if (!timer) timer = setTimeout(saveNow, 900); };
 export const flushProfile = saveNow;
 
-// Every relic there is: the hidden suits (paths and maze gardens), the epic vaults and the legendary weapons.
+// Every relic there is: the hidden suits (paths and maze gardens), the hidden spots and the legendary weapons.
 const ALL_SUITS = [...SUIT_RELICS, ...MAZE_RELIC_IDS];
-export const RELIC_COUNT = ALL_SUITS.length + MAP_KEYS.length + WEAPON_RELICS.length;
+export const RELIC_COUNT = ALL_SUITS.length + SPOT_RELICS.length + WEAPON_RELICS.length;
 
 // First run on this version: what you had picked in Settings becomes your suit.
 export function initProfile(oldColor) {
@@ -126,7 +126,7 @@ export function owned(item) {
   return item.price === 0;
 }
 // Can it be bought yet? Epic and legendary things need their relic found first (relics.js).
-export const unlocked = (item) => { const n = needOf(item); return !n || n.every((r) => P.relics.includes(r)); };
+export const unlocked = (item) => { const n = needOf(item); return !n || n.every((r) => relicIn(P.relics, r)); };
 
 export function buy(item) {
   if (item.price <= 0 || P.coins < item.price || P.own.includes(itemKey(item))) return false;
@@ -149,19 +149,23 @@ export function myLook() {
 }
 
 
-export const hasRelic = (id) => P.relics.includes(id);
+// Found it, or the old epic vault that stood for it (relics.js LEGACY).
+export const hasRelic = (id) => relicIn(P.relics, id);
 export const relicsFound = () => P.relics.filter((r) => ALL_SUITS.includes(r)).length;
 // How many of each kind of hidden place you found: [found, how many there are].
 export const relicCounts = () => {
   const n = (sfx) => P.relics.filter((r) => r.endsWith(sfx)).length;
-  return { suit: [relicsFound(), ALL_SUITS.length], epic: [n(':e'), MAP_KEYS.length], weapon: [n(':w'), WEAPON_RELICS.length] };
+  return { suit: [relicsFound(), ALL_SUITS.length], spot: [SPOT_RELICS.filter(hasRelic).length, SPOT_RELICS.length], weapon: [n(':w'), WEAPON_RELICS.length] };
 };
 // A relic picked up: what to tell the climber, or null if it was found before.
 export function foundRelic(id) {
-  if (P.relics.includes(id)) return null;
+  if (hasRelic(id)) return null;
   P.relics.push(id);
   let out = null;
-  if (id.endsWith(':e')) {
+  const thing = spotThing(id);
+  if (thing) {
+    out = { title: thing.r === 3 ? 'Legendary relic found' : 'Epic relic found', name: thing.name, sub: 'It can be bought in the shop now' };
+  } else if (id.endsWith(':e')) {
     const n = opensOf(id, [...Object.values(SUIT), ...Object.values(FACE), ...Object.values(HAT), ...WEAPONS]).length;
     out = { title: 'Epic vault opened', name: `${n} epic things`, sub: 'They can be bought in the shop now' };
   } else if (id.endsWith(':w')) {
@@ -206,4 +210,4 @@ export function recordRun(run) {
 }
 export const runsOf = (map) => P.runs[map] || [];
 export function addTotals(falls, climbs) { P.totals.falls = (P.totals.falls || 0) + falls; P.totals.climbs = (P.totals.climbs || 0) + climbs; saveSoon(); }
-export const totals = () => ({ falls: P.totals.falls || 0, climbs: P.totals.climbs || 0, earned: P.earned, relics: P.relics.length });
+export const totals = () => ({ falls: P.totals.falls || 0, climbs: P.totals.climbs || 0, earned: P.earned, relics: [...ALL_SUITS, ...SPOT_RELICS, ...WEAPON_RELICS].filter(hasRelic).length });

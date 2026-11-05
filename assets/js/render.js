@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/OutputPass.js';
 import { Mirror } from './mirror.js';
 import { useBakedNoise } from './pattern.js';
+import { hueShift } from './level.js';
 
 export const QUALITY = {
   low: { dpr: 1.0, bloom: false, shadow: 0, rain: 1200, ocean: 48, samples: 0 },
@@ -35,6 +36,29 @@ const THEMES = {
 THEMES.waterfall = { key: 'waterfall', top: 0x3a9ae0, glow: 0xfff6d0, day: 1, sun: 1, sunCol: 0xfff4dc, cloud: 0.45, horK: 1.0, seaK: 0.8, hemiSky: 0xd0f0ff, hemiGround: 0x8ac890,
   hemi: 1.15, light: 0xfff4e4, lightI: 2.6, dir: [0.4, 0.8, -0.45], deep: 0x0a5a80, shallow: 0x30d8c8, shallowR: 48, amp: 0.28, foam: 0.15, scatter: 0x3ff0d8, clear: 0.6, shore: 37.2,
   rain: 0, fog: 0.0034, exposure: 1.0, bloom: [0.35, 0.4, 0.95] };
+
+// A generated map's look (level.js mapDef): its world's sky with the colours turned round (hue), maybe another time of day,
+// and for a holiday its own few colours on top.
+const TIMES = {
+  night: { day: 0, sun: 0, cloud: 0.8, top: 0x070b1c, glow: 0x9ab0ff, sunCol: 0xd8e0ff, light: 0xa8b8ff, dir: [0.4, 1, 0.3], k: 0.5, fogK: 0.32, exposure: 1.1 },
+  dusk: { day: 0.5, sun: 0.7, cloud: 0.5, top: 0x2a2050, glow: 0xff9a6a, sunCol: 0xff8a5a, light: 0xffa070, dir: [0.7, 0.2, 0.4], k: 0.8, fogK: 0.72 },
+};
+function lookOf(key, look) {
+  const B = THEMES[key] || THEMES.storm;
+  if (!look) return B;
+  const T = Object.assign({}, B), h = look.hue || 0;
+  for (const k of ['top', 'glow', 'hemiSky', 'hemiGround', 'scatter']) if (T[k] !== undefined) T[k] = hueShift(T[k], h);
+  // Lava stays lava.
+  if (!T.lava) { T.deep = hueShift(T.deep, h); T.shallow = hueShift(T.shallow, h); }
+  const tm = TIMES[look.time];
+  if (tm) {
+    Object.assign(T, { day: tm.day, sun: tm.sun, cloud: tm.cloud, top: tm.top, glow: tm.glow, sunCol: tm.sunCol, light: tm.light, dir: tm.dir, fogK: tm.fogK });
+    T.hemi *= tm.k; T.lightI *= tm.k;
+    if (tm.exposure) T.exposure = tm.exposure;
+  }
+  if (look.over) Object.assign(T, look.over);
+  return T;
+}
 
 const NOISE = `
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -476,9 +500,9 @@ export class Renderer {
     this.flash(0.5 * big);
   }
 
-  // Switches the whole look to a map (storm, sunny or forest).
-  setTheme(key) {
-    const T = (this.theme = THEMES[key] || THEMES.storm), S = this.skyU, O = this.oceanU;
+  // Switches the whole look to a map (its world's key, and a generated map's own look).
+  setTheme(key, look) {
+    const T = (this.theme = lookOf(key, look)), S = this.skyU, O = this.oceanU;
     S.uTop.value.setHex(T.top);
     S.uGlow.value.setHex(T.glow);
     S.uSunCol.value.setHex(T.sunCol);
@@ -544,7 +568,7 @@ export class Renderer {
     const TH = this.theme, E = TH.key === 'storm' ? this.eye : 0;
 
     if (zone) {
-      const target = new THREE.Color(zone.fog);
+      const target = new THREE.Color(zone.fog).multiplyScalar(TH.fogK ?? 1);
       this.fogCol.lerp(target, Math.min(1, dt * 0.7));
       this.scene.fog.color.copy(this.fogCol);
       this.scene.background.copy(this.fogCol);

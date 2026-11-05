@@ -41,10 +41,12 @@ const levels = new Map();
 function levelOf(map) {
   let e = levels.get(map);
   if (!e) {
+    // With a hundred and more maps only the few played lately are kept built.
+    while (levels.size >= 16) levels.delete(levels.keys().next().value);
     const L = generateLevel(map);
     e = { L, W: new World(L.cols) };
-    levels.set(map, e);
-  }
+  } else levels.delete(map);
+  levels.set(map, e);
   return e;
 }
 

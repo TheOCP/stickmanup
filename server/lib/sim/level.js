@@ -9,7 +9,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 21;
+export const LEVEL_VERSION = 22;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -120,6 +120,182 @@ export const MAPS = [
     ],
   },
 ];
+// ---------------------------------------------------------------- generated maps
+// Maps 100 to 199: a hundred more climbs. Each is built on one of the six worlds above (its looks, its way up, its creatures)
+// with a seed of its own, its own colours (hue), a name, the zones in another order, a grade (how hard it is on any
+// difficulty) and up to two twists (mutators). Maps 200 and up are the holiday maps, there on the days round their holiday.
+// The daily climb is one of them, by date (dailyMap), unless the server says another (the team's /daily). Generated maps have
+// no relics: they are climbs, and their coins pay like everywhere else.
+export const GEN0 = 100, GEN_N = 100, HOLI0 = 200;
+export const GRADES = ['Gentle', 'Steep', 'Brutal', 'Extreme'];
+const GEN_WORDS = {
+  storm: [['Static', 'Voltage', 'Thunder', 'Cloudburst', 'Surge', 'Ion', 'Arc', 'Tempest'], ['Spire', 'Mast', 'Beacon', 'Needle', 'Antenna', 'Relay', 'Tower', 'Pylon']],
+  sunny: [['Coral', 'Sunlit', 'Golden', 'Breezy', 'Salty', 'Lagoon', 'Driftwood', 'Tidal'], ['Lighthouse', 'Cliffs', 'Cove', 'Bluff', 'Reef', 'Beacon', 'Point', 'Watch']],
+  forest: [['Mossy', 'Ancient', 'Whispering', 'Elder', 'Fern', 'Hollow', 'Wild', 'Misty'], ['Oak', 'Canopy', 'Grove', 'Treetops', 'Thicket', 'Redwood', 'Bough', 'Glade']],
+  volcano: [['Molten', 'Ashen', 'Cinder', 'Obsidian', 'Scorched', 'Ember', 'Sulfur', 'Blazing'], ['Crater', 'Caldera', 'Peak', 'Forge', 'Vent', 'Summit', 'Furnace', 'Rift']],
+  city: [['Chrome', 'Neon', 'Midnight', 'Glass', 'Cyber', 'Rooftop', 'Hyper', 'Electric'], ['Spire', 'Heights', 'Skyline', 'District', 'Tower', 'Arcology', 'Plaza', 'Block']],
+  waterfall: [['Roaring', 'Crystal', 'Frozen', 'Silver', 'Thunder', 'Azure', 'Glacier', 'Hidden'], ['Falls', 'Cascade', 'Gorge', 'Torrent', 'Rapids', 'Basin', 'Canyon', 'Springs']],
+};
+// The twists: more of some obstacles, ice, or another time of day (only the looks).
+export const MUTATORS = {
+  frozen: { name: 'Frozen', ice: 2 },
+  gauntlet: { name: 'Gauntlet', tpl: { laser: 2, arrows: 2, swing: 1.6 } },
+  moving: { name: 'Restless', tpl: { mover: 2, bob: 2, lift: 1.8, tilt: 1.8, spinner: 1.8 } },
+  crumbling: { name: 'Crumbling', tpl: { crumble: 2.4 } },
+  hooks: { name: 'Hooks', tpl: { grapple: 2.4 } },
+  windy: { name: 'Windy', tpl: { fan: 2.4 } },
+  night: { name: 'Night', look: 'night' },
+  dusk: { name: 'Dusk', look: 'dusk' },
+};
+const MUT_KEYS = Object.keys(MUTATORS);
+// Holidays: from and to are [month, day] in UTC, both days included. Easter moves: its days are worked out each year.
+export const HOLIDAYS = [
+  { id: 200, hol: 'halloween', key: 'forest', name: 'Haunted Hollow', from: [10, 24], to: [11, 1], hue: 250, grade: 2, muts: ['night', 'crumbling'],
+    look: { top: 0x12061e, glow: 0xff7a1a, hemiSky: 0x6a4a9a, hemiGround: 0x1a0e14, light: 0xffa060 },
+    zones: ['Pumpkin Patch', 'Graveyard Gate', 'Witch Woods', 'Bone Bridges', 'Bat Belfry', 'Cauldron Rise', 'Spider Hollow', 'Ghost Lights', 'Midnight Moon'] },
+  { id: 201, hol: 'christmas', key: 'waterfall', name: 'Frosty Peaks', from: [12, 18], to: [12, 27], hue: 0, grade: 1, muts: ['frozen', 'dusk'],
+    look: { top: 0x1a2a50, glow: 0xffd8a0, hemiSky: 0xd0e4ff, light: 0xfff0e0 }, tint: [0xe8f4ff, 0xff4a5a, 0x4ad07a],
+    zones: ['Candy Cane Shore', 'Gingerbread Steps', 'Elf Workshop', 'Sleigh Bells', 'Snowman Ridge', 'Frozen Falls', 'Reindeer Run', 'Starlight Ice', 'Top of the Tree'] },
+  { id: 202, hol: 'newyear', key: 'city', name: 'Countdown Tower', from: [12, 30], to: [1, 2], hue: 40, grade: 2, muts: ['night', 'gauntlet'],
+    look: { top: 0x0a0a1e, glow: 0xffd040, light: 0xfff0c0 },
+    zones: ['Party Docks', 'Confetti Alley', 'Sparkler Roofs', 'Balloon Heights', 'Glitter Gardens', 'Firework Forest', 'Champagne Deck', 'Golden Glass', 'Midnight Crown'] },
+  { id: 203, hol: 'valentine', key: 'sunny', name: 'Sweetheart Cliffs', from: [2, 12], to: [2, 15], hue: 320, grade: 0, muts: ['dusk'],
+    look: { top: 0xd06aa0, glow: 0xffd0e0, hemiSky: 0xffd0e8, light: 0xffe0f0 },
+    zones: ['Rose Pier', 'Love Letters', 'Candy Hearts', 'Cupid Clouds', 'Chocolate Bridges', 'Kiss Spire', 'Lantern Lovers', 'Ribbon Heights', 'Heart of Gold'] },
+  { id: 204, hol: 'easter', key: 'forest', name: 'Egg Hunt Grove', easter: true, hue: 60, grade: 0, muts: ['hooks'],
+    look: { top: 0x8ac8ff, glow: 0xfff6c0, hemiSky: 0xf0e8ff },
+    zones: ['Bunny Burrows', 'Pastel Meadow', 'Basket Trunk', 'Egg Vines', 'Chick Canopy', 'Tulip Crown', 'Spring Showers', 'Bumblebee Heights', 'Golden Egg'] },
+  { id: 205, hol: 'midsummer', key: 'sunny', name: 'Midsummer Light', from: [6, 20], to: [6, 24], hue: 15, grade: 1, muts: ['windy'],
+    look: { top: 0x3a8ae0, glow: 0xfff0a0, light: 0xfff4d0 },
+    zones: ['Bonfire Beach', 'Flower Crowns', 'Maypole Steps', 'Long Day Gardens', 'Sun Bridges', 'Solstice Spire', 'Firefly Gallery', 'Golden Hour', 'Midnight Sun'] },
+];
+
+// Colours turned round the colour wheel by deg.
+export function hueShift(hex, deg) {
+  if (!deg) return hex;
+  let r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, b = (hex & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (d < 1e-6) return hex;
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (((h / 6) * 360 + deg) % 360 + 360) % 360 / 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const ch = (t) => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+  r = ch(h + 1 / 3); g = ch(h); b = ch(h - 1 / 3);
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+const hexStr = (n) => '#' + n.toString(16).padStart(6, '0');
+
+// The zones of a generated map: the world's own, all but the first and the last in another order. Each keeps its height,
+// size of platforms and width of jumps by place (higher is harder), and takes its name, hint, obstacles and colours along.
+function genZones(base, R, o) {
+  const Zs = base.zones, mid = Zs.slice(1, -1).map((z, i) => i + 1);
+  for (let i = mid.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0, t = mid[i]; mid[i] = mid[j]; mid[j] = t; }
+  const order = [0, ...mid, Zs.length - 1], gapK = [0.93, 1, 1.05, 1.1][o.grade], sizeK = [1.1, 1, 0.94, 0.88][o.grade];
+  const ice = new Set();
+  if (o.ice) while (ice.size < o.ice) ice.add(2 + ((R() * (Zs.length - 3)) | 0));
+  return order.map((src, at) => {
+    const place = Zs[at], from = Zs[src], tpl = Object.assign({}, from.tpl);
+    for (const m of o.muts) for (const [k, v] of Object.entries(MUTATORS[m].tpl || {})) if (tpl[k] !== undefined || v > 2) tpl[k] = (tpl[k] || 0.6) * v;
+    // The grade: harder ones a little more of what is hardest, easier ones more plain jumps.
+    if (o.grade >= 2) for (const k of ['laser', 'arrows', 'crumble', 'tilt', 'swing']) if (tpl[k]) tpl[k] *= 1 + 0.25 * (o.grade - 1);
+    if (o.grade === 0) tpl.gap = (tpl.gap || 2) + 1.5;
+    const z = Object.assign({}, from, {
+      y1: place.y1, tpl,
+      name: o.names ? o.names[at] : from.name,
+      color: hueShift(o.tints ? o.tints[at % o.tints.length] : from.color, o.tints ? 0 : o.hue), tint: hueShift(from.tint, o.hue), fog: hueShift(from.fog, o.hue),
+      sx: place.sx.map((v) => Math.max(1.3, v * sizeK)), sz: place.sz.map((v) => Math.max(1.3, v * sizeK)),
+      // Never wider than the widest the worlds have: past that a jump may not make it.
+      gap: place.gap.map((v) => Math.min(3.0, v * gapK)),
+    });
+    if (ice.has(at)) z.ice = true;
+    return z;
+  });
+}
+
+function genMap(id) {
+  const n = id - GEN0, R = rng((Math.imul(id + 1, 0x9e3779b1) ^ 0x5bd1e995) >>> 0), base = MAPS[(n * 5 + 1) % MAPS.length];
+  const k = Math.floor(n / MAPS.length), [A, B] = GEN_WORDS[base.key];
+  const grade = [0, 1, 1, 1, 2, 2, 3][(R() * 7) | 0], hue = R() < 0.2 ? 0 : Math.round(25 + R() * 310);
+  const muts = [];
+  for (let t = 0, want = (R() * 3) | 0; t < 20 && muts.length < want; t++) {
+    const m = MUT_KEYS[(R() * MUT_KEYS.length) | 0];
+    // One time of day at most, and no night where it is night already.
+    if (muts.includes(m) || (MUTATORS[m].look && (muts.some((x) => MUTATORS[x].look) || base.key === 'storm' || base.key === 'city'))) continue;
+    muts.push(m);
+  }
+  const ice = muts.includes('frozen') ? 2 : 0;
+  const name = `${A[k % A.length]} ${B[(k + Math.floor(k / B.length) + n) % B.length]}`;
+  const zones = genZones(base, R, { grade, hue, muts, ice });
+  return {
+    id, key: base.key, base: base.id, gen: true, num: n + 1, name, grade, muts, hue,
+    desc: `${base.name} world, ${GRADES[grade]}${muts.length ? ', ' + muts.map((m) => MUTATORS[m].name).join(', ') : ''}.`,
+    seed: (Math.floor(R() * 1e9) ^ id) >>> 0, core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), hue)), route: base.route,
+    look: Object.assign({ hue }, ...muts.filter((m) => MUTATORS[m].look).map((m) => ({ time: MUTATORS[m].look }))), zones,
+  };
+}
+
+function holidayMap(h) {
+  const base = MAPS.find((m) => m.key === h.key), R = rng((Math.imul(h.id, 0x2c1b3c6d) ^ 0x297a2d39) >>> 0);
+  const zones = genZones(base, R, { grade: h.grade, hue: h.hue, muts: h.muts, ice: h.muts.includes('frozen') ? 3 : 0, names: h.zones, tints: h.tint });
+  return {
+    id: h.id, key: h.key, base: base.id, gen: true, holiday: h.hol, name: h.name, grade: h.grade, muts: h.muts, hue: h.hue,
+    desc: `A holiday climb on ${base.name}'s world, ${GRADES[h.grade]}.`,
+    seed: (h.id * 7919 + 4243) >>> 0, core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), h.hue)), route: base.route,
+    look: Object.assign({ hue: h.hue }, ...h.muts.filter((m) => MUTATORS[m].look).map((m) => ({ time: MUTATORS[m].look })), { over: h.look }), zones,
+  };
+}
+
+const defs = new Map();
+// Any map by its number: the six worlds, the generated ones and the holiday ones. Null for none.
+export function mapDef(id) {
+  if (!Number.isInteger(id) || id < 0) return null;
+  if (id < MAPS.length) return MAPS[id];
+  if (defs.has(id)) return defs.get(id);
+  let d = null;
+  if (id >= GEN0 && id < GEN0 + GEN_N) d = genMap(id);
+  else { const h = HOLIDAYS.find((x) => x.id === id); if (h) d = holidayMap(h); }
+  defs.set(id, d);
+  return d;
+}
+// Every map number there is.
+export const ALL_MAP_IDS = [...MAPS.map((m) => m.id), ...Array.from({ length: GEN_N }, (_, i) => GEN0 + i), ...HOLIDAYS.map((h) => h.id)];
+
+// Easter Sunday of a year (the Gregorian rule), as [month, day].
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  return [Math.floor((h + l - 7 * m + 114) / 31), ((h + l - 7 * m + 114) % 31) + 1];
+}
+// The holiday on a day (a Date, read in UTC), or null.
+export function holidayOn(date) {
+  const y = date.getUTCFullYear(), md = (date.getUTCMonth() + 1) * 100 + date.getUTCDate();
+  for (const h of HOLIDAYS) {
+    let from, to;
+    if (h.easter) {
+      const [em, ed] = easter(y), t = Date.UTC(y, em - 1, ed), at = (k) => { const x = new Date(t + k * 86400000); return (x.getUTCMonth() + 1) * 100 + x.getUTCDate(); };
+      from = at(-3); to = at(1);
+    } else { from = h.from[0] * 100 + h.from[1]; to = h.to[0] * 100 + h.to[1]; }
+    if (from <= to ? md >= from && md <= to : md >= from || md <= to) return h;
+  }
+  return null;
+}
+// The day's climb: the holiday's on a holiday, otherwise one of the hundred by date. The same everywhere on the same day (UTC).
+export function dailyMap(date = new Date()) {
+  const h = holidayOn(date);
+  if (h) return h.id;
+  const day = Math.floor(date.getTime() / 86400000), R = rng((Math.imul(day, 0x27d4eb2d) ^ 0x165667b1) >>> 0);
+  R();
+  return GEN0 + ((R() * GEN_N) | 0);
+}
+export const dayKey = (date = new Date()) => date.toISOString().slice(0, 10);
+export const mapName = (id) => { const d = mapDef(id); return d ? d.name : ''; };
+// The maps to pick from with the arrows: the hundred, and a holiday's while it is on (or when it is the day's climb).
+export function genList(date = new Date(), daily = -1) {
+  const out = Array.from({ length: GEN_N }, (_, i) => GEN0 + i), h = holidayOn(date);
+  for (const x of HOLIDAYS) if ((h && h.id === x.id) || x.id === daily) out.unshift(x.id);
+  return out;
+}
 export const ZONES = MAPS[0].zones;
 
 // The angry dummies (jumpers) on each map: name and colours (c body, g band and eyes).
@@ -211,6 +387,22 @@ function hardened(z, t) {
 export const MAZE_CELL = 2.4, MAZE_WALL_H = 4.4, MAZE_WALL_T = 0.3, MAZE_RIM = 1.6, MAZE_ROOF = 0.5, MAZE_EDGE = 1.1;
 // How many legendary relics hide in each map's mazes (relic ids map:m0, map:m1; skins.js says what each one opens).
 export const MAZE_RELICS = { storm: 2, sunny: 2, forest: 1, volcano: 2, city: 2, waterfall: 2 };
+// The hidden spots: one for every epic thing (relics.js says which), and one for every epic and legendary graffiti. Each map has
+// [epic spots, legendary spots]. A spot is only there on one difficulty, so every difficulty hides different ones: some at the
+// end of a hidden course (the harder the difficulty, the longer), some in a corner of a maze garden, and the legendary ones at
+// the end of a long course of their own.
+export const HIDE = { storm: [17, 2], sunny: [17, 2], forest: [17, 2], volcano: [16, 2], city: [19, 2], waterfall: [14, 2] };
+const HIDE_MAPS = ['storm', 'sunny', 'forest', 'volcano', 'city', 'waterfall'];
+// Every hidden spot of a map: j its number, id its relic (map:h0, map:h1 ...), dv the one difficulty it is there on, maze if it is
+// in a maze garden, legend if it is a legendary one.
+export function hideSpots(key) {
+  const [E, G] = HIDE[key] || [0, 0], m = Math.max(0, HIDE_MAPS.indexOf(key)), out = [];
+  for (let j = 0; j < E + G; j++) {
+    const legend = j >= E;
+    out.push({ j, id: key + ':h' + j, dv: legend ? (m + 2 + 2 * (j - E)) % 4 : j % 4, maze: !legend && Math.floor(j / 4) % 2 === 1, legend });
+  }
+  return out;
+}
 
 // Edges of an N x N maze: first the N - 1 walls inside each row (between cell i and i + 1), row by row, then the N walls
 // between each row and the next. Cells are numbered j * N + i.
@@ -360,11 +552,11 @@ const COURSE_NAMES = {
 };
 
 export function generateLevel(mapId = 0) {
-  const MAP = MAPS[mapId] || MAPS[0], ZONE_LIST = MAP.zones;
+  const MAP = mapDef(mapId) || MAPS[0], ZONE_LIST = MAP.zones;
   const R = rng(MAP.seed);
   const rr = (a, b) => a + R() * (b - a);
   const out = {
-    map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
+    map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern, gen: !!MAP.gen, name: MAP.name, look: MAP.look || null,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
     anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
     obs: [], wells: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [], moves: [], hops: [], zips: [], mazes: [],
@@ -2620,16 +2812,17 @@ export function generateLevel(mapId = 0) {
       for (const c of A.cols) {
         if (c.wi === undefined) c.wi = wi; else wi = c.wi;
         c.ri = i;
+        if (plan.dv !== undefined) c.dv = plan.dv;
         out.cols.push(c);
         if (c.crumble) { c.crumble.i = out.crumbles.length; out.crumbles.push(c); }
         if (c.blink) out.blinks.push(c);
         recBox(c.x, c.z, c.hx, c.hz, c.ry, c.y + c.hy);
       }
       for (const q of A.recs) recBox(...q);
-      for (const o of A.obs) { o.i = out.obs.length; out.obs.push(o); }
+      for (const o of A.obs) { o.i = out.obs.length; if (plan.dv !== undefined) o.dv = plan.dv; out.obs.push(o); }
       for (const w of A.wells) out.wells.push(w);
       out.relics.push({
-        i, id, kind: plan.kind, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones: A.cols, way: A.way, rests: A.rests, made, entry: PORTAL ? 0 : A.rests[1].c.wi, portal: PORTAL,
+        i, id, kind: plan.kind, dv: plan.dv, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones: A.cols, way: A.way, rests: A.rests, made, entry: PORTAL ? 0 : A.rests[1].c.wi, portal: PORTAL,
         vault: { x: e.x, y: e.y, z: e.z, s: plan.end, ry: -e.a }, exit: { x: e.x + ux * (plan.end / 2 - 0.75), y: e.y, z: e.z + uz * (plan.end / 2 - 0.75) },
         gate: { x: sx, y: st.y + st.hy, z: sz, a: ang0 },
         back: PORTAL ? { x: A.rests[0].x - Math.cos(A.rests[0].a) * 1.7, y: A.rests[0].y, z: A.rests[0].z - Math.sin(A.rests[0].a) * 1.7 } : null,
@@ -2641,14 +2834,30 @@ export function generateLevel(mapId = 0) {
     const plans = [
       { kind: 'suit', id: '0', y: [170, 300], parts: 10, k: [0.74, 0.86], tiny: 0.9, end: 4.4, rise: 40, mark: 22, out: 4 },
       { kind: 'suit', id: '1', y: [560, 720], parts: 13, k: [0.78, 0.9], tiny: 0.85, end: 4.4, rise: 60, mark: 24, out: 8 },
-      { kind: 'epic', id: 'e', y: [100, 440], parts: 7, k: [0.66, 0.8], tiny: 1, end: 4.6, rise: 18, mark: 18, out: 0 },
       { kind: 'weapon', id: 'w', y: [400, 720], parts: 16, k: [0.8, 0.94], tiny: 0.85, end: 4.8, rise: 90, mark: 26, out: 12 },
     ];
+    // The hidden spots at the end of a course (hideSpots): each difficulty's spread over the whole climb, longer and harder the
+    // harder the difficulty, and the legendary ones long.
+    const NOOK = [
+      { parts: 3, k: [0.6, 0.72], tiny: 1, rise: 8, mark: 16, out: 0 },
+      { parts: 4, k: [0.64, 0.76], tiny: 1, rise: 12, mark: 18, out: 0 },
+      { parts: 5, k: [0.7, 0.82], tiny: 0.95, rise: 16, mark: 20, out: 2 },
+      { parts: 6, k: [0.74, 0.86], tiny: 0.9, rise: 22, mark: 22, out: 4 },
+    ];
+    const spots = hideSpots(MAP.key).filter((q) => !q.maze), byDv = [0, 1, 2, 3].map((d) => spots.filter((q) => q.dv === d));
+    for (const q of spots) {
+      const list = byDv[q.dv], n = list.length, at = list.indexOf(q), y0 = 70 + (at * 820) / n, y1 = 70 + ((at + 1) * 820) / n;
+      const how = q.legend ? { parts: 8, k: [0.76, 0.88], tiny: 0.88, rise: 40, mark: 22, out: 6 } : NOOK[q.dv];
+      plans.push(Object.assign({ kind: q.legend ? 'suit' : 'epic', id: 'h' + q.j, dv: q.dv, y: [y0, y1], end: 4.4, wide: true }, how));
+    }
     for (const plan of plans) {
       noteHazards();
-      const list = shuffle(pool.filter((c) => c.y + c.hy - 2 > plan.y[0] && c.y + c.hy - 2 < plan.y[1]));
       let done = false;
-      // Where there is little room a course can come out a part or two shorter. There always is one.
+      // Where there is little room a course can come out a part or two shorter, and a hidden spot's anywhere up the climb.
+      // There always is one.
+      for (const ys of plan.wide ? [plan.y, [60, 900]] : [plan.y]) {
+      if (done) break;
+      const list = shuffle(pool.filter((c) => c.y + c.hy - 2 > ys[0] && c.y + c.hy - 2 < ys[1]));
       for (let parts = plan.parts; parts >= 2 && !done; parts--) for (const st of list) {
         if (done) break;
         const out0 = Math.atan2(st.z, st.x), wantR = PORTAL ? 38 + plan.out : routeR + 24 + plan.out;
@@ -2664,6 +2873,7 @@ export function generateLevel(mapId = 0) {
           }
           if (done) break;
         }
+      }
       }
     }
   }
@@ -3010,14 +3220,32 @@ export function generateLevel(mapId = 0) {
     }
   }
   buildCoins();
-  buildSecrets();
+  // The generated maps are climbs only: no relics on them.
+  if (MAP.gen) out.relics = []; else buildSecrets();
   // Legendary relics in the mazes (MAZE_RELICS), in the cell furthest from the way in, spread up the climb. Like the other
   // hidden suits (kind 'suit'), on every difficulty and with any rules.
-  const nRel = Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
+  const nRel = MAP.gen ? 0 : Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
   for (let q = 0; q < nRel; q++) {
     const m = out.mazes[Math.floor(((q + 1) * out.mazes.length) / (nRel + 1))];
     m.relic = MAP.key + ':m' + q;
     out.relics.push({ i: out.relics.length, id: m.relic, kind: 'suit', x: m.rx, y: m.y + 1.05, z: m.rz, maze: m.i });
+  }
+  // The hidden spots in the maze gardens (hideSpots): one to a maze, in a cell well away from both ways in and from the
+  // legendary relic. Only on its own difficulty.
+  if (out.mazes.length && !MAP.gen) {
+    hideSpots(MAP.key).filter((q) => q.maze).forEach((q, k) => {
+      const m = out.mazes[(k * 3 + 1) % out.mazes.length], R = rng((m.seed ^ Math.imul(q.j + 11, 0x9e3779b1)) >>> 0), far = (i, j, a, b) => Math.abs(i - a) + Math.abs(j - b);
+      const taken = out.relics.filter((r) => r.maze === m.i).map((r) => r.cell || [m.ri, m.rj]);
+      let cell = null;
+      for (let t = 0; t < 200 && !cell; t++) {
+        const i = (R() * m.N) | 0, j = (R() * m.N) | 0;
+        if (far(i, j, m.ei, m.ej) < 3 || far(i, j, m.xi, m.xj) < 3 || far(i, j, m.ri, m.rj) < 2 || taken.some(([a, b]) => far(i, j, a, b) < 2)) continue;
+        cell = [i, j];
+      }
+      if (!cell) cell = [m.N - 1 - m.ri, m.rj];
+      const [x, z] = mazeCell(m, cell[0], cell[1]);
+      out.relics.push({ i: out.relics.length, id: q.id, kind: q.legend ? 'suit' : 'epic', dv: q.dv, x, y: m.y + 1.05, z, maze: m.i, cell });
+    });
   }
 
   // Clouds never get in the way of the climb. They slowly circle the middle, so only their distance from it counts:
@@ -3054,7 +3282,11 @@ export function generateLevel(mapId = 0) {
 // Insane only until 4.10.6, and custom rules had none until 4.10.21).
 // Both kinds at once, as storm.sec and worldview.setSecrets take them: 'open' are the epic paths, 'hard' all the others.
 export const ALL_SECRETS = { hard: true, open: true };
-export const secretOn = (c, sec) => !!sec && (c.rk === 'epic' ? !!sec.open : !!sec.hard);
+// What a climb on difficulty d has: all of them, but of the hidden spots (hideSpots) only that difficulty's.
+export const secretsFor = (d) => ({ hard: true, open: true, dv: d });
+// Is this here on that difficulty? (c.dv: the one difficulty a hidden spot's course or relic is there on.)
+export const dvOn = (c, sec) => c.dv === undefined || !sec || sec.dv === undefined || c.dv === sec.dv;
+export const secretOn = (c, sec) => !!sec && (c.rk === 'epic' ? !!sec.open : !!sec.hard) && dvOn(c, sec);
 
 // Do two oriented rectangles (x, z, hx, hz, c = cos yaw, s = sin yaw) overlap, with margin m? (2D SAT)
 export function overlap(a, b, m) {

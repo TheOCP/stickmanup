@@ -2,9 +2,13 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, MAZE_RELICS } from './level.js';
+import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
 import { NavPath } from './navpath.js';
-import { EMOTES } from './emotes.js';
+import { EMOTES, EMOTE } from './emotes.js';
+import { SPRAYS, sprayUrl } from './sprays.js';
+import { Graffiti } from './graffiti.js';
+import { Ghosts, GhostRec, decode as ghostDecode, better as ghostBetter } from './ghost.js';
+import { Traitor, traitorLine } from './traitor.js';
 import { World } from './physics.js';
 import { WorldView, setSimple, setThin } from './worldview.js';
 import { setDetail } from './scenery.js';
@@ -53,7 +57,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, relicMark: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
@@ -76,12 +80,18 @@ const RULES = [
 ];
 const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Friendly fire<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="ff" data-v="0" class="${r.ff === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="ff" data-v="1" class="${r.ff === 1 ? 'on' : ''}">On</button></div></label></div>
     <p class="sub" style="margin:4px 0 0">On: your shots throw your friends off the climb, and theirs throw you.</p>`;
+// Traitor mode (traitor.js): only for a game with others, started from the lobby.
+const traitorHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Traitor mode<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="tr" data-v="0" class="${r.tr === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="tr" data-v="1" class="${r.tr === 1 ? 'on' : ''}">On</button></div></label></div>
+    <p class="sub" style="margin:4px 0 0">On: one of you is secretly the traitor and sabotages the climb. Find them with the clues and vote them out before the top. Needs 3 or more climbers.</p>`;
 // Friendly fire is kept only for a game started from the lobby, and only when the host switched it on there.
-const cleanRules = (r = {}, ff = false) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; if (ff && r.ff === 1) o.ff = 1; return o; };
-// How many of a map's relics have been found: four at the end of its courses, and the ones in its maze gardens.
+const cleanRules = (r = {}, ff = false) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; if (ff && r.ff === 1) o.ff = 1; if (ff && r.tr === 1) o.tr = 1; return o; };
+// How many of a map's relics have been found: three at the end of its long courses, the ones in its maze gardens and its
+// hidden spots (on every difficulty different ones).
 function relicLine(mapId) {
-  const key = MAPS[mapId].key, ids = ['0', '1', 'e', 'w'];
+  if (mapId >= MAPS.length) return `<p class="sub" id="relicLine" style="margin:12px 0 0">No relics on this climb: they are hidden on the six worlds.</p>`;
+  const key = MAPS[mapId].key, ids = ['0', '1', 'w'];
   for (let i = 0; i < (MAZE_RELICS[key] || 0); i++) ids.push('m' + i);
+  for (const q of hideSpots(key)) ids.push('h' + q.j);
   return `<p class="sub" id="relicLine" style="margin:12px 0 0">Relics found on this map: ${ids.filter((k) => hasRelic(key + ':' + k)).length} of ${ids.length}</p>`;
 }
 function rulesHtml(r, editable, solo) {
@@ -99,7 +109,7 @@ if (settings.aimAssist === false) settings.aimHelp = 0;
 delete settings.camAssist;
 delete settings.aimAssist;
 if (!settings.name || /^Robot \d+$/.test(settings.name)) settings.name = 'Climber ' + (100 + ((Math.random() * 900) | 0));
-if (!MAPS[settings.map]) settings.map = 0;
+if (!mapDef(settings.map)) settings.map = 0;
 const saveSettings = () => store.set('settings', settings);
 // v2 keeps best times per map; earlier best times were all on the storm tower.
 if (!store.get('best2') && store.get('best')) { const b = {}; for (const [d, t] of Object.entries(store.get('best'))) b['0:' + d] = t; store.set('best2', b); }
@@ -148,6 +158,7 @@ const putXY = (el, x, y) => {
 const EV_WARN = { gust: 'GUST INCOMING', wave: 'WAVE INCOMING', laser: 'LASERS INCOMING', cannon: 'CANNONS INCOMING', quake: 'QUAKE INCOMING', bees: 'BEES INCOMING' };
 const EV_ON = { gust: 'GUST! GRAB ON', wave: 'WAVE! JUMP OR GRAB ON', laser: 'LASERS! KEEP MOVING', cannon: 'CANNONS! GET OUT OF THE RINGS', quake: 'QUAKE! JUMP WHEN IT SHAKES', bees: 'BEES! RUN OR SHIELD!' };
 const ui = (app.ui = {
+  ghostsSaid(off) { ui.toast(off ? 'The host switched the ghosts off for everyone' : 'The host switched the ghosts on again', ''); },
   coins(n, pop) {
     const el = hudEl('#hCoins');
     putHtml(el, `<i class="coin"></i>${n}`);
@@ -199,7 +210,7 @@ const ui = (app.ui = {
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
     // Where the relics still to find are: the height their course starts at.
-    const rel = (L.relics || []).filter((r) => !hasRelic(r.id)).map((r) => `<i class="rl ${r.kind}" style="bottom:${(((r.gate || r).y) / top) * 100}%"></i>`).join('');
+    const rel = (L.relics || []).filter((r) => !hasRelic(r.id) && (r.dv === undefined || r.dv === g.diff)).map((r) => `<i class="rl ${r.kind}" style="bottom:${(((r.gate || r).y) / top) * 100}%"></i>`).join('');
     $('#hAlt .marks').innerHTML = cps + rel + [...g.s.players.keys()].filter((s) => s === g.slot || !g.hidden.has(s)).map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
     $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].filter((p) => p.slot === g.slot || !g.hidden.has(p.slot)).map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
@@ -295,7 +306,7 @@ const ui = (app.ui = {
   // that place is drawn, so up means further away or higher, and down means back toward the camera.
   nav(g) {
     const el = this.navEl || (this.navEl = $('#hNav')), me = g.me;
-    if (!settings.nav || g.won || g.aiming || !g.L.route) { if (!el.hidden) el.hidden = true; return; }
+    if (!settings.nav || g.won || g.aiming || !g.L.route || app.trStatic) { if (!el.hidden) el.hidden = true; return; }
     const N = g.L.navPath || (g.L.navPath = new NavPath(g.L));
     N.update(me);
     const p = N.target(me);
@@ -450,11 +461,18 @@ function closeEmotes() {
   app.input.lockPad(false);
   app.input.freeMouse(false);
 }
+// The emote that plays at checkpoints: one of yours, never a flip (game.js cpEmote).
+const cpEmotes = () => EMOTES.filter((e) => !e.hidden && !e.hop && owned(e));
 function openEmotes(viaPad) {
   if (app.screen !== 'game' || !app.game) return;
   const list = EMOTES.filter((e) => !e.hidden && owned(e)), more = EMOTES.filter((e) => !e.hidden).length - list.length;
+  const sprays = SPRAYS.filter((s) => owned(s)), cp = cpEmotes().find((e) => e.id === settings.cpEmote);
   $('#emoteMenu').innerHTML = `<div class="emHead"><b>Emotes</b><small>${more ? `${more} more in the shop` : 'You have them all'}</small></div>
-    <div class="emGrid">${list.map((e) => `<button class="emo r${e.r}" data-em="${e.id}"><i>${e.icon}</i><span>${esc(e.name)}</span></button>`).join('')}</div>`;
+    <div class="emGrid">${list.map((e) => `<button class="emo r${e.r}" data-em="${e.id}"><i>${e.icon}</i><span>${esc(e.name)}</span></button>`).join('')}</div>
+    <button class="emCp" data-cpe="1"><span>At checkpoints</span><b>${cp ? `${cp.icon} ${esc(cp.name)}` : 'Nothing'}</b><small>Tap to change</small></button>
+    <div class="emHead"><b>Graffiti</b><small>${sprays.length < SPRAYS.length ? `${SPRAYS.length - sprays.length} more in the shop` : 'You have them all'}</small></div>
+    <p class="emSub">Sprayed on what you stand on, or on the wall you hold. Everyone who climbs here sees it.</p>
+    <div class="emGrid">${sprays.map((s) => `<button class="emo spr r${s.r}" data-spray="${s.id}"><img src="${sprayUrl(s, 96)}" alt=""><span>${esc(s.name)}</span></button>`).join('')}</div>`;
   $('#emoteMenu').className = 'on';
   app.sound.ui();
   if (viaPad) { app.input.lockPad(true); nav.setUsing(true); }
@@ -463,6 +481,111 @@ function openEmotes(viaPad) {
 function toggleEmotes(viaPad) {
   if (emoteOpen()) closeEmotes();
   else openEmotes(viaPad);
+}
+
+// ---------- graffiti ----------
+// Your own: drawn at once, sent to the room and kept on the server for whoever climbs here later (graffiti.js).
+function sprayNow(id) {
+  const g = app.game, G = app.graffiti, item = SPRAYS.find((s) => s.id === id);
+  if (!g || !G || !item || !owned(item)) return;
+  const now = performance.now() / 1000, a = G.aim(g, now);
+  if (!a.at) { ui.toast(a.why, 'bad'); return; }
+  const s = Object.assign({ id }, a.at);
+  G.add(s);
+  G.last = now;
+  app.sound.spray();
+  ui.haptic('tick');
+  g.s.toHost(Object.assign({ k: 'spray', s: g.slot }, s));
+  cloud.postSpray(g.map, LEVEL_VERSION, s);
+}
+// Someone else's, from the room. Only with Graffiti from other climbers on.
+function onSpray(e) {
+  if (settings.graffiti && app.graffiti) app.graffiti.add(e);
+}
+// The ones the server keeps for this map.
+async function loadSprays(map) {
+  if (!settings.graffiti || !app.graffiti) return;
+  const list = await cloud.fetchSprays(map, LEVEL_VERSION);
+  if (!app.game || app.game.map !== map) return;
+  for (const s of list) app.graffiti.add(s);
+}
+
+// ---------- ghost racing (ghost.js) ----------
+// Your best climb of this map and difficulty is kept on this phone too, so it races you without an account.
+const ghostKey = (map, diff) => `ghost.${map}.${diff}`;
+let ghostLine = 0;
+async function loadGhosts(g) {
+  const map = g.map, diff = g.diff, mine = store.get(ghostKey(map, diff), null);
+  const list = [];
+  if (mine && mine.data) list.push({ key: 'me', name: '', how: 'me', won: mine.won, t: mine.t, h: mine.h, data: mine.data });
+  const show = () => app.ghosts.set(list.map((x) => Object.assign({}, x, { a: ghostDecode(x.data) })));
+  show();
+  const got = await cloud.fetchGhosts(map, diff, app.room && app.room.kind === 'server' ? app.room.code : '');
+  if (app.game !== g) return;
+  for (const x of got) {
+    if (!x || typeof x.data !== 'string') continue;
+    if (x.key === 'me') {
+      // The server's own best of yours, if it beats the one on this phone.
+      if (ghostBetter(x, list[0] && list[0].key === 'me' ? list[0] : null)) { if (list[0] && list[0].key === 'me') list.shift(); list.unshift(Object.assign({}, x, { how: 'me' })); }
+    } else list.push(x);
+  }
+  show();
+}
+const ghostShown = (g, key) => settings.ghosts && !(g.rules && g.rules.ng) && (key === 'me' ? settings.ghostMe : !settings.ghostHide.includes(key));
+// Every frame: record yours, move the ghosts, and say who is ahead.
+function ghostTick(g, dt) {
+  const rec = app.ghostRec;
+  if (rec && !rec.dead) {
+    // Only a climb by the difficulty's own rules, never moved by the team or flown, is one to race.
+    if (g.custom || g.tped || g.flying) rec.dead = true;
+    else rec.step(g.time, g.me, Math.atan2(-Math.sin(g.cam.yaw), -Math.cos(g.cam.yaw)));
+  }
+  app.ghosts.update(dt, g.time, app.world, (key) => ghostShown(g, key));
+  if ((ghostLine += dt) < 0.25) return;
+  ghostLine = 0;
+  const el = $('#hGhost');
+  let best = null;
+  for (const x of app.ghosts.list) if (x.at && ghostShown(g, x.key) && (!best || Math.abs(x.at.y - g.me.y) < Math.abs(best.at.y - g.me.y))) best = x;
+  if (!best || g.won) { el.hidden = true; return; }
+  const d = Math.round(best.at.y - g.me.y), who = best.key === 'me' ? 'Your best' : best.name;
+  el.hidden = false;
+  el.className = d > 0 ? 'behind' : '';
+  el.textContent = d > 0 ? `${who}: ${d} m ahead` : d < 0 ? `${who}: ${-d} m behind you` : `${who}: level with you`;
+}
+// The climb is over: if it beat your best, it is the ghost from now on.
+function ghostEnd(g, won, t) {
+  const rec = app.ghostRec;
+  app.ghostRec = null;
+  if (!rec || !g) return;
+  const r = rec.result(won, won ? t : g.time);
+  if (!r) return;
+  const key = ghostKey(g.map, g.diff), was = store.get(key, null);
+  if (!ghostBetter(r, was)) return;
+  store.set(key, r);
+  cloud.postGhost(g.map, g.diff, r);
+}
+// Which ghosts you see, and for the host whether anyone does.
+function ghostMenu(back) {
+  const g = app.game;
+  if (!g) return back();
+  const row = (on, label, sub, act, extra = '') => `<button class="btn ${on ? 'primary' : ''}" data-a="${act}" ${extra}><b>${esc(label)}: ${on ? 'On' : 'Off'}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`;
+  const fmt = (x) => (x.won ? `Summit in ${fmtTime(x.t)}` : `Up to ${Math.round(x.h)} m`);
+  const off = !!(g.rules && g.rules.ng), others = app.ghosts.list.filter((x) => x.key !== 'me'), mine = app.ghosts.list.find((x) => x.key === 'me');
+  show(`<div class="pause"><h2>Ghosts</h2>
+    <p class="sub">See-through climbers playing back the best climbs of this map on ${esc(DIFFS[g.diff].name)}, from the same start as you. Only for the eyes.</p>
+    ${off ? '<p class="note">The host switched the ghosts off for everyone.</p>' : ''}
+    ${row(settings.ghosts, 'Ghosts', 'For you only', 'all')}
+    ${row(settings.ghostMe, 'Your best', mine ? fmt(mine) : 'Not yet: finish a climb from the start', 'me')}
+    ${others.map((x) => row(!settings.ghostHide.includes(x.key), x.name, `${x.how === 'room' ? 'In this room' : 'Friend'}, ${fmt(x)}`, 'one', `data-k="${esc(x.key)}"`)).join('')}
+    ${!others.length ? '<p class="sub">Your friends\' ghosts and those of the others in the room show up here once they have climbed this map on this difficulty.</p>' : ''}
+    ${!g.solo && g.s.isHost ? row(!off, 'For everyone', 'You are the host', 'host') : ''}
+    <button class="btn" data-a="back"><b>Back</b></button></div>`, {
+    back,
+    all: () => { settings.ghosts = !settings.ghosts; saveSettings(); ghostMenu(back); },
+    me: () => { settings.ghostMe = !settings.ghostMe; saveSettings(); ghostMenu(back); },
+    one: (b) => { const k = b.dataset.k, h = settings.ghostHide; settings.ghostHide = h.includes(k) ? h.filter((x) => x !== k) : [...h, k].slice(-50); saveSettings(); ghostMenu(back); },
+    host: () => { g.s.toHost({ k: 'ghosts', off: !off }); setTimeout(() => ghostMenu(back), 150); },
+  });
 }
 
 // ---------- menu system ----------
@@ -499,12 +622,21 @@ const bestOf = (map) => { const b = store.get('best2', {}), out = {}; for (const
 // so switching back is instant and nothing on the GPU is ever rebuilt.
 const worlds = new Map();
 function loadMap(id) {
-  if (!MAPS[id]) id = 0;
+  if (!mapDef(id)) id = 0;
+  clearTimeout(soonT);
   if (app.level && app.level.map === id) return;
   const R = app.renderer;
   if (app.view) R.scene.remove(app.view.root);
   let w = worlds.get(id);
   if (!w) {
+    // The six worlds stay ready; of the generated maps only the last two, they are big.
+    const gens = [...worlds.keys()].filter((k) => k >= MAPS.length);
+    while (id >= MAPS.length && gens.length >= 2) {
+      const k = gens.shift(), old = worlds.get(k);
+      old.view.dispose();
+      old.view.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      worlds.delete(k);
+    }
     const level = generateLevel(id);
     w = { level, world: new World(level.cols), view: null };
     applyDetail(getSafe());
@@ -517,8 +649,48 @@ function loadMap(id) {
   if (auto) auto.settle();
   app.view.setCheckpoints(1, 0);
   app.titleStorm = new Storm(app.level, 1);
-  R.setTheme(app.level.mapKey);
+  R.setTheme(app.level.mapKey, app.level.look);
   report('stage', { s: 'map', map: id });
+}
+// Paging through the generated maps with the arrows: a map is only built once you stop on it for a moment.
+let soonT = 0;
+function loadMapSoon(id) {
+  if (id < MAPS.length || worlds.has(id)) return loadMap(id);
+  clearTimeout(soonT);
+  soonT = setTimeout(() => { if (!app.game) loadMap(id); }, 650);
+}
+
+// ---------- the generated maps and the day's climb (level.js mapDef) ----------
+// The day's climb: the one the team set on the server (/daily), otherwise the date's.
+app.dailyPin = -1;
+const todayMap = () => (app.dailyPin >= 0 && mapDef(app.dailyPin) ? app.dailyPin : dailyMap());
+const genAbout = (d) => (d.holiday ? `A holiday climb on the ${MAPS[d.base].name} world` : `Climb ${d.num} of 100, on the ${MAPS[d.base].name} world`);
+const genSvg = (next) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${next ? 'M8 4 L16 12 L8 20' : 'M16 4 L8 12 L16 20'}"/></svg>`;
+// The one shown between the arrows: the map you play if it is a generated one, otherwise the last one you looked at.
+const genShown = (cur) => (cur >= MAPS.length && mapDef(cur) ? cur : mapDef(settings.genAt) ? settings.genAt : todayMap());
+function genCard(id, sel, act = 'gpick') {
+  const d = mapDef(id), today = id === todayMap();
+  return `<button class="map gen ${sel ? 'sel' : ''}${d.holiday ? ' hol' : ''}" data-a="${act}" data-m="${id}" style="--acc:${d.accent}">
+    <b>${esc(d.name)}</b><small>${esc(genAbout(d))}</small>
+    <span class="gtags"><em class="gr g${d.grade}">${GRADES[d.grade]}</em>${d.muts.map((m) => `<em>${MUTATORS[m].name}</em>`).join('')}${today ? '<em class="today">Today</em>' : ''}</span></button>`;
+}
+function genRow(cur, ro) {
+  const id = genShown(cur), t = todayMap();
+  return `<div class="kind" style="margin:14px 0 6px">More climbs: 100 maps and a new one every day</div>
+    <div class="genrow ${ro ? 'ro' : ''}"><button class="gnav" data-a="gprev" aria-label="Previous map">${genSvg(false)}</button>${genCard(id, cur === id)}<button class="gnav" data-a="gnext" aria-label="Next map">${genSvg(true)}</button></div>
+    ${ro ? '' : `<div class="row genbtns"><button class="btn sm ${cur === t ? 'primary' : ''}" data-a="gday"><b>Today's climb</b><small>${esc(mapName(t))}</small></button><button class="btn sm" data-a="grand"><b>Surprise me</b><small>Any of the 100</small></button></div>`}`;
+}
+// The arrows and buttons of genRow. cur: the map now; set(id) picks one.
+function genActs(cur, set) {
+  const list = genList(new Date(), todayMap());
+  const step = (k) => {
+    const at = genShown(cur());
+    let i = list.indexOf(at);
+    if (i < 0) i = 0;
+    // From one of the six worlds the first press picks the one shown.
+    set(cur() === at ? list[(i + k + list.length) % list.length] : at);
+  };
+  return { gprev: () => step(-1), gnext: () => step(1), gday: () => set(todayMap()), grand: () => set(list[(Math.random() * list.length) | 0]), gpick: (b) => set(+b.dataset.m) };
 }
 
 function mapCards(sel) {
@@ -549,7 +721,7 @@ function lockedIf(ban, h) {
 
 function title() {
   app.screen = 'title';
-  const save = validSave('save.solo'), best = bestOf(settings.map), M = MAPS[settings.map], acct = cloud.account();
+  const save = validSave('save.solo'), best = bestOf(settings.map), M = mapDef(settings.map), acct = cloud.account(), today = mapDef(todayMap());
   loadMap(settings.map);
   // The first time, and whenever the terms have changed, ask before anything else.
   if (!cloud.banned() && ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2')))) {
@@ -565,15 +737,16 @@ function title() {
   show(`<div class="title${ban ? ' banned' : ''}">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
-      ${ban ? banCard(ban) : `<p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise. If one falls, everyone feels it.</p>`}
+      ${ban ? banCard(ban) : `<p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise, and a hundred more of them. If one falls, everyone feels it.</p>`}
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
       ${notice}
       ${ban ? '' : `<button class="btn sm donate" data-a="donate">♥ Donate</button>`}
     </div>
     <div class="mainbtns">
-      ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${ban ? why : `${MAPS[save.map || 0].name} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}`}</small></button>` : ''}
+      ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${ban ? why : `${esc(mapName(save.map || 0))} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}`}</small></button>` : ''}
       <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>${ban ? why : `Pick a map and practise on your own`}</small></button>
+      <button class="btn daily${today.holiday ? ' hol' : ''}" data-a="daily"${off} style="--acc:${today.accent}"><b>Today's climb</b><small>${ban ? why : `${esc(today.name)} · ${GRADES[today.grade]}${today.holiday ? ' · Holiday' : ''}`}</small></button>
       <button class="btn" data-a="host"${off}><b>Host a game</b><small>${ban ? why : `On the game server or online`}</small></button>
       <button class="btn" data-a="join"${off}><b>Join a game</b><small>${ban ? why : `With a room code`}</small></button>
       <div class="row"><button class="btn sm frbtn" data-a="friends"${off}><span>Friends</span><span id="frCount">${friendBadge()}</span></button><button class="btn sm" data-a="browser"${off}>Server browser</button></div>
@@ -586,6 +759,7 @@ function title() {
     records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
     cont: () => startSolo(save.map || 0, save.diff, save),
     solo: soloPick,
+    daily: () => { settings.map = todayMap(); settings.genAt = settings.map; saveSettings(); loadMap(settings.map); soloPick(); },
     host: hostPick,
     join: () => joinScreen(cloud.serverUrl() ? 'server' : 'online'),
     browser: () => browserScreen(title),
@@ -612,6 +786,7 @@ function soloPick() {
   const save = validSave('save.solo');
   show(`<div class="panel">${header('Solo climb')}
     ${mapCards(settings.map)}
+    ${genRow(settings.map, false)}
     <div class="kind" style="margin:14px 0 0">Rules</div>
     ${rulesHtml(settings.rules, true, true)}
     ${relicLine(settings.map)}
@@ -624,7 +799,8 @@ function soloPick() {
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
     },
     map: (b) => pickMap(+b.dataset.m, soloPick),
-    pick: (b) => startSolo(settings.map, +b.dataset.d, null),
+    ...genActs(() => settings.map, (id) => { settings.map = id; settings.genAt = id; saveSettings(); loadMapSoon(id); soloPick(); }),
+    pick: (b) => { loadMap(settings.map); startSolo(settings.map, +b.dataset.d, null); },
   });
 }
 
@@ -708,20 +884,23 @@ function lobby(s) {
     slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span>${roleTag(p)}<small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
-  loadMap(resume ? mp.map || 0 : s.lobby.map || 0);
+  const lmapNow = resume ? mp.map || 0 : s.lobby.map || 0;
+  loadMapSoon(lmapNow);
   show(`<div class="panel">${header(host ? 'Your game' : 'Joined game')}
     <div class="lobby">
       <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div>${cloud.account() && s.players.size < MAX_PLAYERS ? '<button class="btn sm" data-a="invite" style="margin-top:10px">Invite friends</button>' : ''}</div>
       <div>
         <div class="kind" style="margin-bottom:6px">Map</div>
-        <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${(resume ? mp.map || 0 : s.lobby.map || 0) === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
+        <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${lmapNow === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
+        ${host && !resume ? genRow(lmapNow, false) : lmapNow >= MAPS.length ? `<div class="genrow ro">${genCard(lmapNow, true)}</div>` : ''}
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
         <div class="kind" style="margin:10px 0 6px">Rules</div>
         ${rulesHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         ${friendlyFireHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
+        ${traitorHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord (nobody is tied together, and everyone keeps their own checkpoint)</label>
-        ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${MAPS[mp.map || 0].name}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
+        ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${esc(mapName(mp.map || 0))}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
     : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start...</p>`}
       </div>
@@ -730,6 +909,7 @@ function lobby(s) {
     share: () => shareText(room.kind === 'server' ? `Join my StickManUp climb! Open StickManUp, tap Join a game and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
     lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
+    ...genActs(() => lmapNow, (id) => { if (host && !resume) { settings.map = id; settings.genAt = id; saveSettings(); s.setLobby({ map: id }); } }),
     resume: (b) => s.setLobby({ resume: b.checked }),
     nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
     invite: () => { app.lobbyFriends = s; openFriends(() => { app.lobbyFriends = null; lobby(s); }); },
@@ -828,7 +1008,7 @@ function roomForm(back) {
 
 function roomRow(r) {
   const full = +r.n >= +r.max, code = String(r.code);
-  const map = MAPS[r.map] ? MAPS[r.map].name : 'Unknown map', diff = DIFFS[r.diff] ? DIFFS[r.diff].name : '';
+  const map = mapName(r.map) || 'Unknown map', diff = DIFFS[r.diff] ? DIFFS[r.diff].name : '';
   return `<button class="item" data-a="room" data-code="${esc(code)}" data-locked="${r.locked ? 1 : 0}" ${full ? 'disabled' : ''}><div><b>${r.locked ? '🔒 ' : ''}${esc(r.name)}</b><small>${esc(r.host)} · ${esc(map)} · ${esc(diff)} · ${esc(+r.n || 0)}/${esc(+r.max || 4)} climbers · ${r.started ? 'climbing' : 'in the lobby'}</small></div><span class="go">${full ? 'FULL' : 'JOIN ›'}</span></button>`;
 }
 
@@ -1052,6 +1232,12 @@ cloud.on('notCounting', (why) => {
   toldNot.add(why);
   ui.toast(NOT_COUNTING[why], 'bad');
 });
+cloud.on('daily', (id) => {
+  const v = mapDef(id) ? id : -1;
+  if (v === app.dailyPin) return;
+  app.dailyPin = v;
+  if (app.screen === 'title') title();
+});
 cloud.on('announce', (text) => { app.announcement = text; if (app.screen === 'title') title(); else ui.toast(text); });
 cloud.on('maintenance', (text) => { app.maintenance = text; });
 // Out of whatever they were doing, straight away.
@@ -1173,7 +1359,7 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
     ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
-    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}${chk('nav', 'Arrow that shows the way up')}${chk('relicMark', 'Marker that shows the nearest relic')}</div>
+    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}${chk('nav', 'Arrow that shows the way up')}${chk('relicMark', 'Marker that shows the nearest relic')}${chk('graffiti', 'Graffiti from other climbers')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
@@ -1592,6 +1778,11 @@ function beginGame(s, g) {
   for (const r of app.pool.jumpers || []) r.hide();
   for (const l of app.pool.ropes) l.mesh.visible = false;
   app.game = new Game(app, s, g);
+  app.graffiti.clear();
+  loadSprays(app.game.map);
+  app.ghostRec = new GhostRec();
+  loadGhosts(app.game);
+  app.traitor.begin(app.game);
   applyVanish(live.staff());
   keepAwake(true);
 }
@@ -1602,7 +1793,12 @@ function endGame() {
   cloud.runEnd();
   cloud.flush();
   closeEmotes();
+  if (app.game && !app.game.won) ghostEnd(app.game, false);
   if (app.game) { app.game.destroy(); app.game = null; }
+  app.graffiti.clear();
+  app.ghosts.clear();
+  $('#hGhost').hidden = true;
+  app.traitor.end();
   app.paused = false;
   app.input.enabled = false;
   app.input.reset();
@@ -1628,18 +1824,39 @@ function pause() {
     ${inviteNow() ? `<button class="btn primary" data-a="invite"><b>Join ${esc(inviteNow().name)}</b><small>They invited you to their climb</small></button>` : ''}
     ${g.diff < 2 ? `<button class="btn" data-a="respawn"><b>Back to checkpoint</b><small>${mp ? 'Moves the whole team' : 'If you are stuck'}</small></button>`
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
-    <div class="row"><button class="btn sm" data-a="friends">Friends</button><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
+    <div class="row"><button class="btn sm" data-a="friends">Friends</button><button class="btn sm" data-a="ghosts">Ghosts</button><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
+    ${app.traitor.on ? `<button class="btn" data-a="traitor"><b>Traitor mode</b><small>${app.traitor.over ? 'It is decided' : 'Clues and calling a vote'}</small></button>` : ''}
     <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
     ${padKeys()}</div>`, {
     back: resume,
     respawn: () => { g.s.toHost({ k: 'restart' }); resume(); },
     settings: () => settingsScreen(pause),
+    ghosts: () => ghostMenu(pause),
+    traitor: () => trMenu(pause),
     how: () => howTo(pause),
     friends: () => openFriends(pause),
     invite: () => acceptInvite(pause),
     term: openTerminal,
     quit: () => { if (g.s.isHost) g.save(); endGame(); title(); },
+  });
+}
+
+// Traitor mode: the clues so far, and calling a vote.
+function trMenu(back) {
+  const T = app.traitor, g = app.game;
+  if (!g || !T.on) return back();
+  const res = T.result;
+  show(`<div class="pause"><h2>Traitor mode</h2>
+    <p class="sub">${T.me ? 'You are the traitor. Sabotage with the mask button, and vote along with the others so nobody notices.' : 'One of the team is the traitor. Every sabotage leaves a clue. Vote them out before the top.'}</p>
+    ${res ? `<p class="note">${res.win === 'team' ? `Caught: ${esc(res.name)} was the traitor.` : res.win === 'left' ? 'The traitor left the climb.' : `The traitor won: it was ${esc(res.name)}.`}</p>` : ''}
+    <div class="kind">Clues</div>
+    ${T.clues.length ? `<ul class="trclues">${T.clues.slice().reverse().map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : '<p class="sub">No sabotage yet.</p>'}
+    <p class="sub">Innocent climbers voted out: ${T.wrong} of 2. At 2 the traitor wins.</p>
+    ${!T.over ? '<button class="btn primary" data-a="call"><b>Call a vote</b><small>Everyone picks who they think it is. More than half of the team on one name decides.</small></button>' : ''}
+    <button class="btn" data-a="back"><b>Back</b></button></div>`, {
+    back,
+    call: () => { T.callVote(); resume(); },
   });
 }
 
@@ -1726,7 +1943,7 @@ function showInvite(m) {
       else { hideInvite(); app.invite = null; }
     });
   }
-  const where = [MAPS[m.map] ? MAPS[m.map].name : '', DIFFS[m.diff] ? DIFFS[m.diff].name : '', `${Math.min(4, Math.max(1, m.n | 0))}/4 climbers`].filter(Boolean).join(' · ');
+  const where = [mapName(m.map), DIFFS[m.diff] ? DIFFS[m.diff].name : '', `${Math.min(4, Math.max(1, m.n | 0))}/4 climbers`].filter(Boolean).join(' · ');
   inviteEl.innerHTML = `<div class="itext"><b class="frname">${esc(app.invite.name)}</b><span>invites you to their climb</span><small>${esc(where)}</small>${ON_PC && app.game ? '<small>Press Esc to answer</small>' : ''}</div>
     <div class="ibtns"><button class="btn primary sm" data-i="join">Join</button><button class="btn sm" data-i="no">Not now</button></div>`;
   inviteEl.classList.add('on');
@@ -1755,11 +1972,13 @@ function resume() {
 }
 
 app.finish = (r) => {
+  ghostEnd(app.game, !r.far, r.time);
   app.input.enabled = false;
   app.input.reset();
   setTimeout(() => {
     show(`<div class="results">${r.record ? '<div class="rec">New best time</div>' : ''}<h1>SUMMIT REACHED</h1>
-      <p class="sub">${r.players > 1 ? `${r.players} climbers` : 'You'} reached the top of ${MAPS[r.map || 0].name} on ${DIFFS[r.diff].name}.</p>
+      <p class="sub">${r.players > 1 ? `${r.players} climbers` : 'You'} reached the top of ${esc(mapName(r.map || 0))} on ${DIFFS[r.diff].name}.</p>
+      ${traitorLine(r.tr)}
       <div class="stats"><div><b>${fmtTime(r.time)}</b><small>Time</small></div><div><b>${r.falls}</b><small>Falls</small></div><div><b>${fmtTime(r.best)}</b><small>Best on ${DIFFS[r.diff].name}</small></div><div><b><i class="coin"></i>${r.coins}</b><small>Coins, ${r.bonus} of them for the top</small></div></div>
       ${r.firstWin ? `<div class="rec gold">First win on ${DIFFS[r.diff].name}: ${r.firstWin} coins</div>` : ''}
       ${(r.unlocked || []).map((n) => `<div class="rec gold">Legendary unlocked: ${esc(n)}</div>`).join('')}
@@ -1873,6 +2092,12 @@ function boot() {
   app.fx = new Fx(app.renderer.scene);
   app.viewGun = new ViewGun(app.renderer.scene);
   app.evfx = new EventFx(app.renderer.scene);
+  app.graffiti = new Graffiti(app.renderer.scene);
+  app.ghosts = new Ghosts(app.renderer.scene);
+  app.traitor = new Traitor(app);
+  app.traitor.mount();
+  $('#hTr').addEventListener('click', () => { if (app.game && !app.game.won) { pause(); trMenu(pause); } });
+  app.onSpray = onSpray;
   app.input = new Input($('#touch'));
   app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
   app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };
@@ -1887,6 +2112,17 @@ function boot() {
   app.input.onEmote = () => toggleEmotes(false);
   $('#hEmote').addEventListener('click', () => toggleEmotes(false));
   $('#emoteMenu').addEventListener('click', (e) => {
+    // The checkpoint emote: the next one of yours, then none.
+    if (e.target.closest('[data-cpe]')) {
+      const opts = ['', ...cpEmotes().map((x) => x.id)], i = opts.indexOf(settings.cpEmote);
+      settings.cpEmote = opts[(i + 1) % opts.length];
+      saveSettings();
+      app.sound.ui();
+      openEmotes(!!app.input.padLock);
+      return;
+    }
+    const sp = e.target.closest('[data-spray]');
+    if (sp) { sprayNow(sp.dataset.spray); closeEmotes(); return; }
     const b = e.target.closest('[data-em]');
     if (!b) return;
     if (app.game) app.game.emote(b.dataset.em);
@@ -1990,6 +2226,8 @@ function frame(now) {
   if (app.game) {
     const g = app.game, me = g.me;
     g.update(dt, app.paused);
+    ghostTick(g, dt);
+    if (app.traitor.on) { app.traitor.tick(g); app.traitor.frame(); }
     // Through your eyes in a maze garden: the gun in your hands (not with a scope up, that has its own view).
     app.viewGun.update(dt, app.renderer.camera, g.flying ? 0 : (g.fpK || 0) * (1 - (g.scopeK || 0)), { weapon: g.gun, aim: g.aiming, speed: Math.hypot(me.vx, me.vz), ground: me.grounded, shot: g.time - (g.lastShot ?? -9), world: g.W, rig: g.robots.get(g.slot) });
   } else if (app.spec) {

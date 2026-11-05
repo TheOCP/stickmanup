@@ -6,8 +6,9 @@ import { coins, owned, unlocked, equip, worn, myLook, relicCounts, runsOf, total
 import { needOf, whereOf } from './relics.js';
 import { RELIC_AT } from './relicspots.js';
 import { buyItem } from './cloud.js';
-import { DIFFS, MAPS } from './level.js';
+import { DIFFS, MAPS, mapDef, mapName } from './level.js';
 import { EMOTES } from './emotes.js';
+import { SPRAYS, paintSpray, sprayUrl } from './sprays.js';
 import { WEAPONS, STUN_MIN } from './weapons.js';
 import { fmtTime } from './util.js';
 
@@ -85,6 +86,8 @@ function thumbFor(item) {
   const g = c.getContext('2d');
   if (item.kind === 'weapon') {
     drawGun(g, item.id, W, H);
+  } else if (item.kind === 'spray') {
+    g.drawImage(paintSpray(item, 128), 0, (H - W) / 2, W, W);
   } else if (item.kind === 'emote') {
     g.font = '76px system-ui, sans-serif';
     g.textAlign = 'center';
@@ -121,7 +124,7 @@ function thumbFor(item) {
 }
 
 // ---------------------------------------------------------------- the shop
-const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['hair', 'Hair'], ['emotes', 'Emotes'], ['weapons', 'Weapons'], ['legend', 'Legendary']];
+const TABS = [['suits', 'Suits'], ['flags', 'Flags'], ['faces', 'Faces'], ['hats', 'Hats'], ['hair', 'Hair'], ['emotes', 'Emotes'], ['sprays', 'Graffiti'], ['weapons', 'Weapons']];
 const HOLD_NAME = { pistol: 'Sidearm', smg: 'Submachine gun', shotgun: 'Shotgun', rifle: 'Rifle', sniper: 'Sniper rifle', heavy: 'Machine gun', launcher: 'Launcher' };
 // Bars that compare weapons at a glance.
 // Where something that isn't open yet is found.
@@ -131,6 +134,12 @@ function whereText(it) {
   if (w.kind === 'void') return 'Find all six legendary weapons first: each waits at the end of the hardest path of its map.';
   const m = MAPS.find((x) => x.key === w.map), name = m ? m.name : w.map;
   const at = RELIC_AT[needOf(it)[0]];
+  if (w.spot) {
+    const dn = DIFFS[w.dv].name;
+    if (w.maze) return `On ${name}, only on ${dn}: in a corner of the maze garden at about ${at} m. Look for the little shrine.`;
+    if (w.kind === 'legend') return `On ${name}, only on ${dn}: at the end of a long hidden course that starts at about ${at} m. Look for the orange gate and the pillar of light.`;
+    return `On ${name}, only on ${dn}: at the end of a hidden course that starts at about ${at} m. Look for the purple gate and the pillar of light.`;
+  }
   if (w.kind === 'epic') return `Find the epic vault on ${name} first. Its course starts at about ${at} m, on any difficulty: look for the purple gate and the pillar of light.`;
   if (w.kind === 'weapon') return `Find the legendary vault on ${name} first. Its course starts at about ${at} m, on any difficulty: look for the golden gate and the pillar of light.`;
   // In a maze garden the item's own hint says which one. The others wait at the end of a course.
@@ -155,8 +164,10 @@ const listFor = (tab) => {
   if (tab === 'hats') return HATS.filter((f) => !f.hidden || owned(f));
   if (tab === 'hair') return HAIRS;
   if (tab === 'emotes') return EMOTES.filter((e) => !e.hidden);
+  if (tab === 'sprays') return SPRAYS;
   if (tab === 'weapons') return WEAPONS;
-  if (tab === 'legend') return [...OWNERS.filter((o) => owned(o)), ...LEGENDS];
+  // The legendary suits are suits like any other, at the end of the list with the team's own if you have one.
+  if (tab === 'suits') return [...SUITS.filter((s) => s.tab === tab), ...LEGENDS, ...OWNERS.filter((o) => owned(o))];
   return SUITS.filter((s) => s.tab === tab);
 };
 
@@ -164,14 +175,14 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   const { app, show, esc, ui, lookChanged } = ctx;
   let tab = startTab, sel = null, gridScroll = 0, drawTok = 0;
 
-  const sameSlot = (item, look) => (item.kind === 'emote' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : item.kind === 'weapon' ? { ...look, w: item.id } : item.kind === 'hair' ? { ...look, r: item.id } : { ...look, h: item.id });
+  const sameSlot = (item, look) => (item.kind === 'emote' || item.kind === 'spray' ? look : item.kind === 'suit' ? { ...look, s: item.id } : item.kind === 'face' ? { ...look, f: item.id } : item.kind === 'weapon' ? { ...look, w: item.id } : item.kind === 'hair' ? { ...look, r: item.id } : { ...look, h: item.id });
   const preview = () => {
     app.preview = { look: sel ? sameSlot(sel, myLook()) : myLook(), yaw: app.preview ? app.preview.yaw : 0, emote: sel && sel.kind === 'emote' ? sel.id : null, aim: !!sel && sel.kind === 'weapon' };
   };
 
   function card(it) {
     const have = owned(it), on = have && worn(it);
-    const tag = it.kind === 'emote' && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : !unlocked(it) || !(it.price > 0) ? `<em class="lock">${whereOf(it) ? 'Hidden' : 'Locked'}</em>` : `<em class="price">${COIN}${it.price}</em>`;
+    const tag = (it.kind === 'emote' || it.kind === 'spray') && have ? '<em class="have">Owned</em>' : on ? '<em class="wearing">Wearing</em>' : have ? '<em class="have">Owned</em>' : !unlocked(it) || !(it.price > 0) ? `<em class="lock">${whereOf(it) ? 'Hidden' : 'Locked'}</em>` : `<em class="price">${COIN}${it.price}</em>`;
     return `<button class="skin r${it.r} ${sel === it ? 'sel' : ''} ${have ? '' : 'no'}" data-a="pick" data-id="${it.id}"><img data-th="${it.id}" alt=""><b>${esc(it.name)}</b>${tag}</button>`;
   }
 
@@ -179,18 +190,20 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     return RARITY.map((r) => {
       const items = list.filter((x) => x.r === r.id);
       if (!items.length) return '';
-      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x)).length} of ${items.length}</small></h3><div class="skins">${items.map(card).join('')}</div>`;
+      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x)).length} of ${items.length}</small></h3>${r.id === 3 && tab === 'suits' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found first, on any difficulty, and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}<div class="skins">${items.map(card).join('')}</div>`;
     }).join('');
   }
 
   function sideHtml() {
     const it = sel;
+    if (!it && tab === 'sprays') return `<p class="sub" style="margin:0">Pictures to spray on the towers: during a climb, open your emotes and pick one. It goes on what you stand on, or on the wall you hold, and everyone who climbs there sees it. Every epic and legendary one waits in a hidden spot of its own first.</p>`;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
-      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest relic courses, on any difficulty: find them, then buy them.</p>`
-      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Epic things are in the epic vaults first: every map has one, at the end of a course behind a purple gate.</p>`;
+      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Every epic weapon waits in a hidden spot of its own, legendary ones at the end of the hardest relic courses, on any difficulty: find them, then buy them.</p>`
+      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Every epic thing waits in a hidden spot of its own first: at the end of a course behind a purple gate or in a maze garden, on one map and one difficulty. The shop says where.</p>`;
     const r = RARITY[it.r], have = owned(it), on = have && worn(it), open = unlocked(it), where = whereOf(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
+    else if (it.kind === 'spray' && have) act = '<p class="sub" style="margin:4px 0 0">Yours. Spray it from your emotes during a climb.</p>';
     else if (on) act = `<button class="btn sm" disabled>${it.kind === 'weapon' ? 'Carrying it' : 'Wearing it'}</button>`;
     else if (have) act = `<button class="btn sm primary" data-a="equip">${it.kind === 'weapon' ? 'Carry it' : 'Wear it'}</button>`;
     else if (it.price > 0 && open) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
@@ -202,7 +215,8 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     else if (it.hint && !have) hint = it.hint;
     else if (it.hint && have && !it.team) hint = 'Found it. Well done.';
     hint = hint ? `<p class="hint">${esc(hint)}</p>` : '';
-    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${it.kind === 'weapon' ? weaponStats(it) : ''}${hint}${need}${act}`;
+    const big = it.kind === 'spray' ? `<img class="sprbig" src="${sprayUrl(it, 256)}" alt="">` : '';
+    return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${big}${it.kind === 'weapon' ? weaponStats(it) : ''}${hint}${need}${act}`;
   }
 
   function loadThumbs() {
@@ -229,7 +243,6 @@ export function openShop(ctx, goBack, startTab = 'suits') {
       </div>
       <div class="shopmain">
         <div class="tabs">${TABS.map(([k, n]) => `<button data-a="tab" data-t="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        ${tab === 'legend' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found first, on any difficulty, and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}
         <div class="shopgrid">${sections(list)}</div>
       </div></div>`, {
       back: () => { app.preview = null; goBack(); },
@@ -243,7 +256,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
         buying = false;
         if (err) { ui.toast(err, 'bad'); render(); return; }
         app.sound.checkpoint();
-        if (item.kind !== 'emote') equip(item);
+        if (item.kind !== 'emote' && item.kind !== 'spray') equip(item);
         lookChanged();
         ui.toast(`${item.name} is yours`, 'good');
         preview(); render();
@@ -263,7 +276,9 @@ let buying = false;
 // ---------------------------------------------------------------- records
 export function openRecords(ctx, goBack, startMap = 0) {
   const { app, show, esc, header } = ctx;
-  let map = startMap;
+  let map = mapDef(startMap) ? startMap : 0;
+  // The six worlds, and the generated map you have picked as well.
+  const chips = [...MAPS, ...(map >= MAPS.length ? [mapDef(map)] : [])];
   const fmtDate = (t) => { try { return new Date(t).toLocaleDateString(); } catch (e) { return ''; } };
   function render() {
     const runs = runsOf(map), T = totals();
@@ -273,9 +288,9 @@ export function openRecords(ctx, goBack, startMap = 0) {
     }).join('');
     const rows = runs.map((r, i) => `<div class="rrow ${r.won ? 'won' : ''}"><span class="rn">${i + 1}</span><b>${r.h} m</b><span class="rd d${r.diff}">${DIFFS[r.diff].name}${r.custom ? ' (custom)' : ''}</span><span>${r.falls} fall${r.falls === 1 ? '' : 's'}</span><span>${fmtTime(r.t)}</span><span class="rc">${COIN}${r.coins}</span><small>${r.won ? 'Summit · ' : ''}${r.players > 1 ? r.players + ' climbers · ' : ''}${esc(fmtDate(r.when))}</small></div>`).join('');
     show(`<div class="panel">${header('Records')}
-      <div class="mapchips">${MAPS.map((m) => `<button data-a="m" data-m="${m.id}" class="${map === m.id ? 'on' : ''}">${esc(m.name)}</button>`).join('')}</div>
+      <div class="mapchips">${chips.map((m) => `<button data-a="m" data-m="${m.id}" class="${map === m.id ? 'on' : ''}">${esc(m.name)}</button>`).join('')}</div>
       <div class="rcards">${best}</div>
-      <div class="kind" style="margin:14px 0 6px">Best climbs on ${esc(MAPS[map].name)}</div>
+      <div class="kind" style="margin:14px 0 6px">Best climbs on ${esc(mapName(map))}</div>
       ${rows ? `<div class="rrows">${rows}</div>` : '<div class="empty">Nothing here yet. Your height, falls, time and difficulty show up as soon as you climb.</div>'}
       <div class="rtot"><div><b>${T.climbs}</b><small>Climbs started</small></div><div><b>${T.falls}</b><small>Falls in total</small></div><div><b>${T.earned}</b><small>Coins earned</small></div><div><b>${T.relics} of ${RELIC_COUNT}</b><small>Relics found</small></div></div>
     </div>`, {

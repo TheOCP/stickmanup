@@ -193,13 +193,17 @@ to use one. They work only in those channels because everyone there can read the
 those channels private. The bot gets every message in the channels it can see, but it only looks at the ones starting with `!`,
 and it stores none of them.
 
-* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer` `/tell` `/resetcheckpoint` `/tp`
+* **Players**: `/help` `/player` `/players` `/search` `/recent` `/lastplayed` `/new` `/online` `/top` `/stats` `/alts` `/ip` `/ips` `/rename` `/note` `/notes` `/signout` `/deleteplayer` `/tell` `/resetcheckpoint` `/tp` `/clearsprays`
 * **Coins and items**: `/coins` `/givecoins` `/takecoins` `/setcoins` `/giveall` `/resetwallet` `/history` `/items` `/giveitem` `/takeitem` `/catalog` `/giverelic` `/takerelic` `/dailycap` `/giveitem` gives anything in the game by name or ID, even what can't be bought, like legendary suits, and without its relic. Only The Hacker and GG Girl are left out: those go with a flag from `/setrole`. `/catalog` lists it all, 60 to a page (`page`), and can search by name or show one kind only (`kind`: suit, epic, legend, face, hat, emote or weapon).
 * **Bans, always with a reason**: `/ban` `/unban` `/tempban` `/banip` `/unbanip` `/banphone` `/unbanphone` `/bans` `/baninfo` `/kick`
 * **Anticheat**: `/flags` `/suspects` `/clearflags` `/trust` `/untrust` `/anticheat` `/phone` `/climbs` `/climb`
-* **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/logguests` `/backup` `/audit` `/admins`
+* **The server**: `/rooms` `/closeroom` `/status` `/announce` `/maintenance` `/daily` `/logguests` `/backup` `/audit` `/admins`
 * **Roles and permissions**: `/setrole` `/roles` `/newrole` `/editrole` `/delrole` `/roleperm` `/playerperm` `/perms`
 * **Live, in the game only**: `/vanish` `/watch` `/join` (on Discord they say to use the terminal)
+
+`/daily` picks the day's climb for everyone: a map number (0 to 5 the six worlds, 100 to 199 the generated maps, 200 and up
+the holiday maps), its name, or `auto` to let the date pick it again, optionally for some days. `/clearsprays` takes away all
+of a player's graffiti.
 
 `/resetcheckpoint` sends a player back to the start of the map and forgets their saved climb, right away if they are climbing. `/tp player to` moves a climber: `to` is another player on the same map and difficulty, a height like `300m` (the checkpoint at or below it), `start` or `top`, and `me` works for either one. A moved climb stops earning from that moment, and on a tied team the climber comes off the cord until they reach the others. `/tell` sends a player a message that shows in their game. `/giverelic` gives a relic, so what it opens can be bought:
 one relic, every relic of a map (`storm`), or `all`. `/takerelic` takes them back.
@@ -364,6 +368,10 @@ Web requests:
 * `POST /auth/exchange` with `{code, verifier}` gives `{token, user}`
 * With `Authorization: Bearer TOKEN`: `GET` and `DELETE /api/me`, `POST /api/logout`, `POST /api/tos`, `GET /api/save`,
   and `PUT /api/save` with `{rev, data}`, which answers 409 with the current save if another phone got there first
+* `GET /api/sprays?map=&lv=`: the latest graffiti on a map (anyone). With a token: `POST /api/spray` (one of yours, only
+  pictures from the game that you own; the latest 6 of every player on every map are kept), `POST /api/ghost` (your climb
+  for ghost racing, kept if it beats your best) and `GET /api/ghosts?map=&diff=&room=` (yours, your room's and your
+  friends' best climbs)
 
 Signing in happens in the phone's browser, never in the game. The browser comes back through a `stickmanup://` link with
 a one time code, which is useless without a secret only the game that started has (PKCE). Session tokens are stored only

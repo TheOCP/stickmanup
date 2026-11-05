@@ -233,6 +233,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 #hHearts svg.off { fill: rgba(20, 20, 30, .55); stroke: rgba(255, 255, 255, .55); }
 #hHearts.hit { animation: heartHit .45s ease-out; }
 @keyframes heartHit { 0% { transform: translateX(-50%) scale(1.45); } 35% { transform: translateX(-50%) scale(.9); } 100% { transform: translateX(-50%) scale(1); } }
+#hGhost { position: absolute; left: 50%; top: calc(36px + var(--it)); transform: translateX(-50%); padding: 3px 10px; border-radius: 99px; background: rgba(10, 14, 24, 0.45); color: #bfefff; font: 700 12px/1.3 system-ui; white-space: nowrap; pointer-events: none; }
+#hGhost.behind { color: #ffd27a; }
 #hRelic { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; color: #ffa030; --m: 255, 160, 48; }
 #hRelic[hidden] { display: none; }
 #hRelic.epic { color: #c070ff; --m: 192, 112, 255; }
@@ -278,7 +280,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 .emGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
 .emo { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 3px 6px; border-radius: 11px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
 .emo i { font-style: normal; font-size: 26px; line-height: 1.1; } .emo span { font-size: 10.5px; font-weight: 650; line-height: 1.15; text-align: center; color: var(--tx2); }
-.emo.r1 { border-color: rgba(74, 168, 255, 0.5); } .emo.r2 { border-color: rgba(184, 107, 255, 0.55); }
+.emo.spr img { width: 46px; height: 46px; display: block; }
+.emCp { display: flex; align-items: center; gap: 8px; width: 100%; margin: 8px 0 12px; padding: 9px 11px; border-radius: 11px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); color: inherit; font: inherit; text-align: left; }
+.emCp span { font-size: 12px; color: var(--tx2); } .emCp b { flex: 1; font-size: 13px; font-weight: 750; } .emCp small { font-size: 10.5px; color: var(--tx2); }
+.emSub { margin: -4px 0 8px; font-size: 11.5px; color: var(--tx2); }
+.sprbig { display: block; width: min(200px, 70%); margin: 8px auto 4px; image-rendering: auto; }
+.emo.r1 { border-color: rgba(74, 168, 255, 0.5); } .emo.r2 { border-color: rgba(184, 107, 255, 0.55); } .emo.r3 { border-color: rgba(255, 154, 46, 0.6); }
 .emo:active { background: rgba(63, 240, 208, 0.25); }
 
 #zoneTitle { position: fixed; left: 0; right: 0; top: 24%; text-align: center; pointer-events: none; z-index: 7; opacity: 0; transform: translateY(10px); transition: opacity 0.6s, transform 0.6s; }
@@ -828,3 +835,53 @@ body.pad .pause .padkeys { display: flex; }
 #update .ubar { display: block; width: 180px; max-width: 100%; height: 6px; margin-top: 4px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.14); }
 #update .ubar i { display: block; height: 100%; border-radius: 3px; background: #6ff2a1; transition: width 0.25s linear; }
 .fnote { margin: 0 0 10px; }
+
+/* The generated maps: one card between two arrows, and the day's climb (main.js genRow). */
+.genrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 8px; align-items: stretch; }
+.genrow.ro { grid-template-columns: minmax(0, 1fr); }
+.genrow.ro .gnav { display: none; }
+.gnav { border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: var(--tx); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.gnav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.gnav:active { background: rgba(255, 255, 255, 0.16); }
+.map.gen { --bg: linear-gradient(160deg, #0d1220 10%, #1a1a30 55%, color-mix(in srgb, var(--acc, #3ff0d0) 45%, transparent)); --mc: var(--acc, #3ff0d0); min-height: 84px; border-left: 4px solid var(--acc, #3ff0d0); min-width: 0; }
+.genbtns > .btn.sm { flex-direction: column; }
+.map.gen b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map.gen.hol { --bg: linear-gradient(135deg, #3a1a08 0%, #2a1050 60%, color-mix(in srgb, var(--acc, #ff8a28) 50%, transparent)); }
+.gtags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.gtags em { font-style: normal; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); color: var(--tx); }
+.gtags em.gr.g0 { background: #2f8a4a; } .gtags em.gr.g1 { background: #2f6aa8; } .gtags em.gr.g2 { background: #a8562f; } .gtags em.gr.g3 { background: #a82f4e; }
+.gtags em.today { background: #ffd040; color: #1a1408; }
+.genbtns { margin-top: 8px; }
+.btn.daily { border-left: 4px solid var(--acc, #ffd040); }
+.btn.daily.hol { background: linear-gradient(135deg, rgba(255, 140, 40, 0.22), rgba(160, 60, 255, 0.2)); }
+
+/* Traitor mode (traitor.js): the traitor's mask button and sabotage list, everyone's vote button, the vote, and the sabotages. */
+#hTr, #hSab { position: absolute; right: calc(14px + var(--ir)); width: 44px; height: 44px; border-radius: 14px; pointer-events: auto; font-size: 22px; line-height: 1; display: grid; place-items: center; }
+#hTr { top: calc(64px + var(--it)); }
+#hSab { top: calc(116px + var(--it)); background: rgba(120, 10, 30, 0.6); box-shadow: 0 0 14px rgba(255, 40, 80, 0.45); }
+#hTr[hidden], #hSab[hidden] { display: none; }
+#sabMenu { position: fixed; z-index: 9; display: none; right: calc(66px + var(--ir)); top: calc(64px + var(--it)); width: min(300px, calc(100vw - 96px)); padding: 10px; border-radius: 16px; background: rgba(24, 6, 12, 0.92); border: 1px solid rgba(255, 70, 100, 0.45); flex-direction: column; gap: 6px; }
+#sabMenu.on { display: flex; }
+#sabMenu > b { color: #ff6a86; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+#sabMenu button { text-align: left; padding: 8px 10px; border-radius: 11px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 60, 90, 0.16); color: #fff; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+#sabMenu button b { font-size: 14px; }
+#sabMenu button small { font-size: 11.5px; color: rgba(255, 255, 255, 0.75); }
+#sabMenu button.wait { opacity: 0.5; }
+#sabMenu .sabnote { font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+#trVote { position: fixed; z-index: 8; left: 50%; top: calc(62px + var(--it)); transform: translateX(-50%); width: min(460px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 16px; background: rgba(30, 8, 16, 0.9); border: 1px solid rgba(255, 70, 100, 0.5); color: #fff; display: flex; flex-direction: column; gap: 4px; pointer-events: auto; }
+#trVote[hidden] { display: none; }
+#trVote > b { font-size: 15px; color: #ff8aa0; }
+#trVote > small { font-size: 12px; color: rgba(255, 255, 255, 0.75); }
+#trVote .trv { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+#trVote .trv button { flex: 1 1 40%; min-width: 0; padding: 8px 6px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); color: #fff; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#trVote .trv button.on { background: #ff3b5c; border-color: #ff3b5c; }
+#trVote .trv button.skip { flex-basis: 100%; color: rgba(255, 255, 255, 0.7); }
+#trVote .trv button:disabled:not(.on) { opacity: 0.45; }
+#trDark { position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0; transition: opacity 0.6s; background: radial-gradient(circle at 50% 56%, rgba(0, 0, 0, 0.55) 0, rgba(0, 0, 0, 0.97) 120px, #000 260px); }
+#trDark.on { opacity: 1; transition: opacity 0.15s; }
+body.trStatic #hNav, body.trStatic #hAlt, body.trStatic #tags, body.trStatic #hPlayers, body.trStatic #hZone, body.trStatic #hRelic { visibility: hidden; }
+body.trStatic #hud::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.22; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.5) 0 1px, transparent 1px 3px); animation: trStatic 0.12s steps(3) infinite; }
+@keyframes trStatic { 0% { transform: translateY(0); } 50% { transform: translateY(1px); } 100% { transform: translateY(-1px); } }
+.trclues { margin: 4px 0 10px; padding-left: 18px; text-align: left; font-size: 13px; line-height: 1.45; }
+.trEnd { margin: 8px 0 0; font-weight: 750; }
+.trEnd.good { color: #6ff08e; } .trEnd.bad { color: #ff7a90; }

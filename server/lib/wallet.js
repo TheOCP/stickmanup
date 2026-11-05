@@ -7,6 +7,9 @@
 // time, each first win bonus once, and a limit per day. catalog.json is made from the game's own tables by dev/makecatalog.mjs.
 const crypto = require('node:crypto');
 const catalog = require('./catalog.json');
+// Maps by their number: the six worlds, the generated ones (100 to 199) and the holiday ones (200 and up).
+const MAP_BY_ID = new Map(catalog.maps.map((m, i) => [m.id ?? i, m]));
+const mapById = (id) => (Number.isInteger(id) ? MAP_BY_ID.get(id) || null : null);
 const { Limiter } = require('./limits');
 
 const DAY = 86400000;
@@ -19,6 +22,8 @@ const MAX_LIST = 2000;
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
 const today = () => new Date().toISOString().slice(0, 10);
 const unique = (list, ok) => [...new Set(Array.isArray(list) ? list.slice(0, MAX_LIST).filter(ok) : [])];
+// Has this relic, or the old epic vault (map:e) that stood for the things a hidden spot holds now.
+const hasRelic = (list, id) => list.includes(id) || (!!catalog.legacy && catalog.legacy[id] !== undefined && list.includes(catalog.legacy[id]));
 
 class Wallet {
   constructor(db, env = {}) {
@@ -201,12 +206,14 @@ class Wallet {
     });
   }
   // ---------------------------------------------------------------- relics, given by hand
-  // Every relic there is, as [id, name]: storm:0 and storm:1 are the hidden paths, storm:e the epic vault, storm:w the
-  // legendary weapon, storm:m0 and m1 the maze gardens.
+  // Every relic there is, as [id, name]: storm:0 and storm:1 are the hidden paths, storm:w the legendary weapon, storm:m0 and
+  // m1 the maze gardens, storm:h0 and on the hidden spots (one thing each). storm:e, the old epic vault, is only in old wallets.
   relicList() { return catalog.maps.flatMap((m) => m.relics.map((r) => [r, this.relicName(r)])); }
   relicName(id) {
     const [map, k] = String(id).split(':'), M = map ? map[0].toUpperCase() + map.slice(1) : '';
     const what = { 0: 'hidden path 1', 1: 'hidden path 2', e: 'epic vault', w: 'legendary weapon', m0: 'maze garden 1', m1: 'maze garden 2' }[k];
+    const spot = catalog.spotNames && catalog.spotNames[id];
+    if (spot) return `${M} hidden spot ${+k.slice(1) + 1} (${spot})`;
     return what ? `${M} ${what}` : String(id);
   }
   // One relic, all of a map's (its name), or all of them.
@@ -261,7 +268,16 @@ class Wallet {
     const low = t.toLowerCase(), hits = Object.keys(catalog.names).filter((k) => catalog.names[k].toLowerCase() === low);
     return hits.length === 1 ? { key: hits[0] } : hits.length ? { many: hits } : {};
   }
-  get mapNames() { return catalog.maps.map((m) => m.key); }
+  get mapNames() { return catalog.maps.filter((m) => !m.gen).map((m) => m.key); }
+  // A map's name for the team: the world's key, or a generated map's name and number.
+  mapLabel(id) { const m = mapById(id); return !m ? String(id) : m.gen ? `${m.name} (#${id})` : m.key; }
+  // A map from what the team typed: its number, its name or a world's key.
+  findMap(text) {
+    const t = String(text || '').trim().replace(/^#/, '');
+    if (/^\d+$/.test(t)) return mapById(+t);
+    const low = t.toLowerCase();
+    return catalog.maps.find((m) => !m.gen && m.key === low) || catalog.maps.find((m) => String(m.name || '').toLowerCase() === low) || null;
+  }
   // Does this person really own what they are wearing? Free things and things earned another way aren't on sale.
   // What someone is wearing, by the names the shop sells it under. Faces and hats that share a name with a suit are told apart.
   ownsLook(id, look, role = '') {
@@ -284,7 +300,7 @@ class Wallet {
       if (w.own.includes(item)) return { status: 200, wallet: this.show(w) };
       // Epic and legendary things only once their relic is found.
       const need = catalog.need && catalog.need[item];
-      if (need && !need.every((r) => w.relics.includes(r))) return { status: 409, err: 'Find it first.', wallet: this.show(w) };
+      if (need && !need.every((r) => hasRelic(w.relics, r))) return { status: 409, err: 'Find it first.', wallet: this.show(w) };
       if (w.coins < price) return { status: 402, err: 'Not enough coins.', wallet: this.show(w) };
       w.coins -= price;
       w.own.push(item);
@@ -296,7 +312,7 @@ class Wallet {
 
   startRun(id, o) {
     const map = o && o.map, diff = o && o.diff;
-    if (!Number.isInteger(map) || !catalog.maps[map] || !Number.isInteger(diff) || !catalog.diffs[diff]) return null;
+    if (!Number.isInteger(map) || !mapById(map) || !Number.isInteger(diff) || !catalog.diffs[diff]) return null;
     const run = crypto.randomBytes(16).toString('base64url');
     this.load(id);
     // With rules sent along the server works out for itself whether they are the difficulty's own.
@@ -313,7 +329,7 @@ class Wallet {
   report(id, o, how = {}) {
     const r = typeof (o && o.run) === 'string' ? this.q.run.get(o.run) : null;
     if (!r || r.user_id !== id) return { status: 404, err: 'That climb is not known here.' };
-    const M = catalog.maps[r.map], D = catalog.diffs[r.diff], elapsed = (Date.now() - r.started) / 1000;
+    const M = mapById(r.map), D = catalog.diffs[r.diff], elapsed = (Date.now() - r.started) / 1000;
     return this.tx(() => {
       const w = this.load(id), taken = new Set(JSON.parse(r.coins)), out = { status: 200, paid: 0, accepted: [], later: [], relics: [], first: 0, win: null, capped: false };
       let dayRoom = Math.max(0, this.dayCap - w.dayEarned);
@@ -340,15 +356,15 @@ class Wallet {
       for (const i of out.accepted) taken.add(i);
       if (allow) payDay(allow * D.coin, 'coins');
 
-      // Relics: only the ones that exist on this map, never with custom rules, on every difficulty (since 1.6.6).
-      if (!r.custom) {
-        for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x))) {
-          out.relics.push(relic);
-          if (!w.relics.includes(relic)) w.relics.push(relic);
-        }
-        const suits = catalog.suitRelics || [];
-        if (suits.length && suits.every((x) => w.relics.includes(x)) && !w.ach.includes('hunter')) w.ach.push('hunter');
+      // Relics: only the ones that exist on this map, on every difficulty (since 1.6.6) and with any rules (custom rules
+      // make nothing easier than Easy already is, and the game finds them there too).
+      // A hidden spot only counts on the difficulty it is there on.
+      for (const relic of unique(o.relics, (x) => typeof x === 'string' && M.relics.includes(x) && (!M.dv || M.dv[x] === undefined || M.dv[x] === r.diff))) {
+        out.relics.push(relic);
+        if (!w.relics.includes(relic)) w.relics.push(relic);
       }
+      const suits = catalog.suitRelics || [];
+      if (suits.length && suits.every((x) => w.relics.includes(x)) && !w.ach.includes('hunter')) w.ach.push('hunter');
 
       // The top: once per climb, and only after a climb's worth of time.
       let won = r.won;

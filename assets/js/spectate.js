@@ -4,7 +4,7 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm, QUAKE_AT, markShots, beeStep } from './storm.js';
-import { DIFFS, MAPS, zoneAt, ALL_SECRETS, applyMaze, MAZE_WALL_H } from './level.js';
+import { DIFFS, MAPS, mapName, mapDef, zoneAt, secretsFor, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
@@ -124,7 +124,7 @@ export class Spectator {
 
   // The whole picture: which climb this is and who is in it.
   setGame(g) {
-    const app = this.app, map = inList(g.map, MAPS), diff = inList(g.diff, DIFFS), rules = g.rules && typeof g.rules === 'object' ? g.rules : {};
+    const app = this.app, map = mapDef(g.map) ? g.map : 0, diff = inList(g.diff, DIFFS), rules = g.rules && typeof g.rules === 'object' ? g.rules : {};
     if (map !== this.map || diff !== this.diff) {
       this.hooks.loadMap(map);
       this.map = map;
@@ -151,7 +151,7 @@ export class Spectator {
       app.view.resetDoors();
       this.doors = new Set();
       this.mz = -1;
-      this.storm.sec = ALL_SECRETS;
+      this.storm.sec = secretsFor(diff);
       app.view.setSecrets(this.storm.sec);
       app.pool.coins.clear();
       app.pool.relic.show(null);
@@ -390,7 +390,7 @@ export class Spectator {
       this.infoAcc = 0;
       const p = this.players.get(this.focus), marks = [];
       for (const [s, v] of this.vis) marks.push([s, clamp(v.y / L.top, 0, 1) * 100]);
-      this.hooks.info({ name: p ? p.name : '', map: MAPS[this.map].name, diff: DIFFS[this.diff].name, T: Math.max(0, T), h: Math.max(0, Math.round(me.y - PR - 2)), top: Math.round(L.top - 2), falls: this.falls, held: this.held, won: this.won, marks });
+      this.hooks.info({ name: p ? p.name : '', map: mapName(this.map), diff: DIFFS[this.diff].name, T: Math.max(0, T), h: Math.max(0, Math.round(me.y - PR - 2)), top: Math.round(L.top - 2), falls: this.falls, held: this.held, won: this.won, marks });
     }
   }
 

@@ -2,8 +2,8 @@
 
 <img src="docs/icon.png" width="128" alt="StickManUp icon">
 
-A co op climbing game. Up to four stickmen are tied together by a glowing cord and climb one of six giant maps. If one
-falls, everyone feels it. Android, PC and browser players can all play together on the game server.
+A co op climbing game. Up to four stickmen are tied together by a glowing cord and climb one of six giant maps, or one of
+a hundred more, with a new climb every day. If one falls, everyone feels it. Android, PC and browser players can all play together on the game server.
 
 * **Android:** [download the APK](../../releases/latest/download/StickManUp.apk) · Android 8.0 or newer · no root needed · about 850 KB
 * **Windows:** [download the installer](../../releases/latest/download/StickManUp-Setup.exe) · 64 bit · updates itself. Windows
@@ -166,8 +166,8 @@ Spend them in the shop:
 * **Epic (purple):** full costumes like Ninja, Knight, Astronaut, Skeleton, Solid Gold, Viking, Pharaoh, Battle Mech,
   Shark and Thundercloud, with their own face and hat,
   and each with something of its own: a jetpack, a parrot on the shoulder, a samurai banner, a tail, a sack of
-  presents, balloons, a rainbow over the shoulders. Neon lines, slime, lava and stars on them really glow. They wait
-  in each map's epic vault first (see below).
+  presents, balloons, a rainbow over the shoulders. Neon lines, slime, lava and stars on them really glow. Each one
+  waits in a hidden spot of its own first (see below).
 * **Legendary (orange):** living suits that move and leave a trail: aurora curtains, molten rock, cut crystal, deep
   space, circuits, dragon scales, spirit smoke, a neon grid and holograms, many with wings, horns, crowns, orbs or a
   blade on the back. Eleven wait in the maze gardens and twelve at the end of relic courses, two on each map, on every
@@ -176,13 +176,19 @@ Spend them in the shop:
 * **Weapons:** 50 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
   scope, machine guns, launchers, and odd ones like the Tesla Coil, the Harpoon Gun and the Cryo Blaster. Each is held its own way, and the shop shows how long it paralyses, how fast it
   fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
-  Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest course, and the Void
-  Cannon opens once all six are found.
+  Every epic weapon waits in a hidden spot of its own; each map's legendary weapon waits at the end of its hardest course,
+  and the Void Cannon opens once all six are found.
+* **Graffiti:** 60 pictures to spray on the towers, common to legendary: a cute black cat, a sleepy kitten, dragons, a
+  phoenix, a kraken, an oni mask, skulls, a frost fox and many more. Open your emotes during a climb and pick one: it goes
+  on what you stand on, or on the wall you hold. Everyone in the room sees it at once, and the server keeps the latest
+  few of every player on every map, so whoever climbs there later finds them too (Settings can hide other climbers'
+  graffiti). Every epic and legendary one waits in a hidden spot of its own first.
 * **Hair:** a tab of its own: short crop, side swoop, ponytail, spiky, long hair, a purple bob, space buns, curls,
   braids and glowing neon spikes. Hats sit on top of the hair, never through it, and every hat sits on the head at a
   slant without covering the eyes; a helmet that covers the whole head hides the hair under it.
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
-  the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
+  the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins. In the emote
+  menu you can pick one to play by itself whenever you reach a checkpoint.
 
 **Hunted.** Creatures don't only walk their beat any more. In a maze they notice you from a few cells away (further on the
 harder settings), then come through the corridors after you, never through a wall, and stay after you for as long as you
@@ -191,9 +197,15 @@ do, a bite makes them let go for a moment, and SHOOT paralyses them. In each maz
 the screen: a bite takes one, and with none left you go back to the checkpoint as if you had fallen. The next maze, or the
 next try, starts with 3 again.
 
-**Relic courses.** Finding something only opens it in the shop: it still costs coins. Every map has four hard parkour
-courses out past the route, on every difficulty and with any rules: two to legendary suits, one to the epic vault and one to the legendary
-weapon. Each starts at a gate with a pillar of light that can be seen from far away, and a marker on the screen and gems
+**Relic courses.** Finding something only opens it in the shop: it still costs coins. Every map has three hard parkour
+courses out past the route, on every difficulty and with any rules: two to legendary suits and one to the legendary
+weapon. Relics found with custom rules count as well.
+
+**Hidden spots.** There are no vaults full of epics any more: every epic thing, and every epic and legendary graffiti,
+waits in a spot of its own, on one map and on one difficulty only. Each map has 14 to 19 of them for epics (courses
+behind a purple gate, and small shrines in a corner of the maze gardens) and two long courses behind an orange gate for
+legendary graffiti, so every difficulty has its own to find. The shop says on which map, on which difficulty and from
+about what height. Things found in the old epic vaults stay yours. Each starts at a gate with a pillar of light that can be seen from far away, and a marker on the screen and gems
 on the height bar show where the nearest ones are. The shop says on which map and from what height each thing is found.
 There are no shortcuts to a relic. A course runs straight out from the tower to a ring of its own, well past what a jump or a
 drop from the route can reach, and climbs as it goes round: the legendary ones 40 to 100 m. On the volcano the gate is a portal
@@ -245,6 +257,21 @@ with custom rules keep their own best times.
 The climb saves itself. Solo players can continue from the title screen, and a multiplayer host can continue the
 saved climb from the lobby.
 
+**A hundred more, and a climb every day.** Below the six maps, two arrows page through 100 more climbs. Each is built on
+one of the six worlds (its way up, its creatures and its obstacles) but with its own seed, its own colours, the zones in
+another order, a grade (Gentle, Steep, Brutal or Extreme, on top of the difficulty) and up to two twists: Frozen,
+Gauntlet, Restless, Crumbling, Hooks, Windy, Night or Dusk. Every one of them passes the same checks as the six
+(`node dev/leveltest.js`). **Today's climb** on the title screen is one of them, the same for everyone on the same day
+(UTC). On holidays it is a holiday map instead: Haunted Hollow round Halloween, Frosty Peaks round Christmas, Countdown
+Tower at New Year, Sweetheart Cliffs on Valentine's Day, Egg Hunt Grove at Easter and Midsummer Light in June, each with
+zones of its own. The team can pick any map as the day's climb with `/daily` (in the game's terminal or on Discord).
+These maps have no relics; they are climbs, and their coins pay like everywhere else.
+
+**Ghost racing.** Your best climb of a map and difficulty plays back beside you as a see through climber, from the same
+start, and so do the best ones of your friends and of the others in the room. A line at the top says how far ahead or
+behind the nearest one is. In the pause menu, **Ghosts** switches them all off, or only yours, or any one of the others,
+just for you; the host can switch them off for everyone. Only for the eyes: they never touch the climb.
+
 ## Moves
 
 * **Left side of the screen**: a floating stick to move
@@ -283,6 +310,14 @@ like. The FPS counter can go anywhere on the screen too. Tips show up once as se
 small **!** markers to read them again.
 
 ## Multiplayer
+
+**Traitor mode** (in the lobby, with 3 or more climbers): one of you is secretly the traitor. Their mask button
+sabotages the climb: snap the cord so everyone climbs alone until they reach the others again, jam the checkpoints for
+30 seconds, put the lights out for the others, or fill their compass with static (no way up arrow, height or names).
+Every sabotage leaves a clue: where the cord snapped, which zone the jam came from, where one light stayed on, whom the
+static was loudest near. Anyone can call a vote from the magnifier button or the pause menu; more than half of the team
+on one name decides. Catch the traitor and the team wins. Vote out two innocent climbers, or reach the top with the
+traitor still hidden, and the traitor wins. The summit screen says who it was.
 
 Up to 4 climbers. Everyone needs the same StickManUp version. The host picks the map. Tied together, the team
 shares its checkpoints and falls back together. With the cord turned off in the lobby, nobody is tied together and
@@ -337,7 +372,8 @@ The owner and the people they trust run the game from inside it. Staff get a **T
 in the pause menu and while watching (or press the \` key or F2 on a keyboard). It takes the same commands as the
 Discord bot, suggests them as you type, fills in names of players who are online, and says what you probably meant
 when something is misspelled. A second tab lists everyone in the game right now with what they are doing, with buttons
-to watch them, join their room, see more or kick them. Roles like Friend, VIP and Family show as a coloured tag next to
+to watch them, join their room, see more or kick them. `/daily` sets the day's climb for everyone (a map number, a name
+or auto, optionally for some days) and `/clearsprays` takes away all of a player's graffiti. Roles like Friend, VIP and Family show as a coloured tag next to
 the name. Who may do what is set with roles and permissions on the server: see
 [server/README.md](server/README.md#the-team).
 

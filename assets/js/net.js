@@ -1,6 +1,6 @@
 // Multiplayer. A star network: clients talk only to the host, the host relays.
 // Transports: a StickManUp server (WebSocket relay) and Online (PeerJS/WebRTC).
-import { LEVEL_VERSION, DIFFS, MAPS } from './level.js';
+import { LEVEL_VERSION, DIFFS, mapDef } from './level.js';
 import { validColor } from './colors.js';
 import { cleanLook, cleanRole } from './skins.js';
 
@@ -11,20 +11,25 @@ export const PROTO = LEVEL_VERSION * 100 + 2;
 const count = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
 const num = (v) => (Number.isFinite(v) ? v : 0);
 const inList = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
+// Any map there is (level.js mapDef: the worlds, the generated ones and the holiday ones).
+const mapOk = (v) => (mapDef(v) ? v : 0);
 function cleanRoomRules(r) {
   const o = {};
   if (r && typeof r === 'object') for (const k of ['cps', 'haz', 'rope']) if (Number.isInteger(r[k]) && r[k] >= 0 && r[k] < DIFFS.length) o[k] = r[k];
   if (r && r.ff === 1) o.ff = 1;
+  // Ghosts off for everyone (ghost.js) and traitor mode (traitor.js).
+  if (r && r.ng === 1) o.ng = 1;
+  if (r && r.tr === 1) o.tr = 1;
   return o;
 }
 function cleanLobby(l) {
   const x = l && typeof l === 'object' ? l : {};
-  return { map: inList(x.map, MAPS), diff: inList(x.diff, DIFFS), rules: cleanRoomRules(x.rules), noCord: !!x.noCord, resume: !!x.resume };
+  return { map: mapOk(x.map), diff: inList(x.diff, DIFFS), rules: cleanRoomRules(x.rules), noCord: !!x.noCord, resume: !!x.resume };
 }
 function cleanGame(g) {
   if (!g || typeof g !== 'object') return null;
   return Object.assign(g, {
-    map: inList(g.map, MAPS), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls), mz: count(g.mz),
+    map: mapOk(g.map), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls), mz: count(g.mz),
     pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {}, loose: Array.isArray(g.loose) ? g.loose : [],
   });
 }

@@ -27,8 +27,8 @@ const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {},
 // What a maze garden's creature does to you, by map.
 // In each maze you have this many hearts. A bite takes one, and with none left you go back to the checkpoint.
 export const MAZE_HEARTS = 3;
-// How many stones of a course you may jump past: more than this is not a jump but a shortcut (courseChecks).
-const COURSE_SKIP = 3;
+// A relic counts once you have stood this close to the end of its course (pickups).
+const RELIC_NEAR = 3;
 // How fast creatures come after you (you run at 6.2), and from how many cells away they notice you in a maze, by hazard setting.
 const HUNT_SPEED = [2.2, 2.8, 3.4, 4.0], HUNT_CELLS = [3, 4, 5, 6];
 const MAZE_BITE = { storm: 'A storm crab pinched you!', sunny: 'A scorpion stung you!', forest: 'A wild boar charged you!', volcano: 'A fire imp burned you!', city: 'A robot dog bit you!', waterfall: 'A crocodile snapped at you!' };
@@ -581,7 +581,7 @@ export class Game {
       const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
       // In a maze garden it has to be from its own cell, not through the wall next to it. At the end of a course, by way of the course.
       if (d < (r.maze !== undefined ? 1.35 : 1.9)) {
-        if (!r.way || (this.onCourse === r.i && this.wayAt >= r.way.length - 1 - COURSE_SKIP)) this.takeRelic(r);
+        if (!r.way || (this.onCourse === r.i && this.wayAt >= r.way.length - 1 - RELIC_NEAR)) this.takeRelic(r);
       } else if (d < 25 && !this.relicNear.has(r.id)) {
         this.relicNear.add(r.id);
         this.app.sound.relicHum();
@@ -1353,13 +1353,12 @@ export class Game {
     return q ? q.c.wi : -1;
   }
 
-  // Nobody gets anywhere on a course but along it. Anywhere up to the second marker is a way in, and from there on only a few
-  // stones further on than you have been. Nor is a course a way up the route: off it and onto the route above where it
-  // started, you are back where it started.
-  courseSkip(r, n) {
+  // Nobody gets onto a course but by its way in, anywhere up to the second marker. Nor is a course a way up the route: off it
+  // and onto the route above where it started, you are back where it started.
+  courseSkip(r) {
     this.splashed = true;
     this.splashT = this.simT;
-    this.s.toHost({ k: 'course', r, n, skip: 1 });
+    this.s.toHost({ k: 'course', r, n: -1, skip: 1 });
   }
 
   courseChecks() {
@@ -1388,9 +1387,11 @@ export class Game {
         if (g.kind === 'secret') { this.onCourse = g.ri; this.wayAt = g.wi; }
       }
       if (g.kind === 'secret') {
+        // From anywhere else a course only counts from its way in. Once on it, how you get along it is up to you: stones are
+        // never counted, since pads throw you past some without you ever standing on them, and the cord can pull you past others.
         const r = L.relics[g.ri], been = this.onCourse === g.ri ? this.wayAt : -1;
-        if (g.wi > (been < 0 ? r.entry : been + COURSE_SKIP)) {
-          if (!this.splashed) this.courseSkip(g.ri, been >= 0 && this.rest && this.rest[0] === g.ri ? this.rest[1] : -1);
+        if (been < 0 && g.wi > r.entry) {
+          if (!this.splashed) this.courseSkip(g.ri);
           return;
         }
         this.onCourse = g.ri;
@@ -1404,7 +1405,7 @@ export class Game {
       } else {
         const r = this.onCourse >= 0 && L.relics[this.onCourse], st = r && r.start;
         if (st && me.y - PR > st.y + st.hy + 3) {
-          if (!this.splashed) this.courseSkip(r.i, -1);
+          if (!this.splashed) this.courseSkip(r.i);
           return;
         }
         this.onCourse = -1;

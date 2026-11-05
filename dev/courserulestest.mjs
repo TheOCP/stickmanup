@@ -1,5 +1,5 @@
 // The rules of the relic courses and the mazes, played in the same copy of the game the server reruns climbs with (no pictures).
-// Run `node dev/makesim.mjs` first. On every course: landing on a stone further on than you have come sends you back, a relic you
+// Run `node dev/makesim.mjs` first. On every course: landing on a course past its way in from anywhere else sends you back, a relic you
 // haven't walked to doesn't count, a course isn't a way up the route, a course walked from end to end gets its relic with nobody
 // sent back on the way, and on the volcano the gate takes you round the outside. In a maze: creatures come after you and bite, a bite
 // takes a heart, with none left you go back to the checkpoint with the hearts full.
@@ -83,13 +83,13 @@ for (const M of MAPS) {
       else console.log(`    not sent back at y ${high.y.toFixed(1)} on ${g.me.ground && g.me.ground.kind}, whys ${g.whys}, on ${g.onCourse}, me y ${g.me.y.toFixed(1)}, splashed ${g.splashed}, grounded ${g.me.grounded}`);
     }
     if (tried) report(id, "a course isn't a way up the route", sent === tried, sent === tried ? '' : `sent back from ${sent} of ${tried}`);
-    // Far ahead on the same course.
+    // Far ahead on the same course: stones aren't counted.
     clearOut(g);
     g.onCourse = r.i; g.wayAt = Math.max(0, r.entry);
     const ahead = plainFrom(r, r.entry + 12);
     if (ahead) {
       put(g, ahead.x, ahead.y + ahead.hy, ahead.z); until(g);
-      report(id, 'far ahead on the same course sends you back', g.whys.includes('courseskip'), g.whys.includes('courseskip') ? '' : `wi ${ahead.wi} y ${ahead.y.toFixed(1)}, ${g.me.grounded ? 'on ' + (g.me.ground && g.me.ground.kind) + ' wi ' + (g.me.ground && g.me.ground.wi) : 'in the air'}, me y ${g.me.y.toFixed(1)}, on ${g.onCourse} way ${g.wayAt}`);
+      report(id, 'far ahead on the same course is fine (pads and the cord take you past stones)', !g.whys.includes('courseskip'), !g.whys.includes('courseskip') ? '' : `wi ${ahead.wi} y ${ahead.y.toFixed(1)}, ${g.me.grounded ? 'on ' + (g.me.ground && g.me.ground.kind) + ' wi ' + (g.me.ground && g.me.ground.wi) : 'in the air'}, me y ${g.me.y.toFixed(1)}, on ${g.onCourse} way ${g.wayAt}`);
     }
     // End to end, standing on each thing in turn. Nobody gets sent back, and the relic counts.
     clearOut(g); g.taken.length = 0;

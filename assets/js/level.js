@@ -2134,8 +2134,8 @@ export function generateLevel(mapId = 0) {
   // Nobody gets to a relic any other way. A course first runs straight out from the tower, and from the second marker on it
   // goes round on a ring of its own, past what a jump or a drop from the route can reach, climbing as it goes (offRoute). A
   // crater has no room inside it, so there the gate is a portal to a course round the outside of the mountain (portal). And
-  // game.js checks the rest wherever it is played, the server's rerun too: landing on a stone further on than you have come
-  // sends you back (way, entry, COURSE_SKIP).
+  // game.js checks the rest wherever it is played, the server's rerun too: landing on a course past its way in from anywhere
+  // else sends you back (way, entry).
   function buildSecrets() {
     const SR = rng(MAP.seed ^ 0x51ec7e7), sr = (a, b) => a + SR() * (b - a), shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (SR() * (i + 1)) | 0, t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
     out.relics = [];

@@ -197,8 +197,8 @@ weapon. Each starts at a gate with a pillar of light that can be seen from far a
 on the height bar show where the nearest ones are. The shop says on which map and from what height each thing is found.
 There are no shortcuts to a relic. A course runs straight out from the tower to a ring of its own, well past what a jump or a
 drop from the route can reach, and climbs as it goes round: the legendary ones 40 to 100 m. On the volcano the gate is a portal
-to a course round the outside of the mountain, with a ring where you arrive to go back. And the game checks it, the server's rerun too: land on a stone further on than
-you have come and you are sent back, a relic only counts at the end of the way, and a course doesn't take you up the route.
+to a course round the outside of the mountain, with a ring where you arrive to go back. And the game checks it, the server's rerun too: land on a course past its way
+in from anywhere else and you are sent back, a relic only counts at the end of the way, and a course doesn't take you up the route.
 `node dev/courseshortcuttest.js` says if any of it can be reached from anywhere else.
 
 A course wears its map's looks: stones, gate, sign and vault in the map's own surfaces, spikes on the gate. What is around it

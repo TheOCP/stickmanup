@@ -477,6 +477,15 @@ function stopClimb(c, why) {
   saveClimbs();
   if (c === climb) emit('notCounting', why);
 }
+// The climb stops earning here, and what it earned so far goes to the server as usual.
+export function runStop(why) {
+  if (!climb) return;
+  if (rec) { rec.seal(); rec = null; }
+  climb.live = false;
+  climb = null;
+  saveClimbs();
+  emit('notCounting', why);
+}
 export function runCoin(i) { if (counting()) climb.coins.push(i); }
 export function runRelic(id) { if (counting()) { climb.relics.push(id); sealNow(); } }
 export function runWin(falls) {

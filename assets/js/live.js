@@ -83,6 +83,8 @@ function heardFrom(text) {
     case 'req': emit('req', m); break;
     case 'friend': emit('friend', m); break;
     case 'cpreset': emit('cpreset', m); break;
+    case 'tp': emit('tp', m); break;
+    case 'where': emit('where', m); break;
     case 'invite': emit('invite', m); break;
     case 'invited': emit('invited', m); break;
     case 'inviteErr': emit('inviteErr', m); break;
@@ -127,6 +129,9 @@ export function invite(num, pass) {
 }
 
 // Everyone in the game now, for the team. Comes back as 'list'.
+// Where this player is, for the team's tp command.
+export function here(q, o) { if (isReady) sendObj(Object.assign({ t: 'here', q }, o)); }
+
 export function askList() { if (isReady) sendObj({ t: 'list' }); }
 
 export function unwatch() {

@@ -9,5 +9,9 @@ contextBridge.exposeInMainWorld('Desktop', {
     ipcRenderer.on('auth', (e, code) => f(String(code)));
     ipcRenderer.send('auth-ready');
   },
-  onUpdate: (f) => { ipcRenderer.on('update-ready', () => f()); },
+  onUpdate: (f) => {
+    ipcRenderer.on('update-ready', () => f());
+    ipcRenderer.send('update-listen');
+  },
+  installUpdate: () => ipcRenderer.send('install-update'),
 });

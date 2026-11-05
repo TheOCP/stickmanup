@@ -17,6 +17,7 @@ import * as cloud from './cloud.js';
 import { Session, PROTO, makeLink, MAX_PLAYERS } from './net.js';
 import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keepAwake } from './platform.js';
 import * as live from './live.js';
+import { initUpdater } from './updater.js';
 import { initFriends, openFriends, friendBadge, endSpectate, watchPlayer, joinPlayerRoom } from './friends.js';
 import { initTerminal, openTerminal, termSay, close as closeTerminal, seen as termSeen } from './terminal.js';
 import { Game, SHIELD_MAPS } from './game.js';
@@ -1002,6 +1003,7 @@ const NOT_COUNTING = {
   tainted: 'This climb has stopped counting for coins',
   dead: 'This climb has stopped counting for coins',
   gap: 'This climb has stopped counting for coins',
+  moved: 'The team moved you: this climb no longer earns coins',
 };
 const toldNot = new Set();
 cloud.on('notCounting', (why) => {
@@ -1773,6 +1775,8 @@ function startLive() {
   // Refused by the server: its own answer says why, and whether that means being banned.
   live.on('off', () => cloud.checkStanding());
   live.on('cpreset', (m) => cloud.checkpointReset(m.at));
+  live.on('tp', (m) => { if (app.game) app.game.teleport(m); });
+  live.on('where', (m) => { const g = app.game; if (g && !g.won) live.here(m.q, { map: g.map, diff: g.diff, pos: [g.me.x, g.me.y, g.me.z] }); });
   live.on('invite', showInvite);
   live.on('invited', (m) => ui.toast(`Invite sent to ${inviter(m)}`, 'good'));
   live.on('inviteErr', (m) => ui.toast(String((m && m.why) || 'Could not send the invite').slice(0, 140), 'bad'));
@@ -1838,7 +1842,7 @@ function boot() {
   nav = new PadNav({
     using: padButtons,
     input: app.input,
-    root: () => { const m = $('#menu'); return m.classList.contains('on') ? m : emoteOpen() ? $('#emoteMenu') : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
+    root: () => { if (app.spec && app.spec.fly) return null; const m = $('#menu'); return m.classList.contains('on') ? m : emoteOpen() ? $('#emoteMenu') : app.screen === 'layout' || app.screen === 'fpsmove' ? $('#editBar') : null; },
     screen: () => app.screen,
     // On the title screen B does nothing: closing the whole app is for the phone's own back button.
     back: () => { if (app.screen !== 'title') goBack(); },
@@ -1846,6 +1850,7 @@ function boot() {
       // Select: the highlight starts on Back to checkpoint, so it is two presses away during a climb.
       if (app.screen === 'game') { pause(); nav.aim(select ? 'respawn' : 'back'); }
       else if (app.screen === 'pause') resume();
+      else if (app.spec && app.spec.fly) app.spec.setFly(false);
     },
     turn: (a) => { if (app.preview) app.preview.yaw = (app.preview.yaw || 0) + a * 3.5; },
     place: (dx, dy) => {
@@ -1880,7 +1885,7 @@ function boot() {
     document.addEventListener('visibilitychange', () => window.SMU_vis(!document.hidden));
     window.addEventListener('pagehide', () => window.SMU_leave());
   }
-  if (DESK) DESK.onUpdate(() => ui.toast('Update ready. It installs when you close the game.', 'good'));
+  initUpdater(app);
   startLive();
   title();
   requestAnimationFrame(frame);

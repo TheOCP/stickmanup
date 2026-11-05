@@ -72,6 +72,7 @@ const COMMANDS = [
   cmd('baninfo', 'Whether a player is banned, and their history', PLAYER),
   cmd('kick', 'Throw a player out of the room they are in', PLAYER, REASON(false)),
   cmd('resetcheckpoint', 'Send a player back to the start of the map and forget their saved climb', PLAYER, REASON(false)),
+  cmd('tp', 'Move a climber: to a player, a height, the start or the top. That climb stops earning', PLAYER, { type: 3, name: 'to', description: 'A player, a height like 300m, start or top', required: true, max_length: 64 }, REASON(false)),
   cmd('tell', 'Send a player a message in the game', PLAYER, { type: 3, name: 'text', description: 'The message', required: true, max_length: 300 }),
   // Anticheat
   cmd('flags', 'What was flagged lately, or for one player', { ...PLAYER, required: false }, COUNT),
@@ -85,7 +86,7 @@ const COMMANDS = [
   cmd('rooms', 'The rooms open right now'),
   cmd('closeroom', 'Close a room', { type: 3, name: 'code', description: 'The 5 letter code', required: true, max_length: 5 }, REASON(false)),
   // Live, in the game
-  cmd('vanish', 'Be invisible: offline to friends, and nobody is told you watch', { type: 5, name: 'on', description: 'On or off (empty switches it)', required: false }, { ...PLAYER, required: false, description: 'Whose (you, if empty)' }),
+  cmd('vanish', 'Be invisible and fly: offline to friends, and /watch or /join flies unseen', { type: 5, name: 'on', description: 'On or off (empty switches it)', required: false }, { ...PLAYER, required: false, description: 'Whose (you, if empty)' }),
   cmd('watch', 'Watch any climb, solo or in a room (in the game)', PLAYER),
   cmd('join', 'Join the room a player is in, past its password (in the game)', { ...PLAYER, description: 'Name, #number, ID or a room code' }),
   // The server
@@ -115,7 +116,7 @@ const COMMANDS = [
 
 // Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
 const GROUPS = {
-  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint'],
+  players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint', 'tp'],
   coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'giverelic', 'takerelic', 'dailycap'],
   climbs: ['climbs', 'climb'],
   bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
@@ -742,7 +743,7 @@ const RUN = {
     if (on === was) return ctx.reply(`${line(u)} is ${on ? 'already vanished' : 'not vanished'}.`, { color: 'warn' });
     st.setVanish(u.id, on);
     ctx.s.friends.vanishChanged(u.id);
-    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline, and nobody is told when they watch a climb. Rooms still show them when they climb in one.` : `${line(u)} can be seen again.`);
+    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline. /watch a player or /join a room to fly around it unseen: nobody there sees it or is told. Climbing in a room yourself still shows you.` : `${line(u)} can be seen again.`);
   },
   watch(ctx, d) {
     if (!ctx.game) return ctx.reply(IN_GAME, { color: 'warn' });
@@ -787,6 +788,41 @@ const RUN = {
     const text = opt(d, 'text');
     ctx.s.admin.tell(u.id, `Message from ${ctx.game ? ctx.whoShort : 'the team'}: ${text}`);
     return done(ctx, 'tell', `${playerLine(u)}: ${text}`, `Sent to ${line(u)}. It shows in their game within about 30 seconds, or the next time they open it.`);
+  },
+  // The game knows where everyone is, the server does not: a height, the start and the top are worked out by the climber's
+  // game, and for a player the server asks that player's game first.
+  tp(ctx, d) {
+    const u = /^me$/i.test(String(opt(d, 'player')).trim()) ? self(ctx) : target(ctx, d);
+    if (!u) return undefined;
+    const f = ctx.s.friends, to = String(opt(d, 'to')).trim(), low = to.toLowerCase(), said = opt(d, 'reason');
+    const at = f ? f.presence(u.id) : { st: 'off' };
+    if (at.st !== 'climb') return ctx.reply(`${line(u)} is not climbing right now, so there is nothing to move.`, { color: 'warn' });
+    const note = `${playerLine(u)} to ${to}: ${said || 'no reason given'}`, after = ' That climb stops earning from here.';
+    const place = low === 'start' ? { h: 0 } : low === 'top' ? { top: true } : /^\d{1,5}\s*m$/.test(low) ? { h: parseInt(low, 10) } : null;
+    if (place) {
+      f.tell(u.id, Object.assign({ t: 'tp' }, place));
+      tell(ctx, u, 'The team moved you.', said);
+      return done(ctx, 'tp', note, `Moved ${line(u)} ${place.top ? 'to the top' : place.h ? `to the checkpoint at or below ${place.h} m` : 'to the start'}.${after}`);
+    }
+    let o;
+    if (low === 'me') { o = self(ctx); if (!o) return undefined; } else {
+      const r = ctx.s.admin.find(to);
+      if (r.many) return ctx.reply(`More than one player is called that. Use a number:\n${r.many.map(line).join('\n')}`, { color: 'warn' });
+      o = r.id ? ctx.s.admin.info(r.id) : null;
+      if (!o) return ctx.reply(`"${esc(to)}" is not a player. Use a player, a height like 300m, start or top.`, { color: 'warn' });
+    }
+    if (o.id === u.id) return ctx.reply('That is the same player.', { color: 'warn' });
+    if (f.presence(o.id).st !== 'climb') return ctx.reply(`${line(o)} is not climbing right now.`, { color: 'warn' });
+    return safely(ctx, async () => {
+      const p = await f.askWhere(o.id);
+      if (!p) return `${line(o)} did not say where they are. Try again in a moment.`;
+      if (p.map !== at.map || p.diff !== at.diff) return `${line(u)} and ${line(o)} are not on the same map and difficulty.`;
+      f.tell(u.id, { t: 'tp', pos: p.pos, map: p.map, diff: p.diff });
+      tell(ctx, u, 'The team moved you.', said);
+      ctx.s.admin.audit(ctx.who, 'tp', note);
+      ctx.bot.log('Admin', `**${esc(ctx.whoShort)}** used /tp\n${esc(note)}`);
+      return `Moved ${line(u)} to ${line(o)}.${after}`;
+    });
   },
   resetcheckpoint(ctx, d) {
     const u = target(ctx, d);

@@ -755,7 +755,7 @@ export const LEGENDS = [
 // The two personal suits. Whoever goes by that name wears them. (Anyone could type the name: there is no
 // server to check it against.)
 export const OWNERS = [
-  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x050706, b: 0x12c040, c: 0x40ff70 }, trail: 0x40ff70, trailFx: 'code', face: 'hacker', gear: ['monocle', 'glider', 'hood_halo', 'hood_crown'], hint: 'Only for TheOCP.' }),
+  s('o_theocp', 'The Hacker', 4, -1, { tab: 'legend', team: ['owner'], c: 0x40ff70, shader: { mode: 5, a: 0x050706, b: 0x12c040, c: 0x40ff70 }, trail: 0x40ff70, trailFx: 'code', face: 'hacker', gear: ['monocle', 'glider', 'hood_crown'], hint: 'Only for TheOCP.' }),
   s('o_shortgg', 'GG Girl', 4, -1, { tab: 'legend', team: ['owner', 'admin'], c: 0xff6aa8, p: paintFn.fengish, face: 'cute', gear: ['hairgg', 'headset', 'hemgg'], trail: 0xff8ac0, glow: 0.22, hint: 'Only for ShortGG.' }),
 ];
 

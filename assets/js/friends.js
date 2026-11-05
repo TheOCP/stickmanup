@@ -6,6 +6,7 @@ import { Spectator } from './spectate.js';
 import { MAPS, DIFFS } from './level.js';
 import { css, COLORS } from './colors.js';
 import { fmtTime, clamp } from './util.js';
+import { ON_PC } from './platform.js';
 
 const $ = (q) => document.querySelector(q);
 let ctx = null, view = null, known = null, count = { on: 0, req: 0 }, leaveNow = null;
@@ -15,6 +16,13 @@ export const friendBadge = () => (count.req ? `<i class="frc req">${count.req}</
 
 export function initFriends(c) {
   ctx = c;
+  // Vanishing while already watching someone: up and away.
+  let wasVanished = false;
+  live.on('staff', (s) => {
+    const v = !!(s && s.vanished);
+    if (v && !wasVanished && ctx.app.spec) ctx.app.spec.setFly(true);
+    wasVanished = v;
+  });
   const shown = (m) => (m.name ? String(m.name).slice(0, 20) : `Player #${m.num | 0}`);
   live.on('count', (m) => {
     count = { on: Math.max(0, m.on | 0), req: Math.max(0, m.req | 0) };
@@ -274,6 +282,7 @@ const setText = (el, text) => { if (el && el.dataset.v !== text) { el.dataset.v 
 
 function specScreen(spec, f, leave, back) {
   const { app, show, esc } = ctx, L = app.level, top = L.top;
+  const flyer = !!(ctx.team && ctx.team());
   const track = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
   show(`<div class="specui">
     <div class="sptop">
@@ -283,21 +292,69 @@ function specScreen(spec, f, leave, back) {
     </div>
     <div class="spalt"><div class="track">${track}</div><div class="marks" id="spMarks"></div></div>
     <div class="spnote" id="spNote"></div>
+    ${flyer ? `<div class="spfly" id="spFly" hidden>
+      ${ON_PC ? '<div class="spflyhelp">WASD to move, drag to look, Space up, C down, E fast</div>' : '<div class="spstick" id="spStick"><i></i></div>'}
+      <div class="spflybtns"><button class="btn sm" data-a="flyto">Go to them</button>${ON_PC ? '' : '<button class="btn sm" data-h="up">UP</button><button class="btn sm" data-h="down">DOWN</button><button class="btn sm" data-h="fast">FAST</button>'}</div>
+    </div>` : ''}
     <div class="spbot">
       <div class="spstats"><div><b id="spH">0 m</b><small>Height</small></div><div><b id="spTop">0 m</b><small>Top</small></div><div><b id="spF">0</b><small>Falls</small></div></div>
       <div class="spteam" id="spTeam"></div>
       ${f && canJoin(f) ? '<button class="btn primary sm spjoin" data-a="join">Join</button>' : ''}
-      ${ctx.team && ctx.team() ? '<button class="btn sm spterm" data-a="term">Terminal</button>' : ''}
+      ${flyer ? '<button class="btn sm spterm" id="spFlyB" data-a="fly">Fly</button><button class="btn sm spterm" data-a="term">Terminal</button>' : ''}
     </div>
   </div>`, {
     back: () => leave(),
     follow: (b) => spec.follow(+b.dataset.s),
+    fly: () => spec.setFly(!spec.fly),
+    flyto: () => spec.flyTo(),
     term: () => ctx.openTerminal && ctx.openTerminal(),
     join: () => leave(null, () => joinRoom(f.room, back)),
   }, false);
   $('#menu').classList.add('specm');
   app.screen = 'spec';
   showTeam(spec);
+  if (flyer) {
+    bindFly(spec);
+    // Vanished is what it is for: watching someone without being there.
+    if (ctx.team().vanished) spec.setFly(true);
+  }
+}
+
+function showFly(on) {
+  const p = $('#spFly'), b = $('#spFlyB');
+  if (p) p.hidden = !on;
+  if (b) { b.textContent = on ? 'Stop flying' : 'Fly'; b.classList.toggle('primary', on); }
+}
+
+// The touch controls for flying. Looking around stays what it is: dragging anywhere else on the screen.
+function bindFly(spec) {
+  const t = spec.flyPad, stick = $('#spStick');
+  if (stick) {
+    const nub = stick.firstElementChild;
+    let id = null;
+    const at = (e) => {
+      const r = stick.getBoundingClientRect(), R = r.width / 2;
+      let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R;
+      const l = Math.hypot(x, y);
+      if (l > 1) { x /= l; y /= l; }
+      t.sx = x;
+      t.sy = -y;
+      nub.style.transform = `translate(${(x * R * 0.6).toFixed(1)}px, ${(y * R * 0.6).toFixed(1)}px)`;
+    };
+    const end = (e) => { if (e.pointerId === id) { id = null; t.sx = t.sy = 0; nub.style.transform = ''; } };
+    stick.addEventListener('pointerdown', (e) => { id = e.pointerId; stick.setPointerCapture(id); at(e); });
+    stick.addEventListener('pointermove', (e) => { if (e.pointerId === id) at(e); });
+    stick.addEventListener('pointerup', end);
+    stick.addEventListener('pointercancel', end);
+  }
+  for (const b of document.querySelectorAll('#spFly [data-h]')) {
+    const k = b.dataset.h;
+    // Thumbs are busy with the stick and looking around, so fast stays on by itself.
+    if (k === 'fast') { b.addEventListener('click', () => { t.fast = !t.fast; b.classList.toggle('on', t.fast); }); continue; }
+    const set = (v) => () => { t[k] = v; b.classList.toggle('on', v); };
+    b.addEventListener('pointerdown', set(true));
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, set(false));
+  }
 }
 
 function showTeam(s) {
@@ -361,7 +418,7 @@ function watchFriend(num, back, who, after) {
       clearTimeout(timer);
       const first = !spec;
       if (first) {
-        spec = new Spectator(app, { loadMap: ctx.loadMap, team: showTeam, info: showInfo });
+        spec = new Spectator(app, { loadMap: ctx.loadMap, team: showTeam, info: showInfo, fly: showFly });
         if (N && N.keepAwake) N.keepAwake(true);
       }
       spec.setGame(g);

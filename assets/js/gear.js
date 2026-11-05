@@ -139,23 +139,7 @@ export const GEAR = {
     for (const [x, y] of [[0, 1], [1, 0], [-1, -1], [0, -1], [1, -1]]) out.push(box(c * 0.62, c * 0.62, 0.006, x * c, y0 + y * c, z + 0.002, hot, 0, 0, 0, G, 2.6));
     return out;
   },
-  // Also The Hacker's: zeros and ones going round the head at the brow, above the eyes so the face stays clear, with a ring of
-  // cubes further out (hood_halo), and shards of light turning the other way above it (hood_crown).
-  hood_halo: () => {
-    const R = 0.37, tilt = 0.14, y0 = 0.2, hot = 0x9dffc0, G = 0x40ff70, dim = 0x0a5a24, out = [tor(R, 0.0035, 0, y0, 0, dim, Math.PI / 2 + tilt, 0, G, 2.6)];
-    const bits = '01101001110100';
-    for (let i = 0; i < bits.length; i++) {
-      const a = (i / bits.length) * Math.PI * 2, x = Math.sin(a) * R, z = Math.cos(a) * R * Math.cos(tilt), y = y0 - Math.cos(a) * R * Math.sin(tilt);
-      out.push(bits[i] === '1' ? box(0.016, 0.07, 0.01, x, y, z, hot, 0, a, 0, G, 3.2) : tor(0.025, 0.0075, x, y, z, hot, 0, a, G, 3.2, 0.72, 1));
-    }
-    const R2 = 0.44, t2 = -0.32;
-    out.push(tor(R2, 0.003, 0, 0, 0, dim, Math.PI / 2 + t2, 0, G, 2.2));
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2 + 0.3, x = Math.sin(a) * R2, z = Math.cos(a) * R2 * Math.cos(t2), y = -Math.cos(a) * R2 * Math.sin(t2);
-      out.push(box(0.022, 0.022, 0.022, x, y, z, hot, a, a * 1.7, 0, G, 3));
-    }
-    return out;
-  },
+  // Also The Hacker's: shards of light turning above the head.
   hood_crown: () => {
     const hot = 0xc8ffd8, G = 0x40ff70, out = [tor(0.2, 0.003, 0, 0.36, 0, 0x0a5a24, Math.PI / 2, 0, G, 2.4)];
     for (let i = 0; i < 6; i++) {
@@ -822,7 +806,6 @@ for (const [at, ids] of Object.entries(EPIC_AT)) {
   }
 }
 GEAR_ANIM.planets = 'spin';
-GEAR_ANIM.hood_halo = 'spin';
 GEAR_ANIM.hood_crown = 'rev';
 // Taller than a hat: the shop draws the climber smaller so they fit on the card.
 export const GEAR_TALL = new Set(['balloons', 'sashimono', 'discoball', 'cloud_back', 'parasol']);

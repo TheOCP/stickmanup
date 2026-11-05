@@ -67,6 +67,8 @@ class Friends {
     this.rooms = rooms;
     this.staff = staff;
     this.terminal = null;
+    this.wheres = new Map();
+    this.whereNo = 0;
     const d = db.db;
     d.exec(`
       CREATE TABLE IF NOT EXISTS friends (
@@ -299,6 +301,25 @@ class Friends {
   send(ws, o) { this.sendText(ws, JSON.stringify(o)); }
   tell(id, o) { const ws = this.live.get(id); if (ws) this.send(ws, o); }
 
+  // Where someone is on their climb right now. Only their own game knows: null if it doesn't say in time.
+  askWhere(id, ms = 3000) {
+    const ws = this.live.get(id);
+    if (!ws) return Promise.resolve(null);
+    return new Promise((done) => {
+      const q = ++this.whereNo;
+      const end = (p) => { clearTimeout(t); this.wheres.delete(q); done(p); };
+      const t = setTimeout(() => end(null), ms);
+      this.wheres.set(q, { id, end });
+      this.send(ws, { t: 'where', q });
+    });
+  }
+  hereIs(ws, m) {
+    const w = this.wheres.get(m.q), p = m.pos;
+    if (!w || w.id !== ws.uid) return;
+    const ok = Array.isArray(p) && p.length === 3 && p.every((n) => Number.isFinite(n) && Math.abs(n) < 1e5);
+    w.end(ok ? { map: int(m.map, 0, 63), diff: int(m.diff, 0, 63), pos: p } : null);
+  }
+
   message(ws, text) {
     if (!ws.uid) return this.hello(ws, text);
     // Passed along as it came. Watchers check it themselves, like everything else a stranger's phone sends.
@@ -319,6 +340,7 @@ class Friends {
     else if (m.t === 'invite') this.invite(ws, m.num, m.pass);
     else if (m.t === 'cmd' && this.terminal) this.terminal.run(ws, m, (o) => this.send(ws, o)).catch((e) => console.error('terminal:', e.message));
     else if (m.t === 'list') this.staffList(ws);
+    else if (m.t === 'here') this.hereIs(ws, m);
   }
 
   hello(ws, text) {

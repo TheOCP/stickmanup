@@ -26,7 +26,7 @@ app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setAppUserModelId('io.stickmanup.desktop');
 
-let win = null, authCode = '', authReady = false, leaving = false;
+let win = null, authCode = '', authReady = false, leaving = false, updateReady = false, updateHeard = false, updating = false;
 
 // Signing in happens in the real browser, which comes back through stickmanup://auth?code=...
 function takeLink(args) {
@@ -61,8 +61,27 @@ function checkUpdates() {
   if (!app.isPackaged || SMOKE) return;
   const { autoUpdater } = require('electron-updater');
   autoUpdater.on('error', (e) => console.error('update check failed:', e && e.message));
-  autoUpdater.on('update-downloaded', () => { if (win && !win.isDestroyed()) win.webContents.send('update-ready'); });
+  autoUpdater.on('update-downloaded', () => { updateReady = true; sayUpdate(); });
   autoUpdater.checkForUpdates().catch(() => {});
+}
+// The game shows the card as soon as both are there: the download and the page listening for it.
+function sayUpdate() {
+  if (updateReady && updateHeard && win && !win.isDestroyed()) win.webContents.send('update-ready');
+}
+// Restart to update: the game gets its moment to send what it hasn't yet, like when closing.
+function installUpdate() {
+  if (!updateReady || updating) return;
+  updating = true;
+  let went = false;
+  const go = () => {
+    if (went) return;
+    went = true;
+    leaving = true;
+    require('electron-updater').autoUpdater.quitAndInstall(true, true);
+  };
+  setTimeout(go, 2500);
+  if (win && !win.isDestroyed()) win.webContents.executeJavaScript('window.SMU_leave ? window.SMU_leave() : 0', true).then(go, go);
+  else go();
 }
 
 function makeWindow() {
@@ -186,6 +205,8 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('quit', () => { if (win) win.close(); else app.quit(); });
     ipcMain.on('fullscreen', toggleFull);
     ipcMain.on('auth-ready', () => { authReady = true; sendAuth(); });
+    ipcMain.on('update-listen', () => { updateHeard = true; sayUpdate(); });
+    ipcMain.on('install-update', installUpdate);
     makeWindow();
   });
   app.on('window-all-closed', () => app.quit());

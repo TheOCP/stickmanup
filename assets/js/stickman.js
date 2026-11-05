@@ -334,9 +334,6 @@ function legendMat(S) {
 // fading with age, a faint shimmer running back along it. The two crossed strips make it a tube from every side. uv.x is how
 // old that part is (0 at the climber, 1 at the end), uv.y across.
 const RIB_N = 36, RIB_LIFE = 0.55, CODE_BITS = 40;
-// Its speedhack: copies of the climber in green light left behind while running fast, GHOSTS of them GHOST_DT apart, like the
-// Hacker's blur in the video.
-const GHOSTS = 3, GHOST_DT = 0.05, GHOST_FAST = 4.5;
 function ribbonMat() {
   return new THREE.ShaderMaterial({
     fog: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
@@ -609,7 +606,7 @@ export class Stickman {
       this.cape.material = mat;
       this.cape.visible = true;
     } else if (this.cape) this.cape.visible = false;
-    // Legendary trail: sparkles, or for The Hacker a ribbon of light, falling code and ghosts (trailFx 'code'). Each kind is made once
+    // Legendary trail: sparkles, or for The Hacker a ribbon of light and falling code (trailFx 'code'). Each kind is made once
     // and kept, like everything else here.
     if (S.trail) {
       const fx = S.trailFx === 'code' ? 'code' : 'spark';
@@ -622,11 +619,7 @@ export class Stickman {
     } else if (this.trail) { this.trailVis(this.trail, false); this.trail.off = true; }
   }
 
-  trailVis(T, on) {
-    for (const o of T.parts) o.visible = on;
-    // Ghosts only ever show when made, never when the trail comes back.
-    if (T.ghosts && !on) for (const set of T.ghosts) for (const m of set) m.visible = false;
-  }
+  trailVis(T, on) { for (const o of T.parts) o.visible = on; }
 
   sparkTrail() {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false });
@@ -639,8 +632,8 @@ export class Stickman {
     return { fx: 'spark', parts: [im], tint: [mat], im, i: 0, acc: 0, p: Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, life: 0 })) };
   }
 
-  // The Hacker's: a clean ribbon of light streaming out behind (two crossed strips so it shows from every side), now and then a
-  // zero or a one dropping off the climber and flipping as it falls, and the speedhack ghosts.
+  // The Hacker's: a clean ribbon of light streaming out behind (two crossed strips so it shows from every side), and now and
+  // then a zero or a one dropping off the climber and flipping as it falls.
   codeTrail() {
     const bits = (geo) => {
       const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false });
@@ -663,45 +656,8 @@ export class Stickman {
     ribbon.frustumCulled = false;
     ribbon.renderOrder = 2;
     this.scene.add(ribbon);
-    // The speedhack ghosts: one set of the body's parts for each, placed by copying where the real ones were. Each ghost
-    // keeps its own see-through material; on every new copy they all move one back, so the oldest is the faintest.
-    const ghosts = [];
-    for (let r = 0; r < GHOSTS; r++) {
-      const gm = new THREE.MeshBasicMaterial({ color: 0x30ff70, transparent: true, opacity: 0.5 - r * 0.14, depthWrite: false, blending: THREE.AdditiveBlending });
-      ghosts.push(this.limbs.map((o) => {
-        const m = new THREE.Mesh(o.geometry, gm);
-        m.matrixAutoUpdate = false;
-        m.visible = false;
-        m.renderOrder = 1;
-        this.scene.add(m);
-        return m;
-      }));
-    }
     return { fx: 'code', parts: [im0, im1, ribbon], tint: [im0.material, im1.material], uC: mat.uniforms.uC, uT: mat.uniforms.uT, im0, im1, geo, i: 0, acc: 0,
-      p: Array.from({ length: CODE_BITS }, () => ({ x: 0, y: 0, z: 0, vy: 0, life: 0, max: 1, one: false, r: 0, s: 1 })), pts: [], pool: [], empty: false,
-      ghosts, gAcc: 0, gx: 0, gz: 0 };
-  }
-
-  // A new speedhack ghost where the body is now, the older ones one step back; none while slow, so they run out.
-  ghostStep(T, dt, x, z, fast) {
-    T.gAcc += dt;
-    if (T.gAcc < GHOST_DT) return;
-    T.gAcc = 0;
-    const G0 = T.ghosts, jump = Math.abs(x - T.gx) + Math.abs(z - T.gz) > 3;
-    T.gx = x; T.gz = z;
-    for (let r = GHOSTS - 1; r > 0; r--) {
-      const a = G0[r], b = G0[r - 1];
-      for (let j = 0; j < a.length; j++) {
-        a[j].visible = b[j].visible && !jump;
-        if (a[j].visible) { a[j].matrix.copy(b[j].matrix); a[j].matrixWorldNeedsUpdate = true; }
-      }
-    }
-    if (fast) this.g.updateMatrixWorld(true);
-    const a = G0[0];
-    for (let j = 0; j < a.length; j++) {
-      a[j].visible = fast && this.limbs[j].visible;
-      if (a[j].visible) { a[j].matrix.copy(this.limbs[j].matrixWorld); a[j].matrixWorldNeedsUpdate = true; }
-    }
+      p: Array.from({ length: CODE_BITS }, () => ({ x: 0, y: 0, z: 0, vy: 0, life: 0, max: 1, one: false, r: 0, s: 1 })), pts: [], pool: [], empty: false };
   }
 
   trailZero(im) {
@@ -711,10 +667,10 @@ export class Stickman {
   }
 
   // Sparkles left behind while moving.
-  trailStep(dt, x, y, z, moving, t, sp = 0) {
+  trailStep(dt, x, y, z, moving, t) {
     const T = this.trail;
     if (!T || T.off) return;
-    if (T.fx === 'code') { this.ghostStep(T, dt, x, z, sp > GHOST_FAST && this.g.visible); return this.codeStep(T, dt, x, y, z, moving, t); }
+    if (T.fx === 'code') return this.codeStep(T, dt, x, y, z, moving, t);
     T.acc += dt;
     if (moving && T.acc > 0.06) {
       T.acc = 0;
@@ -1068,7 +1024,7 @@ export class Stickman {
       this.capeA += (want - this.capeA) * Math.min(1, dt * 7);
       this.cape.rotation.x = this.capeA;
     }
-    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5, t, sp);
+    if (this.trail) this.trailStep(dt, x, y, z, sp > 0.8 || Math.abs(vy) > 1.5, t);
     this.shield.visible = !!(flags & F.SHIELD);
     if (this.shield.visible) this.shieldMat.opacity = 0.22 + Math.sin(t * 20) * 0.06;
     // Contact shadow on the floor below, fading with height.

@@ -54,8 +54,9 @@ public class MainActivity extends Activity {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.10.15";
+    static final String VERSION = "4.10.16";
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final Updater updater = new Updater(this);
     private final StringBuilder jsQueue = new StringBuilder();
     private boolean jsPosted;
     private volatile String insets = "{\"l\":0,\"t\":0,\"r\":0,\"b\":0}";
@@ -203,6 +204,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent i) {
         super.onNewIntent(i);
+        if (Updater.ACTION.equals(i.getAction())) {
+            updater.result(i);
+            return;
+        }
         setIntent(i);
         takeSignIn(i);
     }
@@ -558,6 +563,27 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE));
             } catch (Exception ignored) {
             }
+        }
+
+        /** Updates (updater.js, Updater.java). */
+        @JavascriptInterface
+        public boolean updateAllowed() {
+            return updater.allowed();
+        }
+
+        @JavascriptInterface
+        public void updateAllow() {
+            updater.askAllow();
+        }
+
+        @JavascriptInterface
+        public void updateGet() {
+            updater.get();
+        }
+
+        @JavascriptInterface
+        public void updateInstall() {
+            updater.install();
         }
 
         /** A sign in code that arrived before the page was ready. Handed over once. */

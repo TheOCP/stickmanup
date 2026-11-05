@@ -275,7 +275,11 @@ who with, which room), and buttons to watch them, join their room, see more or k
   vanished, friends see you as offline (last seen when you vanished), you aren't counted online, and when you watch a
   climb nobody is told: no eye, no name. On that screen you fly: stick or WASD goes where you look, up and down
   with the buttons or Space and C, faster with FAST or E, through anything. The team can switch it on with Fly without
-  vanishing too. It is only a camera, nobody in the climb sees it. Climbing in a room still shows you to the others in it.
+  vanishing too. It is only a camera, nobody in the climb sees it.
+* On your own climb, `/vanish` makes you fly the same way with the climbing buttons: JUMP or Space up, GRAB, Shift or C
+  down, REEL or E fast. Your stickman, name and cord are gone for the others in the room, though the room's player count
+  still counts you. That climb stops earning, and `/vanish off` drops you from where you are. A new climb started while
+  vanished starts flying.
 * `/watch player` follows anyone's climb live, solo climbs too, whether or not they let friends watch. Without
   vanish they see that you are watching, like with a friend.
 * `/join player` (or a room code) joins their room on this server as a climber, without its password, and everyone in

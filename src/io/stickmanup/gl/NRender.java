@@ -74,6 +74,8 @@ public final class NRender {
     private static final class Obj {
         int id, kind, g, m, ro, inst, vao, imVbo, icVbo;
         boolean fc, vis, imDirty = true;
+        /** Held in front of the eyes (viewgun.js): mw is its place from the camera, not in the world. */
+        boolean eye;
         Prog vaoProg;
         ByteBuffer im, ic;
         float[] bs;
@@ -89,6 +91,8 @@ public final class NRender {
         int lModel = -1, lView = -1, lProj = -1, lUv = -1, lInst = -1, lColor = -1, lEmis = -1, lOp = -1, lRough = -1, lMetal = -1, lPanel = -1,
                 lHasTex = -1, lCam = -1, lHemiS = -1, lHemiG = -1, lHemiI = -1, lMoonC = -1, lMoonI = -1, lMoonD = -1, lFogC = -1, lFogD = -1, lFog = -1,
                 lExp = -1, lSpec = -1, lKind = -1, lMV = -1, lMM = -1, lFC = -1, lFD = -1, lFogOut = -1;
+        /** Whether this program holds the view for what is in front of the eyes right now. */
+        boolean eyeNow;
         /** The frame this program last got the camera and lights, and the material it holds. */
         int frame = -1, inst = -1;
         Mat lastMat;
@@ -105,7 +109,7 @@ public final class NRender {
     private Obj[] byId = new Obj[256];
     private final List<Obj> objs = new ArrayList<>();
     private final Map<Integer, Tex> texs = new HashMap<>();
-    private final float[] env = new float[32], view = new float[16], proj = new float[16], vp = new float[16], cam = new float[3];
+    private final float[] env = new float[32], view = new float[16], proj = new float[16], vp = new float[16], cam = new float[3], viewEye = new float[16];
     private final float[] camIn = new float[35], trs = new float[10], tmp = new float[16], mulTmp = new float[16];
     private static final float[] IDENT3 = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     private final float[][] planes = new float[6][4];
@@ -323,6 +327,7 @@ public final class NRender {
             ob.m = i(o.get("m"));
             ob.ro = i(o.get("ro"));
             ob.fc = i(o.get("fc")) == 1;
+            ob.eye = i(o.get("eye")) == 1;
             ob.inst = i(o.get("inst"));
             if (o.get("im") != null) ob.im = b64((String) o.get("im"));
             if (o.get("ic") != null) ob.ic = b64((String) o.get("ic"));
@@ -538,6 +543,9 @@ public final class NRender {
             gl.depthFunc(GLC.LEQUAL);
             gl.clear(GLC.COLOR_BUFFER_BIT | GLC.DEPTH_BUFFER_BIT);
             mul(vp, proj, view);
+            // The same view from the camera's own spot, for what is held in front of the eyes (Obj.eye).
+            System.arraycopy(view, 0, viewEye, 0, 16);
+            viewEye[12] = viewEye[13] = viewEye[14] = 0;
             frustum();
             collect();
             draws = 0;
@@ -675,7 +683,8 @@ public final class NRender {
                     reach = r;
                 }
             }
-            o.dist = (cx - cam[0]) * (cx - cam[0]) + (cy - cam[1]) * (cy - cam[1]) + (cz - cam[2]) * (cz - cam[2]);
+            if (o.eye) o.dist = cx * cx + cy * cy + cz * cz;
+            else o.dist = (cx - cam[0]) * (cx - cam[0]) + (cy - cam[1]) * (cy - cam[1]) + (cz - cam[2]) * (cz - cam[2]);
             // Things that don't fade in fog (sky, lightning, beams) and never-culled things stay.
             if (see > 0 && reach >= 0 && m.fog && o.dist > (see + reach) * (see + reach)) continue;
             if (m.tr) transparent[nTransparent++] = o;
@@ -843,6 +852,7 @@ public final class NRender {
         if (p.frame != frameId) {
             p.frame = frameId;
             p.lastMat = null;
+            p.eyeNow = false;
             if (p.lView >= 0) gl.uniformMatrix4fv(p.lView, view);
             if (p.lProj >= 0) gl.uniformMatrix4fv(p.lProj, proj);
             if (p.lCam >= 0) gl.uniform3f(p.lCam, cam[0], cam[1], cam[2]);
@@ -850,8 +860,9 @@ public final class NRender {
             if (p.lFD >= 0) gl.uniform1f(p.lFD, env[3]);
             if (p.lExp >= 0) gl.uniform1f(p.lExp, env[18]);
         }
+        eyeView(p, o);
         if (p.lMM >= 0) gl.uniformMatrix4fv(p.lMM, o.mw);
-        if (p.lMV >= 0) { mul(tmp, view, o.mw); gl.uniformMatrix4fv(p.lMV, tmp); }
+        if (p.lMV >= 0) { mul(tmp, o.eye ? viewEye : view, o.mw); gl.uniformMatrix4fv(p.lMV, tmp); }
         // Many materials share a program; their values only go over when they change or another one was on.
         if (p.lastMat == m && !m.fresh) return;
         p.lastMat = m;
@@ -879,12 +890,24 @@ public final class NRender {
         }
     }
 
+    /** What is held in front of the eyes has its place from the camera, so for those the view stands at nought. */
+    private void eyeView(Prog p, Obj o) {
+        if (p.eyeNow == o.eye) return;
+        p.eyeNow = o.eye;
+        if (p.lView >= 0) gl.uniformMatrix4fv(p.lView, o.eye ? viewEye : view);
+        if (p.lCam >= 0) {
+            if (o.eye) gl.uniform3f(p.lCam, 0, 0, 0);
+            else gl.uniform3f(p.lCam, cam[0], cam[1], cam[2]);
+        }
+    }
+
     private void setUniforms(Prog p, Mat m, Obj o) {
         if (p.custom) { customUniforms(p, m, o); return; }
         if (p.frame != frameId) {
             p.frame = frameId;
             p.lastMat = null;
             p.inst = -1;
+            p.eyeNow = false;
             gl.uniformMatrix4fv(p.lView, view);
             gl.uniformMatrix4fv(p.lProj, proj);
             if (p.lCam >= 0) gl.uniform3f(p.lCam, cam[0], cam[1], cam[2]);
@@ -899,6 +922,7 @@ public final class NRender {
             if (p.lMoonI >= 0) gl.uniform1f(p.lMoonI, env[14]);
             if (p.lMoonD >= 0) gl.uniform3f(p.lMoonD, env[15], env[16], env[17]);
         }
+        eyeView(p, o);
         gl.uniformMatrix4fv(p.lModel, o.mw);
         if (p.lInst >= 0) {
             int i = o.inst > 0 ? 1 : 0;

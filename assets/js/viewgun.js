@@ -13,6 +13,9 @@ const HIP = [0.15, -0.14, -0.3], AIM = [0.065, -0.115, -0.29];
 const SHOULDER = [new THREE.Vector3(0.24, -0.36, 0.06), new THREE.Vector3(-0.2, -0.38, 0.06)], GRIP = [0, -0.07, -0.012];
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), hand = new THREE.Vector3(), dir = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 
+// For the phone's renderer: drawn from the camera, not from the world (mirror.js).
+const atEye = (o) => { o.userData.eye = true; o.frustumCulled = false; return o; };
+
 export class ViewGun {
   constructor(scene) {
     this.root = new THREE.Group();
@@ -28,7 +31,7 @@ export class ViewGun {
     fm.userData.live = true;
     this.flash = new THREE.Group();
     this.flash.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 0).scale(1, 1, 2.6), fm), new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0).scale(2.2, 0.35, 0.9), fm), new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0).scale(0.35, 2.2, 0.9), fm));
-    for (const m of this.flash.children) m.renderOrder = 4;
+    for (const m of this.flash.children) { m.renderOrder = 4; atEye(m); }
     this.flash.visible = false;
     this.hold.add(this.flash);
     this.flashMat = fm;
@@ -37,7 +40,7 @@ export class ViewGun {
     this.armMat.userData.live = true;
     const stick = new THREE.CylinderGeometry(0.019, 0.023, 1, 10), ball = new THREE.SphereGeometry(0.024, 12, 8);
     this.arms = [0, 1].map(() => {
-      const a = new THREE.Mesh(stick, this.armMat), h = new THREE.Mesh(ball, this.armMat);
+      const a = atEye(new THREE.Mesh(stick, this.armMat)), h = atEye(new THREE.Mesh(ball, this.armMat));
       this.root.add(a, h);
       return { a, h };
     });
@@ -60,9 +63,9 @@ export class ViewGun {
     let m = this.guns.get(id);
     const info = gunInfo(id);
     if (!m) {
-      m = new THREE.Mesh(gearGeo(id), gearMat());
+      m = atEye(new THREE.Mesh(gearGeo(id), gearMat()));
       if (info.spin) {
-        const sp = new THREE.Mesh(gearGeo(info.spin), gearMat());
+        const sp = atEye(new THREE.Mesh(gearGeo(info.spin), gearMat()));
         sp.position.set(info.spinAt[0], info.spinAt[1], info.spinAt[2]);
         m.add(sp);
         m.userData.spinner = sp;

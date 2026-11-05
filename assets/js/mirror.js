@@ -17,6 +17,8 @@ const b64 = (typed) => {
 const f32 = (a) => (a instanceof Float32Array ? a : new Float32Array(a));
 const n4 = (v) => Math.round(v * 1e4) / 1e4;
 const n3 = (v) => Math.round(v * 1e3) / 1e3;
+const n6 = (v) => Math.round(v * 1e6) / 1e6;
+const n7 = (v) => Math.round(v * 1e7) / 1e7;
 // Objects farther than this from the camera are lost in the storm fog; their updates wait until they're near.
 const FAR = 125;
 // A still object this far from the camera is only looked at one frame in eight. Most of the scene is like that.
@@ -213,7 +215,8 @@ export class Mirror {
     const geoOff = o.isSprite || o.isInstancedMesh ? 0 : o.geometry.boundingSphere.center.length();
     const e = { id, obj: o, vis: -1, dirty: true, stamp: 0, imv: o.isInstancedMesh ? o.instanceMatrix.version : 0,
       always: !o.frustumCulled || o.isInstancedMesh || geoR > 40 || geoOff > 20, bs: o.isInstancedMesh && o.frustumCulled ? d.bs : null,
-      mat: o.material, me: this.mats.get(d.m) };
+      mat: o.material, me: this.mats.get(d.m), eye: !!o.userData.eye };
+    if (e.eye) d.eye = 1;
     this.objs.set(id, e);
     this.list.push(e);
     this.defs().o.push(d);
@@ -309,9 +312,14 @@ export class Mirror {
       const om = this.om;
       om.push(e.id, v);
       if (v === 1) {
-        // Directly under the scene, the world transform is simply the object's own.
+        // Held in front of the eyes (viewgun.js): a millimetre there is pixels on the screen, and far up a map big numbers lose
+        // their last digits. So these go as where they are from the camera, and the phone draws them that way.
         const par = o.parent;
-        if (o.matrixAutoUpdate && par !== null && par.parent === null) {
+        if (e.eye) {
+          o.matrixWorld.decompose(_p, _q, _s);
+          om.push(n6(_p.x - this.cx), n6(_p.y - this.cy), n6(_p.z - this.cz), n7(_q.x), n7(_q.y), n7(_q.z), n7(_q.w), n6(_s.x), n6(_s.y), n6(_s.z));
+        // Directly under the scene, the world transform is simply the object's own.
+        } else if (o.matrixAutoUpdate && par !== null && par.parent === null) {
           const p = o.position, q = o.quaternion, s = o.scale;
           om.push(n3(p.x), n3(p.y), n3(p.z), n4(q._x), n4(q._y), n4(q._z), n4(q._w), n3(s.x), n3(s.y), n3(s.z));
         } else {
@@ -423,8 +431,15 @@ export class Mirror {
     // The camera: only when it moved.
     const v = camera.matrixWorldInverse.elements, p = camera.projectionMatrix.elements, cl = this.camLast, co = this.camOut;
     let cch = false;
-    for (let i = 0; i < 16; i++) { const a = n4(v[i]), b = n4(p[i]); co[i] = a; co[16 + i] = b; if (a !== cl[i] || b !== cl[16 + i]) { cl[i] = a; cl[16 + i] = b; cch = true; } }
-    co[32] = n3(cx); co[33] = n3(cy); co[34] = n3(cz);
+    // The turn goes with all its digits, and the move is worked out from exactly the numbers that are sent. Rounded on their
+    // own they don't fit together: a turn off by 0.00005 at 500 m up is the whole view jumping 2.5 cm, every time the camera turns.
+    co[32] = n6(cx); co[33] = n6(cy); co[34] = n6(cz);
+    for (let i = 0; i < 12; i++) co[i] = n7(v[i]);
+    co[12] = n6(-(co[0] * co[32] + co[4] * co[33] + co[8] * co[34]));
+    co[13] = n6(-(co[1] * co[32] + co[5] * co[33] + co[9] * co[34]));
+    co[14] = n6(-(co[2] * co[32] + co[6] * co[33] + co[10] * co[34]));
+    co[15] = 1;
+    for (let i = 0; i < 16; i++) { const a = co[i], b = n4(p[i]); co[16 + i] = b; if (a !== cl[i] || b !== cl[16 + i]) { cl[i] = a; cl[16 + i] = b; cch = true; } }
     if (co[32] !== cl[32] || co[33] !== cl[33] || co[34] !== cl[34]) { cl[32] = co[32]; cl[33] = co[33]; cl[34] = co[34]; cch = true; }
     if (cch) msg += 'c:' + co.join() + '\n';
     if (om.length) msg += 'o:' + om.join() + '\n';

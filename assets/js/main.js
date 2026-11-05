@@ -192,8 +192,8 @@ const ui = (app.ui = {
     const L = app.level, top = L.top;
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
-    $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
-    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
+    $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].filter((s) => s === g.slot || !g.hidden.has(s)).map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
+    $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].filter((p) => p.slot === g.slot || !g.hidden.has(p.slot)).map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
   },
   hud(g, { T, zone, ev, thunder }) {
@@ -1004,6 +1004,7 @@ const NOT_COUNTING = {
   dead: 'This climb has stopped counting for coins',
   gap: 'This climb has stopped counting for coins',
   moved: 'The team moved you: this climb no longer earns coins',
+  flying: 'You are flying: this climb no longer earns coins',
 };
 const toldNot = new Set();
 cloud.on('notCounting', (why) => {
@@ -1549,6 +1550,7 @@ function beginGame(s, g) {
   for (const r of app.pool.jumpers || []) r.hide();
   for (const l of app.pool.ropes) l.mesh.visible = false;
   app.game = new Game(app, s, g);
+  applyVanish(live.staff());
   keepAwake(true);
 }
 
@@ -1655,6 +1657,15 @@ function hideInvite() {
   clearTimeout(inviteT);
   if (inviteEl) inviteEl.classList.remove('on');
 }
+// Vanished on a climb: gone for the others and flying (game.js setFlying).
+function applyVanish(s) {
+  const g = app.game, on = !!(s && s.vanished);
+  if (!g || !s || on === g.flying || g.won) return;
+  g.setFlying(on);
+  if (on) ui.toast(ON_PC ? 'Flying: WASD moves, Space goes up, C goes down, E goes fast' : 'Flying: JUMP goes up, GRAB goes down, REEL goes fast', 'good');
+  else ui.toast('You can be seen again: back on your feet', '');
+}
+
 function showInvite(m) {
   const r = m && m.room;
   if (cloud.banned() || !r || (r.kind !== 'server' && r.kind !== 'online') || !/^[A-Z0-9]{5}$/.test(String(r.code))) return;
@@ -1776,6 +1787,8 @@ function startLive() {
   live.on('off', () => cloud.checkStanding());
   live.on('cpreset', (m) => cloud.checkpointReset(m.at));
   live.on('tp', (m) => { if (app.game) app.game.teleport(m); });
+  // Not when the connection drops (s is null then): that must not drop anyone out of the air or show them.
+  live.on('staff', (s) => { if (s) applyVanish(s); });
   live.on('where', (m) => { const g = app.game; if (g && !g.won) live.here(m.q, { map: g.map, diff: g.diff, pos: [g.me.x, g.me.y, g.me.z] }); });
   live.on('invite', showInvite);
   live.on('invited', (m) => ui.toast(`Invite sent to ${inviter(m)}`, 'good'));
@@ -1936,7 +1949,7 @@ function frame(now) {
     const g = app.game, me = g.me;
     g.update(dt, app.paused);
     // Through your eyes in a maze garden: the gun in your hands (not with a scope up, that has its own view).
-    app.viewGun.update(dt, app.renderer.camera, (g.fpK || 0) * (1 - (g.scopeK || 0)), { weapon: g.gun, aim: g.aiming, speed: Math.hypot(me.vx, me.vz), ground: me.grounded, shot: g.time - (g.lastShot ?? -9), world: g.W, rig: g.robots.get(g.slot) });
+    app.viewGun.update(dt, app.renderer.camera, g.flying ? 0 : (g.fpK || 0) * (1 - (g.scopeK || 0)), { weapon: g.gun, aim: g.aiming, speed: Math.hypot(me.vx, me.vz), ground: me.grounded, shot: g.time - (g.lastShot ?? -9), world: g.W, rig: g.robots.get(g.slot) });
   } else if (app.spec) {
     app.spec.update(dt);
     app.viewGun.update(dt, app.renderer.camera, app.spec.view ? app.spec.fpK || 0 : 0, app.spec.view);

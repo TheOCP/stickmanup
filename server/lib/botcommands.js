@@ -86,7 +86,7 @@ const COMMANDS = [
   cmd('rooms', 'The rooms open right now'),
   cmd('closeroom', 'Close a room', { type: 3, name: 'code', description: 'The 5 letter code', required: true, max_length: 5 }, REASON(false)),
   // Live, in the game
-  cmd('vanish', 'Be invisible and fly: offline to friends, and /watch or /join flies unseen', { type: 5, name: 'on', description: 'On or off (empty switches it)', required: false }, { ...PLAYER, required: false, description: 'Whose (you, if empty)' }),
+  cmd('vanish', 'Be invisible and fly, on a climb or watching one, and offline to friends', { type: 5, name: 'on', description: 'On or off (empty switches it)', required: false }, { ...PLAYER, required: false, description: 'Whose (you, if empty)' }),
   cmd('watch', 'Watch any climb, solo or in a room (in the game)', PLAYER),
   cmd('join', 'Join the room a player is in, past its password (in the game)', { ...PLAYER, description: 'Name, #number, ID or a room code' }),
   // The server
@@ -743,7 +743,7 @@ const RUN = {
     if (on === was) return ctx.reply(`${line(u)} is ${on ? 'already vanished' : 'not vanished'}.`, { color: 'warn' });
     st.setVanish(u.id, on);
     ctx.s.friends.vanishChanged(u.id);
-    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline. /watch a player or /join a room to fly around it unseen: nobody there sees it or is told. Climbing in a room yourself still shows you.` : `${line(u)} can be seen again.`);
+    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline. On a climb their stickman is gone for everyone and they fly: that climb stops earning, and /vanish off drops them where they are. /watch a player or /join a room to fly around it unseen as well: nobody there is told.` : `${line(u)} can be seen again.`);
   },
   watch(ctx, d) {
     if (!ctx.game) return ctx.reply(IN_GAME, { color: 'warn' });

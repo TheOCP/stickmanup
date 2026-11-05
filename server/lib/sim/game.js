@@ -17,6 +17,8 @@ import { myLook } from './profile.js';
 // Near enough to count as having got to the top. The rerun (server/lib/verify-worker.mjs, case 'win') asks the same.
 const nearTop = (b, L, rope) => Math.hypot(b.x, b.z) < L.summit.r + rope * 3 && b.y > L.top - rope * 4;
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
+// Flying (setFlying): metres a second, how much faster with the fast button, and how far out from the middle of the map.
+const FLY_SPEED = 14, FLY_FAST = 4, FLY_ROOM = 600;
 // Where SHIELD does something: Storm Tower (it takes a lightning strike) and the Wild Forest (it drives the bee swarm off).
 export const SHIELD_MAPS = new Set(['storm', 'forest']);
 // How close the swarm must be for a raised shield to drive it off. It flies 4.4 m a second and the shield is up for one.
@@ -66,6 +68,9 @@ export class Game {
     this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
     // Who joined a tied team after the start and has not reached the others yet: not on the cord (see catchUp).
     this.loose = new Set(Array.isArray(g.loose) ? g.loose.filter(Number.isInteger) : []);
+    // Who is vanished right now (setFlying): nobody else draws them.
+    this.hidden = new Set(Array.isArray(g.hide) ? g.hide.filter(Number.isInteger) : []);
+    this.flying = false;
     // Checkpoints: tied together, the team shares one. Without the cord everyone has their own; the host
     // keeps track of them all by slot (pcp), and of whoever is still catching up with a tied team.
     this.pcp = Object.assign({}, g.pcp);
@@ -207,7 +212,7 @@ export class Game {
     // them all over the map.
     this.pcp[slot] = 0;
     if (!this.noCord) this.setLoose([...this.loose, slot]);
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: 0, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns };
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: 0, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden] };
   }
 
   // The host says who isn't on the cord yet. The cord only goes between the others.
@@ -221,6 +226,7 @@ export class Game {
     const a = this.tmpL || (this.tmpL = {}), b = this.tmpM || (this.tmpM = {}), left = new Set(this.loose), reach = this.rope - 1.5;
     const slots = [...this.s.players.keys()].sort((x, y) => x - y);
     for (const s of this.loose) {
+      if (this.hidden.has(s)) continue;
       // The host too, if the team moved them (they have no track of their own).
       const w = s === this.slot ? this.me : this.latest(s, a) ? a : null;
       if (!w) continue;
@@ -254,11 +260,7 @@ export class Game {
       for (const o of L.cps) if (o.y <= y && o.y > c.y) c = o;
       p = this.spawnPos(c.i, this.slot);
     }
-    if (!this.tped) {
-      this.tped = true;
-      this.rec = null;
-      cloud.runStop('moved');
-    }
+    this.stopEarning('moved');
     // A fall from here goes back to the last checkpoint below it. On a tied team they come off the cord until they reach the
     // others again, or it would drag everyone along.
     let cp = 0;
@@ -278,6 +280,49 @@ export class Game {
     Object.assign(this.cam, { x: p[0], y: p[1] + 0.7, z: p[2] });
     this.app.view.setCheckpoints(this.cpl, this.cp);
     this.save();
+  }
+
+  // A climb that moved by other means than climbing can't be played again on the server. What it found until now still counts.
+  stopEarning(why) {
+    if (this.tped) return;
+    this.tped = true;
+    this.rec = null;
+    cloud.runStop(why);
+  }
+
+  // Vanished (the vanish command, main.js): gone for everyone else and flying, through anything, with nothing to run into or
+  // fall off. Coming back the climber just drops from where they are, and climbs on from there. The climb earns nothing more,
+  // so doing this on purpose gets nobody anything.
+  setFlying(on) {
+    if (on === this.flying || this.won) return;
+    this.flying = on;
+    const me = this.me;
+    me.spawn(me.x, me.y, me.z);
+    this.aiming = me.aim = false;
+    if (on) {
+      this.stopEarning('flying');
+      this.bees = null;
+      this.evMarks.clear();
+    }
+    if (this.solo) return;
+    this.s.toHost({ k: 'hide', on });
+    // Already off the cord here, before the host's answer gets back.
+    if (on && !this.noCord) { this.loose.add(this.slot); this.syncRoster(); }
+  }
+
+  // One step of it: where the camera looks is forward, so looking up and pushing forward goes up.
+  flyStep(inp) {
+    const me = this.me, c = this.cam, k = this.app.input.keys, cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
+    const fx = inp.fx || 0, fz = inp.fz || 0, rx = -fz, rz = fx;
+    const sy = inp.mx * fx + inp.mz * fz, sx = inp.mx * rx + inp.mz * rz;
+    const up = (inp.jump ? 1 : 0) - (inp.grab || k.has('KeyC') || k.has('KeyQ') ? 1 : 0);
+    const v = FLY_SPEED * (inp.reel ? FLY_FAST : 1);
+    me.vx = damp(me.vx, (fx * cp * sy + rx * sx) * v, 8, STEP);
+    me.vy = damp(me.vy, (-sp * sy + up) * v, 8, STEP);
+    me.vz = damp(me.vz, (fz * cp * sy + rz * sx) * v, 8, STEP);
+    me.x = clamp(me.x + me.vx * STEP, -FLY_ROOM, FLY_ROOM);
+    me.y = clamp(me.y + me.vy * STEP, 0.8, this.L.top + 80);
+    me.z = clamp(me.z + me.vz * STEP, -FLY_ROOM, FLY_ROOM);
   }
 
   // A player's chosen colour (their slot colour if they haven't picked one).
@@ -308,6 +353,7 @@ export class Game {
     for (const [s, r] of this.robots) if (!this.s.players.has(s)) { r.hide(); this.robots.delete(s); }
     for (const l of this.links) l.mesh.mesh.visible = false;
     this.links = [];
+    for (const s of this.hidden) if (!this.s.players.has(s)) this.hidden.delete(s);
     const tied = slots.filter((s) => !this.loose.has(s));
     for (let i = 0; i + 1 < tied.length && !this.noCord; i++) {
       const a = tied[i], b = tied[i + 1], mesh = pool.ropes[i];
@@ -354,6 +400,7 @@ export class Game {
     this.vis = this.vis || new Map();
     for (const slot of this.s.players.keys()) {
       if (slot === this.slot) continue;
+      if (this.hidden.has(slot)) { this.vis.delete(slot); continue; }
       const o = this.vis.get(slot) || {};
       if (this.sample(slot, T - DELAY, o)) {
         // Rounded the way it gets written down, so the rerun bumps into exactly the same place.
@@ -367,15 +414,17 @@ export class Game {
 
     // Abilities are taps, handled once per frame. A shot only ever leaves while aiming: hold SHOOT and let go, or hold the aim
     // button and pull the trigger. Automatic weapons keep firing for as long as it is held.
-    if (inp.shield && SHIELD_MAPS.has(this.L.mapKey) && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
-    if (inp.act && this.action) this.perform(this.action, T);
+    // Flying the buttons only steer: no shots or shield from someone who isn't there.
+    const acts = this.flying ? NONE : inp;
+    if (acts.shield && SHIELD_MAPS.has(this.L.mapKey) && this.me.raiseShield()) { if (this.rec) this.rec.act('s'); app.sound.shield(); }
+    if (acts.act && this.action) this.perform(this.action, T);
     const ready = this.aiming && this.aimT >= AIM_READY, gun = (this.gun = weaponOf(myLook().w));
-    this.aiming = this.me.aim = !!inp.aim && !this.me.hook;
+    this.aiming = this.me.aim = !!acts.aim && !this.me.hook;
     this.aimT = this.aiming ? this.aimT + dt : 0;
-    if (inp.fire) {
+    if (acts.fire) {
       if (ready) this.fire(T);
       else if (app.ui.aimFirst) app.ui.aimFirst();
-    } else if (gun.auto && this.aiming && this.aimT >= AIM_READY && (inp.fireHold || (inp.aimFlow && this.aimT >= 0.3))) this.fire(T);
+    } else if (gun.auto && this.aiming && this.aimT >= AIM_READY && (acts.fireHold || (acts.aimFlow && this.aimT >= 0.3))) this.fire(T);
 
     // A jump tap is kept until a physics step uses it: at 120 fps half the frames run no physics step,
     // and a tap read on one of those frames used to be lost.
@@ -453,6 +502,12 @@ export class Game {
     const S = this.storm;
     for (const c of this.L.blinks) { c.on = !S.on(c.blink) || S.blink(c.blink, t).on; if (!c.on && me.anchorCol === c) me.release(); }
     for (const c of this.L.traps) { c.on = !S.on(c.trap) || !S.trap(c.trap, t).open; if (!c.on && me.anchorCol === c) me.release(); }
+    if (this.flying) {
+      // The map goes on around it, and a host still runs its creatures for the others.
+      this.flyStep(inp);
+      if (this.s.isHost && !this.solo) this.jumpAI(t, STEP);
+      return;
+    }
     // No gusts inside a maze garden.
     const zone = this.mazeAround(me) ? -1 : zoneAt(this.L, me.y);
     this.env.wind = (b, o) => this.storm.wind(b, o, t, zone);
@@ -703,8 +758,8 @@ export class Game {
   // and, close enough, jump kicks. It never leaves its ledge. Shot: stunned for a while.
   jumpAI(t, dt) {
     if (!this.jumpers.length) return;
-    const S = this.storm, me = this.me, targets = [[me.x, me.y, me.z]];
-    for (const pl of this.s.players.values()) if (pl.slot !== this.slot && pl.last) targets.push([pl.last[0], pl.last[1], pl.last[2]]);
+    const S = this.storm, me = this.me, targets = this.flying ? [] : [[me.x, me.y, me.z]];
+    for (const pl of this.s.players.values()) if (pl.slot !== this.slot && pl.last && !this.hidden.has(pl.slot)) targets.push([pl.last[0], pl.last[1], pl.last[2]]);
     for (const J of this.jumpers) {
       const j = J.j;
       let near = false;
@@ -1210,6 +1265,13 @@ export class Game {
           if (e.i > (this.pcp[from] || 0)) { this.pcp[from] = e.i; this.s.toAll({ k: 'cp', i: e.i, slot: from }); this.save(); }
         } else if (e.i > this.cp) { this.cp = e.i; this.s.toAll({ k: 'cp', i: e.i }); this.save(); }
         break;
+      case 'hide':
+        // Vanished: gone for the others and off the cord. Back again, they climb on their own until they reach them.
+        if (from === undefined) break;
+        if (e.on) { this.hidden.add(from); if (!this.noCord) this.setLoose([...this.loose, from]); }
+        else this.hidden.delete(from);
+        this.s.toAll({ k: 'hide', s: [...this.hidden] });
+        break;
       case 'tp':
         // The team moved them: their own checkpoint from here, and off the cord until they reach the others again.
         if (from === undefined || !Number.isInteger(e.i) || !this.L.cps[e.i]) break;
@@ -1292,6 +1354,11 @@ export class Game {
         this.syncRoster();
         break;
       }
+      case 'hide':
+        this.hidden = new Set(Array.isArray(e.s) ? e.s.filter(Number.isInteger) : []);
+        if (this.vis) for (const s of this.hidden) this.vis.delete(s);
+        this.syncRoster();
+        break;
       case 'sling': if (e.to === this.slot) this.me.fling(e.v[0], e.v[1], e.v[2]); break;
       case 'maze': if (e.v !== this.mz) this.setMaze(e.v); break;
       case 'crumble': this.crumble(e.i); break;
@@ -1427,9 +1494,10 @@ export class Game {
     const c = this.cam, [dx, dy] = app.input.takeCam(this.aiming, zoomed ? gunNow.zoom / 48 : 1), ak = (this.aimK = damp(this.aimK, this.aiming ? 1 : 0, 12, dt));
     // Inside a maze garden the view goes to the eyes, aiming or not: walls and a roof all round, and nobody sees the way
     // from above. Out through a doorway it comes back.
-    const fk = (this.fpK = damp(this.fpK || 0, this.mazeAround(me) ? 1 : 0, 9, dt));
+    const fk = (this.fpK = damp(this.fpK || 0, this.flying || this.mazeAround(me) ? 1 : 0, 9, dt));
     c.yaw -= dx;
-    c.pitch = clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak) - 0.75 * fk * (1 - ak), 1.25);
+    // Flying: straight up and straight down are ways to go too.
+    c.pitch = this.flying ? clamp(c.pitch + dy, -1.5, 1.5) : clamp(c.pitch + dy, -0.6 * ak - 0.3 * (1 - ak) - 0.75 * fk * (1 - ak), 1.25);
     // Only a real look holds the camera follow back. A hand resting on the mouse or a thumb resting on the screen sends tiny
     // moves all the time, and counting those, the follow would hardly ever get a turn. They go both ways, so they cancel out.
     const lookFade = Math.exp(-dt * 3);
@@ -1437,7 +1505,7 @@ export class Game {
     this.lookY = clamp((this.lookY || 0) * lookFade + dy, -0.06, 0.06);
     // A thumb that has really dragged the camera keeps it until it is lifted, however slowly it moves.
     if (((dx || dy) && Math.hypot(this.lookX, this.lookY) > 0.03) || app.input.camHeld()) this.camTouched = T;
-    this.assistCamera(dt, T, ak);
+    if (!this.flying) this.assistCamera(dt, T, ak);
     c.x = damp(c.x, me.x, 14, dt); c.z = damp(c.z, me.z, 14, dt);
     c.y = damp(c.y, me.y + 0.8, me.vy < -14 || me.hook ? 14 : 7, dt);
     const cp = Math.cos(c.pitch), ox = Math.sin(c.yaw) * cp, oy = Math.sin(c.pitch), oz = Math.cos(c.yaw) * cp;

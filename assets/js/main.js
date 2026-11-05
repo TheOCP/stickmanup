@@ -78,26 +78,22 @@ const RULES = [
   ['haz', 'Obstacles', ['Calm', 'Normal', 'Wild']],
   ['rope', 'Cord', ['Long', 'Normal', 'Short']],
 ];
-const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Friendly fire<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="ff" data-v="0" class="${r.ff === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="ff" data-v="1" class="${r.ff === 1 ? 'on' : ''}">On</button></div></label></div>
-    <p class="sub" style="margin:4px 0 0">On: your shots throw your friends off the climb, and theirs throw you.</p>`;
+const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Friendly fire<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="ff" data-v="0" class="${r.ff === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="ff" data-v="1" class="${r.ff === 1 ? 'on' : ''}">On</button></div></label></div>`;
 // Traitor mode (traitor.js): only for a game with others, started from the lobby.
-const traitorHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Traitor mode<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="tr" data-v="0" class="${r.tr === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="tr" data-v="1" class="${r.tr === 1 ? 'on' : ''}">On</button></div></label></div>
-    <p class="sub" style="margin:4px 0 0">On: one of you is secretly the traitor and sabotages the climb. Find them with the clues and vote them out before the top. Needs 3 or more climbers.</p>`;
+const traitorHtml = (r, editable) => `<div class="rules" style="margin-top:6px"><label>Traitor mode<div class="seg ${editable ? '' : 'ro'}"><button data-a="rule" data-k="tr" data-v="0" class="${r.tr === 1 ? '' : 'on'}">Off</button><button data-a="rule" data-k="tr" data-v="1" class="${r.tr === 1 ? 'on' : ''}">On</button></div></label></div>`;
 // Friendly fire is kept only for a game started from the lobby, and only when the host switched it on there.
 const cleanRules = (r = {}, ff = false) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; if (ff && r.ff === 1) o.ff = 1; if (ff && r.tr === 1) o.tr = 1; return o; };
 // How many of a map's relics have been found: three at the end of its long courses, the ones in its maze gardens and its
-// hidden spots (on every difficulty different ones).
+// hidden spots (on every difficulty different ones). A generated map has its world's, somewhere else.
 function relicLine(mapId) {
-  if (mapId >= MAPS.length) return `<p class="sub" id="relicLine" style="margin:12px 0 0">No relics on this climb: they are hidden on the six worlds.</p>`;
-  const key = MAPS[mapId].key, ids = ['0', '1', 'w'];
+  const key = (mapDef(mapId) || MAPS[0]).key, ids = ['0', '1', 'w'];
   for (let i = 0; i < (MAZE_RELICS[key] || 0); i++) ids.push('m' + i);
   for (const q of hideSpots(key)) ids.push('h' + q.j);
   return `<p class="sub" id="relicLine" style="margin:12px 0 0">Relics found on this map: ${ids.filter((k) => hasRelic(key + ':' + k)).length} of ${ids.length}</p>`;
 }
 function rulesHtml(r, editable, solo) {
   return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
-    .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
-    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
+    .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>`;
 }
 const roleChip = (r) => { const i = roleInfo(r); return i ? `<em class="role${ROLE_TAGS[r] ? ' ' + r : ''}" style="background:${i.color}">${esc(i.tag)}</em>` : ''; };
 const roleTag = (p) => roleChip(p.role);
@@ -465,13 +461,12 @@ function closeEmotes() {
 const cpEmotes = () => EMOTES.filter((e) => !e.hidden && !e.hop && owned(e));
 function openEmotes(viaPad) {
   if (app.screen !== 'game' || !app.game) return;
-  const list = EMOTES.filter((e) => !e.hidden && owned(e)), more = EMOTES.filter((e) => !e.hidden).length - list.length;
+  const list = EMOTES.filter((e) => !e.hidden && owned(e));
   const sprays = SPRAYS.filter((s) => owned(s)), cp = cpEmotes().find((e) => e.id === settings.cpEmote);
-  $('#emoteMenu').innerHTML = `<div class="emHead"><b>Emotes</b><small>${more ? `${more} more in the shop` : 'You have them all'}</small></div>
+  $('#emoteMenu').innerHTML = `<div class="emHead"><b>Emotes</b></div>
     <div class="emGrid">${list.map((e) => `<button class="emo r${e.r}" data-em="${e.id}"><i>${e.icon}</i><span>${esc(e.name)}</span></button>`).join('')}</div>
-    <button class="emCp" data-cpe="1"><span>At checkpoints</span><b>${cp ? `${cp.icon} ${esc(cp.name)}` : 'Nothing'}</b><small>Tap to change</small></button>
-    <div class="emHead"><b>Graffiti</b><small>${sprays.length < SPRAYS.length ? `${SPRAYS.length - sprays.length} more in the shop` : 'You have them all'}</small></div>
-    <p class="emSub">Sprayed on what you stand on, or on the wall you hold. Everyone who climbs here sees it.</p>
+    <button class="emCp" data-cpe="1"><span>At checkpoints</span><b>${cp ? `${cp.icon} ${esc(cp.name)}` : 'Nothing'}</b></button>
+    <div class="emHead"><b>Graffiti</b></div>
     <div class="emGrid">${sprays.map((s) => `<button class="emo spr r${s.r}" data-spray="${s.id}"><img src="${sprayUrl(s, 96)}" alt=""><span>${esc(s.name)}</span></button>`).join('')}</div>`;
   $('#emoteMenu').className = 'on';
   app.sound.ui();
@@ -489,7 +484,7 @@ function sprayNow(id) {
   const g = app.game, G = app.graffiti, item = SPRAYS.find((s) => s.id === id);
   if (!g || !G || !item || !owned(item)) return;
   const now = performance.now() / 1000, a = G.aim(g, now);
-  if (!a.at) { ui.toast(a.why, 'bad'); return; }
+  if (!a.at) { if (a.why) ui.toast(a.why, 'bad'); return; }
   const s = Object.assign({ id }, a.at);
   G.add(s);
   G.last = now;
@@ -572,12 +567,10 @@ function ghostMenu(back) {
   const fmt = (x) => (x.won ? `Summit in ${fmtTime(x.t)}` : `Up to ${Math.round(x.h)} m`);
   const off = !!(g.rules && g.rules.ng), others = app.ghosts.list.filter((x) => x.key !== 'me'), mine = app.ghosts.list.find((x) => x.key === 'me');
   show(`<div class="pause"><h2>Ghosts</h2>
-    <p class="sub">See-through climbers playing back the best climbs of this map on ${esc(DIFFS[g.diff].name)}, from the same start as you. Only for the eyes.</p>
     ${off ? '<p class="note">The host switched the ghosts off for everyone.</p>' : ''}
     ${row(settings.ghosts, 'Ghosts', 'For you only', 'all')}
     ${row(settings.ghostMe, 'Your best', mine ? fmt(mine) : 'Not yet: finish a climb from the start', 'me')}
     ${others.map((x) => row(!settings.ghostHide.includes(x.key), x.name, `${x.how === 'room' ? 'In this room' : 'Friend'}, ${fmt(x)}`, 'one', `data-k="${esc(x.key)}"`)).join('')}
-    ${!others.length ? '<p class="sub">Your friends\' ghosts and those of the others in the room show up here once they have climbed this map on this difficulty.</p>' : ''}
     ${!g.solo && g.s.isHost ? row(!off, 'For everyone', 'You are the host', 'host') : ''}
     <button class="btn" data-a="back"><b>Back</b></button></div>`, {
     back,
@@ -664,7 +657,7 @@ function loadMapSoon(id) {
 // The day's climb: the one the team set on the server (/daily), otherwise the date's.
 app.dailyPin = -1;
 const todayMap = () => (app.dailyPin >= 0 && mapDef(app.dailyPin) ? app.dailyPin : dailyMap());
-const genAbout = (d) => (d.holiday ? `A holiday climb on the ${MAPS[d.base].name} world` : `Climb ${d.num} of 100, on the ${MAPS[d.base].name} world`);
+const genAbout = (d) => (d.holiday ? `Holiday · ${MAPS[d.base].name}` : `#${d.num} · ${MAPS[d.base].name}`);
 const genSvg = (next) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${next ? 'M8 4 L16 12 L8 20' : 'M16 4 L8 12 L16 20'}"/></svg>`;
 // The one shown between the arrows: the map you play if it is a generated one, otherwise the last one you looked at.
 const genShown = (cur) => (cur >= MAPS.length && mapDef(cur) ? cur : mapDef(settings.genAt) ? settings.genAt : todayMap());
@@ -676,9 +669,9 @@ function genCard(id, sel, act = 'gpick') {
 }
 function genRow(cur, ro) {
   const id = genShown(cur), t = todayMap();
-  return `<div class="kind" style="margin:14px 0 6px">More climbs: 100 maps and a new one every day</div>
+  return `<div class="kind" style="margin:14px 0 6px">More climbs</div>
     <div class="genrow ${ro ? 'ro' : ''}"><button class="gnav" data-a="gprev" aria-label="Previous map">${genSvg(false)}</button>${genCard(id, cur === id)}<button class="gnav" data-a="gnext" aria-label="Next map">${genSvg(true)}</button></div>
-    ${ro ? '' : `<div class="row genbtns"><button class="btn sm ${cur === t ? 'primary' : ''}" data-a="gday"><b>Today's climb</b><small>${esc(mapName(t))}</small></button><button class="btn sm" data-a="grand"><b>Surprise me</b><small>Any of the 100</small></button></div>`}`;
+    ${ro ? '' : `<div class="row genbtns"><button class="btn sm ${cur === t ? 'primary' : ''}" data-a="gday"><b>Today's climb</b><small>${esc(mapName(t))}</small></button><button class="btn sm" data-a="grand"><b>Surprise me</b></button></div>`}`;
 }
 // The arrows and buttons of genRow. cur: the map now; set(id) picks one.
 function genActs(cur, set) {
@@ -694,7 +687,7 @@ function genActs(cur, set) {
 }
 
 function mapCards(sel) {
-  return `<div class="maps">${MAPS.map((m) => `<button class="map m${m.id} ${sel === m.id ? 'sel' : ''}" data-a="map" data-m="${m.id}"><b>${m.name}</b><small>${m.desc}</small></button>`).join('')}</div>`;
+  return `<div class="maps">${MAPS.map((m) => `<button class="map m${m.id} ${sel === m.id ? 'sel' : ''}" data-a="map" data-m="${m.id}"><b>${m.name}</b></button>`).join('')}</div>`;
 }
 
 function pickMap(id, redraw) {
@@ -737,7 +730,7 @@ function title() {
   show(`<div class="title${ban ? ' banned' : ''}">
     <div class="brand">
       <div class="logo">STICKMAN<span>UP</span></div>
-      ${ban ? banCard(ban) : `<p class="tag">Up to four stickmen, tied together by a glowing cord. Six giant climbs: a storm tower, a sunny lighthouse, a monster forest, a volcano, a neon city and a waterfall paradise, and a hundred more of them. If one falls, everyone feels it.</p>`}
+      ${ban ? banCard(ban) : ''}
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
       ${notice}
@@ -745,10 +738,10 @@ function title() {
     </div>
     <div class="mainbtns">
       ${save ? `<button class="btn primary" data-a="cont"${off}><b>Continue climb</b><small>${ban ? why : `${esc(mapName(save.map || 0))} · ${DIFFS[save.diff].name} · ${Math.round(save.pos[1] - 2)} m · ${fmtTime(save.t)}`}</small></button>` : ''}
-      <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b><small>${ban ? why : `Pick a map and practise on your own`}</small></button>
+      <button class="btn ${save ? '' : 'primary'}" data-a="solo"${off}><b>Solo climb</b>${ban ? `<small>${why}</small>` : ''}</button>
       <button class="btn daily${today.holiday ? ' hol' : ''}" data-a="daily"${off} style="--acc:${today.accent}"><b>Today's climb</b><small>${ban ? why : `${esc(today.name)} · ${GRADES[today.grade]}${today.holiday ? ' · Holiday' : ''}`}</small></button>
-      <button class="btn" data-a="host"${off}><b>Host a game</b><small>${ban ? why : `On the game server or online`}</small></button>
-      <button class="btn" data-a="join"${off}><b>Join a game</b><small>${ban ? why : `With a room code`}</small></button>
+      <button class="btn" data-a="host"${off}><b>Host a game</b>${ban ? `<small>${why}</small>` : ''}</button>
+      <button class="btn" data-a="join"${off}><b>Join a game</b>${ban ? `<small>${why}</small>` : ''}</button>
       <div class="row"><button class="btn sm frbtn" data-a="friends"${off}><span>Friends</span><span id="frCount">${friendBadge()}</span></button><button class="btn sm" data-a="browser"${off}>Server browser</button></div>
       <div class="row"><button class="btn sm acctbtn" data-a="account"><span>${acct ? esc(acct.user.provider === 'guest' ? 'Guest · sign in' : acct.user.name) : 'Sign in'}</span>${roleChip(myRole())}</button><button class="btn sm shopbtn" data-a="shop"${off}><span>Shop</span><span class="wal"><i class="coin"></i>${myCoins()}</span></button></div>
       <div class="row three"><button class="btn sm" data-a="records"${off}>Records</button><button class="btn sm" data-a="settings"${off}>Settings</button><button class="btn sm" data-a="how"${off}>How to play</button></div>
@@ -777,7 +770,7 @@ function title() {
 function diffCards(sel) {
   const best = bestOf(settings.map), icons = ['◆', '◆◆', '◆◆◆', '◆◆◆◆'];
   return `<div class="cards">${DIFFS.map((d) => `<button class="card d${d.id} ${sel === d.id ? 'sel' : ''}" data-a="pick" data-d="${d.id}">
-    <span class="ic">${icons[d.id]}</span><b>${d.name}</b><small>${d.desc}</small><span class="best">${best[d.id] ? 'Best ' + fmtTime(best[d.id]) : 'Not climbed yet'}</span>${wonOnce(d.id) ? '' : `<span class="best first">First win pays ${d.first} coins</span>`}</button>`).join('')}</div>`;
+    <span class="ic">${icons[d.id]}</span><b>${d.name}</b><span class="best">${best[d.id] ? 'Best ' + fmtTime(best[d.id]) : 'Not climbed yet'}</span>${wonOnce(d.id) ? '' : `<span class="best first">First win pays ${d.first} coins</span>`}</button>`).join('')}</div>`;
 }
 
 function soloPick() {
@@ -790,7 +783,7 @@ function soloPick() {
     <div class="kind" style="margin:14px 0 0">Rules</div>
     ${rulesHtml(settings.rules, true, true)}
     ${relicLine(settings.map)}
-    <p class="sub" style="margin-top:14px">Pick a difficulty to start. Solo has no cord partner, so the teamwork tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
+    <div style="margin-top:14px"></div>
     ${diffCards(-1)}</div>`, {
     back: title,
     rule: (b) => {
@@ -819,10 +812,9 @@ function hostPick() {
   if (cloud.banned()) return title();
   app.screen = 'host';
   show(`<div class="panel fitpanel">${header('Host a game')}
-    <p class="sub">Up to 4 climbers. Everyone needs StickManUp, and the same version.</p>
     <div class="cards">
-      <button class="card" data-a="server"><span class="ic">🖥</span><b>Game server</b><small>Public or private, with a password if you like. Works on every network.</small></button>
-      <button class="card" data-a="go" data-k="online"><span class="ic">🌐</span><b>Online</b><small>A 5 letter room code. Easiest, but some networks (often mobile data) block it.</small></button>
+      <button class="card" data-a="server"><span class="ic">🖥</span><b>Game server</b></button>
+      <button class="card" data-a="go" data-k="online"><span class="ic">🌐</span><b>Online</b></button>
     </div></div>`, {
     back: title,
     server: () => roomForm(hostPick),
@@ -875,9 +867,9 @@ function lobby(s) {
   app.screen = 'lobby';
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
-  if (!host) info = `<div class="kind">Connected</div><p>You're in. The host picks the map and difficulty and starts the climb.</p><p>Ping: ${s.ping || '...'} ms</p>`;
-  else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p><p>${room.pub ? 'It shows in the server browser. Friends can also tap <b>Join a game</b> and type this code.' : 'Not in the server browser. Friends tap <b>Join a game</b> and type this code.'}${room.locked ? ' They also need your password.' : ''}</p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
-  else info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div><p>Friends tap <b>Join a game</b>, then <b>Online</b>, and type this code.</p>${canShare() ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
+  if (!host) info = `<div class="kind">Connected</div><p>Ping: ${s.ping || '...'} ms</p>`;
+  else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
+  else info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div>${canShare() ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
@@ -894,14 +886,14 @@ function lobby(s) {
         <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${lmapNow === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
         ${host && !resume ? genRow(lmapNow, false) : lmapNow >= MAPS.length ? `<div class="genrow ro">${genCard(lmapNow, true)}</div>` : ''}
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
-        <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b><small>${d.desc}</small></button>`).join('')}</div>
+        <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b></button>`).join('')}</div>
         <div class="kind" style="margin:10px 0 6px">Rules</div>
         ${rulesHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         ${friendlyFireHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         ${traitorHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
-        <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord (nobody is tied together, and everyone keeps their own checkpoint)</label>
+        <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord</label>
         ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${esc(mapName(mp.map || 0))}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
-        ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready${s.players.size === 1 ? ' (you can start alone and friends can join while you climb)' : ''}</small></button>`
+        ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready</small></button>`
     : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start...</p>`}
       </div>
     </div></div>`, {
@@ -930,12 +922,10 @@ function joinScreen(tab) {
   app.screen = 'join';
   app.joinTab = tab;
   app.joinBack = null;
-  const body = tab === 'server' ? `<p class="sub">Type the 5 letter code from the host's screen. Works on every network.</p>
-      <div class="field"><input class="code" id="scode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"></div>
+  const body = tab === 'server' ? `<div class="field"><input class="code" id="scode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"></div>
       <div class="field" style="margin-top:8px"><input id="spass" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Password, if the room has one"><button class="btn primary sm" data-a="server">Join</button></div>
       <button class="btn sm" data-a="browser" style="margin-top:10px">Open the server browser</button>`
-    : `<p class="sub">Type the 5 letter code from the host's screen.</p>
-      <div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
+    : `<div class="field"><input class="code" id="code" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE"><button class="btn primary sm" data-a="online">Join</button></div>`;
   show(`<div class="panel fitpanel">${header('Join a game')}
     <div class="tabs"><button data-a="tab" data-t="server" class="${tab === 'server' ? 'on' : ''}">Server</button><button data-a="tab" data-t="online" class="${tab === 'online' ? 'on' : ''}">Online</button></div>
     ${body}</div>`, {
@@ -985,15 +975,13 @@ function roomForm(back) {
     <div class="field"><input id="rname" maxlength="28" spellcheck="false" autocomplete="off" value="${esc(settings.roomName || '')}" placeholder="${esc((settings.name || 'Climber') + "'s climb")}"></div>
     <div class="kind" style="margin:12px 0 6px">Who can find it</div>
     <div class="seg vis"><button data-a="vis" data-v="1" class="${pub ? 'on' : ''}">Public</button><button data-a="vis" data-v="0" class="${pub ? '' : 'on'}">Private</button></div>
-    <p class="sub" id="rvis" style="margin:8px 0 0">${pub ? 'Shows in the server browser for everyone.' : 'Hidden from the server browser. Only people with the code can join.'}</p>
     <label class="toggle" style="margin-top:12px"><input type="checkbox" id="rlock" data-a="lock"> Needs a password to join</label>
     <div class="field" id="rpassf" style="display:none;margin-top:6px"><input id="rpass" maxlength="64" spellcheck="false" autocomplete="off" placeholder="Password"></div>
-    <button class="btn primary" data-a="make" style="margin-top:14px"><b>Create the room</b><small>You pick the map and difficulty next</small></button></div>`, {
+    <button class="btn primary" data-a="make" style="margin-top:14px"><b>Create the room</b></button></div>`, {
     back,
     vis: (b) => {
       settings.roomPub = b.dataset.v === '1';
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
-      $('#rvis').textContent = settings.roomPub ? 'Shows in the server browser for everyone.' : 'Hidden from the server browser. Only people with the code can join.';
     },
     lock: (b) => { $('#rpassf').style.display = b.checked ? '' : 'none'; if (b.checked) $('#rpass').focus(); },
     make: () => {
@@ -1848,12 +1836,12 @@ function trMenu(back) {
   if (!g || !T.on) return back();
   const res = T.result;
   show(`<div class="pause"><h2>Traitor mode</h2>
-    <p class="sub">${T.me ? 'You are the traitor. Sabotage with the mask button, and vote along with the others so nobody notices.' : 'One of the team is the traitor. Every sabotage leaves a clue. Vote them out before the top.'}</p>
+    ${T.me ? '<p class="note">You are the traitor</p>' : ''}
     ${res ? `<p class="note">${res.win === 'team' ? `Caught: ${esc(res.name)} was the traitor.` : res.win === 'left' ? 'The traitor left the climb.' : `The traitor won: it was ${esc(res.name)}.`}</p>` : ''}
     <div class="kind">Clues</div>
     ${T.clues.length ? `<ul class="trclues">${T.clues.slice().reverse().map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : '<p class="sub">No sabotage yet.</p>'}
-    <p class="sub">Innocent climbers voted out: ${T.wrong} of 2. At 2 the traitor wins.</p>
-    ${!T.over ? '<button class="btn primary" data-a="call"><b>Call a vote</b><small>Everyone picks who they think it is. More than half of the team on one name decides.</small></button>' : ''}
+    <p class="sub">Wrong votes: ${T.wrong} of 2</p>
+    ${!T.over ? '<button class="btn primary" data-a="call"><b>Call a vote</b></button>' : ''}
     <button class="btn" data-a="back"><b>Back</b></button></div>`, {
     back,
     call: () => { T.callVote(); resume(); },

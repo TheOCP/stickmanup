@@ -129,6 +129,11 @@ const HOLD_NAME = { pistol: 'Sidearm', smg: 'Submachine gun', shotgun: 'Shotgun'
 // Bars that compare weapons at a glance.
 // Where something that isn't open yet is found.
 function whereText(it) {
+  const t = whereOn(it);
+  // The generated maps of that world have it too, in another place.
+  return t && whereOf(it) && whereOf(it).map ? t + ' · Also on the generated climbs of this world.' : t;
+}
+function whereOn(it) {
   const w = whereOf(it);
   if (!w) return '';
   if (w.kind === 'void') return 'Find all six legendary weapons first: each waits at the end of the hardest path of its map.';

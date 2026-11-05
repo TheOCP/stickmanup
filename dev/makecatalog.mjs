@@ -36,7 +36,7 @@ for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...HAIRS, ...EMOTES, 
   if (it.relic) relicSuits[it.relic] = key;
 }
 const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
-// Every map: the six worlds, then the generated ones and the holiday ones (no relics on those). The server finds them by id.
+// Every map: the six worlds, then the generated ones and the holiday ones (with their world's relics, in other places). The server finds them by id.
 const maps = ALL_MAP_IDS.map((id) => {
   const M = mapDef(id), L = generateLevel(id);
   L.coins.forEach((c, i) => { if (c.i !== i) throw new Error(`coin numbers on ${M.key} have holes`); });

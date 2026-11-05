@@ -248,4 +248,8 @@ export default [
   ["{} s", "{} s", "{} s", "{} s", "{} s", "{} с", "{} sn"],
   ["{} of {} voted", "{} de {} votaron", "{} de {} votaram", "{} sur {} ont voté", "{} von {} haben gewählt", "Проголосовали {} из {}", "{} / {} oy verdi"],
   ["Skip", "Saltar", "Pular", "Passer", "Überspringen", "Пропустить", "Geç"],
+  ["Play without the cord", "Jugar sin cuerda", "Jogar sem corda", "Jouer sans corde", "Ohne Seil spielen", "Играть без верёвки", "İpsiz oyna"],
+  ["More climbs", "Más escaladas", "Mais escaladas", "Plus d'ascensions", "Mehr Aufstiege", "Ещё восхождения", "Daha fazla tırmanış"],
+  ["Wrong votes: {} of 2", "Votos erróneos: {} de 2", "Votos errados: {} de 2", "Mauvais votes : {} sur 2", "Falsche Stimmen: {} von 2", "Ошибочных голосований: {} из 2", "Yanlış oylar: {} / 2"],
+  ["Also on the generated climbs of this world.", "También en las escaladas generadas de este mundo.", "Também nas escaladas geradas deste mundo.", "Aussi sur les ascensions générées de ce monde.", "Auch auf den erzeugten Aufstiegen dieser Welt.", "А также на созданных восхождениях этого мира.", "Bu dünyanın üretilmiş tırmanışlarında da var."],
 ];

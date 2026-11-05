@@ -8,7 +8,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 22;
+export const LEVEL_VERSION = 23;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -147,6 +147,10 @@ export const MUTATORS = {
   dusk: { name: 'Dusk', look: 'dusk' },
 };
 const MUT_KEYS = Object.keys(MUTATORS);
+// Maps whose first seed put a relic course where it fails dev/courseshortcuttest.js (or left one out) take the next seed that
+// passes. Checked for all of them: see the generated maps in that test.
+const SEED_FIX = { 107: 1, 143: 1, 149: 1, 202: 1 };
+const fixSeed = (id, seed) => (seed + (SEED_FIX[id] || 0) * 104729) >>> 0;
 // Holidays: from and to are [month, day] in UTC, both days included. Easter moves: its days are worked out each year.
 export const HOLIDAYS = [
   { id: 200, hol: 'halloween', key: 'forest', name: 'Haunted Hollow', from: [10, 24], to: [11, 1], hue: 250, grade: 2, muts: ['night', 'crumbling'],
@@ -229,7 +233,7 @@ function genMap(id) {
   return {
     id, key: base.key, base: base.id, gen: true, num: n + 1, name, grade, muts, hue,
     desc: `${base.name} world, ${GRADES[grade]}${muts.length ? ', ' + muts.map((m) => MUTATORS[m].name).join(', ') : ''}.`,
-    seed: (Math.floor(R() * 1e9) ^ id) >>> 0, core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), hue)), route: base.route,
+    seed: fixSeed(id, (Math.floor(R() * 1e9) ^ id) >>> 0), core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), hue)), route: base.route,
     look: Object.assign({ hue }, ...muts.filter((m) => MUTATORS[m].look).map((m) => ({ time: MUTATORS[m].look }))), zones,
   };
 }
@@ -240,7 +244,7 @@ function holidayMap(h) {
   return {
     id: h.id, key: h.key, base: base.id, gen: true, holiday: h.hol, name: h.name, grade: h.grade, muts: h.muts, hue: h.hue,
     desc: `A holiday climb on ${base.name}'s world, ${GRADES[h.grade]}.`,
-    seed: (h.id * 7919 + 4243) >>> 0, core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), h.hue)), route: base.route,
+    seed: fixSeed(h.id, (h.id * 7919 + 4243) >>> 0), core: base.core, pattern: base.pattern, accent: hexStr(hueShift(parseInt(base.accent.slice(1), 16), h.hue)), route: base.route,
     look: Object.assign({ hue: h.hue }, ...h.muts.filter((m) => MUTATORS[m].look).map((m) => ({ time: MUTATORS[m].look })), { over: h.look }), zones,
   };
 }
@@ -3219,11 +3223,12 @@ export function generateLevel(mapId = 0) {
     }
   }
   buildCoins();
-  // The generated maps are climbs only: no relics on them.
-  if (MAP.gen) out.relics = []; else buildSecrets();
+  // The generated maps have them too, under their world's names (storm:0, storm:h3...): each thing can be found on its world
+  // and on every map built on it, in another place each time.
+  buildSecrets();
   // Legendary relics in the mazes (MAZE_RELICS), in the cell furthest from the way in, spread up the climb. Like the other
   // hidden suits (kind 'suit'), on every difficulty and with any rules.
-  const nRel = MAP.gen ? 0 : Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
+  const nRel = Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
   for (let q = 0; q < nRel; q++) {
     const m = out.mazes[Math.floor(((q + 1) * out.mazes.length) / (nRel + 1))];
     m.relic = MAP.key + ':m' + q;
@@ -3231,7 +3236,7 @@ export function generateLevel(mapId = 0) {
   }
   // The hidden spots in the maze gardens (hideSpots): one to a maze, in a cell well away from both ways in and from the
   // legendary relic. Only on its own difficulty.
-  if (out.mazes.length && !MAP.gen) {
+  if (out.mazes.length) {
     hideSpots(MAP.key).filter((q) => q.maze).forEach((q, k) => {
       const m = out.mazes[(k * 3 + 1) % out.mazes.length], R = rng((m.seed ^ Math.imul(q.j + 11, 0x9e3779b1)) >>> 0), far = (i, j, a, b) => Math.abs(i - a) + Math.abs(j - b);
       const taken = out.relics.filter((r) => r.maze === m.i).map((r) => r.cell || [m.ri, m.rj]);

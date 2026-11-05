@@ -265,7 +265,7 @@ Gauntlet, Restless, Crumbling, Hooks, Windy, Night or Dusk. Every one of them pa
 (UTC). On holidays it is a holiday map instead: Haunted Hollow round Halloween, Frosty Peaks round Christmas, Countdown
 Tower at New Year, Sweetheart Cliffs on Valentine's Day, Egg Hunt Grove at Easter and Midsummer Light in June, each with
 zones of its own. The team can pick any map as the day's climb with `/daily` (in the game's terminal or on Discord).
-These maps have no relics; they are climbs, and their coins pay like everywhere else.
+These maps have their world's relics too, each in another place: the three courses, the maze gardens and the hidden spots. A relic found there counts just like one found on its world, and coins pay like everywhere else.
 
 **Ghost racing.** Your best climb of a map and difficulty plays back beside you as a see through climber, from the same
 start, and so do the best ones of your friends and of the others in the room. A line at the top says how far ahead or

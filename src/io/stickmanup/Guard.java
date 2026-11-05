@@ -19,8 +19,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.InputStream;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -40,7 +38,6 @@ final class Guard {
     private static final String[] SU = { "/system/bin/su", "/system/xbin/su", "/sbin/su", "/system/su", "/vendor/bin/su", "/data/adb/magisk", "/data/adb/ksu", "/data/adb/ap", "/system/app/Superuser.apk" };
     private static final String[] ROOT_APPS = { "com.topjohnwu.magisk", "me.weishu.kernelsu", "me.bmax.apatch", "eu.chainfire.supersu" };
     private static final String[] HOOK_APPS = { "de.robv.android.xposed.installer", "org.lsposed.manager", "org.meowcat.edxposed.manager", "com.solohsu.android.edxp.manager" };
-    private static final int FRIDA_PORT = 27042;
 
     private Guard() {}
 
@@ -70,7 +67,7 @@ final class Guard {
             o.put("assets", assetsOk(c));
             o.put("dbg", Debug.isDebuggerConnected() || Debug.waitingForDebugger() || tracerPid() > 0);
             String maps = readMaps();
-            o.put("frida", maps.contains("frida") || maps.contains("gum-js") || maps.contains("linjector") || threadNamed() || portOpen(FRIDA_PORT));
+            o.put("frida", maps.contains("frida") || maps.contains("gum-js") || maps.contains("linjector") || threadNamed());
             o.put("hook", maps.contains("xposed") || maps.contains("lspd") || maps.contains("edxp") || maps.contains("substrate") || xposedClass() || installedAny(c, HOOK_APPS));
             o.put("root", isRooted(c));
             o.put("emu", isEmulator());
@@ -179,15 +176,6 @@ final class Guard {
             // Not readable: nothing to report.
         }
         return false;
-    }
-
-    private static boolean portOpen(int port) {
-        try (Socket s = new Socket()) {
-            s.connect(new InetSocketAddress("127.0.0.1", port), 60);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private static boolean xposedClass() {

@@ -18,10 +18,16 @@ const Q = 32767, PQ = 1024;
 const MAX_LIVE = 64;
 // A phone matches to the last bit. These only allow for something odd without calling anyone names.
 const NEAR = 0.02;     // metres: counts as a perfect match
-const SOFT = 1.0;      // metres: a small slip, forgiven a few times per climb
-const SOFT_BUDGET = 3;
+// Being out of step now and then proves nothing, however long a climb goes on: each second in step wins some room back. A hack
+// is out of step every second, and uses all of it up in a few seconds.
+const SLIP_LIMIT = 8;
+const SLIP_BACK = 1 / 30;
+const FAR = 25;        // metres: further out than this, it may be a teleport
+const MAX_MOVE = 70;   // metres a second: nothing in the game moves a climber faster
+const SAVE_SLACK = 3;  // metres: the rerun can be this much out of step at the moment of a save
+const SHOT_BURST = 4;  // shots ahead of a weapon's rate, for a phone that stutters
 const SHOT_SLACK = 25; // metres: a shot starts from a camera a little behind the climber
-const GRAPPLE_REACH = 14;
+const GRAPPLE_REACH = 12.5;
 
 // Everything that only makes noise or pictures: any property, any call, any number, and nothing happens.
 const nothing = new Proxy(function () {}, {
@@ -88,6 +94,8 @@ function makeGame(run, head) {
   Object.defineProperty(game, 'time', { get() { return this.simT; } });
   game.save = () => {};
   game.noteRun = () => {};
+  // Flying goes where the camera looks, which isn't written down. Where it ended is (act 'f').
+  game.flyStep = () => {};
   game.coinTaken = new Set(Array.isArray(head.coins) ? head.coins : []);
   const live = {
     run, game, tick: 0, soft: 0, tainted: false, last: null, snapSeq: head.saves | 0, relics: new Set(), crumb: null, lastT: head.t, lastShot: -99, guns: new Set(),
@@ -183,6 +191,16 @@ function unpack(b64) {
 
 // ---------------------------------------------------------------- why it doesn't match, in words
 const m1 = (v) => Math.round(v * 10) / 10;
+// Whether the phone's own climber jumped: further since it last said where it was than anything in the game can go, and not
+// back to a checkpoint it has reached, which gains nothing. Otherwise it is the rerun that got out of step.
+function jumped(live, s) {
+  const l = live.last, g = live.game;
+  if (!l) return true;
+  if (Math.hypot(s[1] - l[1], s[2] - l[2], s[3] - l[3]) <= MAX_MOVE * Math.max(STEP, (s[0] - l[0]) * STEP)) return false;
+  const top = Math.max(live.maxCp, g.cp);
+  for (const c of g.L.cps) if (c.i <= top && Math.hypot(s[1] - c.x, s[2] - c.y, s[3] - c.z) < 5) return false;
+  return true;
+}
 function explain(live, s) {
   const me = live.game.me, l = live.last, at = Math.round(live.game.simT);
   const dx = s[1] - me.x, dy = s[2] - me.y, dz = s[3] - me.z, off = Math.hypot(dx, dy, dz), side = Math.hypot(dx, dz);
@@ -190,11 +208,11 @@ function explain(live, s) {
   const phoneSide = l ? Math.hypot(s[1] - l[1], s[3] - l[3]) / dt : 0, physSide = l ? Math.hypot(me.x - l[1], me.z - l[3]) / dt : 0;
   const phoneUp = l ? (s[2] - l[2]) / dt : 0, physUp = l ? (me.y - l[2]) / dt : 0;
   const where = `at ${at} s, ${m1(me.y - PR)} m up`;
-  if (off > 25) return { kind: 'teleport', score: 60, detail: `Teleported: the phone says it is ${m1(off)} m from where the physics put it, ${where}.` };
+  if (off > FAR && jumped(live, s)) return { kind: 'teleport', score: 60, detail: `Teleported: the phone says it is ${m1(off)} m from where the physics put it, ${where}.` };
   if (dy > 0.25 && dy >= side) return { kind: 'fly', score: 50, detail: `Jump or fly hack: went ${m1(dy)} m higher than the physics allows (rising ${m1(phoneUp)} m/s where the physics says ${m1(physUp)} m/s), ${where}.` };
   if (side > 0.25 && phoneSide > physSide) return { kind: 'speed', score: 50, detail: `Speed hack: moving ${m1(phoneSide)} m/s where the physics says ${m1(physSide)} m/s, ${where}.` };
-  if (dy < -0.25 && dy <= -side) return { kind: 'gravity', score: 30, detail: `Falling faster than the physics says: ${m1(-dy)} m lower, ${where}.` };
-  return { kind: 'physics', score: 30, detail: `The climb does not match the physics: ${m1(off)} m off, ${where}.` };
+  if (dy < -0.25 && dy <= -side) return { kind: 'gravity', score: 10, detail: `Falling faster than the physics says: ${m1(-dy)} m lower, ${where}.` };
+  return { kind: 'physics', score: 15, detail: `The climb does not match the physics: ${m1(off)} m off, ${where}.` };
 }
 
 function compare(live, s) {
@@ -205,18 +223,20 @@ function compare(live, s) {
     return;
   }
   const off = Math.hypot(s[1] - me.x, s[2] - me.y, s[3] - me.z);
-  if (off > NEAR) {
-    if (off < SOFT && ++live.soft <= SOFT_BUDGET) {
-      // A small slip: pick up from where the phone is, and let the next second tell.
-      me.x = s[1]; me.y = s[2]; me.z = s[3]; me.vx = s[4]; me.vy = s[5]; me.vz = s[6];
-    } else {
-      const f = explain(live, s);
-      if (live.soft > SOFT_BUDGET) f.detail += ` ${live.soft} slips in this climb so far.`;
-      live.flags.push(f);
-      live.tainted = true;
-      return;
-    }
+  if (off <= NEAR) {
+    live.soft = Math.max(0, live.soft - SLIP_BACK);
+    live.last = s;
+    return;
   }
+  const f = explain(live, s);
+  live.soft += off < 1 ? 1 : off < 5 ? 2 : 3;
+  if (f.kind === 'teleport' || live.soft > SLIP_LIMIT) {
+    live.flags.push(f);
+    live.tainted = true;
+    return;
+  }
+  // A slip: pick up from where the phone is, and let the next second tell.
+  me.x = s[1]; me.y = s[2]; me.z = s[3]; me.vx = s[4]; me.vy = s[5]; me.vz = s[6];
   live.last = s;
 }
 
@@ -226,14 +246,16 @@ function bad(live, kind, score, detail) {
   live.tainted = true;
 }
 
-// A shot on its way, by the weapon it says it came from: not faster than that weapon fires. Shots in the same step are the
+// A shot on its way, by the weapon it says it came from: not faster than that weapon fires, over several shots. A phone that
+// stutters fires by its own clock, so one pair of shots can be close together in physics time. Shots in the same step are the
 // same blast. Which weapons were used goes back to be checked against what this player owns.
 function shotInTime(live, gun) {
-  const gap = live.tick - live.lastShot;
-  if (gap !== 0 && gap < Math.max(1, Math.floor(gun.rate * 60 * 0.55))) return false;
-  live.lastShot = live.tick;
+  const t = live.game.simT;
   live.guns.add(gun.id);
-  return true;
+  if (t === live.lastShot) return true;
+  live.shots = Math.min(SHOT_BURST, (live.shots ?? SHOT_BURST) + Math.max(0, t - live.lastShot) / (gun.rate * 0.8)) - 1;
+  live.lastShot = t;
+  return live.shots >= 0;
 }
 
 function snapshot(live) {
@@ -252,7 +274,8 @@ function act(live, a, snaps, quiet) {
       const anchor = L.anchors[a[2]];
       if (!anchor) return bad(live, 'grapple', 40, 'Grappled a hook that does not exist.');
       const d = Math.hypot(anchor.x - me.x, anchor.y - me.y, anchor.z - me.z);
-      if (d > GRAPPLE_REACH) return bad(live, 'grapple', 40, `Grappled a hook ${m1(d)} m away. The reach is 12.5 m.`);
+      // The button goes by what was in reach a moment ago, and the climber may be falling fast past it.
+      if (d > GRAPPLE_REACH + 1 + Math.hypot(me.vx, me.vy, me.vz) * 0.4) return bad(live, 'grapple', 40, `Grappled a hook ${m1(d)} m away. The reach is 12.5 m.`);
       me.grapple(anchor);
       break;
     }
@@ -294,7 +317,7 @@ function act(live, a, snaps, quiet) {
       if (solo) break;
       if (++live.kickCount > 4 + live.tick / 30) return bad(live, 'kick', 20, 'Kicked far more often than the jumpers can.');
       const j = L.jumpers[a[2]];
-      if (!j || Math.hypot(j.x - me.x, j.y - me.y, j.z - me.z) > 25) return bad(live, 'kick', 30, 'Knocked by a jumper that is nowhere near.');
+      if (!j || Math.hypot(j.x - me.x, j.y - me.y, j.z - me.z) > 60) return bad(live, 'kick', 30, 'Knocked by a jumper that is nowhere near.');
       live.kicks.push([a[3], a[4], a[5], String(a[6] || '').slice(0, 24)]);
       break;
     }
@@ -304,6 +327,18 @@ function act(live, a, snaps, quiet) {
       for (const s of [...g.s.players.keys()]) if (!slots.includes(s) && s !== g.slot) g.s.players.delete(s);
       for (const s of slots) if (!g.s.players.has(s)) g.s.players.set(s, { slot: s, name: '', color: null, look: null, samples: [] });
       g.syncRoster();
+      break;
+    }
+    case 'f': {
+      // Vanished: flying, or back from it. Whether this player may fly goes back to the server to check, and nothing a phone
+      // says about a flight it isn't allowed gets past that.
+      live.flew = true;
+      g.setFlying(!!a[2]);
+      if (a[2]) break;
+      if (![a[3], a[4], a[5]].every(Number.isFinite)) return bad(live, 'bad', 20, 'The climb recording is broken in a way the game cannot produce.');
+      me.spawn(a[3], a[4], a[5]);
+      if (Number.isInteger(a[6]) && L.cps[a[6]]) { g.cp = a[6]; live.maxCp = Math.max(live.maxCp, a[6]); }
+      live.last = [live.tick, a[3], a[4], a[5], 0, 0, 0];
       break;
     }
     case 'e': if (!solo) return event(live, a[2]);
@@ -337,7 +372,8 @@ function event(live, e) {
       // Only what happens to this climber counts: someone else on their own checkpoint, or a team going back while this
       // one is still catching up, moves nothing here.
       if (e.only === g.slot || ((e.only === null || e.only === undefined) && !g.loose.has(g.slot))) {
-        if (at > live.maxCp) return bad(live, 'respawn', 40, `Sent back to checkpoint ${at}, but only ${live.maxCp} has been reached.`);
+        // A phone left behind by its team looks just like this. It stops counting, and nobody gets called anything.
+        if (at > live.maxCp) { live.tainted = true; return undefined; }
         const want = g.spawnPos(at, g.slot), p = e.pos && e.pos[g.slot];
         if (p && Math.hypot(p[0] - want[0], p[1] - want[1], p[2] - want[2]) > 0.5) return bad(live, 'respawn', 60, 'Respawned somewhere other than the checkpoint: a teleport.');
       }
@@ -348,7 +384,8 @@ function event(live, e) {
       const c = Number.isInteger(e.i) && L.cps[e.i];
       if (!c) return bad(live, 'respawn', 30, 'Reached a checkpoint that does not exist.');
       if (e.slot === g.slot || (e.slot === undefined && !g.loose.has(g.slot))) {
-        if (!nearCp(live, c)) return bad(live, 'respawn', 50, `Reached a checkpoint from ${m1(Math.hypot(me.x - c.x, me.y - c.y, me.z - c.z))} m away.`);
+        // The same: a phone that was left behind. The climb stops counting.
+        if (!nearCp(live, c)) { live.tainted = true; return undefined; }
         if (e.i > live.maxCp) live.maxCp = e.i;
       }
       g.onEvent(e);
@@ -369,7 +406,12 @@ function event(live, e) {
       const close = (b) => Math.hypot(b.x, b.z) < L.summit.r + g.rope * 3 && b.y > L.top - g.rope * 4;
       // Without the cord, or still catching up, someone else got there. The climb ends, and game.js finish pays this one nothing.
       if (!close(me) && (g.noCord || g.loose.has(g.slot))) { g.onEvent(e); break; }
-      if (!close(me) && !(l && close(l))) return bad(live, 'win', 60, `Claimed the top from ${m1(L.top - me.y)} m below it.`);
+      if (!close(me) && !(l && close(l))) {
+        // With nobody on the cord it can only be made up. With someone, this phone may just have been left behind.
+        if (!l) return bad(live, 'win', 60, `Claimed the top from ${m1(L.top - me.y)} m below it.`);
+        live.tainted = true;
+        return undefined;
+      }
       g.onEvent(e);
       break;
     }
@@ -398,6 +440,13 @@ function event(live, e) {
 }
 
 // ---------------------------------------------------------------- playing it
+function backFirst(live, acts, ai, s) {
+  const me = live.game.me;
+  if (Math.hypot(s[1] - me.x, s[2] - me.y, s[3] - me.z) <= NEAR) return false;
+  for (let i = ai; i < acts.length && acts[i][0] <= live.tick; i++) if (acts[i][1] === 'e' && acts[i][2] && acts[i][2].k === 'respawn') return true;
+  return false;
+}
+
 const inp = { mx: 0, mz: 0, fx: 0, fz: 0, jump: false, jumpPressed: false, dash: false, grab: false, reel: false };
 
 function play(live, chunk, snaps, quiet) {
@@ -427,11 +476,18 @@ function play(live, chunk, snaps, quiet) {
       const h = Math.round(g.me.y - PR - 2);
       if (g.me.grounded && h > live.h) live.h = h;
       while (si < samples.length && samples[si][0] < live.tick) si++;
-      if (si < samples.length && samples[si][0] === live.tick) compare(live, samples[si++]);
+      if (si < samples.length && samples[si][0] === live.tick) {
+        const s = samples[si++];
+        if (!g.flying) {
+          // A host's own fall happens inside the step, so that phone had already gone back when it noted where it was.
+          if (backFirst(live, acts, ai, s)) while (ai < acts.length && acts[ai][0] <= live.tick && !live.tainted) act(live, acts[ai++], snaps, quiet);
+          if (!live.tainted) compare(live, s);
+        }
+      }
     }
     while (ai < acts.length && acts[ai][0] <= end && !live.tainted) act(live, acts[ai++], snaps, quiet);
-    if (live.soft > SOFT_BUDGET && !live.tainted) {
-      live.flags.push({ kind: 'physics', score: 30, detail: `The climb keeps slipping from the physics: ${live.soft} small slips.` });
+    if (live.soft > SLIP_LIMIT && !live.tainted) {
+      live.flags.push({ kind: 'physics', score: 15, detail: 'The climb keeps slipping from the physics.' });
       live.tainted = true;
     }
   } finally {
@@ -485,13 +541,13 @@ function handle(m) {
   if (c.meta.head && m.run.snapshot && c.meta.head.pos && live.tick === 0) {
     // What the phone resumed from has to be what the server saw.
     const a = c.meta.head.pos, b = m.run.snapshot.pos, off = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-    if (off > 0.05) live.flags.push({ kind: 'teleport', score: 60, detail: `Picked up a saved climb ${m1(off)} m from where it was saved: an edited save.` });
-    if (off > 0.05) live.tainted = true;
+    if (off > SAVE_SLACK) live.flags.push({ kind: 'teleport', score: 60, detail: `Picked up a saved climb ${m1(off)} m from where it was saved: an edited save.` });
+    if (off > SAVE_SLACK) live.tainted = true;
   }
   const snaps = [];
   if (!live.tainted) play(live, c, snaps, false);
   remember(m.run.id, live);
-  const out = { tick: live.tick, simT: live.game.simT, coins: live.coins, relics: live.relicsNew, win: live.win, flags: live.flags, snaps, h: live.h, soft: live.soft, guns: [...live.guns], tainted: live.tainted, cp: live.game.cp, falls: live.game.falls };
+  const out = { tick: live.tick, simT: live.game.simT, coins: live.coins, relics: live.relicsNew, win: live.win, flags: live.flags, snaps, h: live.h, soft: live.soft, guns: [...live.guns], flew: !!live.flew, tainted: live.tainted, cp: live.game.cp, falls: live.game.falls };
   live.coins = []; live.relicsNew = []; live.win = null; live.flags = [];
   return out;
 }

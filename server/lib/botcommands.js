@@ -743,7 +743,7 @@ const RUN = {
     if (on === was) return ctx.reply(`${line(u)} is ${on ? 'already vanished' : 'not vanished'}.`, { color: 'warn' });
     st.setVanish(u.id, on);
     ctx.s.friends.vanishChanged(u.id);
-    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline. On a climb their stickman is gone for everyone and they fly: that climb stops earning, and /vanish off drops them where they are. /watch a player or /join a room to fly around it unseen as well: nobody there is told.` : `${line(u)} can be seen again.`);
+    return done(ctx, 'vanish', `${playerLine(u)} ${on ? 'on' : 'off'}`, on ? `${line(u)} is vanished: their friends see them as offline. On a climb their stickman is gone for everyone and they fly, and nothing on the map can reach them. /vanish off drops them where they are, and they can get coins and checkpoints again. /watch a player or /join a room to fly around it unseen as well: nobody there is told.` : `${line(u)} can be seen again.`);
   },
   watch(ctx, d) {
     if (!ctx.game) return ctx.reply(IN_GAME, { color: 'warn' });

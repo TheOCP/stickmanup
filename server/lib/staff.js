@@ -65,6 +65,7 @@ class Staff {
     for (const r of STARTERS) if (!this.q.all.all().some((x) => x.key === r.key)) this.q.put.run(r.key, r.tag, r.color, r.rank, JSON.stringify(r.perms), t);
     this.load();
     this.vanishCache = new Map();
+    this.vanishEnded = new Map();
   }
 
   load() {
@@ -194,8 +195,14 @@ class Staff {
     return this.vanishCache.get(id);
   }
   vanished(id) { return this.vanishedAt(id) > 0; }
+  // Off again only lately: a phone can still be sending the climb they flew in.
+  wasVanished(id) { return this.vanishEnded.get(id) > Date.now() - 86400000; }
   setVanish(id, on) {
     const v = on ? Date.now() : 0;
+    if (!on && this.vanished(id)) {
+      this.vanishEnded.set(id, Date.now());
+      if (this.vanishEnded.size > 5000) this.vanishEnded.clear();
+    }
     this.q.setVanish.run(v, id);
     this.vanishCache.set(id, v);
     if (this.vanishCache.size > 5000) this.vanishCache.clear();

@@ -60,6 +60,7 @@ const staff = new Staff(db, admin);
 if (db.setting('dayCap')) wallet.setDayCap(+db.setting('dayCap'));
 const verifier = new Verifier(db, wallet, admin, env);
 const attest = new Attest(env);
+verifier.staff = staff;
 const rooms = verifier.rooms = new Rooms({
   who: (token) => db.sessionUser(token),
   isOff: (ip, token) => {
@@ -72,6 +73,7 @@ const rooms = verifier.rooms = new Rooms({
   ownsLook: (id, look) => { const u = db.user(id); return wallet.ownsLook(id, look, u ? u.role : ''); },
   roleOf: (id) => { const u = db.user(id); return u ? u.role : ''; },
   canJoinAny: (id) => staff.can(admin.info(id), 'join'),
+  mayFly: (id) => staff.vanished(id),
   ipKey,
   // Old games have no token to give. Once the anticheat is enforcing, they need the update.
   needToken: () => admin.mode === 'enforce',
@@ -174,13 +176,14 @@ const publicUser = (u) => ({ id: u.id, num: u.num, name: u.name, provider: u.pro
 const deviceOf = (d) => (typeof d === 'string' && /^[0-9a-f]{16,64}$/.test(d) ? d : null);
 
 // What each thing a phone can report counts for. Being rooted alone never counts: plenty of honest people are, the owner too.
+// What is merely installed counts for nothing either, it is only kept as a note: having a tool isn't using it on this game.
 const GUARD_SCORES = [
   ['sig', (g) => g.sig === false, 'phone', 80, 'Running a changed copy of the app: the signature is not the official one.'],
   ['assets', (g) => g.assets === false, 'phone', 60, 'The game files inside the app have been changed.'],
   ['frida', (g) => !!g.frida, 'phone', 60, 'Frida, a tool for changing running apps, was found in the game.'],
-  ['dbg', (g) => !!g.dbg, 'phone', 40, 'A debugger is attached to the game.'],
-  ['hook', (g) => !!g.hook, 'phone', 20, 'Xposed or a similar hooking tool is loaded into the game.'],
-  ['apps', (g) => Array.isArray(g.apps) && g.apps.length > 0, 'phone', 15, 'Cheat tools are installed on the phone.'],
+  ['dbg', (g) => !!g.dbg, 'phone', 20, 'A debugger is attached to the game.'],
+  ['hook', (g) => !!g.hook, 'phone', 0, 'Xposed or a similar hooking tool is on the phone.'],
+  ['apps', (g) => Array.isArray(g.apps) && g.apps.length > 0, 'phone', 0, 'Cheat tools are installed on the phone.'],
 ];
 function cleanGuard(g) {
   if (!g || typeof g !== 'object') return null;

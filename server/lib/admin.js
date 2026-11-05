@@ -7,6 +7,8 @@ const net = require('node:net');
 
 const DAY = 86400000;
 const WARN_EVERY = 10 * 60000;
+// The same thing again within this long adds nothing to the score: a glitch that keeps happening isn't ten cheats.
+const SCORE_EVERY = 60 * 60000;
 const SEEN_EVERY = 60000;
 const IP_KEEP = 90 * DAY;
 const FLAG_KEEP = 180 * DAY;
@@ -37,6 +39,7 @@ class Admin {
     this.notify = { signin() {}, flag() {}, ban() {}, unban() {}, note() {} };
     this.presence = new Map();
     this.warned = new Map();
+    this.scored = new Map();
     this.seenAt = new Map();
     this.banScore = Math.max(1, +env.ANTICHEAT_BAN_SCORE || 100);
     this.d.exec(`
@@ -94,7 +97,7 @@ class Admin {
       flagsAll: q('SELECT f.*, u.num, u.name, u.game_name FROM flags f JOIN users u ON u.id = f.user_id WHERE f.cleared = 0 ORDER BY f.at DESC LIMIT ?'),
       clearFlags: q('UPDATE flags SET cleared = 1 WHERE user_id = ? AND cleared = 0'),
       suspects: q(`SELECT u.id, u.num, u.name, u.game_name, SUM(f.score) AS score, COUNT(*) AS n, MAX(f.at) AS last FROM flags f JOIN users u ON u.id = f.user_id
-        WHERE f.cleared = 0 AND f.at > ? GROUP BY u.id ORDER BY score DESC LIMIT ?`),
+        WHERE f.cleared = 0 AND f.at > ? GROUP BY u.id HAVING SUM(f.score) > 0 ORDER BY score DESC LIMIT ?`),
       addBan: q('INSERT INTO bans (kind, value, user_id, name, reason, by_who, at, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
       activeBan: q('SELECT * FROM bans WHERE kind = ? AND value = ? AND lifted_at IS NULL AND (until IS NULL OR until > ?) ORDER BY at DESC LIMIT 1'),
       liftUser: q('UPDATE bans SET lifted_at = ?, lifted_by = ?, lift_reason = ? WHERE user_id = ? AND lifted_at IS NULL'),
@@ -298,11 +301,14 @@ class Admin {
   flag(id, kind, detail, score, run) {
     const u = this.info(id);
     if (!u) return null;
-    const text = String(detail).slice(0, 500), s = Math.max(0, score | 0);
+    const text = String(detail).slice(0, 500), key = id + '|' + kind, t = now();
+    const s = this.scored.get(key) > t - SCORE_EVERY ? 0 : Math.max(0, score | 0);
+    if (s > 0) this.scored.set(key, t);
     this.q.addFlag.run(id, now(), String(kind).slice(0, 24), text, s, run || null);
-    const total = this.score(id), key = id + '|' + kind, t = now();
+    const total = this.score(id);
     console.log(`flag: ${this.label(u)} [${kind}] ${text} (score ${total})`);
-    if (!(this.warned.get(key) > t - WARN_EVERY)) {
+    // Worth nothing, or nothing new: kept for whoever looks, without pinging anyone.
+    if (s > 0 && !(this.warned.get(key) > t - WARN_EVERY)) {
       this.warned.set(key, t);
       this.notify.flag({ user: u, kind, detail: text, score: s, total, run, mode: this.mode });
     }
@@ -373,6 +379,7 @@ class Admin {
     this.q.oldGuests.run(t - 60 * DAY);
     this.seenAt.clear();
     for (const [k, v] of this.warned) if (v < t - WARN_EVERY) this.warned.delete(k);
+    for (const [k, v] of this.scored) if (v < t - SCORE_EVERY) this.scored.delete(k);
   }
 }
 

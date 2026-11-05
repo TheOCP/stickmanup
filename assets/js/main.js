@@ -210,7 +210,7 @@ const ui = (app.ui = {
     else if (beesNear && !(me.flags & 128)) { warn = 'BEES! SHIELD NOW!'; cls = 'g'; }
     else if (ev && ev.on) { warn = EV_ON[ev.kind]; cls = 'g'; }
     else if (ev && ev.warn > 0) { warn = EV_WARN[ev.kind]; cls = 'w'; }
-    else {
+    else if (!g.flying) {
       for (const r of L.rods) {
         if (Math.abs(r.y - me.y) > 4 || Math.hypot(r.x - me.x, r.z - me.z) > r.rad + 1.5) continue;
         if (g.storm.rodWarn(r, T) > 0) { warn = 'LIGHTNING: MOVE OR SHIELD!'; cls = 'w'; break; }
@@ -299,7 +299,7 @@ const ui = (app.ui = {
     for (let i = 0; i < L.signs.length; i++) {
       const s = L.signs[i], key = L.map + ':' + i, d = Math.hypot(s.x - me.x, s.y - me.y, s.z - me.z);
       let el = this.tipEls.get(i);
-      if (d < 7 && !seen.has(key)) { seen.add(key); store.set('tipsSeen', [...seen]); this.tip(s.text); }
+      if (d < 7 && !g.flying && !seen.has(key)) { seen.add(key); store.set('tipsSeen', [...seen]); this.tip(s.text); }
       // Out of reach (nearly all of them, nearly always): no need to work out where on the screen it is.
       if (d >= 24) { if (el && !el.__off) { el.__off = true; el.style.display = 'none'; } continue; }
       v.set(s.x, s.y - 0.7, s.z).project(cam);
@@ -1004,7 +1004,6 @@ const NOT_COUNTING = {
   dead: 'This climb has stopped counting for coins',
   gap: 'This climb has stopped counting for coins',
   moved: 'The team moved you: this climb no longer earns coins',
-  flying: 'You are flying: this climb no longer earns coins',
 };
 const toldNot = new Set();
 cloud.on('notCounting', (why) => {

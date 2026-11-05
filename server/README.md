@@ -126,6 +126,13 @@ phone also says exactly where it is. If that isn't where the server's copy of th
 that goes too high, running too fast, flying, teleporting, an edited save, coins it never reached: all of them show up
 as a difference, and the warning says which and by how much.
 
+One difference proves nothing, so it doesn't raise a flag. The server's copy picks up from where the phone is, and only a
+climb that keeps differing gets flagged. Each second in step wins some room back, so a long climb has no more trouble than
+a short one, and a hack that is out of step every second uses it up within seconds. A phone left far behind by its team
+just stops counting, without a flag. The same flag again within an hour adds nothing to the score. Things that are merely
+installed on a phone, like Xposed or cheat apps, and a failed hardware check, are only kept as a note: they count for
+nothing and nobody gets a message about them.
+
 The rerun takes about a thousandth of the time the climb took. One worker can keep up with several hundred people climbing.
 With a lot of people, set `ANTICHEAT_WORKERS` higher, one per spare processor.
 
@@ -278,8 +285,11 @@ who with, which room), and buttons to watch them, join their room, see more or k
   vanishing too. It is only a camera, nobody in the climb sees it.
 * On your own climb, `/vanish` makes you fly the same way with the climbing buttons: JUMP or Space up, GRAB, Shift or C
   down, REEL or E fast. Your stickman, name and cord are gone for the others in the room, though the room's player count
-  still counts you. That climb stops earning, and `/vanish off` drops you from where you are. A new climb started while
-  vanished starts flying.
+  still counts you. Waves, wind, lava, quakes, bees and lightning can't reach you and don't warn you, and you collect
+  nothing while you fly. `/vanish off` drops you from where you are, and from there you get coins and checkpoints again.
+  A new climb started while vanished starts flying. Whoever may use `/vanish` can fly up to coins this way and collect
+  them after landing, and the anticheat lets it pass, so only give it to people you trust with that. Anyone else whose
+  recording says it flew gets flagged.
 * `/watch player` follows anyone's climb live, solo climbs too, whether or not they let friends watch. Without
   vanish they see that you are watching, like with a friend.
 * `/join player` (or a room code) joins their room on this server as a climber, without its password, and everyone in

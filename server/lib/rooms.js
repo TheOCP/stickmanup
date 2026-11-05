@@ -20,9 +20,13 @@ const scrypt = (pass, salt) => new Promise((res, rej) => crypto.scrypt(pass, sal
 // What people can see of a name: no control characters or line breaks, a sensible length.
 const cleanText = (s, max) => String(s == null ? '' : s).normalize('NFC').replace(/[\p{C}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const small = (v) => (Number.isInteger(v) && v >= 0 && v < 64 ? v : 0);
-// Faster than anything in the game can go, with room to spare. Respawns are one jump, not a pattern, so it takes several.
-const MAX_SPEED = 60;
+// Faster than anything in the game can go, with room to spare. Measured over a couple of seconds, since a bad connection
+// delivers things in bursts, and it has to go on: a respawn is one jump, not a pattern.
+const MAX_SPEED = 75;
+const FAST_WINDOW = 2000;
 const MAX_FAST = 4;
+const MAX_SAID_SPEED = 120;
+const MAX_SAID = 8;
 
 class Rooms {
   constructor(opts = {}) {
@@ -36,6 +40,7 @@ class Rooms {
     this.roleOf = opts.roleOf || (() => '');
     // The team may join any room on this server without its password (staff.js decides who that is).
     this.canJoinAny = opts.canJoinAny || (() => false);
+    this.mayFly = opts.mayFly || (() => false);
     this.needToken = opts.needToken || (() => false);
     this.ipKey = opts.ipKey || ((x) => x);
     this.perIp = new Map();
@@ -78,6 +83,7 @@ class Rooms {
     ws.lastPos = null;
     ws.lastCheck = 0;
     ws.fast = 0;
+    ws.said = 0;
     ws.warned = false;
     ws.lookAt = 0;
     ws.lookFlag = false;
@@ -138,7 +144,7 @@ class Rooms {
     if (ws.userId && me && me.look && !this.ownsLook(ws.userId, me.look)) {
       if (!ws.lookFlag) {
         ws.lookFlag = true;
-        this.onCheat(ws.userId, 'look', 'Wearing items in a room that it does not own.', 5);
+        this.onCheat(ws.userId, 'look', 'Wearing items in a room that it does not own.', 0);
       }
       me.look = null;
     }
@@ -176,18 +182,24 @@ class Rooms {
     try { m = JSON.parse(text); } catch (e) { return; }
     const s = ws.role === 'host' ? m.p && m.p[0] : m.s;
     if (!Array.isArray(s) || s.length < 3) return;
-    if (!s.slice(0, 6).every(Number.isFinite)) return this.caught(ws, 'room', 'Sent an impossible position in a room.', 30);
-    if (ws.lastPos) {
-      const dt = (now - ws.lastPos.t) / 1000, d = Math.hypot(s[0] - ws.lastPos.x, s[1] - ws.lastPos.y, s[2] - ws.lastPos.z);
-      if (dt > 0.1 && dt < 3) {
-        const v = d / dt;
-        if (v > MAX_SPEED) {
-          if (++ws.fast >= MAX_FAST) this.caught(ws, 'room', `Moving ${Math.round(v)} m/s in room ${ws.room.code}, over and over. Nothing in the game goes faster than about 20 m/s.`, 40);
-        } else if (ws.fast > 0 && v < MAX_SPEED / 2) ws.fast--;
+    // The physics can blow up on a phone for a moment, and the game puts that right by itself. It gains nothing.
+    if (!s.slice(0, 6).every(Number.isFinite)) return undefined;
+    // Vanished, flying is allowed.
+    if (this.mayFly(ws.userId)) { ws.lastPos = null; ws.fast = ws.said = 0; return undefined; }
+    const was = ws.lastPos;
+    if (!was || now - was.t >= FAST_WINDOW) {
+      if (was) {
+        const dt = (now - was.t) / 1000, v = Math.hypot(s[0] - was.x, s[1] - was.y, s[2] - was.z) / dt;
+        if (dt < 6 && v > MAX_SPEED) {
+          if (++ws.fast >= MAX_FAST) this.caught(ws, 'room', `Moving ${Math.round(v)} m/s in room ${ws.room.code}, for ${MAX_FAST * FAST_WINDOW / 1000} seconds on end. Nothing in the game goes faster than about 20 m/s.`, 30);
+        } else ws.fast = 0;
       }
+      ws.lastPos = { t: now, x: s[0], y: s[1], z: s[2] };
     }
-    ws.lastPos = { t: now, x: s[0], y: s[1], z: s[2] };
-    if (Math.hypot(s[3] || 0, s[4] || 0, s[5] || 0) > 120) this.caught(ws, 'room', `Says it is moving at ${Math.round(Math.hypot(s[3], s[4], s[5]))} m/s in room ${ws.room.code}.`, 30);
+    const said = Math.hypot(s[3] || 0, s[4] || 0, s[5] || 0);
+    if (said <= MAX_SAID_SPEED) ws.said = 0;
+    else if (++ws.said >= MAX_SAID) this.caught(ws, 'room', `Says it is moving at ${Math.round(said)} m/s in room ${ws.room.code}, again and again.`, 20);
+    return undefined;
   }
   caught(ws, kind, detail, score) {
     ws.warned = true;

@@ -80,17 +80,17 @@ r = A.check(USER, ask({ sig: crypto.randomBytes(32) }));
 check('our app re-signed by someone else is caught', r.notOfficial && /not signed with the official key/.test(r.flag), r);
 
 r = A.check(USER, ask({}, 'fake'));
-check('a chain from anyone but Google fails', /not from Google|broken chain/.test(r.flag || ''), r);
+check('a chain from anyone but Google fails, and is only described', /not from Google|broken chain/.test(r.text || '') && !r.flag, r);
 const a2 = ask();
 a2.chain = [a2.chain[0], b64(ca('other'))];
 r = A.check(USER, a2);
-check('a chain that does not link up fails', !!r.flag, r);
+check('a chain that does not link up fails, and is only described', /^Failed/.test(r.text || '') && !r.flag, r);
 
 // The question.
 const a3 = ask();
 check('a good answer passes once', /^Passed/.test(A.check(USER, a3).text));
 r = A.check(USER, a3);
-check('the same answer again is refused', !!r.flag && /never asked/.test(r.flag), r);
+check('the same answer again is refused, and is only described', !r.flag && /old or unknown/.test(r.text), r);
 r = A.check(USER, { challenge: 'made-up', chain: a3.chain });
 check('an answer to a made up question is refused', !!r.flag, r);
 const a4 = ask();

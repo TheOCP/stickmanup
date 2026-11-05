@@ -30,8 +30,9 @@ class Verifier {
     this.admin = admin;
     this.env = env;
     this.build = BUILD;
-    this.slack = Number.isFinite(+env.ANTICHEAT_SPEED_SLACK) && env.ANTICHEAT_SPEED_SLACK !== undefined ? +env.ANTICHEAT_SPEED_SLACK : 30;
+    this.slack = Number.isFinite(+env.ANTICHEAT_SPEED_SLACK) && env.ANTICHEAT_SPEED_SLACK !== undefined ? +env.ANTICHEAT_SPEED_SLACK : 60;
     this.rooms = null;
+    this.staff = null;
     this.workers = [];
     this.count = Math.max(1, Math.min(8, +env.ANTICHEAT_WORKERS || 1));
     this.pending = new Map();
@@ -186,7 +187,8 @@ class Verifier {
         // Whatever went wrong here, it says nothing about the player.
         console.error(`rerun of a climb failed: ${result.error}`);
         if (/bad|no start|JSON|invalid|incorrect|unexpected|Unexpected/i.test(result.error)) {
-          this.admin.flag(user.id, 'bad', 'Sent a climb recording that can not be read.', 20, r.id);
+          // Only kept as a note: a phone that ran out of room or was killed halfway through writing can do this too.
+          this.admin.flag(user.id, 'bad', 'Sent a climb recording that can not be read.', 0, r.id);
           tainted = 1;
         }
         result = null;
@@ -215,7 +217,15 @@ class Verifier {
         if (this.wallet.ownsLook(user.id, { w: id })) continue;
         const detail = `Used a weapon they do not own: ${id}.`;
         this.stats.flags++;
-        this.admin.flag(user.id, 'weapon', detail, 50, r.id);
+        this.admin.flag(user.id, 'weapon', detail, 20, r.id);
+        verdict = detail;
+        tainted = 1;
+      }
+      // Flying is for the team. Anyone else whose recording says it flew has made that up.
+      if (result.flew && !tainted && !this.mayFly(user.id)) {
+        const detail = 'Flew through a climb without being allowed to.';
+        this.stats.flags++;
+        this.admin.flag(user.id, 'fly', detail, 60, r.id);
         verdict = detail;
         tainted = 1;
       }
@@ -223,7 +233,7 @@ class Verifier {
     }
 
     // The clock: the phone can't have played longer than the server has known about this climb.
-    if (!tainted && ticks / 60 > elapsed + this.slack) {
+    if (!tainted && ticks / 60 > elapsed * 1.03 + this.slack) {
       const factor = Math.round((ticks / 60 / Math.max(elapsed, 1)) * 10) / 10;
       const detail = `Game speed hack: played ${Math.round(ticks / 60)} s of climb in ${Math.round(elapsed)} s of real time (${factor}x).`;
       this.admin.flag(user.id, 'clock', detail, 60, r.id);
@@ -234,10 +244,10 @@ class Verifier {
     // A phone claiming coins the rerun never reached.
     if (result && !tainted) {
       const forged = claims.coins.filter((c) => !seen.has(c)), fakeRelics = claims.relics.filter((c) => !seen.has(c));
-      // One that doesn't match could be a rounding accident on a phone, and pays nothing when enforcing anyway. Three can't be.
+      // A few that don't match can be the rerun being out of step for a moment, and pay nothing when enforcing anyway. Plenty of them can't.
       const total = (r.forged | 0) + forged.length;
       if (forged.length) this.d.prepare('UPDATE runs SET forged = ? WHERE id = ?').run(total, r.id);
-      if (total > 2 || fakeRelics.length) {
+      if ((total > 5 && total > seen.size * 0.1) || (fakeRelics.length && !(result.soft > 0))) {
         const detail = fakeRelics.length ? `Claimed a relic it never reached: ${String(fakeRelics[0]).slice(0, 32)}.` : `Claimed ${total} coins it never reached.`;
         this.admin.flag(user.id, 'coins', detail, 40, r.id);
         verdict = detail;
@@ -277,6 +287,11 @@ class Verifier {
       if (!p || !p.t || p.t < t - 120000 || p.bad) return false;
     }
     return true;
+  }
+
+  mayFly(id) {
+    const s = this.staff;
+    return !!s && (s.can(this.admin.info(id), 'vanish') || s.vanished(id) || s.wasVanished(id));
   }
 
   // ---------------------------------------------------------------- for the admins

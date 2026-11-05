@@ -260,7 +260,8 @@ export class Game {
       for (const o of L.cps) if (o.y <= y && o.y > c.y) c = o;
       p = this.spawnPos(c.i, this.slot);
     }
-    this.stopEarning('moved');
+    // Moved while flying is just more flying: where it ends is written down when it ends.
+    if (!this.flying) this.stopEarning('moved');
     // A fall from here goes back to the last checkpoint below it. On a tied team they come off the cord until they reach the
     // others again, or it would drag everyone along.
     let cp = 0;
@@ -290,17 +291,17 @@ export class Game {
     cloud.runStop(why);
   }
 
-  // Vanished (the vanish command, main.js): gone for everyone else and flying, through anything, with nothing to run into or
-  // fall off. Coming back the climber just drops from where they are, and climbs on from there. The climb earns nothing more,
-  // so doing this on purpose gets nobody anything.
+  // Vanished (the vanish command, main.js): gone for everyone else and flying, through anything, with nothing on the map able
+  // to reach them. Coming back the climber just drops from where they are, and climbs on from there, earning again. The
+  // recording says where the flight ended, and the server checks this player may fly at all (verify-worker.mjs, act 'f').
   setFlying(on) {
     if (on === this.flying || this.won) return;
     this.flying = on;
     const me = this.me;
     me.spawn(me.x, me.y, me.z);
     this.aiming = me.aim = false;
+    if (this.rec) { if (on) this.rec.act('f', 1); else this.rec.act('f', 0, me.x, me.y, me.z, this.cp); }
     if (on) {
-      this.stopEarning('flying');
       this.bees = null;
       this.evMarks.clear();
     }
@@ -865,7 +866,7 @@ export class Game {
     if (!rigs || !this.jumpers.length) return;
     const cam = this.R.camera.position, list = [];
     for (const J of this.jumpers) if (J.active && Math.abs(J.y - cam.y) < 45 && Math.hypot(J.x - cam.x, J.z - cam.z) < 50) list.push(J);
-    if (list.length && !this.jumpWarned) {
+    if (list.length && !this.jumpWarned && !this.flying) {
       this.jumpWarned = true;
       this.app.ui.toast(`${list[0].j.name} ahead! Jump past or SHOOT to stun`, 'bad');
     }
@@ -1400,6 +1401,8 @@ export class Game {
   save() {
     // Halfway through a physics step the climber isn't anywhere yet. It happens when the step is done.
     if (this.stepping) { this.saveLater = true; return; }
+    // Alone, a save is where the server picks the climb up again, and it doesn't follow a flight. The last one from before it stands.
+    if (this.flying && this.solo) return;
     const m = this.me, rs = this.rec ? this.rec.save() : undefined;
     cloud.climbSaved();
     store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
@@ -1534,7 +1537,7 @@ export class Game {
     const eye = clamp((me.y - last.y0) / (this.L.top - last.y0), 0, 1);
     // The map's event where I am (none inside a maze garden): the storm's gust blows the weather about, the rest is drawn
     // by app.evfx.
-    const indoor = !!this.mazeAround(me), ev = indoor ? null : this.storm.event(T, zi), gust = ev && ev.kind === 'gust' ? ev : null;
+    const indoor = !!this.mazeAround(me), ev = indoor || this.flying ? null : this.storm.event(T, zi), gust = ev && ev.kind === 'gust' ? ev : null;
     R.indoor = indoor;
     this.wind.x = this.wind.z = 0;
     if (gust && gust.on) {
@@ -1567,7 +1570,7 @@ export class Game {
     R.update(dt, cam.position, zone, eye, this.wind);
     R.shadowFocus(me.x, me.y, me.z);
     this.bgBolt -= dt;
-    if (this.bgBolt <= 0 && this.L.mapKey === 'storm' && !indoor) {
+    if (this.bgBolt <= 0 && this.L.mapKey === 'storm' && !indoor && !this.flying) {
       this.bgBolt = (2 + Math.random() * 7) * (1 - zi * 0.08) * (1 + eye * 3);
       const a = Math.random() * Math.PI * 2, r = 90 + Math.random() * 260;
       R.bolt(me.x + Math.cos(a) * r, Math.max(0, me.y - 60 + Math.random() * 50), me.z + Math.sin(a) * r, 2.2);
@@ -1593,7 +1596,7 @@ export class Game {
       this.nearRelic = null;
       for (const r of this.L.relics) if (!hasRelic(r.id) && pathOn(r.kind, this.diff, this.custom) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
       const z0 = this.zaps.get(this.slot), th0 = this.storm.thunder(T, this.slot);
-      app.ui.hud(this, { T, zone: zi, ev, thunder: th0 && !(z0 && z0.k === th0.k && z0.struck) && !this.mazeAround(me) ? th0 : null });
+      app.ui.hud(this, { T, zone: zi, ev, thunder: th0 && !this.flying && !(z0 && z0.k === th0.k && z0.struck) && !this.mazeAround(me) ? th0 : null });
     }
     // Crosshair turns red over a target (checked ~12 times a second while aiming).
     if (this.aiming) {

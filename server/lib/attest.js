@@ -151,14 +151,14 @@ class Attest {
   check(userId, a) {
     if (a.err) return { text: `Not available on this phone (${String(a.err).slice(0, 80)})` };
     const c = typeof a.challenge === 'string' ? this.challenges.get(a.challenge) : null;
-    if (!c || c.userId !== userId || c.exp < Date.now()) return { text: 'Answer to an old or unknown question', flag: 'The hardware check was answered with a question the server never asked: replayed or made up.', score: 15 };
+    if (!c || c.userId !== userId || c.exp < Date.now()) return { text: 'Answer to an old or unknown question' };
     this.challenges.delete(a.challenge);
     let certs;
     try {
       if (!Array.isArray(a.chain) || a.chain.length < 2 || a.chain.length > 8) throw new Error('bad chain');
       certs = a.chain.map((b) => new crypto.X509Certificate(Buffer.from(String(b), 'base64')));
     } catch (e) {
-      return { text: 'Unreadable answer', flag: 'The hardware check answer is not a real certificate chain.', score: 15 };
+      return { text: 'Unreadable answer' };
     }
     // Every certificate is signed by the next, and the last by a root Google publishes.
     try {
@@ -173,7 +173,7 @@ class Attest {
       const known = this.roots.length ? this.roots.some((r) => r.fingerprint256 === top.fingerprint256 || top.verify(r.publicKey)) : null;
       if (known === false) throw new Error('not from Google');
     } catch (e) {
-      return { text: `Failed: ${e.message}`, flag: `The hardware check failed: ${e.message}. That is what faked attestation looks like, but also what some rooted phones do, so it counts little.`, score: 10 };
+      return { text: `Failed: ${e.message}` };
     }
     let rec;
     try {

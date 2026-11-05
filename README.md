@@ -242,7 +242,7 @@ saved climb from the lobby.
 * **Emotes**: the smiley at the top right opens the menu during a climb. Everyone climbing with you sees them. Flips
   start with a small jump, and moving ends a pose.
 
-Keyboard and mouse: WASD, Space, Shift, E, F grapple, Q shield, C dash (left Ctrl too, except in a browser), T emotes, H tip. The mouse turns the camera, hold right click (or R) to aim and left click fires, Esc pauses. In the PC app, F11 or Alt+Enter is fullscreen. On a PC the frame rate goes from 60 to 144 in Settings.
+Keyboard and mouse: WASD, Space, C grab (Ctrl too, except in a browser), E, F grapple, Q shield, Left Shift dash, T emotes, H tip. The mouse turns the camera, hold right click (or R) to aim and left click fires, Esc pauses. In the PC app, F11 or Alt+Enter is fullscreen. On a PC the frame rate goes from 60 to 144 in Settings.
 
 Controller: left stick moves, right stick looks, A jump, B grab, X grapple, Y or pressing in the left stick dash, LT hold
 to aim, RT fire while aiming, RB reel, LB shield, direction pad down emotes. As soon as a controller is used, the

@@ -66,12 +66,12 @@ input { font: inherit; color: var(--tx); }
 .panel::-webkit-scrollbar { display: none; }
 .ph { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .ph h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.01em; flex: 1; }
-.back { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.06); font-size: 22px; line-height: 1; }
+.back { width: 36px; height: 36px; flex: none; padding: 0; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.06); }
+.back svg { display: block; width: 22px; height: 22px; }
+.back path { fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
 /* The shop's way out: big, bright and labelled, so nobody has to hunt for it. */
 .back.big { width: auto; height: 42px; padding: 0 16px 0 10px; display: flex; align-items: center; gap: 6px; border-radius: 12px; font: 800 16px/1 system-ui;
   color: #06222a; background: linear-gradient(180deg, #8ff6dc, #4fd8c0); border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 0 14px rgba(127, 248, 216, 0.55); }
-.back.big svg { width: 22px; height: 22px; }
-.back.big path { fill: none; stroke: currentColor; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
 .back.big:active { transform: scale(0.96); }
 .sub { color: var(--tx2); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
 
@@ -488,6 +488,9 @@ body.pad .set { grid-template-columns: 1fr; }
 /* Foldables and tablets: everything bigger, rather than small buttons on a big empty screen. */
 @media (min-width: 900px) and (min-height: 620px) { #menu { zoom: 1.25; } }
 @media (min-width: 1100px) and (min-height: 760px) { #menu { zoom: 1.5; } }
+/* 1440p and 4K: the same layout as 1080p, at the same share of the screen. */
+@media (min-width: 2400px) and (min-height: 1300px) { #menu { zoom: 2; } }
+@media (min-width: 3600px) and (min-height: 2000px) { #menu { zoom: 3; } }
 
 @media (max-height: 449px) {
   #menu { padding: calc(10px + var(--it)) calc(14px + var(--ir)) calc(10px + var(--ib)) calc(14px + var(--il)); }
@@ -506,7 +509,8 @@ body.pad .set { grid-template-columns: 1fr; }
   .panel { padding: 12px 14px; border-radius: 16px; }
   .ph { margin-bottom: 8px; }
   .ph h2 { font-size: 18px; }
-  .back { width: 32px; height: 32px; font-size: 20px; }
+  .back { width: 32px; height: 32px; }
+  .back svg { width: 20px; height: 20px; }
   .back.big { width: auto; height: 38px; font-size: 15px; }
   .sub { margin-bottom: 8px; font-size: 12.5px; line-height: 1.4; }
   .cards, .maps { gap: 7px; }

@@ -220,7 +220,7 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     const list = listFor(tab);
     show(`<div class="shop">
       <div class="shopside">
-        <div class="ph"><button class="back big" data-a="back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 L7 12 L15 20"/></svg><span>Back</span></button><div class="wallet">${COIN}<b>${coins()}</b></div></div>
+        <div class="ph"><button class="back big" data-a="back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4 L8 12 L16 20"/></svg><span>Back</span></button><div class="wallet">${COIN}<b>${coins()}</b></div></div>
         <div class="shopinfo">${sideHtml()}</div>
       </div>
       <div class="shopmain">

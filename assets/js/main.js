@@ -450,7 +450,8 @@ $('#menu').addEventListener('click', (e) => {
   const f = handlers[b.dataset.a];
   if (f) f(b);
 });
-const header = (title) => `<div class="ph"><button class="back" data-a="back">‹</button><h2>${title}</h2></div>`;
+// The arrow is drawn, not typed: a font puts its arrow character wherever it likes, which is never quite the middle.
+const header = (title) => `<div class="ph"><button class="back" data-a="back" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4 L8 12 L16 20"/></svg></button><h2>${title}</h2></div>`;
 
 // Best times per map and difficulty, keyed "map:diff".
 const bestOf = (map) => { const b = store.get('best2', {}), out = {}; for (const d of DIFFS) if (b[map + ':' + d.id]) out[d.id] = b[map + ':' + d.id]; return out; };
@@ -1493,7 +1494,7 @@ function howTo(back) {
   app.screen = 'how';
   show(`<div class="panel">${header('How to play')}<div class="how">
     ${ON_PC
-    ? '<div><b>Mouse and keyboard</b>W A S D moves and the mouse turns the camera. Space jumps, Shift grabs, E reels, C dashes, F is the action button and Q the shield. Hold right click to aim, then left click fires. T opens emotes, H reads a tip and Esc pauses. A controller works too.</div>'
+    ? '<div><b>Mouse and keyboard</b>W A S D moves and the mouse turns the camera. Space jumps, C grabs (Ctrl too in the PC app), E reels, Left Shift dashes, F is the action button and Q the shield. Hold right click to aim, then left click fires. T opens emotes, H reads a tip and Esc pauses. A controller works too.</div>'
     : '<div><b>Move and look</b>Touch the left side to get a stick under your thumb. Drag the right side to turn the camera.</div>'}
     <div><b>JUMP</b>Tap for a hop, hold for full height. You can still jump for a split second after running off an edge.</div>
     <div><b>GRAB (hold)</b>Clamps you to whatever you're touching, even walls. The ring shows your grip, which drains faster on walls. It stops you sliding, but a hit from an enemy or a trap still tears you off.</div>
@@ -1520,7 +1521,7 @@ function howTo(back) {
     <div><b>Falling</b>A fall drops you to whatever is below. Hit the ground and the team restarts at the last checkpoint (with checkpoints off: back at the start). Without the cord, only you go back, to your own last checkpoint.</div>
     <div><b>Obstacles</b>Every map has 26 of its own: swinging weights, rolling logs and balls, presses that slam down, spikes that pop up, jets, spinning bars, bumpers that throw you, platforms that blink out or drop open, turntables, mud that slows you and slippery decks. Most of them shake, flicker or glow just before they strike, so watch for the warning. The higher you climb, the more of them there are and the faster they move, and near the top come six harder endgame ones.</div>
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
-    <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>Shift</kbd> grab, <kbd>E</kbd> reel, <kbd>C</kbd> dash, <kbd>T</kbd> emotes, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
+    <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>C</kbd>${IS_WEB ? '' : ' or <kbd>Ctrl</kbd>'} grab, <kbd>E</kbd> reel, <kbd>Left Shift</kbd> dash, <kbd>T</kbd> emotes, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
     <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> grab, <kbd>RB</kbd> reel, <kbd>Y</kbd> or <kbd>L3</kbd> dash, <kbd>LT</kbd> hold to aim, <kbd>RT</kbd> fire while aiming, <kbd>Down</kbd> on the direction pad emotes, <kbd>X</kbd> grapple, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
     <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
   </div></div>`, { back });
@@ -1833,7 +1834,7 @@ function boot() {
   app.input = new Input($('#touch'));
   app.input.onPause = () => { if (app.screen === 'game') pause(); else if (app.screen === 'pause') resume(); else if (ON_PC && app.screen !== 'title') goBack(); };
   app.input.onTip = () => { if (app.screen === 'game' && ui.nearTip) ui.tip(ui.nearTip); };
-  if (ON_PC) for (const [id, key] of [['bJump', 'Space'], ['bGrab', 'Shift'], ['bReel', 'E'], ['bAct', 'F'], ['bShoot', 'Right + Left'], ['bShield', 'Q'], ['bDash', 'C']]) {
+  if (ON_PC) for (const [id, key] of [['bJump', 'Space'], ['bGrab', 'C'], ['bReel', 'E'], ['bAct', 'F'], ['bShoot', 'Right + Left'], ['bShield', 'Q'], ['bDash', 'Shift']]) {
     const k = document.createElement('kbd');
     k.textContent = key;
     $('#' + id).append(k);

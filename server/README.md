@@ -283,7 +283,7 @@ who with, which room), and buttons to watch them, join their room, see more or k
   climb nobody is told: no eye, no name. On that screen you fly: stick or WASD goes where you look, up and down
   with the buttons or Space and C, faster with FAST or E, through anything. The team can switch it on with Fly without
   vanishing too. It is only a camera, nobody in the climb sees it.
-* On your own climb, `/vanish` makes you fly the same way with the climbing buttons: JUMP or Space up, GRAB, Shift or C
+* On your own climb, `/vanish` makes you fly the same way with the climbing buttons: JUMP or Space up, GRAB or C
   down, REEL or E fast. Your stickman, name and cord are gone for the others in the room, though the room's player count
   still counts you. Waves, wind, lava, quakes, bees and lightning can't reach you and don't warn you, and you collect
   nothing while you fly. `/vanish off` drops you from where you are, and from there you get coins and checkpoints again.

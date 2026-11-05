@@ -5,7 +5,9 @@ import { ON_PC, IS_WEB } from './platform.js';
 const MOUSE_LOOK = 0.4, MOUSE_JUMP = 250;
 const clampMove = (d) => Math.max(-MOUSE_JUMP, Math.min(MOUSE_JUMP, d));
 // Keys light up the button they stand for.
-const KEY_BTN = { Space: 'bJump', ShiftLeft: 'bGrab', ShiftRight: 'bGrab', KeyJ: 'bGrab', KeyE: 'bReel', KeyK: 'bReel', KeyF: 'bAct', KeyQ: 'bShield', KeyC: 'bDash', KeyR: 'bShoot' };
+const KEY_BTN = { Space: 'bJump', ShiftLeft: 'bDash', ShiftRight: 'bGrab', KeyC: 'bGrab', KeyJ: 'bGrab', KeyE: 'bReel', KeyK: 'bReel', KeyF: 'bAct', KeyQ: 'bShield', KeyR: 'bShoot' };
+// In a browser Ctrl is out: with W held down, as it always is while running, it would close the tab.
+if (!IS_WEB) KEY_BTN.ControlLeft = KEY_BTN.ControlRight = 'bGrab';
 
 export class Input {
   constructor(layer) {
@@ -223,8 +225,7 @@ export class Input {
       if (e.code === 'Space' && !this.keys.has('Space')) this.jumpEdge = true;
       if (e.code === 'KeyF' && !this.keys.has('KeyF')) this.edge.act = true;
       if (e.code === 'KeyQ' && !this.keys.has('KeyQ')) this.edge.shield = true;
-      // In a browser Ctrl is out: with W held down, as it always is while running, it would close the tab.
-      if ((e.code === 'KeyC' || (e.code === 'ControlLeft' && !IS_WEB)) && !this.keys.has(e.code)) this.edge.dash = true;
+      if (e.code === 'ShiftLeft' && !this.keys.has('ShiftLeft')) this.edge.dash = true;
       if (e.code === 'KeyH' && !this.keys.has('KeyH') && this.onTip) this.onTip();
       if (e.code === 'KeyT' && !this.keys.has('KeyT') && this.onEmote) this.onEmote();
       if (e.code === 'KeyR' && !this.keys.has('KeyR')) this.btn.aim = true;
@@ -284,7 +285,7 @@ export class Input {
     if (k.has('KeyD') || k.has('ArrowRight')) sx += 1;
     if (k.has('KeyW') || k.has('ArrowUp')) sy += 1;
     if (k.has('KeyS') || k.has('ArrowDown')) sy -= 1;
-    let jump = this.btn.jump || k.has('Space'), grab = this.btn.grab || k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyJ');
+    let jump = this.btn.jump || k.has('Space'), grab = this.btn.grab || k.has('KeyC') || k.has('ShiftRight') || k.has('KeyJ') || (!IS_WEB && (k.has('ControlLeft') || k.has('ControlRight')));
     let reel = this.btn.reel || k.has('KeyE') || k.has('KeyK');
     let jumpPressed = this.jumpEdge, fireHold = this.btn.fire;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];

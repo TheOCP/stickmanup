@@ -184,15 +184,26 @@ Spend them in the shop:
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
   the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
 
+**Hunted.** Creatures don't only walk their beat any more. In a maze they notice you from a few cells away (further on the
+harder settings), then come through the corridors after you, never through a wall, and stay after you for as long as you
+are in that maze. On a ledge they turn on you as you come near and stay on their platform. You still run faster than they
+do, a bite makes them let go for a moment, and SHOOT paralyses them. In each maze you have 3 hearts, shown at the top of
+the screen: a bite takes one, and with none left you go back to the checkpoint as if you had fallen. The next maze, or the
+next try, starts with 3 again.
+
 **Relic courses.** Finding something only opens it in the shop: it still costs coins. Every map has four hard parkour
-courses out past the route, on every difficulty: two to legendary suits, one to the epic vault and one to the legendary
+courses out past the route, on every difficulty and with any rules: two to legendary suits, one to the epic vault and one to the legendary
 weapon. Each starts at a gate with a pillar of light that can be seen from far away, and a marker on the screen and gems
 on the height bar show where the nearest ones are. The shop says on which map and from what height each thing is found.
-A course mixes parts picked by chance from twenty kinds, and six of them are found nowhere else: a big wheel you ride
+A course wears its map's looks: stones, gate, sign and vault in the map's own surfaces, spikes on the gate, vines or cables
+hanging under the stones and trees or masts around it on islets of their own. Its obstacles work the same everywhere but
+are something else on each map: the spinning bars are a flock of attacking birds in the forest, diving gulls on the beach,
+crackling lightning in the storm, a fire bar in the volcano, a laser in the city and water jets by the waterfall, and what
+falls is a beehive, a coconut, a boulder, a drone or a lava bomb. A course mixes parts picked by chance from twenty kinds, and six of them are found nowhere else: a big wheel you ride
 round, a windmill you cross on its blades, a stone deck with shock rings to jump, a run under falling comets, gaps with
 a gravity well that pulls you off line, and stones that blink in pairs. They differ per map and per course, but are the
 same for everyone and on every climb, because the server replays each climb to check it. A fall brings you back to the
-last green marker on the course, and the ring at the end takes you back to the route. Custom rules have no courses.
+last green marker on the course, and the ring at the end takes you back to the route.
 `dev/secrettest.js` plays each course with the real physics. Legendary suits found before this update stay yours.
 
 Your other climbers see what you wear. Signed in, what you wear and the weapon you picked are kept on your account, so

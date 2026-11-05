@@ -33,6 +33,7 @@ export class Storm {
     this.th = THUNDER[diff] || THUNDER[1];
     this.setHaz(diff);
     this.stun = new Map(); // monster index -> { from, until } (frozen where it was hit)
+    this.hunt = new Map(); // monster index -> where it is while it comes after you (game.js huntStep)
   }
 
   // Thunder for player slot at time t: { k (strike id), warn 0..1, strikeAt, phase 'warn'|'idle' }.
@@ -44,6 +45,19 @@ export class Storm {
   }
 
   monsterPos(m, t, out) {
+    const s = this.stun.get(m.i), h = this.hunt.get(m.i);
+    if (h) {
+      out.x = h.x; out.z = h.z; out.y = m.y; out.dir = 1;
+      out.hunt = true; out.hx = h.hx; out.hz = h.hz; out.lunge = h.lunge;
+      out.stunned = !!s && t >= s.from && t < s.until;
+      return out;
+    }
+    out.hunt = false;
+    return this.patrolPos(m, t, out);
+  }
+
+  // Where a creature is on its beat.
+  patrolPos(m, t, out) {
     const s = this.stun.get(m.i), tt = s && t >= s.from && t < s.until ? s.from : t;
     const f = 0.5 - 0.5 * Math.cos(TAU * (tt / m.per + m.ph));
     out.x = m.ax + (m.bx - m.ax) * f; out.z = m.az + (m.bz - m.az) * f;

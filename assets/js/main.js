@@ -2,7 +2,7 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, pathOn, MAZE_RELICS } from './level.js';
+import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, MAZE_RELICS } from './level.js';
 import { NavPath } from './navpath.js';
 import { EMOTES } from './emotes.js';
 import { World } from './physics.js';
@@ -87,7 +87,7 @@ function relicLine(mapId) {
 function rulesHtml(r, editable, solo) {
   return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
-    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster. Custom rules have no relic courses.</p>`;
+    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
 }
 const roleChip = (r) => { const i = roleInfo(r); return i ? `<em class="role${ROLE_TAGS[r] ? ' ' + r : ''}" style="background:${i.color}">${esc(i.tag)}</em>` : ''; };
 const roleTag = (p) => roleChip(p.role);
@@ -199,7 +199,7 @@ const ui = (app.ui = {
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
     // Where the relics still to find are: the height their course starts at.
-    const rel = (L.relics || []).filter((r) => !hasRelic(r.id) && pathOn(r.kind, g.diff, g.custom)).map((r) => `<i class="rl ${r.kind}" style="bottom:${(((r.gate || r).y) / top) * 100}%"></i>`).join('');
+    const rel = (L.relics || []).filter((r) => !hasRelic(r.id)).map((r) => `<i class="rl ${r.kind}" style="bottom:${(((r.gate || r).y) / top) * 100}%"></i>`).join('');
     $('#hAlt .marks').innerHTML = cps + rel + [...g.s.players.keys()].filter((s) => s === g.slot || !g.hidden.has(s)).map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
     $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].filter((p) => p.slot === g.slot || !g.hidden.has(p.slot)).map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
@@ -258,6 +258,16 @@ const ui = (app.ui = {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s), pl = g.s.players.get(s);
       putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
     }
+  },
+  // Inside a maze: how many hearts are left.
+  hearts(g) {
+    const el = this.heartsEl || (this.heartsEl = $('#hHearts')), show = !g.flying && !g.won && !!g.mazeAround(g.me);
+    if (el.hidden === show) el.hidden = !show;
+    if (!show || el.__n === g.hearts) return;
+    const lost = el.__n !== undefined && g.hearts < el.__n;
+    el.__n = g.hearts;
+    el.innerHTML = [0, 1, 2].map((i) => `<svg viewBox="0 0 24 24" class="${i < g.hearts ? '' : 'off'}" aria-hidden="true"><path d="M12 21s-8.5-5.4-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 3.2C20.5 15.6 12 21 12 21z"/></svg>`).join('');
+    if (lost) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
   },
   // The marker on the screen for the nearest relic still to find (game.js relicAim): over its gate, or on the edge of the screen
   // on the side it is on, with how far it is.
@@ -1538,6 +1548,7 @@ function howTo(back) {
     <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to paralyse them for over a minute.</div>
     <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
     <div><b>Legendary suits</b>Some can be bought for a lot of coins. Some are earned by what you do on Hardcore. The rest are relics, on the maps on any difficulty: at the end of the relic courses and in the maze gardens.</div>
+    <div><b>Mazes</b>Creatures hunt you through the corridors once they notice you. You have 3 hearts in each maze: a bite takes one, and with none left you go back to the checkpoint. SHOOT paralyses a creature for a while.</div>
     <div><b>Relic courses</b>Each map has four hard parkour courses out past the route, each with a relic at the end that opens things in the shop. Look for a gate with a pillar of light: a marker on the screen and gems on the height bar show where the nearest ones are. A fall brings you back to the last green marker on the course, and the ring at the end takes you back to the route.</div>
     <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
     <div><b>SHOOT</b>Doors block some bridges. Hold SHOOT to aim at the round target and let go to open the door for the whole team. A shot paralyses monsters, bats and jumpers for over a minute, and longer with better weapons. Weapons are in the shop.</div>

@@ -126,8 +126,66 @@ const bracket = (cols) => [[0, 0, 0.34], [0.2, 0.32, 0.26], [-0.16, 0.56, 0.2], 
   P(new THREE.CylinderGeometry(r, r * 0.92, 0.07, 12, 1, false, -Math.PI / 2, Math.PI), M(x, y, -0.02, 1, 1, 1, -0.08), cols[i % 2]),
   P(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 0.02, 12, 1, false, -Math.PI / 2, Math.PI), M(x, y + 0.045, -0.02, 1, 1, 1, -0.08), cols[2])]);
 
+// Hanging under a stone from y = 0 down: a wandering strand, with leaves or links on it. Few triangles: there are many of these.
+function hanging(seed, len, stem, th, bits, bitR) {
+  const R = rng(seed), parts = [];
+  let x = 0, z = 0;
+  for (let y = 0; y > -len; y -= 0.5) {
+    const nx = x + (R() - 0.5) * 0.16, nz = z + (R() - 0.5) * 0.16;
+    parts.push(P(new THREE.CylinderGeometry(th, th * 1.1, 0.54, 3, 1, true), M((x + nx) / 2, y - 0.25, (z + nz) / 2, 1, 1, 1, (nz - z) * 2, 0, (x - nx) * 2), stem));
+    if (bits) for (let k = 0; k < 2; k++) parts.push(P(new THREE.TetrahedronGeometry(bitR, 0), M(nx + (R() - 0.5) * 0.24, y - 0.1 - R() * 0.3, nz + (R() - 0.5) * 0.24, 1.5, 0.6, 1.1, R() * 3, R() * 3, R() * 3), bits[k % bits.length]));
+    x = nx; z = nz;
+  }
+  return parts;
+}
+// Wound round a post from y = 0 up.
+function wound(seed, h, rad, stem, th, bits, bitR, glow) {
+  const R = rng(seed), parts = [];
+  for (let y = 0, a = R() * TAU; y < h; y += 0.26, a += 0.9) {
+    parts.push(P(new THREE.CylinderGeometry(th, th, 0.34, 3, 1, true), M(Math.cos(a) * rad, y + 0.13, Math.sin(a) * rad, 1, 1, 1, 0.9, -a, 0), stem, glow, glow ? 2.2 : 0));
+    if (bits && R() < 0.75) parts.push(P(new THREE.TetrahedronGeometry(bitR, 0), M(Math.cos(a) * (rad + 0.06), y + 0.1, Math.sin(a) * (rad + 0.06), 1.5, 0.6, 1.1, R() * 3, R() * 3, R() * 3), bits[(R() * bits.length) | 0]));
+  }
+  return parts;
+}
+// A bird with its beak toward +z and its wings up (k above 0) or down.
+const bird = (body, wing, beak, k) => [
+  P(ico(0.11, 0), M(0, 0, 0, 0.8, 0.7, 1.5), body), P(ico(0.075, 0), M(0, 0.04, 0.17), body), P(cone(0.03, 0.11, 4), M(0, 0.03, 0.27, 1, 1, 1, Math.PI / 2, 0, 0), beak),
+  P(ico(0.022, 0), M(0.05, 0.07, 0.2), 0x200404, 0xff2a2a, 3), P(ico(0.022, 0), M(-0.05, 0.07, 0.2), 0x200404, 0xff2a2a, 3),
+  P(box(0.34, 0.015, 0.14), M(0.2, k * 0.09, 0, 1, 1, 1, 0, 0, k * 0.55), wing), P(box(0.34, 0.015, 0.14), M(-0.2, k * 0.09, 0, 1, 1, 1, 0, 0, -k * 0.55), wing),
+  P(box(0.1, 0.015, 0.16), M(0, 0, -0.2), wing)];
+
 // ---------------------------------------------------------------- plants and props (about 1 unit = 1 m)
 const MODELS = {
+  // On the relic courses: what hangs under the stones, is wound round the gates, and what the trees stand on.
+  hangvine0: () => hanging(71, 3.2, 0x3a5a24, 0.022, [0x2f6a2a, 0x3c8030, 0x58993c], 0.12),
+  hangvine1: () => hanging(72, 2.0, 0x3a5a24, 0.02, [0x3c8030, 0x58993c], 0.11),
+  hangrope: () => hanging(73, 2.4, 0x6a8a3a, 0.03, [0x3a7a4a, 0x5a9a5a], 0.1),
+  hangcable: () => [...hanging(74, 2.6, 0x1a1c22, 0.02), P(ico(0.05, 0), M(0, -2.6, 0), 0xe8f0ff, 0x7ff8ff, 2)],
+  hangchain: () => [...hanging(75, 2.4, 0x2a2220, 0.03, [0x2a2220], 0.06), P(ico(0.09, 0), M(0, -2.4, 0), 0x3a1a10, 0xff5a1a, 2.4)],
+  hangneon: () => [...hanging(76, 2.2, 0x1a1c22, 0.02), P(ico(0.05, 0), M(0, -2.2, 0), 0xffd0f0, 0xff4fd8, 2.4)],
+  postvine: () => wound(81, 3.4, 0.28, 0x3a5a24, 0.025, [0x2f6a2a, 0x3c8030, 0x58993c], 0.1),
+  postrope: () => wound(82, 3.4, 0.28, 0xc8a46a, 0.03),
+  postcable: () => wound(83, 3.4, 0.23, 0x1a1c22, 0.022, [0xd8b020], 0.05),
+  postchain: () => wound(84, 3.4, 0.23, 0x2a2220, 0.03, [0x3a1a10], 0.06),
+  postneon: () => wound(85, 3.4, 0.23, 0xffd0f0, 0.018, null, 0, 0xff4fd8),
+  isletG: () => [P(ico(1, 1), M(0, -0.55, 0, 1.3, 0.7, 1.3), 0x6a5a48), P(cyl(1.2, 1.3, 0.16, 10), M(0, 0, 0), 0x4f7a34)],
+  isletS: () => [P(ico(1, 1), M(0, -0.55, 0, 1.3, 0.7, 1.3), 0x8a7a60), P(cyl(1.2, 1.3, 0.16, 10), M(0, 0, 0), 0xd9c49c)],
+  isletB: () => [P(ico(1, 1), M(0, -0.55, 0, 1.3, 0.7, 1.3), 0x2a1a16), P(cyl(1.2, 1.3, 0.16, 10), M(0, 0, 0), 0x3a2a26), P(ico(0.3, 0), M(0.7, -0.45, 0.5), 0x3a1a10, 0xff5a1a, 2), P(ico(0.24, 0), M(-0.6, -0.55, -0.6), 0x3a1a10, 0xff5a1a, 2)],
+  isletM: () => [P(box(2.4, 0.2, 2.4), M(0, -0.1, 0), 0x4a5260), P(box(0.3, 1.2, 0.3), M(0.8, -0.7, 0.8, 1, 1, 1, 0.3, 0, 0.2), 0x3a4250), P(box(0.3, 0.9, 0.3), M(-0.8, -0.6, -0.5, 1, 1, 1, -0.3, 0, 0.2), 0x3a4250), P(box(2.44, 0.05, 0.08), M(0, 0.01, 1.18), 0x3a4250, 0x3ff0d0, 2)],
+  isletC: () => [P(box(2.4, 0.5, 2.4), M(0, -0.25, 0), 0x5a5e6e), P(box(2.44, 0.05, 0.08), M(0, 0.01, 1.18), 0x2a2e38, 0xff4fd8, 2.4), P(box(2.44, 0.05, 0.08), M(0, 0.01, -1.18), 0x2a2e38, 0x40e0ff, 2.4)],
+  isletW: () => [P(ico(1, 1), M(0, -0.55, 0, 1.3, 0.7, 1.3), 0x5a6a66), P(cyl(1.2, 1.3, 0.16, 10), M(0, 0, 0), 0x3f7a4a)],
+  birdU: () => bird(0x1a1a22, 0x24242e, 0xd8a020, 1),
+  birdD: () => bird(0x1a1a22, 0x24242e, 0xd8a020, -1),
+  gullU: () => bird(0xeeeae2, 0xb8bcc4, 0xe8a020, 1),
+  gullD: () => bird(0xeeeae2, 0xb8bcc4, 0xe8a020, -1),
+  beehive: () => [P(ico(0.5, 1), M(0, 0, 0, 0.85, 1, 0.85), 0xc89a3a), P(new THREE.TorusGeometry(0.42, 0.04, 4, 12), M(0, 0.18, 0, 1, 1, 1, Math.PI / 2), 0x8a6420), P(new THREE.TorusGeometry(0.42, 0.04, 4, 12), M(0, -0.14, 0, 1, 1, 1, Math.PI / 2), 0x8a6420), P(ico(0.1, 0), M(0, -0.28, 0.32), 0x1a1208), P(ico(0.05, 0), M(0.5, 0.2, 0.2), 0x1a1208), P(ico(0.05, 0), M(-0.45, -0.1, 0.35), 0x1a1208), P(ico(0.05, 0), M(0.2, 0.5, -0.3), 0x1a1208)],
+  coconut: () => [P(ico(0.5, 1), M(0, 0, 0), 0x5a3a20), P(ico(0.07, 0), M(0.15, 0.2, 0.42), 0x1a1208), P(ico(0.07, 0), M(-0.15, 0.2, 0.42), 0x1a1208), P(ico(0.07, 0), M(0, 0, 0.48), 0x1a1208)],
+  boulder: () => [P(new THREE.DodecahedronGeometry(0.5, 0), M(0, 0, 0), 0x7a7a76), P(new THREE.DodecahedronGeometry(0.22, 0), M(0.25, 0.3, 0.1), 0x3f7a4a)],
+  lavabomb: () => [P(new THREE.DodecahedronGeometry(0.5, 0), M(0, 0, 0), 0x2a1410, 0xff5a1a, 1.4)],
+  dronebomb: () => [P(box(0.5, 0.2, 0.5), M(0, 0, 0), 0x3a3e4a), P(box(0.16, 0.06, 0.16), M(0, -0.13, 0.1), 0x200404, 0xff3050, 3), ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].flatMap(([a, b]) => [P(box(0.36, 0.04, 0.04), M(a * 0.28, 0.08, b * 0.28, 1, 1, 1, 0, a * b * 0.78, 0), 0x2a2e38), P(cyl(0.16, 0.16, 0.015, 8), M(a * 0.42, 0.13, b * 0.42), 0x8a8e96)])],
+  flytrap: () => [P(cyl(0.05, 0.08, 1.5, 5), M(0, -1.05, 0), 0x3a7a32), P(new THREE.SphereGeometry(0.5, 10, 6, 0, TAU, 0, Math.PI / 2), M(0, 0.04, 0, 1, 0.8, 1, -0.35), 0x4f9a3a), P(new THREE.SphereGeometry(0.5, 10, 6, 0, TAU, 0, Math.PI / 2), M(0, -0.04, 0, 1, 0.8, 1, Math.PI + 0.35), 0x4f9a3a), P(ico(0.34, 0), M(0, 0, 0.08), 0x8a1a20, 0xff3040, 0.6),
+    ...[-0.36, -0.18, 0, 0.18, 0.36].flatMap((x) => [P(cone(0.035, 0.17, 3), M(x, 0.08, 0.42 - Math.abs(x) * 0.5, 1, 1, 1, Math.PI), 0xf0e6d0), P(cone(0.035, 0.17, 3), M(x, -0.08, 0.42 - Math.abs(x) * 0.5), 0xf0e6d0)])],
+  magnet: () => [P(new THREE.TorusGeometry(0.42, 0.13, 6, 12, Math.PI), M(0, 0.05, 0), 0xc83030), P(box(0.26, 0.3, 0.26), M(0.42, -0.1, 0), 0xc8ccd4, 0x40e0ff, 1.2), P(box(0.26, 0.3, 0.26), M(-0.42, -0.1, 0), 0xc8ccd4, 0xff4fd8, 1.2)],
   pine: () => [P(cyl(0.12, 0.2, 1.4), M(0, 0.7, 0), 0x5a3e28), P(cone(1.0, 1.7, 9), M(0, 1.7, 0), 0x24603a), P(cone(0.8, 1.5, 9), M(0, 2.4, 0, 1, 1, 1, 0, 0.4), 0x2c6e40), P(cone(0.55, 1.2, 9), M(0, 3.1, 0, 1, 1, 1, 0, 0.8), 0x347a46)],
   frostpine: () => [P(cyl(0.12, 0.2, 1.4), M(0, 0.7, 0), 0x4a3a30), P(cone(1.0, 1.7, 9), M(0, 1.7, 0), 0xd8eef6), P(cone(0.8, 1.5, 9), M(0, 2.4, 0, 1, 1, 1, 0, 0.4), 0x5a8a8a), P(cone(0.55, 1.2, 9), M(0, 3.1, 0, 1, 1, 1, 0, 0.8), 0xeaf6fa)],
   oak: () => [P(cyl(0.14, 0.24, 1.8), M(0, 0.9, 0), 0x5e4028), P(cyl(0.06, 0.08, 0.9), M(0.3, 1.5, 0, 1, 1, 1, 0, 0, -0.7), 0x5e4028),
@@ -508,6 +566,29 @@ export function buildScenery(view) {
   paletteTex();
 }
 const GEOS = new Map();
+// Many models as one mesh for vegMat(): [[name, Matrix4], ...]. All drawn together, so this is for things that stay put.
+export function mergedModels(list) {
+  const pos = [], nor = [], uvs = [], glo = [], v = new THREE.Vector3(), nm = new THREE.Matrix3();
+  for (const [name, m] of list) {
+    const g = modelGeo(name), a = g.attributes.position.array, n = g.attributes.normal.array, u = g.attributes.uv.array, l = g.attributes.aGlow.array;
+    nm.getNormalMatrix(m);
+    for (let i = 0; i < a.length; i += 3) {
+      v.set(a[i], a[i + 1], a[i + 2]).applyMatrix4(m);
+      pos.push(v.x, v.y, v.z);
+      v.set(n[i], n[i + 1], n[i + 2]).applyMatrix3(nm).normalize();
+      nor.push(v.x, v.y, v.z);
+      glo.push(l[i], l[i + 1], l[i + 2]);
+    }
+    for (let i = 0; i < u.length; i++) uvs.push(u[i]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setAttribute('aGlow', new THREE.Float32BufferAttribute(glo, 3));
+  g.computeBoundingSphere();
+  return g;
+}
 export function modelGeo(name) {
   if (!GEOS.has(name)) GEOS.set(name, build(MODELS[name]()));
   return GEOS.get(name);

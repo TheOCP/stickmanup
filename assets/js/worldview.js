@@ -8,6 +8,7 @@ import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
 import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail, modelGeo, vegMat } from './scenery.js';
 import { buildMazes, showMaze, MAZE_BEAST } from './mazeview.js';
+import { courseStones, courseDecor, courseGate, courseSweep, postMat, signTex, COMET_HEAD, WELL_HEAD, headMesh } from './courseview.js';
 import { buildStart, updateStart } from './startview.js';
 import { barkTex, rockTex as rockTexture, facadeTex, lighthouseTex, steelTex, buildCoreDetail } from './coreview.js';
 
@@ -208,9 +209,10 @@ export class WorldView {
     const L = this.level, courses = (L.relics || []).filter((r) => r.stones);
     this.secretParts = [];
     this.relicBeams = [];
+    this.facing = [];
     if (!courses.length) return;
     const tint = (kind) => (kind === 'epic' ? 0xc070ff : kind === 'weapon' ? 0xffd040 : 0xffa030);
-    const stone = new THREE.MeshStandardMaterial({ color: 0x3a3440, roughness: 0.6, metalness: 0.35, emissive: 0x241a30, emissiveIntensity: 0.4 });
+    const stone = postMat(this.key);
     const beam = (r, id, h, rad, a) => {
       const b = this.lightBeam(rad, h, tint(r.kind), a);
       this.root.add(b);
@@ -220,27 +222,8 @@ export class WorldView {
     };
     for (const r of courses) {
       const sec = r.kind === 'epic' ? 'open' : 'hard', keep = (o) => { o.visible = false; this.secretParts.push({ sec, o }); return o; };
-      // The stones that stay put: one mesh for each look on this course.
-      const groups = new Map();
-      for (const c of r.stones) {
-        if (c.dyn || c.crumble || c.blink || c.ghost) continue;
-        if (!groups.has(c.look)) groups.set(c.look, []);
-        groups.get(c.look).push(c);
-      }
-      for (const [look, cols] of groups) {
-        const parts = [], glow = HDR(look.g, this.glowK);
-        for (const c of cols) {
-          const m = mat4(c.x, c.y, c.z, 1, 1, 1, c.rx, c.ry, c.rz);
-          parts.push({ geo: BOXG, m: m.clone().scale(new THREE.Vector3(c.hx * 2, c.hy * 2, c.hz * 2)), glow: null });
-          for (const t of trimParts(c.hx, c.hy, c.hz, glow, true)) parts.push({ geo: t.geo, m: m.clone().multiply(t.m), glow: t.glow });
-          // A marker has a lamp on it.
-          if (c.rest !== undefined) {
-            parts.push({ geo: new THREE.CylinderGeometry(0.06, 0.09, 1.7, 6), m: m.clone().multiply(mat4(c.hx * 0.72, c.hy + 0.85, c.hz * 0.72, 1, 1, 1)), glow: null });
-            parts.push({ geo: new THREE.SphereGeometry(0.17, 10, 8), m: m.clone().multiply(mat4(c.hx * 0.72, c.hy + 1.8, c.hz * 0.72, 1, 1, 1)), glow: HDR(look.g, 3.4) });
-          }
-        }
-        keep(this.add(new THREE.Mesh(merge(parts), this.lookMat(look))));
-      }
+      courseStones(this, r, keep);
+      courseDecor(this, r, keep);
       // The vault: four pillars with fire on top, a glowing ring on the floor and a pedestal under the relic.
       const v = r.vault, g = new THREE.Group(), gl = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 3) }), h = v.s / 2 - 0.35;
       g.position.set(v.x, v.y, v.z);
@@ -272,75 +255,23 @@ export class WorldView {
       const curtain = this.lightBeam(0.62, 2.2, 0x7ff8d8, 0.55);
       curtain.position.y = 1.1;
       this.relicBeams.push({ o: curtain, part: true });
-      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: canvasTex(384, 108, (x, w, hh) => {
-        x.fillStyle = '#10201c'; x.fillRect(0, 0, w, hh);
-        x.fillStyle = '#7ff8d8'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = 'bold 56px sans-serif';
-        x.fillText(tr('WAY BACK'), w / 2, hh / 2 + 2, 350);
-      }), side: THREE.DoubleSide }));
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: signTex(this.key, 512, 144, 0x7ff8d8, tr('WAY BACK')) }));
       label.position.y = 2.5;
-      label.rotation.y = Math.PI / 2;
+      // It turns to whoever looks at it, so it can be read from anywhere.
+      label.userData.anim = true;
+      this.facing.push({ o: label, x: v.x + Math.cos(v.ry) * out.position.x, z: v.z - Math.sin(v.ry) * out.position.x, ry: v.ry });
       out.add(oRing, curtain, label);
       g.add(out);
       keep(g);
       this.add(g, false);
       beam(r, r.id, 110, 0.5, 0.55).position.set(v.x, v.y + 55, v.z);
-      // The gate where the course leaves the route, standing across the way out.
-      const G = r.gate, gate = new THREE.Group(), gm = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 2.6) });
-      gate.position.set(G.x, G.y, G.z);
-      gate.rotation.y = Math.PI / 2 - G.a;
-      for (const s of [-1, 1]) {
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.4, 0.22), stone);
-        p.position.set(s * 1.35, 1.7, 0);
-        const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), gm);
-        cap.position.set(s * 1.35, 3.62, 0);
-        gate.add(p, cap);
-      }
-      const lintel = new THREE.Mesh(new THREE.BoxGeometry(3, 0.24, 0.3), gm);
-      lintel.position.y = 3.4;
-      const veil = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 3.28), new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 0.5), transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-      veil.position.y = 1.64;
-      gate.add(lintel, veil);
-      keep(gate);
-      this.add(gate, false);
+      const G = r.gate;
+      courseGate(this, r, tint(r.kind), keep);
       beam(r, r.id, 70, 0.3, 0.6).position.set(G.x, G.y + 35, G.z);
-    }
-    // The signs: a post with a board, readable from both sides, the arrow pointing along the path.
-    for (const sg of L.signs || []) {
-      const c = tint(sg.kind), name = sg.kind === 'epic' ? 'EPIC' : sg.kind === 'weapon' ? 'LEGENDARY' : 'RELIC';
-      const face = (dir) => canvasTex(512, 256, (x, w, hh) => {
-        x.fillStyle = '#16121c'; x.fillRect(0, 0, w, hh);
-        x.strokeStyle = '#' + c.toString(16).padStart(6, '0'); x.lineWidth = 14; x.strokeRect(10, 10, w - 20, hh - 20);
-        x.fillStyle = x.strokeStyle; x.textAlign = 'center'; x.textBaseline = 'middle';
-        x.font = 'bold 64px sans-serif';
-        x.fillText(tr(name), w / 2 - dir * 50, 92, 380);
-        x.font = 'bold 40px sans-serif';
-        x.fillText(tr('THIS WAY'), w / 2 - dir * 50, 170, 380);
-        // The arrow, a shape and not a letter.
-        const ax = dir > 0 ? w - 70 : 70;
-        x.beginPath();
-        x.moveTo(ax + dir * 40, 128); x.lineTo(ax - dir * 20, 78); x.lineTo(ax - dir * 20, 108); x.lineTo(ax - dir * 50, 108);
-        x.lineTo(ax - dir * 50, 148); x.lineTo(ax - dir * 20, 148); x.lineTo(ax - dir * 20, 178); x.closePath();
-        x.fill();
-      });
-      const g = new THREE.Group();
-      g.position.set(sg.x, sg.y, sg.z);
-      g.rotation.y = sg.ry;
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 2.3, 6), stone);
-      post.position.y = 1.15;
-      const board = (dir, turn) => {
-        const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.95), new THREE.MeshBasicMaterial({ map: face(dir), color: HDR(0xffffff, 1.4) }));
-        m.position.set(0, 1.85, turn ? -0.03 : 0.03);
-        m.rotation.y = turn ? Math.PI : 0;
-        return m;
-      };
-      g.add(post, board(1, false), board(-1, true));
-      this.add(g, false);
-      g.visible = false;
-      this.secretParts.push({ sec: sg.sec, o: g });
     }
   }
 
-  // sec: which hidden paths this climb has ({ hard, open } from level.js pathsOf), or nothing for none.
+  // sec: which hidden paths this climb has ({ hard, open }, level.js ALL_SECRETS), or nothing for none.
   setSecrets(sec) {
     this.secNow = sec;
     for (const p of this.secretParts || []) p.o.visible = !!sec && !!sec[p.sec];
@@ -516,7 +447,14 @@ export class WorldView {
       const parts = [{ geo: st ? shapeGeo(cheap) : BOXG, m: mat4(0, 0, 0, c.hx * 2, c.hy * 2, c.hz * 2), glow: null }].concat(trimParts(c.hx, c.hy, c.hz, glow, true));
       let mat = c.crumble ? this.crumbleMat : c.look ? this.lookMat(c.look) : st ? patMat(st.pat, st.col === null ? z.tint : st.col) : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
       // Blinking platforms fade in and out, so each gets its own see-through material.
-      if (c.blink || c.ghost) { mat = mat.clone(); mat.transparent = true; mat.userData.live = true; }
+      if (c.blink || c.ghost) {
+        const from = mat;
+        mat = from.clone();
+        mat.onBeforeCompile = from.onBeforeCompile;
+        mat.customProgramCacheKey = from.customProgramCacheKey;
+        mat.transparent = true;
+        mat.userData.live = true;
+      }
       const mesh = this.add(new THREE.Mesh(merge(parts), mat)), off = c.kind === 'secret';
       if (off) mesh.visible = false;
       this.dyn.push({ c, mesh, fall: 0, off });
@@ -1315,7 +1253,7 @@ export class WorldView {
   // A lit material in an obstacle's colours (shared between obstacles with the same look).
   lookMat(look) {
     let m = this.looks.get(look);
-    if (!m) { m = panelMat(look.c, { roughness: 0.5, metalness: 0.3, emissive: look.g, emissiveIntensity: 0.22, pattern: 0 }); this.looks.set(look, m); }
+    if (!m) { m = panelMat(look.c, { roughness: 0.5, metalness: look.p ? 0.05 : 0.3, emissive: look.g, emissiveIntensity: look.e ?? 0.22, pattern: look.p || 0 }); this.looks.set(look, m); }
     return m;
   }
 
@@ -1366,6 +1304,7 @@ export class WorldView {
     const cyl = (r, h, seg = 12) => new THREE.CylinderGeometry(r, r, h, seg);
     for (const o of L.obs) {
       const look = o.look, mat = this.lookMat(look);
+      if (o.prim === 'sweep' && o.key === 'coursesweep' && courseSweep(this, o, add, mat)) continue;
       if (o.prim === 'sweep') {
         const g = new THREE.Group();
         g.position.set(o.x, o.y, o.z);
@@ -1553,21 +1492,26 @@ export class WorldView {
         bar.position.set(o.x, o.y, o.z);
         const a = Math.atan2(-o.dz, o.dx);
         bar.rotation.y = a;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(o.r, 14, 10), glowM(look, 4));
+        const model = o.key === 'coursecomet' && COMET_HEAD[this.key];
+        const head = model ? headMesh(model) : new THREE.Mesh(new THREE.SphereGeometry(o.r, 14, 10), glowM(look, 4));
+        if (model) head.scale.setScalar(o.r / 0.5 * 1.15);
         const tail = new THREE.Mesh(new THREE.ConeGeometry(o.r * 0.85, 3.2, 12, 1, true).rotateZ(Math.PI / 2).translate(-1.6, 0, 0), new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.4), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
         tail.rotation.y = a;
         g.add(bar, head, tail);
         add(o, g, (st, t) => {
           const p = st.comet(o, t, P);
           head.visible = tail.visible = p.fly;
-          if (p.fly) { head.position.set(p.x, p.y, p.z); tail.position.set(p.x, p.y, p.z); }
+          if (p.fly) { head.position.set(p.x, p.y, p.z); tail.position.set(p.x, p.y, p.z); if (model) head.rotation.set(t * 5, t * 3.4, 0); }
           bar.visible = p.warn > 0;
           line.opacity = p.warn > 0 ? 0.25 + p.warn * 0.75 * (Math.sin(t * 34) > -0.3 ? 1 : 0.4) : 0;
         });
       } else if (o.prim === 'well') {
         const g = new THREE.Group();
         g.position.set(o.x, o.y, o.z);
-        const core = new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), new THREE.MeshBasicMaterial({ color: 0x050308 }));
+        // On a map with water it is a whirlpool, its rings lying flat. Lava glows. A plant or a magnet sits in the middle of some.
+        const model = o.key === 'coursewell' && WELL_HEAD[this.key], water = o.key === 'coursewell' && (this.key === 'sunny' || this.key === 'waterfall');
+        const core = model ? headMesh(model) : new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), new THREE.MeshBasicMaterial({ color: o.key !== 'coursewell' ? 0x050308 : this.key === 'volcano' ? HDR(look.g, 1.6) : look.c }));
+        if (model) core.scale.setScalar(o.r / 0.5);
         const gm = new THREE.MeshBasicMaterial({ color: HDR(look.g, 2) });
         gm.userData.live = true;
         const r1 = new THREE.Mesh(new THREE.TorusGeometry(o.r * 1.6, 0.05, 6, 36), gm), r2 = new THREE.Mesh(new THREE.TorusGeometry(o.r * 2.2, 0.035, 6, 40), gm);
@@ -1575,8 +1519,12 @@ export class WorldView {
         add(o, g, (st, t) => {
           const p = st.pulse(o, t, 0.5), k = p.on ? 1 : 0.35 + p.warn * 0.4;
           gm.color.setHex(look.g).multiplyScalar(0.9 + k * 2.6);
-          r1.rotation.set(t * 1.7, t * 2.3 * k, 0);
-          r2.rotation.set(-t * 1.1, 0, t * 2.9 * k);
+          if (water) { r1.rotation.set(Math.PI / 2, 0, t * 3 * k); r2.rotation.set(Math.PI / 2, 0, -t * 2 * k); }
+          else {
+            r1.rotation.set(t * 1.7, t * 2.3 * k, 0);
+            r2.rotation.set(-t * 1.1, 0, t * 2.9 * k);
+          }
+          if (model === 'flytrap') { core.rotation.y = Math.sin(t * 2) * 0.5; core.scale.y = (o.r / 0.5) * (p.on ? 1 + Math.sin(t * 18) * 0.12 : 0.9); }
           const s = 1 + (p.on ? 0.1 * Math.sin(t * 16) : 0);
           r1.scale.setScalar(s);
           r2.scale.setScalar(s);
@@ -2109,6 +2057,10 @@ export class WorldView {
       c.fx.scale.set(k, 1, k);
     }
     for (const b of this.relicBeams || []) if (b.part || b.o.visible) b.o.material.uniforms.uT.value = wt;
+    if (eye) for (const f of this.facing || []) {
+      const dx = eye.x - f.x, dz = eye.z - f.z;
+      if (dx * dx + dz * dz < 2500) f.o.rotation.y = Math.atan2(dx, dz) - f.ry;
+    }
     for (const e of this.cps) { e.halo.rotation.y = t * 1.5; e.halo.rotation.x = Math.sin(t) * 0.4; e.beam.material.uniforms.uT.value = wt; }
     for (const r of this.rods) {
       const w = storm.rodWarn(r.r, t);
@@ -2220,11 +2172,12 @@ export class WorldView {
       e.o.visible = near;
       if (!near) continue;
       const p = storm.monsterPos(m, t, e.p), o = e.o;
-      const dx = (m.bx - m.ax) * p.dir, dz = (m.bz - m.az) * p.dir;
+      const dx = p.hunt ? p.hx : (m.bx - m.ax) * p.dir, dz = p.hunt ? p.hz : (m.bz - m.az) * p.dir;
       if (e.beast) {
-        // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned.
-        const walk = p.stunned ? 0 : t * 9 + m.i;
-        o.position.set(p.x, m.y - 0.65 + Math.abs(Math.sin(walk)) * 0.05, p.z);
+        // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned. After
+        // you it runs, with its head low, and it snaps forward as it bites.
+        const walk = p.stunned ? 0 : t * (p.hunt ? 15 : 9) + m.i, snap = p.hunt ? p.lunge * 0.5 : 0;
+        o.position.set(p.x + dx * snap, m.y - 0.65 + Math.abs(Math.sin(walk)) * (p.hunt ? 0.09 : 0.05), p.z + dz * snap);
         o.rotation.set(0, dx || dz ? Math.atan2(dx, dz) : o.rotation.y, p.stunned ? Math.sin(t * 25) * 0.25 : Math.sin(walk) * 0.06, 'YXZ');
         continue;
       }
@@ -2246,4 +2199,4 @@ export class WorldView {
   }
 }
 
-export { HDR, mat4, canvasTex };
+export { HDR, mat4, canvasTex, merge, trimParts };

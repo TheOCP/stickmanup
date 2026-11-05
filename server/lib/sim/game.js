@@ -5,7 +5,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm, QUAKE_AT, WAVE_H, BEE_R, LASER_R, CANNON_R, markShots, beeStep } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, pathsOf, pathOn, applyMaze, MAZE_WALL_H } from './level.js';
+import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, ALL_SECRETS, applyMaze, mazeCellAt, mazeWay, mazeCell, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -24,8 +24,12 @@ export const SHIELD_MAPS = new Set(['storm', 'forest']);
 // How close the swarm must be for a raised shield to drive it off. It flies 4.4 m a second and the shield is up for one.
 const BEE_SHIELD_R = 3.2;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
-const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {};
+const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {}, tmpH = {}, tmpW = { steps: 0, next: 0 };
 // What a maze garden's creature does to you, by map.
+// In each maze you have this many hearts. A bite takes one, and with none left you go back to the checkpoint.
+export const MAZE_HEARTS = 3;
+// How fast creatures come after you (you run at 6.2), and from how many cells away they notice you in a maze, by hazard setting.
+const HUNT_SPEED = [2.2, 2.8, 3.4, 4.0], HUNT_CELLS = [3, 4, 5, 6];
 const MAZE_BITE = { storm: 'A storm crab pinched you!', sunny: 'A scorpion stung you!', forest: 'A wild boar charged you!', volcano: 'A fire imp burned you!', city: 'A robot dog bit you!', waterfall: 'A crocodile snapped at you!' };
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
 // Seconds of aiming before a shot can leave: an accidental tap or click fires nothing.
@@ -123,16 +127,18 @@ export class Game {
     for (const i of this.doors) this.openDoor(i, true);
     // The maze gardens: which way their walls stand. It changes each time the team goes back to a checkpoint.
     this.mazeSeen = false;
+    this.hearts = MAZE_HEARTS;
+    this.heartMaze = -1;
+    this.heartOutT = 0;
     this.setMaze(g.mz);
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
     const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === LEVEL_VERSION ? sf : null;
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
-    // Real Hardcore or harder only: the hidden places don't exist with easier custom rules. The epic paths are there on every
-    // difficulty (level.js, pathOn).
+    // Real Hardcore or harder only: what is earned up there doesn't count with custom rules. The relic courses are always there.
     this.hardcore = this.diff >= 2 && !this.custom;
-    this.storm.sec = pathsOf(this.diff, this.custom);
+    this.storm.sec = ALL_SECRETS;
     // Coins only count where the server can see the climb: alone, or in a room on the game server.
     this.earning = this.solo || !!(session.link && session.link.isServer);
     this.rec = null;
@@ -546,7 +552,7 @@ export class Game {
     this.pickups();
   }
 
-  // Coins are each climber's own, and stay gone after a fall. Relics are there whenever the hidden paths are (pathOn).
+  // Coins are each climber's own, and stay gone after a fall. Relics are there on every climb.
   pickups() {
     if (this.tped) return;
     const me = this.me, b = Math.floor(me.y / 8);
@@ -563,7 +569,7 @@ export class Game {
       }
     }
     for (const r of this.L.relics) {
-      if (hasRelic(r.id) || !pathOn(r.kind, this.diff, this.custom)) continue;
+      if (hasRelic(r.id)) continue;
       const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
       // In a maze garden it has to be from its own cell, not through the wall next to it.
       if (d < (r.maze !== undefined ? 1.35 : 1.9)) this.takeRelic(r);
@@ -615,25 +621,91 @@ export class Game {
     if (r.h >= 3 || r.won) recordRun(r);
   }
 
+  // Creatures come after you. In a maze they notice you from a few cells away, walk the corridors to you (never through a
+  // wall) and don't let go while you stay in it. On a ledge they turn on you as you come near and stay on their platform.
+  // This runs on each climber's own climb, so a rerun gets the same, and each player is hunted on their own screen.
+  // Gives back the maze you are in, or null.
+  huntStep(t) {
+    const me = this.me, S = this.storm, L = this.L, hunt = S.hunt, M = this.mazeAround(me), P = tmpH, W = tmpW;
+    // A new maze: hearts full again.
+    if (M && this.heartMaze !== M.i) { this.heartMaze = M.i; this.hearts = MAZE_HEARTS; }
+    // None left: back to the checkpoint. If that didn't get through (a short lock after another respawn), it is said again.
+    if (this.hearts <= 0 && this.simT >= this.heartOutT) { this.heartOutT = this.simT + 2; this.s.toHost({ k: 'hearts' }); }
+    const speed = (HUNT_SPEED[S.haz] ?? HUNT_SPEED[1]) * STEP, cells = HUNT_CELLS[S.haz] ?? HUNT_CELLS[1], you = M ? mazeCellAt(M, me.x, me.z) : 0;
+    for (const m of L.monsters) {
+      let h = hunt.get(m.i), tx, tz;
+      if (m.mz !== undefined) {
+        // In its maze only, and only with you in it too.
+        if (!M || m.mz !== M.i) { if (h) hunt.delete(m.i); continue; }
+        if (!h) {
+          S.patrolPos(m, t, P);
+          if (mazeWay(M, this.mz, mazeCellAt(M, P.x, P.z), you, W).steps > cells) continue;
+          h = { x: P.x, z: P.z, hx: 0, hz: 1, wait: 0, lunge: 0 };
+          hunt.set(m.i, h);
+        }
+        const c = mazeCellAt(M, h.x, h.z);
+        mazeWay(M, this.mz, c, you, W);
+        if (W.next === c) { tx = me.x; tz = me.z; }
+        else {
+          const i = W.next % M.N, q = mazeCell(M, i, (W.next - i) / M.N);
+          tx = q[0]; tz = q[1];
+        }
+      } else if (m.hl !== undefined) {
+        // On its ledge: toward you if you are on it or coming, else back to its beat.
+        if (!h && Math.abs(m.y - me.y) > 2.4) continue;
+        const ex = me.x - m.cx, ez = me.z - m.cz, a = ex * m.fx + ez * m.fz, b = ez * m.fx - ex * m.fz;
+        if (Math.abs(m.y - me.y) < 2.4 && Math.abs(a) < m.hl + 3 && Math.abs(b) < m.hw + 3) {
+          if (!h) { S.patrolPos(m, t, P); h = { x: P.x, z: P.z, hx: 0, hz: 1, wait: 0, lunge: 0 }; hunt.set(m.i, h); }
+          const qa = clamp(a, -m.hl, m.hl), qb = clamp(b, -m.hw, m.hw);
+          tx = m.cx + qa * m.fx - qb * m.fz; tz = m.cz + qa * m.fz + qb * m.fx;
+        } else {
+          if (!h) continue;
+          S.patrolPos(m, t, P);
+          if (Math.abs(P.x - h.x) + Math.abs(P.z - h.z) < 0.7) { hunt.delete(m.i); continue; }
+          tx = P.x; tz = P.z;
+        }
+      } else continue;
+      h.lunge = Math.max(0, h.lunge - STEP * 3);
+      if (h.wait > 0) { h.wait -= STEP; continue; }
+      const s = S.stun.get(m.i);
+      if (s && t >= s.from && t < s.until) continue;
+      const dx = tx - h.x, dz = tz - h.z, d = Math.sqrt(dx * dx + dz * dz);
+      if (d > 1e-4) { h.hx = dx / d; h.hz = dz / d; }
+      if (d <= speed) { h.x = tx; h.z = tz; }
+      else { h.x += (dx / d) * speed; h.z += (dz / d) * speed; }
+    }
+    return M;
+  }
+
   // Monsters and bats knock you off on contact; lightning (sunny) strikes where it warned.
   hazards(t) {
-    const me = this.me, L = this.L, k = this.storm.k;
+    const me = this.me, L = this.L, k = this.storm.k, inMaze = this.huntStep(t);
     this.knockCd = Math.max(0, this.knockCd - STEP);
     const knock = (fx, fz, src) => {
-      if (this.knockCd > 0) return;
+      if (this.knockCd > 0) return false;
       this.knockCd = 0.8;
       const d = Math.hypot(me.x - fx, me.z - fz) || 1, nx = (me.x - fx) / d, nz = (me.z - fz) / d;
       if (me.knock(nx * 9 * k, 6.5 * k, nz * 9 * k, 0.6)) {
         this.app.sound.bonk();
         this.app.ui.haptic('heavy');
         this.app.ui.toast(src === 'bat' ? 'Bat attack!' : src === 'maze' ? MAZE_BITE[L.mapKey] || 'Monster hit you!' : 'Monster hit you!', 'bad');
+        return true;
       }
+      return false;
     };
     for (const m of L.monsters) {
-      if (Math.abs(m.y - me.y) > 3 || Math.abs(m.ax - me.x) + Math.abs(m.az - me.z) > 14) continue;
-      const p = this.storm.monsterPos(m, t, tmpP);
+      if (Math.abs(m.y - me.y) > 3) continue;
+      const p = this.storm.monsterPos(m, t, tmpP), h = this.storm.hunt.get(m.i);
+      // Just bitten: it lets go for a moment, so you can get away.
+      if (h && h.wait > 0) continue;
       // Outside the forest every map's monsters are its own creature (the same as in its maze gardens).
-      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR) knock(p.x, p.z, m.mz !== undefined || L.mapKey !== 'forest' ? 'maze' : 'monster');
+      if (!p.stunned && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < m.r + PR && knock(p.x, p.z, m.mz !== undefined || L.mapKey !== 'forest' ? 'maze' : 'monster')) {
+        if (h) { h.wait = 1.3; h.lunge = 1; }
+        if (inMaze && m.mz === inMaze.i && this.hearts > 0) {
+          this.hearts--;
+          if (this.hearts <= 0) { this.heartOutT = this.simT; this.app.ui.toast('Out of hearts: back to the checkpoint', 'bad'); }
+        }
+      }
     }
     for (const b of L.bats) {
       if (!this.storm.on(b) || Math.abs(b.cy - me.y) > 3 || Math.abs(b.cx - me.x) + Math.abs(b.cz - me.z) > 12) continue;
@@ -1255,7 +1327,7 @@ export class Game {
     const g = me.grounded && me.ground;
     if (g && g.crumble && g.crumble.st === 0) { this.crumble(g.crumble.i); this.s.toHost({ k: 'crumble', i: g.crumble.i }); }
     if (g && g.kind === 'mfloor') {
-      if (!this.mazeSeen) { this.mazeSeen = true; this.app.ui.toast('A maze! It changes every time you go back to a checkpoint', ''); }
+      if (!this.mazeSeen) { this.mazeSeen = true; this.app.ui.toast('A maze! You have 3 hearts in here, and it changes every time you go back to a checkpoint', ''); }
     }
     const z = zoneAt(L, me.y);
     if (z > this.maxZone) {
@@ -1314,6 +1386,7 @@ export class Game {
     if (e.k === 'restart' && this.rec && this.solo) this.rec.act('r');
     switch (e.k) {
       case 'splash':
+      case 'hearts':
       case 'restart': {
         // Tied together by the cord, the whole team goes back. Without the cord, or not on it yet, only the one who fell
         // (or asked to restart) does; everyone else keeps climbing.
@@ -1321,7 +1394,7 @@ export class Game {
         this.locks = this.locks || {};
         if (T < (this.locks[key] || 0)) return;
         this.locks[key] = T + 1.5;
-        if (e.k === 'splash') this.falls++;
+        if (e.k === 'splash' || e.k === 'hearts') this.falls++;
         if (this.cpl === 2 && one === null) this.cp = 0;
         // The whole team back at the checkpoint: the maze gardens change, so the way through has to be found again.
         // (Without the cord one climber going back leaves them alone: the others may be inside one. So does a team going back
@@ -1424,7 +1497,11 @@ export class Game {
         // The host of a tied team, moved by the team and off the cord for now: only their own fall, not the team's checkpoint.
         if (!this.ownFall(e)) this.cp = e.cp;
         this.falls = e.falls;
-        if (e.why === 'splash' || e.why === 'course') addTotals(1, 0);
+        if (e.why === 'splash' || e.why === 'course' || e.why === 'hearts') addTotals(1, 0);
+        // Hearts full again, and whatever was after you has lost you.
+        this.hearts = MAZE_HEARTS;
+        this.heartMaze = -1;
+        this.storm.hunt.clear();
         this.splashed = false;
         this.cpSent.clear();
         for (const l of this.links) l.chain.ok = false;
@@ -1434,6 +1511,7 @@ export class Game {
         Object.assign(this.cam, { yaw: mark ? Math.atan2(-Math.cos(mark.a), -Math.sin(mark.a)) : this.startYaw(p[0], p[2], e.at ?? e.cp), x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.cpl, this.cp);
         if (e.why === 'course' || e.why === 'courseout') { ui.toast(e.why === 'course' ? 'Back to the last course marker' : 'Back on the route', ''); break; }
+        if (e.why === 'hearts') break;
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
         ui.toast(e.why === 'reset' ? 'The team sent you back to the start of the map.' : e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
@@ -1505,6 +1583,8 @@ export class Game {
     this.mz = Math.max(0, Math.floor(+v) || 0);
     if (!this.L.mazes || !this.L.mazes.length) return;
     applyMaze(this.L, this.mz);
+    // The walls stand differently now: nobody can be followed through them.
+    this.storm.hunt.clear();
     this.app.view.setMaze(this.mz);
   }
 
@@ -1707,7 +1787,7 @@ export class Game {
       this.relicAim = null;
       let aimD = Infinity;
       for (const r of this.L.relics) {
-        if (hasRelic(r.id) || !pathOn(r.kind, this.diff, this.custom)) continue;
+        if (hasRelic(r.id)) continue;
         if (Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
         // The marker on the screen points at the gate, and once you are on the course at the relic.
         const q = r.gate && this.onCourse !== r.i ? r.gate : r, d = Math.hypot(q.x - me.x, q.y - me.y, q.z - me.z);
@@ -1727,6 +1807,7 @@ export class Game {
     app.ui.tips(this);
     if (app.ui.nav) app.ui.nav(this);
     if (app.ui.relicMark) app.ui.relicMark(this);
+    if (app.ui.hearts) app.ui.hearts(this);
   }
 
   // The maze garden a climber is inside, under its roof (the doorways too), or null.

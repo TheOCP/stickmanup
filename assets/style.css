@@ -227,6 +227,12 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 #hNav path { fill: #7ff8d8; stroke: rgba(6, 20, 26, 0.85); stroke-width: 2.5; stroke-linejoin: round; filter: drop-shadow(0 0 4px rgba(127, 248, 216, 0.8)); }
 @keyframes navPulse { 0%, 100% { transform: translateY(0); opacity: 0.95; } 50% { transform: translateY(-3px); opacity: 0.75; } }
 /* The marker for the nearest relic: over its gate, or on the edge of the screen on its side. */
+#hHearts { position: absolute; left: 50%; top: calc(94px + var(--it)); transform: translateX(-50%); display: flex; gap: 6px; pointer-events: none; }
+#hHearts[hidden] { display: none; }
+#hHearts svg { width: 30px; height: 30px; display: block; fill: #ff3b5c; stroke: #fff; stroke-width: 1.6; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6)); }
+#hHearts svg.off { fill: rgba(20, 20, 30, .55); stroke: rgba(255, 255, 255, .55); }
+#hHearts.hit { animation: heartHit .45s ease-out; }
+@keyframes heartHit { 0% { transform: translateX(-50%) scale(1.45); } 35% { transform: translateX(-50%) scale(.9); } 100% { transform: translateX(-50%) scale(1); } }
 #hRelic { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; color: #ffa030; --m: 255, 160, 48; }
 #hRelic[hidden] { display: none; }
 #hRelic.epic { color: #c070ff; --m: 192, 112, 255; }

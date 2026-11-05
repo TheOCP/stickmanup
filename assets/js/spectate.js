@@ -4,7 +4,7 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm, QUAKE_AT, markShots, beeStep } from './storm.js';
-import { DIFFS, MAPS, zoneAt, pathsOf, applyMaze, MAZE_WALL_H } from './level.js';
+import { DIFFS, MAPS, zoneAt, ALL_SECRETS, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
@@ -151,8 +151,7 @@ export class Spectator {
       app.view.resetDoors();
       this.doors = new Set();
       this.mz = -1;
-      const custom = ['cps', 'haz', 'rope'].some((k) => rules[k] !== undefined && rules[k] !== diff);
-      this.storm.sec = pathsOf(diff, custom);
+      this.storm.sec = ALL_SECRETS;
       app.view.setSecrets(this.storm.sec);
       app.pool.coins.clear();
       app.pool.relic.show(null);

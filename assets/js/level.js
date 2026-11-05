@@ -276,6 +276,27 @@ export function mazePath(m, v) {
   }
   return out;
 }
+// The cell (j * N + i) a point is in.
+export function mazeCellAt(m, x, z) {
+  const ex = x - m.x, ez = z - m.z, top = m.N - 1;
+  const i = clamp(Math.round((ex * m.fx + ez * m.fz) / MAZE_CELL + top / 2), 0, top), j = clamp(Math.round(top / 2 - (ex * m.nx + ez * m.nz) / MAZE_CELL), 0, top);
+  return j * m.N + i;
+}
+// For something in cell c on its way to cell target in variant v: how many steps that is, and the next cell to go to.
+export function mazeWay(m, v, c, target, out) {
+  if (m.hv !== v || m.ht !== target) { m.hd = mazeDist(m.N, mazeLayout(m, v), target); m.hv = v; m.ht = target; }
+  const N = m.N, w = mazeLayout(m, v), d = m.hd, i = c % N, j = (c - i) / N;
+  out.steps = d[c];
+  out.next = c;
+  const step = (n, e) => { if (out.next === c && !w[e] && d[n] === d[c] - 1) out.next = n; };
+  if (d[c] > 0) {
+    if (i > 0) step(c - 1, edgeV(N, i - 1, j));
+    if (i < N - 1) step(c + 1, edgeV(N, i, j));
+    if (j > 0) step(c - N, edgeH(N, i, j - 1));
+    if (j < N - 1) step(c + N, edgeH(N, i, j));
+  }
+  return out;
+}
 // Where a cell's middle is (x, z).
 export function mazeCell(m, i, j) {
   const u = (i - (m.N - 1) / 2) * MAZE_CELL, w = ((m.N - 1) / 2 - j) * MAZE_CELL;
@@ -312,6 +333,30 @@ export function applyMaze(L, v) {
     });
   }
 }
+
+// How the relic courses look on each map. The obstacles work the same everywhere: only how they look and what they are called differ.
+const COURSE_LOOKS = {
+  storm: { c: 0x6a7280, g: 0x3ff0d0, p: 8, e: 0.12, a: { c: 0x4a5260, g: 0x3ff0d0, p: 1, e: 0.3 }, b: { c: 0x4a5260, g: 0xffd040, p: 1, e: 0.3 }, sweep: { c: 0x3a4250, g: 0x7ff8ff, p: 1, s: 'laser' },
+    pendulum: { c: 0x3a3e46, g: 0xffd040, p: 1 }, crusher: { c: 0x4a5260, g: 0xffd040, p: 8 }, spikes: { c: 0x7a8290, g: 0x3ff0d0, p: 1 }, ring: { c: 0x3a4250, g: 0x7ff8ff }, comet: { c: 0x3a4250, g: 0xbfe8ff }, well: { c: 0x1a2028, g: 0x3ff0d0 }, windmill: { c: 0x4a5260, g: 0x3ff0d0, p: 1 }, wheel: { c: 0x4a5260, g: 0x3ff0d0, p: 1 } },
+  sunny: { c: 0xffffff, g: 0xffb04a, p: 6, e: 0.06, a: { c: 0xd0aa70, g: 0xffc060, p: 3, e: 0.15 }, b: { c: 0xd8c8a0, g: 0xff8a4a, p: 2, e: 0.15 }, sweep: { c: 0xc9a06a, g: 0xffe0a0, p: 3, s: 'laser' },
+    pendulum: { c: 0x5a5e66, g: 0xffc060, p: 1, s: 'anchor' }, crusher: { c: 0xe8d8b0, g: 0xff8a4a, p: 2 }, spikes: { c: 0x3a2a4a, g: 0xff5a8a }, ring: { c: 0xd9c49c, g: 0xffd890 }, comet: { c: 0x5a3a20, g: 0xffb060 }, well: { c: 0x0a2a3a, g: 0x3ad0d8 }, windmill: { c: 0xc9a06a, g: 0xffe0a0, p: 3 }, wheel: { c: 0xc9a06a, g: 0xffe0a0, p: 3 } },
+  forest: { c: 0xffffff, g: 0x9be564, p: 5, e: 0.05, a: { c: 0x8a6a4a, g: 0x9be564, p: 16, e: 0.15 }, b: { c: 0xffffff, g: 0xd8ff70, p: 13, e: 0.12 }, sweep: { c: 0x6a4a2c, g: 0x9be564, p: 16, s: 'laser' },
+    pendulum: { c: 0x8a6a4a, g: 0x9be564, p: 16, s: 'log' }, crusher: { c: 0x8a6a4a, g: 0x9be564, p: 16 }, spikes: { c: 0x4a3a1a, g: 0xb0e050 }, ring: { c: 0x4f7a34, g: 0x9be564 }, comet: { c: 0xc89a3a, g: 0xffc030 }, well: { c: 0x2a3a14, g: 0xb0ff50 }, windmill: { c: 0x8a6a4a, g: 0x9be564, p: 16 }, wheel: { c: 0x8a6a4a, g: 0x9be564, p: 16 } },
+  volcano: { c: 0xb09a92, g: 0xff5a2a, p: 7, e: 0.14, a: { c: 0x8a7068, g: 0xff5a2a, p: 7, e: 0.3 }, b: { c: 0x7a6a8e, g: 0xffa040, p: 7, e: 0.3 }, sweep: { c: 0x2a1a16, g: 0xff7a2a, p: 7, s: 'laser' },
+    pendulum: { c: 0x4a3a34, g: 0xff5a2a, p: 7, e: 0.5 }, crusher: { c: 0x6a5a54, g: 0xff5a2a, p: 7, e: 0.25 }, spikes: { c: 0x1a1418, g: 0xff7a2a }, ring: { c: 0x2a1a16, g: 0xff7a2a }, comet: { c: 0x2a1410, g: 0xff5a1a }, well: { c: 0x3a1408, g: 0xff4a10 }, windmill: { c: 0x8a7068, g: 0xff5a2a, p: 7, e: 0.25 }, wheel: { c: 0x8a7068, g: 0xff5a2a, p: 7, e: 0.25 } },
+  city: { c: 0x8a8e9e, g: 0xff4fd8, p: 12, e: 0.12, a: { c: 0x2a2e38, g: 0xff4fd8, p: 1, e: 0.35 }, b: { c: 0x2a2e38, g: 0x40e0ff, p: 1, e: 0.35 }, sweep: { c: 0x2a2e38, g: 0xff3050, p: 1, s: 'laser' },
+    pendulum: { c: 0x2a2e38, g: 0xff4fd8, p: 1 }, crusher: { c: 0x3a3e4a, g: 0xffd040, p: 8 }, spikes: { c: 0x2a2e38, g: 0x40e0ff }, ring: { c: 0x2a2440, g: 0xff4fd8 }, comet: { c: 0x3a3e4a, g: 0x40e0ff }, well: { c: 0x1a1830, g: 0xa060ff }, windmill: { c: 0x2a2440, g: 0xff4fd8, p: 1 }, wheel: { c: 0x2a2440, g: 0xff4fd8, p: 1 } },
+  waterfall: { c: 0xffffff, g: 0x7fe8ff, p: 13, e: 0.06, a: { c: 0xb89464, g: 0x7fe8ff, p: 3, e: 0.15 }, b: { c: 0xffffff, g: 0xb0ffe0, p: 13, e: 0.12 }, sweep: { c: 0xb89464, g: 0x7fe8ff, p: 3, s: 'laser' },
+    pendulum: { c: 0xffffff, g: 0x7fe8ff, p: 13 }, crusher: { c: 0xffffff, g: 0x7fe8ff, p: 13 }, spikes: { c: 0xe87a6a, g: 0xffa090 }, ring: { c: 0x1a5a8a, g: 0x7fe8ff }, comet: { c: 0x7a7a76, g: 0xbfe0f0 }, well: { c: 0x0a2a3a, g: 0x40c8e0 }, windmill: { c: 0xb89464, g: 0x7fe8ff, p: 3 }, wheel: { c: 0xb89464, g: 0x7fe8ff, p: 3 } },
+};
+const COURSE_NAMES = {
+  storm: { sweep: 'Arc of lightning', pendulum: 'Wrecking ball', crusher: 'Steel press', spikes: 'Live wires', ring: 'Thunder ring', comet: 'Ball lightning', well: 'Eye of the storm', windmill: 'Turbine blade' },
+  sunny: { sweep: 'Diving gulls', pendulum: 'Swinging anchor', crusher: 'Stone slab', spikes: 'Sea urchins', ring: 'Sand wave', comet: 'Falling coconut', well: 'Whirlpool', windmill: 'Windmill sail' },
+  forest: { sweep: 'Attacking birds', pendulum: 'Swinging log', crusher: 'Falling trunk', spikes: 'Thorns', ring: 'Leaf storm', comet: 'Falling beehive', well: 'Snapping plant', windmill: 'Giant branch' },
+  volcano: { sweep: 'Fire bar', pendulum: 'Lava ball', crusher: 'Basalt press', spikes: 'Obsidian spikes', ring: 'Lava wave', comet: 'Lava bomb', well: 'Magma vortex', windmill: 'Burning blade' },
+  city: { sweep: 'Security laser', pendulum: 'Wrecking ball', crusher: 'Hydraulic press', spikes: 'Shock spikes', ring: 'Shock pulse', comet: 'Falling drone', well: 'Magnet trap', windmill: 'Neon fan' },
+  waterfall: { sweep: 'Water jets', pendulum: 'Swinging boulder', crusher: 'Stone press', spikes: 'Sharp coral', ring: 'Water ring', comet: 'Falling boulder', well: 'Whirlpool', windmill: 'Water wheel blade' },
+};
 
 export function generateLevel(mapId = 0) {
   const MAP = MAPS[mapId] || MAPS[0], ZONE_LIST = MAP.zones;
@@ -1579,7 +1624,7 @@ export function generateLevel(mapId = 0) {
       const p = T.gap(cur, { size: [rr(5, 6), rr(3.2, 3.8)], g: rr(1.4, 2.2), dy: rr(-0.2, 0.6), nosign: true });
       const ax = Math.cos(p.ry), az = -Math.sin(p.ry), half = p.sx / 2 - 0.9;
       out.monsters.push({ i: out.monsters.length, ax: p.x - ax * half, az: p.z - az * half, bx: p.x + ax * half, bz: p.z + az * half,
-        y: p.y + 0.65, per: rr(3.2, 4.6), ph: R(), r: 0.65, zone });
+        y: p.y + 0.65, per: rr(3.2, 4.6), ph: R(), r: 0.65, zone, cx: p.x, cz: p.z, fx: ax, fz: az, hl: half, hw: p.sz / 2 - 0.6 });
       if (zone === 0 && !intro.monster) { intro.monster = true; sign(p, 'Monsters knock you off. Time it, or SHOOT to paralyse them.'); }
       return T.gap(p, { g: rr(1.3, 2.0) });
     },
@@ -2105,11 +2150,14 @@ export function generateLevel(mapId = 0) {
     const INNER = ROUTE === 'crater', MAX_R = INNER ? 16.5 : 64, TURNS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4];
     // How far you can jump, edge to edge, to a stone dy higher.
     const jumpGap = (dy) => 6.2 * ((9.4 + Math.sqrt(Math.max(0, 88.36 - 48 * dy))) / 24) - 0.2;
+    // Everything on a course wears its map's looks (c colour, g glow, p surface pattern, e how much it glows, s shape).
+    const CL = COURSE_LOOKS[MAP.key] || COURSE_LOOKS.storm, base = { c: CL.c, g: CL.g, p: CL.p, e: CL.e };
     const LOOKS = {
-      suit: { c: 0x2a2018, g: 0xffa030, s: 'ball' }, epic: { c: 0x221a30, g: 0xc070ff, s: 'ball' }, weapon: { c: 0x2a2410, g: 0xffd040, s: 'ball' },
-      rest: { c: 0x143028, g: 0x7ff8d8 }, pad: { c: 0x123018, g: 0x60ff90 }, ice: { c: 0x8fc8e8, g: 0xa0e8ff }, a: { c: 0x301030, g: 0xff50c0 }, b: { c: 0x102c34, g: 0x40e0ff },
-      laser: { c: 0x2a1014, g: 0xff4060, s: 'laser' },
+      suit: base, epic: base, weapon: base,
+      rest: { c: 0x143028, g: 0x7ff8d8 }, pad: { c: 0x123018, g: 0x60ff90 }, ice: { c: 0x8fc8e8, g: 0xa0e8ff }, a: CL.a, b: CL.b,
+      laser: CL.sweep,
     };
+    const NAMES = COURSE_NAMES[MAP.key] || COURSE_NAMES.storm;
 
     function layCourse(plan, st, ang0, side, wantR) {
       const A = { cols: [], obs: [], own: [], rests: [], recs: [], wells: [], way: [] }, sec = plan.kind === 'epic' ? 'open' : 'hard', look = LOOKS[plan.kind];
@@ -2175,7 +2223,7 @@ export function generateLevel(mapId = 0) {
         A.way.push([c]);
         return c;
       };
-      const hazard = (prim, name, o) => { const q = Object.assign({ key: 'course' + prim, name, prim, lvl: 0, look, zone: zoneAt(out, o.y), sec }, o); A.obs.push(q); return q; };
+      const hazard = (prim, name, o) => { const q = Object.assign({ key: 'course' + prim, name: NAMES[prim] || name, prim, lvl: 0, look: CL[prim] || look, zone: zoneAt(out, o.y), sec }, o); A.obs.push(q); return q; };
       const sidev = (a) => [-Math.sin(a), Math.cos(a)];
       // A comet across the gap between two stones, about where a jump is at its highest.
       const cometOver = (a, b) => {
@@ -2514,7 +2562,6 @@ export function generateLevel(mapId = 0) {
         vault: { x: e.x, y: e.y, z: e.z, s: plan.end, ry: -e.a }, exit: { x: e.x + ux * (plan.end / 2 - 0.75), y: e.y, z: e.z + uz * (plan.end / 2 - 0.75) },
         gate: { x: sx, y: st.y + st.hy, z: sz, a: ang0 },
       });
-      out.signs.push({ x: sx - Math.cos(ang0 + Math.PI / 2) * 1.5, y: st.y + st.hy, z: sz - Math.sin(ang0 + Math.PI / 2) * 1.5, ry: -ang0, kind: plan.kind, sec });
     }
 
     const plans = [
@@ -2891,7 +2938,7 @@ export function generateLevel(mapId = 0) {
   buildCoins();
   buildSecrets();
   // Legendary relics in the mazes (MAZE_RELICS), in the cell furthest from the way in, spread up the climb. Like the other
-  // hidden suits (kind 'suit'), on every difficulty without custom rules.
+  // hidden suits (kind 'suit'), on every difficulty and with any rules.
   const nRel = Math.min(MAZE_RELICS[MAP.key] || 0, out.mazes.length);
   for (let q = 0; q < nRel; q++) {
     const m = out.mazes[Math.floor(((q + 1) * out.mazes.length) / (nRel + 1))];
@@ -2929,11 +2976,10 @@ export function generateLevel(mapId = 0) {
   return out;
 }
 
-// Which hidden paths a climb has: all of them, on every difficulty (4.10.6; the hard ones used to be Hardcore and Insane only).
-// Custom rules have none: they could make a path easier than it is meant to be.
-export const pathOn = (kind, diff, custom) => !custom;
+// Which hidden paths a climb has: all of them, on every difficulty and with any rules (the hard ones used to be Hardcore and
+// Insane only until 4.10.6, and custom rules had none until 4.10.21).
 // Both kinds at once, as storm.sec and worldview.setSecrets take them: 'open' are the epic paths, 'hard' all the others.
-export const pathsOf = (diff, custom) => ({ hard: pathOn('weapon', diff, custom), open: pathOn('epic', diff, custom) });
+export const ALL_SECRETS = { hard: true, open: true };
 export const secretOn = (c, sec) => !!sec && (c.rk === 'epic' ? !!sec.open : !!sec.hard);
 
 // Do two oriented rectangles (x, z, hx, hz, c = cos yaw, s = sin yaw) overlap, with margin m? (2D SAT)

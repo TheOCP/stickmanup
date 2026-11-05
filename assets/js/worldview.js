@@ -201,63 +201,118 @@ export class WorldView {
     this.scene.remove(this.root);
   }
 
-  // The hidden paths (level.js, buildSecrets): their stones, the vaults at the end of the epic and legendary ones, and the
-  // signs where those leave the route. Each kind only shows on the difficulties that have it (setSecrets).
+  // The hidden courses (level.js, buildSecrets): the stones that stay put (the moving ones are in buildDynamic), a vault at the
+  // end of each with a ring back to the route, the gate and sign where it leaves the route, and a pillar of light at both ends
+  // so a course can be seen from far off. setSecrets shows what this climb has, markRelics takes away the pillars of what is found.
   buildSecrets() {
-    const L = this.level, list = L.cols.filter((c) => c.kind === 'secret');
+    const L = this.level, courses = (L.relics || []).filter((r) => r.stones);
     this.secretParts = [];
-    if (!list.length) return;
-    const pat = { storm: 8, sunny: 6, forest: 13, volcano: 7, city: 12, waterfall: 14 }[this.key] ?? 8;
-    const col = new THREE.Color(), geo = shapeGeo(this.key === 'city' ? 'chamfer' : 'rock1'), mat = patMat(pat);
-    for (const sec of ['hard', 'open']) {
-      const mine = list.filter((c) => (c.rk === 'epic' ? 'open' : 'hard') === sec);
-      if (!mine.length) continue;
-      const im = new THREE.InstancedMesh(geo, mat, mine.length);
-      mine.forEach((c, i) => { im.setMatrixAt(i, colMatrix(c, c.hx * 2, c.hy * 2, c.hz * 2)); im.setColorAt(i, col.setHex(this.key === 'city' ? 0x8a90a8 : 0xffffff)); });
-      this.add(im);
-      im.visible = false;
-      this.secretParts.push({ sec, o: im });
-    }
-    const tint = (kind) => (kind === 'epic' ? 0xc070ff : 0xffa030);
+    this.relicBeams = [];
+    if (!courses.length) return;
+    const tint = (kind) => (kind === 'epic' ? 0xc070ff : kind === 'weapon' ? 0xffd040 : 0xffa030);
     const stone = new THREE.MeshStandardMaterial({ color: 0x3a3440, roughness: 0.6, metalness: 0.35, emissive: 0x241a30, emissiveIntensity: 0.4 });
-    // The vaults: four pillars with fire on top, a glowing ring on the floor and a pedestal under the relic.
-    for (const r of L.relics || []) {
-      const v = r.vault;
-      if (!v) continue;
-      const g = new THREE.Group(), glow = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 3) }), h = v.s / 2 - 0.35;
+    const beam = (r, id, h, rad, a) => {
+      const b = this.lightBeam(rad, h, tint(r.kind), a);
+      this.root.add(b);
+      b.visible = false;
+      this.relicBeams.push({ id, o: b });
+      return b;
+    };
+    for (const r of courses) {
+      const sec = r.kind === 'epic' ? 'open' : 'hard', keep = (o) => { o.visible = false; this.secretParts.push({ sec, o }); return o; };
+      // The stones that stay put: one mesh for each look on this course.
+      const groups = new Map();
+      for (const c of r.stones) {
+        if (c.dyn || c.crumble || c.blink || c.ghost) continue;
+        if (!groups.has(c.look)) groups.set(c.look, []);
+        groups.get(c.look).push(c);
+      }
+      for (const [look, cols] of groups) {
+        const parts = [], glow = HDR(look.g, this.glowK);
+        for (const c of cols) {
+          const m = mat4(c.x, c.y, c.z, 1, 1, 1, c.rx, c.ry, c.rz);
+          parts.push({ geo: BOXG, m: m.clone().scale(new THREE.Vector3(c.hx * 2, c.hy * 2, c.hz * 2)), glow: null });
+          for (const t of trimParts(c.hx, c.hy, c.hz, glow, true)) parts.push({ geo: t.geo, m: m.clone().multiply(t.m), glow: t.glow });
+          // A marker has a lamp on it.
+          if (c.rest !== undefined) {
+            parts.push({ geo: new THREE.CylinderGeometry(0.06, 0.09, 1.7, 6), m: m.clone().multiply(mat4(c.hx * 0.72, c.hy + 0.85, c.hz * 0.72, 1, 1, 1)), glow: null });
+            parts.push({ geo: new THREE.SphereGeometry(0.17, 10, 8), m: m.clone().multiply(mat4(c.hx * 0.72, c.hy + 1.8, c.hz * 0.72, 1, 1, 1)), glow: HDR(look.g, 3.4) });
+          }
+        }
+        keep(this.add(new THREE.Mesh(merge(parts), this.lookMat(look))));
+      }
+      // The vault: four pillars with fire on top, a glowing ring on the floor and a pedestal under the relic.
+      const v = r.vault, g = new THREE.Group(), gl = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 3) }), h = v.s / 2 - 0.35;
       g.position.set(v.x, v.y, v.z);
       g.rotation.y = v.ry;
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         const p = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 2.6, 8), stone);
         p.position.set(a * h, 1.3, b * h);
-        const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), glow);
+        const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), gl);
         cap.position.set(a * h, 2.8, b * h);
         g.add(p, cap);
       }
-      for (const [a, b] of [[0, -1], [0, 1]]) {
-        const beam = new THREE.Mesh(new THREE.BoxGeometry(v.s - 0.4, 0.16, 0.16), stone);
-        beam.position.set(0, 2.62, b * h);
-        g.add(beam);
+      for (const b of [-1, 1]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(v.s - 0.4, 0.16, 0.16), stone);
+        bar.position.set(0, 2.62, b * h);
+        g.add(bar);
       }
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.05, 6, 40), glow);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.05, 6, 40), gl);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.04;
       const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.46, 0.42, 10), stone);
       ped.position.y = 0.21;
       g.add(ring, ped);
+      // The way back: a ring on the floor with a curtain of light, and a board saying what it is.
+      const out = new THREE.Group(), outM = new THREE.MeshBasicMaterial({ color: HDR(0x7ff8d8, 3) });
+      out.position.set(v.s / 2 - 0.75, 0, 0);
+      const oRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 6, 32), outM);
+      oRing.rotation.x = Math.PI / 2;
+      oRing.position.y = 0.05;
+      const curtain = this.lightBeam(0.62, 2.2, 0x7ff8d8, 0.55);
+      curtain.position.y = 1.1;
+      this.relicBeams.push({ o: curtain, part: true });
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: canvasTex(384, 108, (x, w, hh) => {
+        x.fillStyle = '#10201c'; x.fillRect(0, 0, w, hh);
+        x.fillStyle = '#7ff8d8'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = 'bold 56px sans-serif';
+        x.fillText(tr('WAY BACK'), w / 2, hh / 2 + 2, 350);
+      }), side: THREE.DoubleSide }));
+      label.position.y = 2.5;
+      label.rotation.y = Math.PI / 2;
+      out.add(oRing, curtain, label);
+      g.add(out);
+      keep(g);
       this.add(g, false);
-      g.visible = false;
-      this.secretParts.push({ sec: r.kind === 'epic' ? 'open' : 'hard', o: g });
+      beam(r, r.id, 110, 0.5, 0.55).position.set(v.x, v.y + 55, v.z);
+      // The gate where the course leaves the route, standing across the way out.
+      const G = r.gate, gate = new THREE.Group(), gm = new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 2.6) });
+      gate.position.set(G.x, G.y, G.z);
+      gate.rotation.y = Math.PI / 2 - G.a;
+      for (const s of [-1, 1]) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.4, 0.22), stone);
+        p.position.set(s * 1.35, 1.7, 0);
+        const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), gm);
+        cap.position.set(s * 1.35, 3.62, 0);
+        gate.add(p, cap);
+      }
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(3, 0.24, 0.3), gm);
+      lintel.position.y = 3.4;
+      const veil = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 3.28), new THREE.MeshBasicMaterial({ color: HDR(tint(r.kind), 0.5), transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      veil.position.y = 1.64;
+      gate.add(lintel, veil);
+      keep(gate);
+      this.add(gate, false);
+      beam(r, r.id, 70, 0.3, 0.6).position.set(G.x, G.y + 35, G.z);
     }
     // The signs: a post with a board, readable from both sides, the arrow pointing along the path.
     for (const sg of L.signs || []) {
-      const legend = sg.kind !== 'epic', c = tint(sg.kind);
+      const c = tint(sg.kind), name = sg.kind === 'epic' ? 'EPIC' : sg.kind === 'weapon' ? 'LEGENDARY' : 'RELIC';
       const face = (dir) => canvasTex(512, 256, (x, w, hh) => {
         x.fillStyle = '#16121c'; x.fillRect(0, 0, w, hh);
         x.strokeStyle = '#' + c.toString(16).padStart(6, '0'); x.lineWidth = 14; x.strokeRect(10, 10, w - 20, hh - 20);
         x.fillStyle = x.strokeStyle; x.textAlign = 'center'; x.textBaseline = 'middle';
         x.font = 'bold 64px sans-serif';
-        x.fillText(tr(legend ? 'LEGENDARY' : 'EPIC'), w / 2 - dir * 50, 92, 380);
+        x.fillText(tr(name), w / 2 - dir * 50, 92, 380);
         x.font = 'bold 40px sans-serif';
         x.fillText(tr('THIS WAY'), w / 2 - dir * 50, 170, 380);
         // The arrow, a shape and not a letter.
@@ -287,8 +342,22 @@ export class WorldView {
 
   // sec: which hidden paths this climb has ({ hard, open } from level.js pathsOf), or nothing for none.
   setSecrets(sec) {
+    this.secNow = sec;
     for (const p of this.secretParts || []) p.o.visible = !!sec && !!sec[p.sec];
     for (const c of this.level.cols) if (c.kind === 'secret') c.on = secretOn(c, sec);
+    for (const d of this.dyn) if (d.c.kind === 'secret') { d.off = !secretOn(d.c, sec); d.mesh.visible = !d.off; }
+    this.markRelics(this.relicHas);
+  }
+
+  // has(id): is this relic found? Its pillars of light go out.
+  markRelics(has) {
+    this.relicHas = has;
+    const L = this.level, sec = this.secNow;
+    for (const b of this.relicBeams || []) {
+      if (b.part) continue;
+      const r = L.relics.find((q) => q.id === b.id);
+      b.o.visible = !!r && !!sec && !!sec[r.kind === 'epic' ? 'open' : 'hard'] && !(has && has(b.id));
+    }
   }
 
   // Performance: only animated things recompute transforms each frame, and only animated materials are
@@ -438,7 +507,7 @@ export class WorldView {
   buildDynamic() {
     const L = this.level;
     for (const c of L.cols) {
-      if (!c.dyn && !c.crumble && !c.blink && !c.trap) continue;
+      if (!c.dyn && !c.crumble && !c.blink && !c.trap && !c.ghost) continue;
       const z = L.zones[c.zone];
       const glow = c.crumble ? HDR(0xff5a2a, 2.2) : c.look ? HDR(c.look.g, this.glowK) : HDR(z.color, this.glowK);
       const st = !c.crumble && !c.look && c.kind !== 'turn' ? styleFor(this.key, Object.assign({}, c, { kind: 'plat' }), c.zone, rng(c.x * 7 + c.z * 13)) : null;
@@ -447,9 +516,10 @@ export class WorldView {
       const parts = [{ geo: st ? shapeGeo(cheap) : BOXG, m: mat4(0, 0, 0, c.hx * 2, c.hy * 2, c.hz * 2), glow: null }].concat(trimParts(c.hx, c.hy, c.hz, glow, true));
       let mat = c.crumble ? this.crumbleMat : c.look ? this.lookMat(c.look) : st ? patMat(st.pat, st.col === null ? z.tint : st.col) : c.surf === 'ice' ? this.iceMat : this.zoneMats[c.zone];
       // Blinking platforms fade in and out, so each gets its own see-through material.
-      if (c.blink) { mat = mat.clone(); mat.transparent = true; mat.userData.live = true; }
-      const mesh = this.add(new THREE.Mesh(merge(parts), mat));
-      this.dyn.push({ c, mesh, fall: 0 });
+      if (c.blink || c.ghost) { mat = mat.clone(); mat.transparent = true; mat.userData.live = true; }
+      const mesh = this.add(new THREE.Mesh(merge(parts), mat)), off = c.kind === 'secret';
+      if (off) mesh.visible = false;
+      this.dyn.push({ c, mesh, fall: 0, off });
     }
   }
 
@@ -1427,6 +1497,90 @@ export class WorldView {
           m.position.y = p.on ? 0 : -0.5 + p.warn * 0.12;
           sm.emissiveIntensity = p.on ? 0.6 : 0.22 + p.warn * (0.6 + Math.sin(t * 40) * 0.3);
         });
+      } else if (o.prim === 'wheel') {
+        // What holds the stones of a big wheel or a roundabout: they move by themselves (physics.js), this keeps up with them.
+        const g = new THREE.Group(), rotor = new THREE.Group(), rim = mat;
+        g.position.set(o.x, o.y, o.z);
+        for (let k = 0; k < o.n; k++) {
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(o.R, 0.16, 0.16).translate(o.R / 2, 0, 0), rim);
+          if (o.flat) arm.rotation.y = -(k * Math.PI * 2) / o.n;
+          else arm.rotation.z = (k * Math.PI * 2) / o.n;
+          rotor.add(arm);
+        }
+        const hub = new THREE.Mesh(cyl(0.42, o.flat ? 0.9 : 0.5, 18), rim);
+        if (o.flat) {
+          g.add(hub, rotor);
+          add(o, g, (st, t) => { rotor.rotation.y = -((Math.PI * 2 * t) / o.per + o.a0); });
+        } else {
+          hub.rotation.x = Math.PI / 2;
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(o.R, 0.07, 6, 56), glowM(look, 1.8));
+          rotor.add(ring);
+          g.rotation.y = -Math.atan2(o.uz, o.ux);
+          g.add(hub, rotor);
+          add(o, g, (st, t) => { rotor.rotation.z = o.a0 - (Math.PI * 2 * t) / o.per; });
+        }
+      } else if (o.prim === 'windmill') {
+        const g = new THREE.Group(), rotor = new THREE.Group(), hub = new THREE.Mesh(cyl(0.34, 0.4, 16).rotateX(Math.PI / 2), mat);
+        g.position.set(o.x, o.y, o.z);
+        g.rotation.y = Math.PI / 2 - Math.atan2(o.uz, o.ux);
+        for (let k = 0; k < o.n; k++) {
+          const arm = new THREE.Group(), blade = new THREE.Mesh(new THREE.BoxGeometry(o.R, 0.3, 0.14).translate(o.R / 2, 0, 0), mat), edge = new THREE.Mesh(new THREE.BoxGeometry(o.R - 0.3, 0.05, 0.16).translate(o.R / 2 + 0.15, 0.17, 0), glowM(look, 3));
+          arm.add(blade, edge);
+          arm.rotation.z = (k * Math.PI * 2) / o.n;
+          rotor.add(arm);
+        }
+        g.add(hub, rotor);
+        add(o, g, (st, t) => { rotor.rotation.z = st.blade(o, t); });
+      } else if (o.prim === 'ring') {
+        const g = new THREE.Group(), P = {};
+        g.position.set(o.x, o.y, o.z);
+        const m = new THREE.MeshBasicMaterial({ color: HDR(look.g, 3), transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+        m.userData.live = true;
+        const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.55, 48, 1, true).translate(0, 0.28, 0), m), core = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), glowM(look, 2.4));
+        core.position.y = 0.1;
+        g.add(wall, core);
+        add(o, g, (st, t) => {
+          const p = st.ring(o, t, P);
+          wall.visible = p.r > 0.3;
+          wall.scale.set(p.r, 1, p.r);
+          m.opacity = Math.min(1, (1 - p.k) * 2.2);
+        });
+      } else if (o.prim === 'comet') {
+        const g = new THREE.Group(), P = {};
+        const line = new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.2), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+        line.userData.live = true;
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(o.span * 2, 0.05, 0.05), line);
+        bar.position.set(o.x, o.y, o.z);
+        const a = Math.atan2(-o.dz, o.dx);
+        bar.rotation.y = a;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(o.r, 14, 10), glowM(look, 4));
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(o.r * 0.85, 3.2, 12, 1, true).rotateZ(Math.PI / 2).translate(-1.6, 0, 0), new THREE.MeshBasicMaterial({ color: HDR(look.g, 2.4), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+        tail.rotation.y = a;
+        g.add(bar, head, tail);
+        add(o, g, (st, t) => {
+          const p = st.comet(o, t, P);
+          head.visible = tail.visible = p.fly;
+          if (p.fly) { head.position.set(p.x, p.y, p.z); tail.position.set(p.x, p.y, p.z); }
+          bar.visible = p.warn > 0;
+          line.opacity = p.warn > 0 ? 0.25 + p.warn * 0.75 * (Math.sin(t * 34) > -0.3 ? 1 : 0.4) : 0;
+        });
+      } else if (o.prim === 'well') {
+        const g = new THREE.Group();
+        g.position.set(o.x, o.y, o.z);
+        const core = new THREE.Mesh(new THREE.SphereGeometry(o.r, 18, 12), new THREE.MeshBasicMaterial({ color: 0x050308 }));
+        const gm = new THREE.MeshBasicMaterial({ color: HDR(look.g, 2) });
+        gm.userData.live = true;
+        const r1 = new THREE.Mesh(new THREE.TorusGeometry(o.r * 1.6, 0.05, 6, 36), gm), r2 = new THREE.Mesh(new THREE.TorusGeometry(o.r * 2.2, 0.035, 6, 40), gm);
+        g.add(core, r1, r2);
+        add(o, g, (st, t) => {
+          const p = st.pulse(o, t, 0.5), k = p.on ? 1 : 0.35 + p.warn * 0.4;
+          gm.color.setHex(look.g).multiplyScalar(0.9 + k * 2.6);
+          r1.rotation.set(t * 1.7, t * 2.3 * k, 0);
+          r2.rotation.set(-t * 1.1, 0, t * 2.9 * k);
+          const s = 1 + (p.on ? 0.1 * Math.sin(t * 16) : 0);
+          r1.scale.setScalar(s);
+          r2.scale.setScalar(s);
+        });
       } else if (o.prim === 'jet') {
         const g = new THREE.Group();
         const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.6), mat);
@@ -1914,6 +2068,7 @@ export class WorldView {
     const tick = (this.tick = (this.tick || 0) + 1), eye = this.camPos, dyn = this.dyn;
     for (let i = 0; i < dyn.length; i++) {
       const d = dyn[i], c = d.c, m = d.mesh;
+      if (d.off) continue;
       // Far above or below the camera a quarter of the updates is plenty: nobody can tell from there.
       const far = !!eye && Math.abs(c.y - eye.y) > 70;
       if (far && d.far && ((i + tick) & 3) !== 0) continue;
@@ -1929,6 +2084,8 @@ export class WorldView {
         const dr = c.ry - d.ory, ry = Math.abs(dr) < 1 ? d.ory + dr * alpha : c.ry;
         if (d.lrx !== c.rx || d.lry !== ry || d.lrz !== c.rz) { d.lrx = c.rx; d.lry = ry; d.lrz = c.rz; m.rotation.set(c.rx, ry, c.rz, 'YXZ'); }
       }
+      // Always solid, but it keeps fading out of sight.
+      if (c.ghost) m.material.opacity = clamp(0.5 + 0.9 * Math.sin((Math.PI * 2 * t) / c.ghost.per + c.ghost.ph * Math.PI * 2), 0.04, 1);
       if (c.blink) {
         const st = storm.on(c.blink) ? storm.blink(c.blink, t) : { on: true, warn: 0 };
         m.visible = st.on;
@@ -1951,6 +2108,7 @@ export class WorldView {
       const k = 1 + 0.12 * Math.sin(t * 6);
       c.fx.scale.set(k, 1, k);
     }
+    for (const b of this.relicBeams || []) if (b.part || b.o.visible) b.o.material.uniforms.uT.value = wt;
     for (const e of this.cps) { e.halo.rotation.y = t * 1.5; e.halo.rotation.x = Math.sin(t) * 0.4; e.beam.material.uniforms.uT.value = wt; }
     for (const r of this.rods) {
       const w = storm.rodWarn(r.r, t);

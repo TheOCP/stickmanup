@@ -87,6 +87,7 @@ function makeGame(run, head) {
     doors: Array.isArray(head.doors) ? head.doors : [], stuns: Array.isArray(head.stuns) ? head.stuns : [],
     pos: Array.isArray(head.pos) && head.pos.every(Number.isFinite) ? { [s.slot]: head.pos } : null,
     noCord: !!head.noCord, pcp: head.pcp || {}, loose: Array.isArray(head.loose) ? head.loose : [],
+    rest: head.mode === 'solo' && Array.isArray(head.rest) ? head.rest : null,
   };
   const game = new Game(app, s, g);
   game.simT = head.t;
@@ -260,7 +261,7 @@ function shotInTime(live, gun) {
 
 function snapshot(live) {
   const g = live.game, m = g.me;
-  return { seq: ++live.snapSeq, t: g.simT, cp: g.cp, falls: g.falls, mz: g.mz, doors: [...g.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...g.coinTaken], stuns: [...g.storm.stun].map(([k, v]) => [k, v.from, v.until]), foundRelics: [...live.relics], tick: live.tick };
+  return { seq: ++live.snapSeq, t: g.simT, rest: g.rest, cp: g.cp, falls: g.falls, mz: g.mz, doors: [...g.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...g.coinTaken], stuns: [...g.storm.stun].map(([k, v]) => [k, v.from, v.until]), foundRelics: [...live.relics], tick: live.tick };
 }
 
 function act(live, a, snaps, quiet) {
@@ -374,7 +375,10 @@ function event(live, e) {
       if (e.only === g.slot || ((e.only === null || e.only === undefined) && !g.loose.has(g.slot))) {
         // A phone left behind by its team looks just like this. It stops counting, and nobody gets called anything.
         if (at > live.maxCp) { live.tainted = true; return undefined; }
-        const want = g.spawnPos(at, g.slot), p = e.pos && e.pos[g.slot];
+        // Sent along a hidden course: to one of its markers, or back to where it starts.
+        const course = e.rest !== undefined, ok = course && Array.isArray(e.rest) && Number.isInteger(e.rest[0]) && Number.isInteger(e.rest[1]) ? g.coursePos(e.rest[0], e.rest[1], g.slot) : null;
+        if (course && !ok) return bad(live, 'respawn', 30, 'Sent to a course marker that does not exist.');
+        const want = ok || g.spawnPos(at, g.slot), p = e.pos && e.pos[g.slot];
         if (p && Math.hypot(p[0] - want[0], p[1] - want[1], p[2] - want[2]) > 0.5) return bad(live, 'respawn', 60, 'Respawned somewhere other than the checkpoint: a teleport.');
       }
       g.onEvent(e);

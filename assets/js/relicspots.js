@@ -1,0 +1,2 @@
+// Written by dev/makecatalog.mjs: how high each relic course starts.
+export const RELIC_AT = {"storm:0":240,"storm:1":617,"storm:e":299,"storm:w":691,"sunny:0":184,"sunny:1":659,"sunny:e":297,"sunny:w":510,"forest:0":210,"forest:1":712,"forest:e":189,"forest:w":599,"volcano:0":218,"volcano:1":635,"volcano:e":388,"volcano:w":416,"city:0":188,"city:1":705,"city:e":334,"city:w":403,"waterfall:0":255,"waterfall:1":637,"waterfall:e":239,"waterfall:w":686};

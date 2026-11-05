@@ -226,6 +226,17 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px;
 #hNav svg { width: 100%; height: 100%; display: block; animation: navPulse 1.4s ease-in-out infinite; }
 #hNav path { fill: #7ff8d8; stroke: rgba(6, 20, 26, 0.85); stroke-width: 2.5; stroke-linejoin: round; filter: drop-shadow(0 0 4px rgba(127, 248, 216, 0.8)); }
 @keyframes navPulse { 0%, 100% { transform: translateY(0); opacity: 0.95; } 50% { transform: translateY(-3px); opacity: 0.75; } }
+/* The marker for the nearest relic: over its gate, or on the edge of the screen on its side. */
+#hRelic { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; color: #ffa030; --m: 255, 160, 48; }
+#hRelic[hidden] { display: none; }
+#hRelic.epic { color: #c070ff; --m: 192, 112, 255; }
+#hRelic.weapon { color: #ffd040; --m: 255, 208, 64; }
+#hRelic i { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; transform: rotate(45deg); background: currentColor; border: 2px solid rgba(255, 255, 255, 0.92); border-radius: 3px; box-shadow: 0 0 12px rgba(var(--m), 0.95); animation: relicPulse 1.2s ease-in-out infinite; }
+@keyframes relicPulse { 0%, 100% { transform: rotate(45deg) scale(1); } 50% { transform: rotate(45deg) scale(1.22); } }
+#hRelic b { position: absolute; left: 0; top: 15px; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+#hAlt .marks .rl { width: 8px; height: 8px; left: 0; border: 0; border-radius: 1px; background: #ffa030; color: #ffa030; transform: translateY(50%) rotate(45deg); box-shadow: 0 0 6px currentColor; }
+#hAlt .marks .rl.epic { background: #c070ff; color: #c070ff; }
+#hAlt .marks .rl.weapon { background: #ffd040; color: #ffd040; }
 #hAlt { position: absolute; left: calc(22px + var(--il)); top: 76px; bottom: 30%; width: 8px; }
 #hAlt .track { position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
 #hAlt .track i { position: absolute; left: 0; right: 0; opacity: 0.75; }

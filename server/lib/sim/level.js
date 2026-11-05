@@ -9,7 +9,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 19;
+export const LEVEL_VERSION = 20;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -322,7 +322,7 @@ export function generateLevel(mapId = 0) {
     map: MAP.id, mapKey: MAP.key, core: MAP.core, pattern: MAP.pattern,
     cols: [], rings: [], decor: [], cps: [], fans: [], rods: [], signs: [], crumbles: [], zones: [],
     anchors: [], doors: [], monsters: [], bats: [], lasers: [], arrows: [], swings: [], trees: [], geysers: [], rocks: [], towers: [],
-    obs: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [], moves: [], hops: [], zips: [], mazes: [],
+    obs: [], wells: [], blinks: [], traps: [], bumpers: [], flows: [], jumpers: [], moves: [], hops: [], zips: [], mazes: [],
     plats: 0, spawn: null, summit: null, top: 0,
   };
   const recs = [], buckets = [], usedObs = [], obsZone = [];
@@ -2079,16 +2079,17 @@ export function generateLevel(mapId = 0) {
   }
 
   // ---------- hidden places ----------
-  // Paths of stepping stones leading off the route, each to a relic. The camera looks in at the tower from outside, so
-  // anything further out than the route is behind you until you turn round.
-  //   suit    two hidden ones per map, with no sign: a legendary suit each, on every difficulty.
-  //   epic    one per map, on every difficulty: a sign at the start, a long path with traps, and a vault at the end that
-  //           opens the epic things of this map in the shop.
-  //   weapon  one per map, on every difficulty: a sign, tiny stones, long gaps and many traps, to a vault with
-  //           the map's legendary weapon.
-  // game.js switches them on (pathOn), worldview.js shows them, and the server's rerun does the same.
+  // Every relic but the ones in the maze gardens waits at the end of its own parkour course, out in the open air past the
+  // route. The course is put together from COURSE parts in a random order, with random sizes, heights and timing, so no two
+  // are alike. The camera looks in at the tower from outside, so a course runs round the tower (seen side on) and not away
+  // from it. Each map's are fixed by its seed: everyone on a team has to see the same stones, and so does the server's rerun.
+  //   suit    two per map: a legendary suit each.
+  //   epic    one per map: a vault that opens the epic things of this map in the shop.
+  //   weapon  one per map, the longest and hardest: a vault with the map's legendary weapon.
+  // All of them start at a gate on a route platform with a pillar of light (worldview.js) and end at a ring that takes you
+  // back to that platform. Markers along the way are where a fall brings you back to (game.js).
   function buildSecrets() {
-    const SR = rng(MAP.seed ^ 0x51ec7e7), sr = (a, b) => a + SR() * (b - a);
+    const SR = rng(MAP.seed ^ 0x51ec7e7), sr = (a, b) => a + SR() * (b - a), shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (SR() * (i + 1)) | 0, t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
     out.relics = [];
     out.signs = [];
     const pool = out.cols.filter((c) => c.kind === 'plat' && c.t === BOX && !c.dyn && !c.crumble && !c.blink && !c.trap && !c.surf && !c.look && !c.shaft && Math.min(c.hx, c.hz) > 0.75);
@@ -2102,107 +2103,446 @@ export function generateLevel(mapId = 0) {
         }
       }
     };
-    // Is a stone here clear of everything else: colliders, route footprints, hazards and the other paths?
-    const clearAt = (x, y, z, h, skip) => {
-      const m = h + 1.1, y0 = y - 1.6, y1 = y + HEAD + 0.8;
-      for (const c of out.cols) {
-        if (c === skip) continue;
-        if (c.maxx >= x - m && c.minx <= x + m && c.maxz >= z - m && c.minz <= z + m && c.maxy >= y0 && c.miny <= y1) return false;
-      }
-      const a = { x, z, hx: h, hz: h, c: 1, s: 0 };
-      for (const q of recs) {
-        if (q.y + q.h < y - 1.2 || q.y > y1 || Math.hypot(q.x - x, q.z - z) > q.rad + h * 1.5 + 1.2) continue;
-        if (overlap(a, q, 1.0)) return false;
-      }
-      for (const p of hazards) if (Math.abs(p[1] - y) < 8 && Math.hypot(p[0] - x, p[2] - z) < 6.5) return false;
-      for (const t of out.trees) if (Math.hypot(t.x - x, t.z - z) < 9) return false;
-      return true;
+    const INNER = ROUTE === 'crater', MAX_R = INNER ? 16.5 : 64, TURNS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4];
+    // How far you can jump, edge to edge, to a stone dy higher.
+    const jumpGap = (dy) => 6.2 * ((9.4 + Math.sqrt(Math.max(0, 88.36 - 48 * dy))) / 24) - 0.2;
+    const LOOKS = {
+      suit: { c: 0x2a2018, g: 0xffa030, s: 'ball' }, epic: { c: 0x221a30, g: 0xc070ff, s: 'ball' }, weapon: { c: 0x2a2410, g: 0xffd040, s: 'ball' },
+      rest: { c: 0x143028, g: 0x7ff8d8 }, pad: { c: 0x123018, g: 0x60ff90 }, ice: { c: 0x8fc8e8, g: 0xa0e8ff }, a: { c: 0x301030, g: 0xff50c0 }, b: { c: 0x102c34, g: 0x40e0ff },
+      laser: { c: 0x2a1014, g: 0xff4060, s: 'laser' },
     };
-    const far = (x, z) => { const rad = Math.hypot(x, z); return (ROUTE === 'crater' && rad > 17) || rad > 46; };
+
+    function layCourse(plan, st, ang0, side, wantR) {
+      const A = { cols: [], obs: [], own: [], rests: [], recs: [], wells: [], way: [] }, sec = plan.kind === 'epic' ? 'open' : 'hard', look = LOOKS[plan.kind];
+      const K = () => sr(plan.k[0], plan.k[1]), hard = plan.k[1] > 0.8, gapOf = (dy, f = 1) => jumpGap(dy) * K() * f;
+      const support = (a) => {
+        const ux = Math.cos(a), uz = Math.sin(a), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);
+        return Math.abs(ux * acx + uz * acz) * st.hx + Math.abs(ux * bcx + uz * bcz) * st.hz;
+      };
+      let cur = { x: st.x, y: st.y + st.hy, z: st.z, a: ang0, hl: support(ang0), hw: 0 }, steps = 0;
+      const sup = (a) => cur.hl * Math.abs(Math.cos(a - cur.a)) + cur.hw * Math.abs(Math.sin(a - cur.a));
+      const steer = () => {
+        const rad = Math.hypot(cur.x, cur.z), e = clamp((wantR - rad) / 12, -0.8, 0.8);
+        return Math.atan2(cur.z, cur.x) + side * (Math.PI / 2 - e);
+      };
+      const inBounds = (x, z) => Math.hypot(x, z) <= MAX_R;
+      // Clear of everything: colliders, route footprints, hazards, trees, and the rest of this course.
+      const clearAt = (x, y, z, h, up = HEAD + 0.8, down = 1.6, skip = null, last = null) => {
+        const m = h + 1.1, y0 = y - down, y1 = y + up;
+        for (const c of out.cols) {
+          if (c === skip) continue;
+          if (c.maxx >= x - m && c.minx <= x + m && c.maxz >= z - m && c.minz <= z + m && c.maxy >= y0 && c.miny <= y1) return false;
+        }
+        const a = { x, z, hx: h, hz: h, c: 1, s: 0 };
+        for (const q of recs) {
+          if (q.y + q.h < y0 + 0.4 || q.y > y1 || Math.hypot(q.x - x, q.z - z) > q.rad + h * 1.5 + 1.2) continue;
+          if (overlap(a, q, 1.0)) return false;
+        }
+        for (const p of hazards) if (p[1] > y0 - 6 && p[1] < y1 + 6 && Math.hypot(p[0] - x, p[2] - z) < 6.5 + h) return false;
+        for (const t of out.trees) if (Math.hypot(t.x - x, t.z - z) < 9 + h) return false;
+        for (const q of A.own) {
+          if (q === last || q.y1 < y0 || q.y0 > y1) continue;
+          if (Math.hypot(q.x - x, q.z - z) < q.r + h + 0.9) return false;
+        }
+        return true;
+      };
+      // Where the next thing goes: a jump on from the last one, bending round whatever is in the way.
+      const place = (hl, hw, gap, dy, o = {}) => {
+        const base = o.a ?? steer();
+        // In a crater there is only the middle, so a course winds up it like a spiral staircase, with shorter gaps for the climb.
+        const lift = INNER && !o.a ? 0.85 : 0;
+        if (lift) gap *= jumpGap(dy + lift) / jumpGap(dy);
+        for (const turn of o.turns || TURNS) {
+          const a = base + turn, d = sup(a) + gap + hl, x = cur.x + Math.cos(a) * d, z = cur.z + Math.sin(a) * d, y = cur.y + dy + lift;
+          if (!inBounds(x, z) || y < 12 || y > top - 40) continue;
+          if (!clearAt(x, y, z, Math.hypot(hl, hw) + (o.pad || 0), o.up, o.down, o.skip, A.own[A.own.length - 1])) continue;
+          return { x, y, z, a, hl, hw };
+        }
+        return null;
+      };
+      const own = (x, y0, y1, z, r) => { const q = { x, y0, y1, z, r }; A.own.push(q); return q; };
+      const col = (c, props) => {
+        c.kind = 'secret'; c.rk = plan.kind; c.on = false; c.zone = zoneAt(out, c.y); c.surf = null; c.look = look;
+        if (props) Object.assign(c, props);
+        A.cols.push(c);
+        return c;
+      };
+      // A stone at p, which becomes the one to go on from.
+      const stone = (p, props) => {
+        const c = col(makeBox(p.x, p.y - 0.35, p.z, p.hl, 0.35, p.hw, 0, -p.a, 0), props);
+        own(p.x, p.y - 1, p.y + HEAD, p.z, Math.hypot(p.hl, p.hw));
+        cur = p;
+        steps++;
+        A.way.push([c]);
+        return c;
+      };
+      const hazard = (prim, name, o) => { const q = Object.assign({ key: 'course' + prim, name, prim, lvl: 0, look, zone: zoneAt(out, o.y), sec }, o); A.obs.push(q); return q; };
+      const sidev = (a) => [-Math.sin(a), Math.cos(a)];
+      // A comet across the gap between two stones, about where a jump is at its highest.
+      const cometOver = (a, b) => {
+        const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1, nx = -dz / l, nz = dx / l, span = 13, x = (a.x + b.x) / 2, z = (a.z + b.z) / 2, y = (a.y + b.y) / 2 + 1.15;
+        for (const s of [-1, 1]) if (!clearAt(x + nx * span * s, y, z + nz * span * s, 1, 2, 2)) return;
+        hazard('comet', 'Comet', { x, y, z, dx: nx, dz: nz, span, speed: sr(15, 19), per: sr(2.6, 3.5), ph: SR(), r: 0.5 });
+      };
+
+      const PARTS = {
+        // Stones hardly bigger than a foot. Some of them keep fading out of sight, though they are still there.
+        needle() {
+          const n = 3 + ((SR() * 3) | 0), ghost = SR() < 0.45;
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.5, 0.66), dy = sr(-0.5, 0.7), p = place(h, h, gapOf(dy, 0.92), dy);
+            if (!p) return false;
+            const c = stone(p);
+            if (ghost) c.ghost = { per: sr(2.2, 3), ph: j * 0.21 };
+          }
+          return true;
+        },
+        // Too far to jump: jump, then dash.
+        leap() {
+          let p = place(0.95, 0.95, gapOf(0, 0.6), sr(-0.1, 0.3));
+          if (!p) return false;
+          stone(p);
+          const a = cur, dy = sr(-0.2, 0.1);
+          p = place(1.25, 1.25, sr(5.1, 5.7), dy);
+          if (!p) return false;
+          stone(p);
+          if (SR() < 0.5) cometOver(a, cur);
+          return true;
+        },
+        // They fall away just after you land: no stopping.
+        crumbles() {
+          const n = 4 + ((SR() * 3) | 0);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.68, 0.85), dy = sr(-0.3, 0.35), p = place(h, h, gapOf(dy, 0.72), dy);
+            if (!p) return false;
+            stone(p, { crumble: { st: 0, t: 0 } });
+          }
+          return true;
+        },
+        // Two colours taking turns: be in the air while they swap.
+        phase() {
+          const n = 5 + ((SR() * 3) | 0), per = sr(2.8, 3.4);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.75, 0.95), dy = sr(-0.3, 0.35), p = place(h, h, gapOf(dy, 0.72), dy);
+            if (!p) return false;
+            stone(p, { blink: { per, ph: j % 2 ? 0.5 : 0, duty: 0.54, sec }, look: j % 2 ? LOOKS.a : LOOKS.b });
+          }
+          return true;
+        },
+        // A big wheel on edge. Its stones stay level: get on low on the near side, ride over the top, jump off on the far side.
+        wheel() {
+          const R = sr(4.6, 5.4), n = SR() < 0.5 ? 4 : 5, per = sr(9, 11.5), h = 0.95, base = steer(), reachX = 0.835 * R;
+          for (const turn of TURNS) {
+            const a = base + turn, ux = Math.cos(a), uz = Math.sin(a), d = sup(a) + sr(1.8, 2.4) + reachX + h, hx = cur.x + ux * d, hy = cur.y + 0.55 * R, hz = cur.z + uz * d;
+            const ed = reachX + h + sr(1.9, 2.5) + 1.2, ex = hx + ux * ed, ey = hy + 0.55 * R - 0.3, ez = hz + uz * ed;
+            if (!inBounds(hx, hz) || !inBounds(ex, ez) || ey > top - 40) continue;
+            if (!clearAt(hx, hy, hz, R + 1.4, R + 2.5, R + 2, null, A.own[A.own.length - 1]) || !clearAt(ex, ey, ez, 1.7)) continue;
+            for (let j = 0; j < n; j++) {
+              const a0 = (j * TAU) / n;
+              col(makeBox(hx + ux * Math.cos(a0) * R, hy + Math.sin(a0) * R, hz + uz * Math.cos(a0) * R, h, 0.25, h, 0, -a, 0), { dyn: { k: 'wheel', hx, hy, hz, ux, uz, R, a0, per } });
+            }
+            A.way.push(A.cols.slice(-n));
+            hazard('wheel', 'Big wheel', { x: hx, y: hy, z: hz, ux, uz, R, n, per, a0: 0 });
+            own(hx, hy - R - 1, hy + R + 3, hz, R + 1.4);
+            A.recs.push([hx, hz, R, R, -a, hy - R, 2 * R + HEAD]);
+            stone({ x: ex, y: ey, z: ez, a, hl: 1.2, hw: 1.2 });
+            return true;
+          }
+          return false;
+        },
+        // A roundabout: ride it to the other side. On the harder courses a laser sweeps over it the other way.
+        carousel() {
+          const R = sr(4, 4.6), arms = 3, per = sr(7, 9), hl = 1.1, base = steer();
+          for (const turn of TURNS) {
+            const a = base + turn, ux = Math.cos(a), uz = Math.sin(a), d = sup(a) + sr(1.6, 2.2) + R + hl, hx = cur.x + ux * d, y = cur.y, hz = cur.z + uz * d;
+            const ed = R + hl + sr(1.7, 2.3) + 1.1, ex = hx + ux * ed, ez = hz + uz * ed;
+            if (!inBounds(hx, hz) || !inBounds(ex, ez)) continue;
+            if (!clearAt(hx, y, hz, R + 1.8, undefined, undefined, null, A.own[A.own.length - 1]) || !clearAt(ex, y, ez, 1.6)) continue;
+            for (let j = 0; j < arms; j++) {
+              const a0 = (j * TAU) / arms;
+              col(makeBox(hx + Math.cos(a0) * R, y - 0.25, hz + Math.sin(a0) * R, hl, 0.25, 0.85, 0, -a0, 0), { dyn: { k: 'orbit', hx, hy: y - 0.25, hz, off: R, a0, per } });
+            }
+            A.way.push(A.cols.slice(-arms));
+            hazard('wheel', 'Roundabout', { x: hx, y: y - 0.25, z: hz, R, n: arms, per, a0: 0, flat: true });
+            if (hard) hazard('sweep', 'Laser sweep', { x: hx, y: y + 0.55, z: hz, n: 2, len: R + 1.5, w: 0.1, per: -sr(3, 3.8), ph: SR(), look: LOOKS.laser });
+            own(hx, y - 1, y + HEAD, hz, R + 1.8);
+            A.recs.push([hx, hz, R + hl, R + hl, 0, y]);
+            stone({ x: ex, y, z: ez, a, hl: 1.1, hw: 1.1 });
+            return true;
+          }
+          return false;
+        },
+        // Stones shuttling across your way, each the opposite way to the last.
+        shuttle() {
+          const n = 2 + ((SR() * 2) | 0), s = sr(1.7, 2.3), per = sr(3.4, 4.2), h = 0.85;
+          for (let j = 0; j < n; j++) {
+            const dy = sr(-0.2, 0.3), p = place(h, h, gapOf(dy, 0.72), dy, { pad: s });
+            if (!p) return false;
+            const [nx, nz] = sidev(p.a);
+            stone(p, { dyn: { k: 'pp', ax: p.x - nx * s, ay: p.y - 0.35, az: p.z - nz * s, bx: p.x + nx * s, by: p.y - 0.35, bz: p.z + nz * s, per, ph: j % 2 ? 0.5 : 0 } });
+          }
+          const p = place(0.9, 0.9, gapOf(0, 0.72), 0);
+          if (!p) return false;
+          stone(p);
+          return true;
+        },
+        // A staircase of pistons going up and down in turn.
+        pistons() {
+          const n = 3 + ((SR() * 2) | 0), amp = sr(1.4, 2), per = sr(3, 3.6), h = 0.85;
+          for (let j = 0; j < n; j++) {
+            const p = place(h, h, sr(1.7, 2.3), sr(0.9, 1.3), { up: HEAD + amp + 0.8, down: amp + 1.6 });
+            if (!p) return false;
+            stone(p, { dyn: { k: 'pp', ax: p.x, ay: p.y - 0.35 - amp, az: p.z, bx: p.x, by: p.y - 0.35 + amp, bz: p.z, per, ph: j * 0.25 } });
+          }
+          const p = place(1, 1, sr(1.9, 2.4), 0.3, { down: amp + 2 });
+          if (!p) return false;
+          stone(p);
+          return true;
+        },
+        // Two walls facing each other, too high to jump: wall jump up between them and out over the low one.
+        shaft() {
+          const W = 3.1, t = 0.5, deep = 3, front = 2, F = sr(5, 7), H = F + 2.4, sx = W + t * 2, sz = deep + front, base = steer();
+          for (const turn of TURNS) {
+            const a = base + turn, ux = Math.cos(a), uz = Math.sin(a), rad = Math.atan2(cur.z, cur.x), [vx, vz] = sidev(a);
+            // The open front faces the camera: away from the tower, or in a crater toward its middle.
+            const f = (vx * Math.cos(rad) + vz * Math.sin(rad) > 0 ? 1 : -1) * (INNER ? -1 : 1), ox = vx * f, oz = vz * f;
+            const y = cur.y + sr(-0.1, 0.25), d = sup(a) + sr(1, 1.5) + sx / 2, back = sz / 2 - front / 2, fx = cur.x + ux * d - ox * back, fz = cur.z + uz * d - oz * back;
+            const in2 = sz / 2 - deep / 2, cx = fx - ox * in2, cz = fz - oz * in2;
+            const ex0 = W / 2 + t + 1.5 + 0.05, ex = cx + ux * ex0, ez = cz + uz * ex0, ey = y + F - 1;
+            if (!inBounds(fx, fz) || !inBounds(ex, ez)) continue;
+            if (!clearAt(cx, y, cz, 4.6, H + 2.2, 1.6, null, A.own[A.own.length - 1]) || !clearAt(ex, ey, ez, 2.1)) continue;
+            const floor = col(makeBox(fx, y - 0.35, fz, sx / 2, 0.35, sz / 2, 0, -a, 0));
+            A.way.push([floor]);
+            floor.shaftOf = { cx, cz, ux, uz, ox, oz, W, F, y, fx: fx + ox * back, fz: fz + oz * back };
+            for (const s of [-1, 1]) {
+              const o = s * (W / 2 + t / 2), wh = s > 0 ? F : H;
+              col(makeBox(cx + ux * o, y + wh / 2, cz + uz * o, t / 2, wh / 2, deep / 2, 0, -a, 0));
+            }
+            col(makeBox(cx - ox * (deep / 2 + t / 2), y + H / 2 - 0.35, cz - oz * (deep / 2 + t / 2), sx / 2, H / 2 + 0.35, t / 2, 0, -a, 0));
+            own(cx, y - 1, y + H + 1.6, cz, 4.6);
+            A.recs.push([cx, cz, sx / 2, deep / 2 + t, -a, y, H + 1.6]);
+            stone({ x: ex, y: ey, z: ez, a, hl: 1.5, hw: 1.5 });
+            return true;
+          }
+          return false;
+        },
+        // A narrow bridge with windmill blades coming down across it. Run through between two blades.
+        mill() {
+          const hl = sr(3.6, 4.6), hw = sr(0.6, 0.75), dy = sr(-0.2, 0.3), p = place(hl, hw, gapOf(dy, 0.72), dy, { pad: 0.6 });
+          if (!p) return false;
+          stone(p);
+          const ux = Math.cos(p.a), uz = Math.sin(p.a), n = hl > 4 ? 2 : 1, blades = hard ? 3 : 2;
+          for (let j = 0; j < n; j++) {
+            const off = n === 1 ? 0 : (j ? 0.45 : -0.45) * hl;
+            hazard('windmill', 'Windmill blade', { x: p.x + ux * off, y: p.y + 3, z: p.z + uz * off, ux, uz, R: 2.9, n: blades, per: sr(2.6, 3.4) * (j ? -1 : 1), ph: SR() });
+          }
+          return true;
+        },
+        // A wide deck with shock rings growing from its middle. Jump each ring as it reaches you.
+        ringdeck() {
+          const h = sr(3.1, 3.6), dy = sr(-0.2, 0.3), p = place(h, h, gapOf(dy, 0.72), dy);
+          if (!p) return false;
+          stone(p);
+          const per = sr(1.6, 2.1), ph = SR();
+          hazard('ring', 'Shock ring', { x: p.x, y: p.y, z: p.z, rmax: h * 1.42, per, ph });
+          if (hard) hazard('ring', 'Shock ring', { x: p.x, y: p.y, z: p.z, rmax: h * 1.42, per, ph: ph + 0.5 });
+          return true;
+        },
+        // Small stones with comets flying across the gaps.
+        cometrun() {
+          const n = 3 + ((SR() * 2) | 0);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.62, 0.78), dy = sr(-0.3, 0.3), a = cur, p = place(h, h, gapOf(dy, 0.85), dy);
+            if (!p) return false;
+            stone(p);
+            if (j) cometOver(a, cur);
+          }
+          return true;
+        },
+        // A gravity well off to one side that pulls you toward it, on and off, as you jump past.
+        wellgap() {
+          const n = 3 + ((SR() * 2) | 0), from = cur, s = SR() < 0.5 ? 1 : -1;
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.72, 0.88), dy = sr(-0.25, 0.3), p = place(h, h, gapOf(dy, 0.8), dy);
+            if (!p) return false;
+            stone(p);
+          }
+          const [nx, nz] = sidev(cur.a), x = (from.x + cur.x) / 2 + nx * s * 4, y = (from.y + cur.y) / 2 + 1, z = (from.z + cur.z) / 2 + nz * s * 4;
+          if (!clearAt(x, y, z, 1.2, 2, 2)) return true;
+          A.wells.push(hazard('well', 'Gravity well', { x, y, z, reach: 7, str: sr(9, 12), per: sr(3, 3.8), duty: 0.5, ph: SR(), r: 0.65 }));
+          return true;
+        },
+        // A spinning deck with laser bars turning the other way, low enough to jump.
+        spindeck() {
+          const h = sr(2.4, 2.8), dy = sr(-0.2, 0.3), p = place(h, h, gapOf(dy, 0.72), dy);
+          if (!p) return false;
+          const w = sr(0.7, 1.1) * (SR() < 0.5 ? 1 : -1);
+          stone(p, { dyn: { k: 'turn', a0: -p.a, w } });
+          hazard('sweep', 'Laser sweep', { x: p.x, y: p.y + 0.55, z: p.z, n: 2, len: h * 1.3, w: 0.1, per: sr(2.6, 3.4) * (w > 0 ? 1 : -1), ph: SR(), look: LOOKS.laser });
+          return true;
+        },
+        // A long thin beam rocking from side to side, with a weight swinging across it on the harder courses.
+        tiltbeam() {
+          const hl = sr(3, 4), hw = sr(0.5, 0.62), dy = sr(-0.2, 0.3), p = place(hl, hw, gapOf(dy, 0.72), dy);
+          if (!p) return false;
+          stone(p, { dyn: { k: 'tilt', ax: 'x', amp: sr(0.14, 0.22), per: sr(3.6, 4.8), ph: SR() } });
+          if (hard) { const [nx, nz] = sidev(p.a), L2 = 2.45; hazard('pendulum', 'Swinging weight', { x: p.x, y: p.y + 0.6 + L2, z: p.z, fy: p.y, nx, nz, L: L2, r: 0.5, amp: 1.05, per: sr(2.3, 3), ph: SR() }); }
+          return true;
+        },
+        // Slippery stones: land, and you keep sliding.
+        ice() {
+          const n = 3 + ((SR() * 2) | 0);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.8, 1), dy = sr(-0.2, 0.4), p = place(h, h, gapOf(dy, 0.72), dy);
+            if (!p) return false;
+            stone(p, { surf: 'ice', look: LOOKS.ice });
+          }
+          return true;
+        },
+        // Bounce pads, each one higher than the last.
+        padshot() {
+          const n = 2 + ((SR() * 2) | 0);
+          let p = place(0.85, 0.85, sr(1.4, 2), sr(-0.1, 0.2), { up: 9 });
+          if (!p) return false;
+          stone(p, { surf: 'pad', look: LOOKS.pad });
+          for (let j = 1; j < n; j++) {
+            p = place(0.85, 0.85, sr(2.4, 3.6), sr(3, 3.8), { up: 9 });
+            if (!p) return false;
+            stone(p, { surf: 'pad', look: LOOKS.pad });
+          }
+          p = place(1.1, 1.1, sr(2.2, 3.2), sr(3, 3.8));
+          if (!p) return false;
+          stone(p);
+          return true;
+        },
+        // A bridge whose spikes come up in a wave: jump them, or run with the gap.
+        spikerun() {
+          const hl = sr(4, 5), hw = sr(0.72, 0.9), dy = sr(-0.2, 0.3), p = place(hl, hw, gapOf(dy, 0.72), dy);
+          if (!p) return false;
+          stone(p);
+          const n = 3, per = sr(2.2, 2.8), ux = Math.cos(p.a), uz = Math.sin(p.a);
+          for (let j = 0; j < n; j++) {
+            const off = ((j + 0.5) / n * 2 - 1) * hl * 0.85;
+            hazard('spikes', 'Spike wave', { x: p.x + ux * off, y: p.y, z: p.z + uz * off, hx: (hl * 0.85) / n - 0.05, hz: hw - 0.06, ry: -p.a, per, ph: j * 0.28, duty: 0.42 });
+          }
+          return true;
+        },
+        // Presses slamming down one after another along a bridge.
+        crushrun() {
+          const hl = sr(3.6, 4.4), hw = sr(0.85, 1), dy = sr(-0.2, 0.3), p = place(hl, hw, gapOf(dy, 0.72), dy, { up: 7 });
+          if (!p) return false;
+          stone(p);
+          const n = 2 + (hard ? 1 : 0), per = sr(2.8, 3.4), ux = Math.cos(p.a), uz = Math.sin(p.a);
+          for (let j = 0; j < n; j++) {
+            const off = ((j + 0.5) / n * 2 - 1) * hl * 0.8;
+            hazard('crusher', 'Press', { x: p.x + ux * off, y: p.y, z: p.z + uz * off, hs: hw + 0.1, per, ph: j * 0.31, ry: -p.a });
+          }
+          return true;
+        },
+        // Small stones with a weight swinging through each gap.
+        swingrun() {
+          const n = 3 + ((SR() * 2) | 0);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.68, 0.85), dy = sr(-0.3, 0.3), a = cur, p = place(h, h, gapOf(dy, 0.78), dy);
+            if (!p) return false;
+            stone(p);
+            if (j) {
+              const b = cur, dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1, L2 = 2.45, fy = (a.y + b.y) / 2;
+              hazard('pendulum', 'Swinging weight', { x: (a.x + b.x) / 2, y: fy + 0.6 + L2, z: (a.z + b.z) / 2, fy, nx: -dz / l, nz: dx / l, L: L2, r: 0.5, amp: 1.05, per: sr(2.3, 3), ph: SR() });
+            }
+          }
+          return true;
+        },
+      };
+
+      // Two hops down off the route, out of sight, then the first marker.
+      let p = place(0.95, 0.95, sr(1.7, 2.1), sr(-1, -0.7), { a: ang0, turns: [0], skip: st });
+      if (!p) return false;
+      stone(p);
+      p = place(0.95, 0.95, sr(1.9, 2.3), sr(-0.2, 0.3));
+      if (!p) return false;
+      stone(p);
+      const marker = () => {
+        const q = place(1.75, 1.75, gapOf(0, 0.6), sr(0, 0.4));
+        if (!q) return false;
+        const c = stone(q, { rest: A.rests.length, look: LOOKS.rest });
+        A.rests.push({ c, x: q.x, y: q.y, z: q.z, a: q.a });
+        return true;
+      };
+      if (!marker()) return false;
+      // At least three of the kinds found nowhere else on the map, the rest from all of them, in any order.
+      const SPECIAL = shuffle(['wheel', 'mill', 'ringdeck', 'cometrun', 'wellgap', 'phase']), OTHER = shuffle(['needle', 'leap', 'crumbles', 'carousel', 'shuttle', 'pistons', 'shaft', 'spindeck', 'tiltbeam', 'ice', 'padshot', 'spikerun', 'crushrun', 'swingrun']);
+      const list = shuffle([...SPECIAL.slice(0, 3), ...OTHER.slice(0, plan.parts - 3)]).concat(SPECIAL.slice(3), OTHER.slice(plan.parts - 3));
+      let done = 0;
+      const made = [];
+      for (const name of list) {
+        if (done >= plan.parts) break;
+        const m = { cols: A.cols.length, obs: A.obs.length, own: A.own.length, recs: A.recs.length, wells: A.wells.length, way: A.way.length, rests: A.rests.length, cur, steps };
+        if (!PARTS[name]()) {
+          A.cols.length = m.cols; A.obs.length = m.obs; A.own.length = m.own; A.recs.length = m.recs; A.wells.length = m.wells; A.way.length = m.way; A.rests.length = m.rests; cur = m.cur; steps = m.steps;
+          continue;
+        }
+        done++;
+        made.push(name);
+        // A marker every third part, so a fall doesn't cost the whole course.
+        if (done % 3 === 0 && done < plan.parts && !marker()) return false;
+      }
+      if (done < plan.parts) return false;
+      const dyEnd = sr(0.2, 0.5), e = place(plan.end / 2, plan.end / 2, gapOf(dyEnd, 0.7), dyEnd, { up: HEAD + 2 });
+      if (!e) return false;
+      stone(e);
+      return { A, e, made };
+    }
+
+    // Commit a course that fits: everything on it, the relic at its end, and the gate where it leaves the route.
+    function commit(plan, st, ang0, ph0, got) {
+      const { A, e, made } = got, id = MAP.key + ':' + plan.id, sec = plan.kind === 'epic' ? 'open' : 'hard';
+      TAG = 'secret';
+      pathLen += 2000;
+      const i = out.relics.length, ux = Math.cos(e.a), uz = Math.sin(e.a), sx = st.x + Math.cos(ang0) * Math.max(0.3, ph0 - 0.45), sz = st.z + Math.sin(ang0) * Math.max(0.3, ph0 - 0.45);
+      for (const c of A.cols) {
+        c.ri = i;
+        out.cols.push(c);
+        if (c.crumble) { c.crumble.i = out.crumbles.length; out.crumbles.push(c); }
+        if (c.blink) out.blinks.push(c);
+        recBox(c.x, c.z, c.hx, c.hz, c.ry, c.y + c.hy);
+      }
+      for (const q of A.recs) recBox(...q);
+      for (const o of A.obs) { o.i = out.obs.length; out.obs.push(o); }
+      for (const w of A.wells) out.wells.push(w);
+      out.relics.push({
+        i, id, kind: plan.kind, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones: A.cols, way: A.way, rests: A.rests, made,
+        vault: { x: e.x, y: e.y, z: e.z, s: plan.end, ry: -e.a }, exit: { x: e.x + ux * (plan.end / 2 - 0.75), y: e.y, z: e.z + uz * (plan.end / 2 - 0.75) },
+        gate: { x: sx, y: st.y + st.hy, z: sz, a: ang0 },
+      });
+      out.signs.push({ x: sx - Math.cos(ang0 + Math.PI / 2) * 1.5, y: st.y + st.hy, z: sz - Math.sin(ang0 + Math.PI / 2) * 1.5, ry: -ang0, kind: plan.kind, sec });
+    }
+
     const plans = [
-      { kind: 'suit', id: '0', y: [170, 300], hops: 3, g: [1.5, 2.1], size: [1.9, 2.3], dy: [-0.5, 0.5], end: 3.2 },
-      { kind: 'suit', id: '1', y: [560, 720], hops: 5, g: [1.9, 2.4], size: [1.4, 1.8], dy: [-0.7, 0.7], end: 3.2 },
-      // Every difficulty: wide enough for anyone who can climb, with traps to time.
-      { kind: 'epic', id: 'e', y: [100, 440], hops: 7, g: [2.2, 2.8], size: [1.3, 1.6], dy: [-0.3, 0.6], end: 4.4, obs: ['pendulum', 'spikes', 'pendulum'] },
-      // The hardest thing on the map: stones a step wide, gaps near the longest jump, a trap at almost every step.
-      { kind: 'weapon', id: 'w', y: [380, 700], hops: 9, g: [2.5, 3.1], size: [0.95, 1.2], dy: [-0.4, 0.8], end: 4.6, obs: ['pendulum', 'spikes', 'crusher', 'pendulum', 'spikes', 'pendulum'] },
+      { kind: 'suit', id: '0', y: [170, 300], parts: 5, k: [0.6, 0.74], end: 4.4 },
+      { kind: 'suit', id: '1', y: [560, 720], parts: 7, k: [0.68, 0.84], end: 4.4 },
+      { kind: 'epic', id: 'e', y: [100, 440], parts: 6, k: [0.64, 0.78], end: 4.6 },
+      { kind: 'weapon', id: 'w', y: [380, 700], parts: 9, k: [0.72, 0.9], end: 4.8 },
     ];
     for (const plan of plans) {
       noteHazards();
-      const list = pool.filter((c) => c.y + c.hy - 2 > plan.y[0] && c.y + c.hy - 2 < plan.y[1]);
-      // Shuffle (seeded), then take the first platform a chain fits off.
-      for (let i = list.length - 1; i > 0; i--) { const j = (SR() * (i + 1)) | 0, t = list[i]; list[i] = list[j]; list[j] = t; }
+      const list = shuffle(pool.filter((c) => c.y + c.hy - 2 > plan.y[0] && c.y + c.hy - 2 < plan.y[1]));
       let done = false;
-      for (const st of list) {
+      // Where there is little room (a narrow crater) a course can come out a part or two shorter. There always is one.
+      for (let parts = plan.parts; parts >= 2 && !done; parts--) for (const st of list) {
         if (done) break;
-        const out0 = Math.atan2(st.z, st.x) + (ROUTE === 'crater' ? Math.PI : 0);
-        for (const jit of [0, 0.5, -0.5, 1.0, -1.0]) {
-          const chain = [], ang0 = out0 + jit;
-          let px = st.x, pz = st.z, py = st.y + st.hy, ph, ang = ang0;
-          const reach = (a) => {
-            const ux = Math.cos(a), uz = Math.sin(a), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);
-            return Math.abs(ux * acx + uz * acz) * st.hx + Math.abs(ux * bcx + uz * bcz) * st.hz;
-          };
-          ph = reach(ang);
-          const ph0 = ph;
-          let good = true;
-          for (let k = 0; k < plan.hops && good; k++) {
-            // The first gap stays at the short end: on the way back it is a jump up from a small stone, with little run up.
-            const last = k === plan.hops - 1, size = last ? plan.end : sr(plan.size[0], plan.size[1]), half = size / 2, g0 = sr(plan.g[0], plan.g[1]), gap = k === 0 ? Math.min(g0, plan.g[0] + 0.25) : g0;
-            // The first hop drops out of sight below the platform; the rest wander a little, and the long ones bend
-            // round whatever is in the way instead of giving up.
-            const dy = k === 0 ? sr(-1.0, -0.7) : last ? sr(0.2, 0.5) : sr(plan.dy[0], plan.dy[1]);
-            const ud = Math.cos(Math.PI / 4);
-            let placed = null;
-            for (const turn of k === 0 ? [0] : [0, 0.55, -0.55, 1.1, -1.1]) {
-              const a = ang + turn, d = ph + gap + half / ud * 0.75, x = px + Math.cos(a) * d, z = pz + Math.sin(a) * d, y = py + dy;
-              if (far(x, z) || y < 12 || !clearAt(x, y, z, half, k === 0 ? st : null)) continue;
-              placed = { x, y, z, half, ang: a };
-              break;
-            }
-            if (!placed) { good = false; break; }
-            chain.push(placed);
-            px = placed.x; pz = placed.z; py = placed.y; ph = half / ud * 0.75;
-            ang = placed.ang + sr(-0.35, 0.35);
+        const out0 = Math.atan2(st.z, st.x) + (INNER ? Math.PI : 0), rad = Math.hypot(st.x, st.z), wantR = INNER ? 6.5 : clamp(rad + 16, 36, 56);
+        for (const side of SR() < 0.5 ? [1, -1] : [-1, 1]) {
+          for (const jit of [0, 0.5, -0.5, 1.0, -1.0]) {
+            const ang0 = out0 + jit, ux = Math.cos(ang0), uz = Math.sin(ang0), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);
+            const ph0 = Math.abs(ux * acx + uz * acz) * st.hx + Math.abs(ux * bcx + uz * bcz) * st.hz;
+            const got = layCourse(Object.assign({}, plan, { parts }), st, ang0, side, wantR);
+            if (!got) continue;
+            commit(plan, st, ang0, ph0, got);
+            done = true;
+            break;
           }
-          if (!good) continue;
-          TAG = 'secret';
-          pathLen += 2000;
-          const stones = chain.map((s2) => {
-            const z0 = zoneAt(out, s2.y), ry = -s2.ang;
-            const c = makeBox(s2.x, s2.y - 0.35, s2.z, s2.half, 0.35, s2.half, 0, ry, 0);
-            c.kind = 'secret'; c.zone = z0; c.on = false; c.rk = plan.kind;
-            out.cols.push(c);
-            recBox(s2.x, s2.z, s2.half, s2.half, ry, s2.y);
-            return c;
-          });
-          const e = chain[chain.length - 1], id = MAP.key + ':' + plan.id, sec = plan.kind === 'epic' ? 'open' : 'hard';
-          const relic = { i: out.relics.length, id, kind: plan.kind, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones };
-          out.relics.push(relic);
-          if (plan.obs) {
-            // The vault at the end, and a sign where the path leaves the route.
-            relic.vault = { x: e.x, y: e.y, z: e.z, s: plan.end, ry: -e.ang };
-            const sx = st.x + Math.cos(ang0) * Math.max(0.3, ph0 - 0.45), sz = st.z + Math.sin(ang0) * Math.max(0.3, ph0 - 0.45);
-            out.signs.push({ x: sx, y: st.y + st.hy, z: sz, ry: -ang0, kind: plan.kind, sec });
-            // The traps, spread along the path: weights swinging across a gap, spikes or a press on a stone.
-            const n = plan.obs.length, zone0 = zoneAt(out, e.y);
-            plan.obs.forEach((prim, j) => {
-              const k = Math.min(chain.length - 2, 1 + Math.floor(((j + 0.5) * (chain.length - 2)) / n)), b = chain[k], a = chain[k - 1] || b;
-              const look = plan.kind === 'epic' ? { c: 0x2a2038, g: 0xc070ff, s: 'ball' } : { c: 0x2a2018, g: 0xffa030, s: 'ball' };
-              const base = { i: out.obs.length, key: 'vault' + plan.kind, name: plan.kind === 'epic' ? 'Vault guard' : 'Legend guard', prim, lvl: 0, look, zone: zone0, sec };
-              const per = sr(2.3, 3.0), ph = SR();
-              if (prim === 'pendulum') {
-                const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1, L2 = 2.45, fy = (a.y + b.y) / 2;
-                out.obs.push(Object.assign(base, { x: (a.x + b.x) / 2, y: fy + 0.6 + L2, z: (a.z + b.z) / 2, fy, nx: -dz / l, nz: dx / l, L: L2, r: 0.5, amp: 1.05, per, ph }));
-              } else if (prim === 'spikes') {
-                out.obs.push(Object.assign(base, { x: b.x, y: b.y, z: b.z, hx: b.half - 0.06, hz: b.half - 0.06, ry: -b.ang, per, ph, duty: 0.42 }));
-              } else {
-                out.obs.push(Object.assign(base, { x: b.x, y: b.y, z: b.z, hs: Math.max(0.6, b.half + 0.1), per: per + 0.6, ph, ry: -b.ang }));
-              }
-            });
-          }
-          done = true;
-          break;
+          if (done) break;
         }
       }
     }

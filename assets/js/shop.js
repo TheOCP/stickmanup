@@ -3,7 +3,8 @@
 import { RARITY, SUITS, LEGENDS, OWNERS, FACES, HATS, HAIRS, COL_W, COL_ARMS, ARM_W, TEX, FACE_W, FACE_H, paintSuit, drawFace, suitIsDark } from './skins.js';
 import { gearTris, gunInfo, GEAR_AT, GEAR_TALL, HAIR_TOP } from './gear.js';
 import { coins, owned, unlocked, equip, worn, myLook, relicCounts, runsOf, totals } from './profile.js';
-import { whereOf } from './relics.js';
+import { needOf, whereOf } from './relics.js';
+import { RELIC_AT } from './relicspots.js';
 import { buyItem } from './cloud.js';
 import { DIFFS, MAPS } from './level.js';
 import { EMOTES } from './emotes.js';
@@ -129,8 +130,11 @@ function whereText(it) {
   if (!w) return '';
   if (w.kind === 'void') return 'Find all six legendary weapons first: each waits at the end of the hardest path of its map.';
   const m = MAPS.find((x) => x.key === w.map), name = m ? m.name : w.map;
-  if (w.kind === 'epic') return `Find the epic vault on ${name} first. Its path is there on every difficulty: look for the EPIC sign.`;
-  if (w.kind === 'weapon') return `Find the legendary vault on ${name} first, on any difficulty. Look for the LEGENDARY sign.`;
+  const at = RELIC_AT[needOf(it)[0]];
+  if (w.kind === 'epic') return `Find the epic vault on ${name} first. Its course starts at about ${at} m, on any difficulty: look for the purple gate and the pillar of light.`;
+  if (w.kind === 'weapon') return `Find the legendary vault on ${name} first. Its course starts at about ${at} m, on any difficulty: look for the golden gate and the pillar of light.`;
+  // In a maze garden the item's own hint says which one. The others wait at the end of a course.
+  if (at !== undefined) return `On ${name}, at the end of a parkour course that starts at about ${at} m. Look for the orange gate and the pillar of light.`;
   return it.hint || '';
 }
 function weaponStats(w) {
@@ -182,8 +186,8 @@ export function openShop(ctx, goBack, startTab = 'suits') {
   function sideHtml() {
     const it = sel;
     if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
-      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest hidden paths, on any difficulty: find them, then buy them.</p>`
-      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Epic things are in the epic vaults first: every map has one, behind the EPIC sign.</p>`;
+      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Epic weapons wait in the epic vaults, legendary ones at the end of the hardest relic courses, on any difficulty: find them, then buy them.</p>`
+      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Epic things are in the epic vaults first: every map has one, at the end of a course behind a purple gate.</p>`;
     const r = RARITY[it.r], have = owned(it), on = have && worn(it), open = unlocked(it), where = whereOf(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';

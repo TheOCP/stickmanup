@@ -170,13 +170,13 @@ Spend them in the shop:
   in each map's epic vault first (see below).
 * **Legendary (orange):** living suits that move and leave a trail: aurora curtains, molten rock, cut crystal, deep
   space, circuits, dragon scales, spirit smoke, a neon grid and holograms, many with wings, horns, crowns, orbs or a
-  blade on the back. Eleven wait in the maze gardens and twelve at the end of hidden paths, two on each map, on every
+  blade on the back. Eleven wait in the maze gardens and twelve at the end of relic courses, two on each map, on every
   difficulty: find one and it can be bought, from 25000 to 60000 coins for the maze ones. Three are earned by what you
   do up there.
 * **Weapons:** 50 of them, common to legendary: sidearms, submachine guns, shotguns, rifles, snipers with a real
   scope, machine guns, launchers, and odd ones like the Tesla Coil, the Harpoon Gun and the Cryo Blaster. Each is held its own way, and the shop shows how long it paralyses, how fast it
   fires, how far it reaches and how hard it throws a friend. The seven legendary weapons are far stronger than the rest.
-  Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest path, and the Void
+  Epic weapons wait in the epic vaults; each map's legendary weapon waits at the end of its hardest course, and the Void
   Cannon opens once all six are found.
 * **Hair:** a tab of its own: short crop, side swoop, ponytail, spiky, long hair, a purple bob, space buns, curls,
   braids and glowing neon spikes. Hats sit on top of the hair, never through it, and every hat sits on the head at a
@@ -184,11 +184,16 @@ Spend them in the shop:
 * **Emotes:** a tab of their own with 23 moves, like the wave, the floss, flips, a cartwheel, the running man, the worm,
   the windmill and a headspin. Wave, Clap, Thumbs up and Backflip are free, the rest cost 60 to 1000 coins.
 
-**Hidden vaults.** Finding something only opens it in the shop: it still costs coins. Every map has an epic vault on
-every difficulty, Easy and Normal too, at the end of a side path that leaves the route behind a sign saying EPIC and
-THIS WAY: small stones over wide gaps, with swinging weights and spikes on the way. On every difficulty a harder
-path behind a LEGENDARY sign, with smaller stones, wider gaps and presses too, leads to the map's legendary weapon.
-Legendary suits found before this update stay yours.
+**Relic courses.** Finding something only opens it in the shop: it still costs coins. Every map has four hard parkour
+courses out past the route, on every difficulty: two to legendary suits, one to the epic vault and one to the legendary
+weapon. Each starts at a gate with a pillar of light that can be seen from far away, and a marker on the screen and gems
+on the height bar show where the nearest ones are. The shop says on which map and from what height each thing is found.
+A course mixes parts picked by chance from twenty kinds, and six of them are found nowhere else: a big wheel you ride
+round, a windmill you cross on its blades, a stone deck with shock rings to jump, a run under falling comets, gaps with
+a gravity well that pulls you off line, and stones that blink in pairs. They differ per map and per course, but are the
+same for everyone and on every climb, because the server replays each climb to check it. A fall brings you back to the
+last green marker on the course, and the ring at the end takes you back to the route. Custom rules have no courses.
+`dev/secrettest.js` plays each course with the real physics. Legendary suits found before this update stay yours.
 
 Your other climbers see what you wear. Signed in, what you wear and the weapon you picked are kept on your account, so
 they come on by themselves when you sign in on another phone, a PC or the web, and whatever you pick last on any of them

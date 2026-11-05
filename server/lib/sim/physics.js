@@ -85,6 +85,11 @@ export function placeDyn(c, t) {
     const a = d.amp * Math.sin(f(d.per, d.ph));
     c.x = d.px + d.ux * Math.sin(a) * d.L; c.y = d.py - Math.cos(a) * d.L; c.z = d.pz + d.uz * Math.sin(a) * d.L;
     aabb(c);
+  } else if (d.k === 'wheel') {
+    // A big wheel on edge: its stones stay level and go round it, rising on the side you get on.
+    const a = d.a0 - TAU * t / d.per, s = Math.cos(a) * d.R;
+    c.x = d.hx + d.ux * s; c.y = d.hy + Math.sin(a) * d.R; c.z = d.hz + d.uz * s;
+    aabb(c);
   } else if (d.k === 'bob') {
     const w = f(d.per, d.ph);
     c.y = d.y0 + Math.sin(w) * d.amp;

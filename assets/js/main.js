@@ -2,7 +2,7 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled } from './level.js';
+import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, pathOn, MAZE_RELICS } from './level.js';
 import { NavPath } from './navpath.js';
 import { EMOTES } from './emotes.js';
 import { World } from './physics.js';
@@ -24,7 +24,7 @@ import { Game, SHIELD_MAPS } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
 import { SUIT, resolveLook, plainLook, ROLE_TAGS, roleInfo, tagColor } from './skins.js';
-import { initProfile, myLook, myRole, owned, wonOnce, coins as myCoins } from './profile.js';
+import { initProfile, myLook, myRole, owned, wonOnce, hasRelic, coins as myCoins } from './profile.js';
 import { openShop, openRecords } from './shop.js';
 import { TitleShow } from './titleshow.js';
 import { startLang, tr, LANG_NAMES } from './i18n.js';
@@ -53,7 +53,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, relicMark: true, color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
@@ -78,10 +78,16 @@ const friendlyFireHtml = (r, editable) => `<div class="rules" style="margin-top:
     <p class="sub" style="margin:4px 0 0">On: your shots throw your friends off the climb, and theirs throw you.</p>`;
 // Friendly fire is kept only for a game started from the lobby, and only when the host switched it on there.
 const cleanRules = (r = {}, ff = false) => { const o = {}; for (const [k] of RULES) if (r[k] >= 0) o[k] = r[k]; if (ff && r.ff === 1) o.ff = 1; return o; };
+// How many of a map's relics have been found: four at the end of its courses, and the ones in its maze gardens.
+function relicLine(mapId) {
+  const key = MAPS[mapId].key, ids = ['0', '1', 'e', 'w'];
+  for (let i = 0; i < (MAZE_RELICS[key] || 0); i++) ids.push('m' + i);
+  return `<p class="sub" id="relicLine" style="margin:12px 0 0">Relics found on this map: ${ids.filter((k) => hasRelic(key + ':' + k)).length} of ${ids.length}</p>`;
+}
 function rulesHtml(r, editable, solo) {
   return `<div class="rules">${RULES.filter(([k]) => !(solo && k === 'rope')).map(([k, name, opts]) => `<label>${name}<div class="seg ${editable ? '' : 'ro'}">${[['-1', 'Auto'], ...opts.map((o, i) => [String(i), o])]
     .map(([v, l]) => `<button data-a="rule" data-k="${k}" data-v="${v}" class="${String(r[k] ?? -1) === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`).join('')}</div>
-    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster.</p>`;
+    <p class="sub" style="margin:6px 0 0">Auto follows the difficulty. Harder difficulties switch on more obstacles and make them faster. Custom rules have no relic courses.</p>`;
 }
 const roleChip = (r) => { const i = roleInfo(r); return i ? `<em class="role${ROLE_TAGS[r] ? ' ' + r : ''}" style="background:${i.color}">${esc(i.tag)}</em>` : ''; };
 const roleTag = (p) => roleChip(p.role);
@@ -192,7 +198,9 @@ const ui = (app.ui = {
     const L = app.level, top = L.top;
     $('#hAlt .track').innerHTML = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
     const cps = L.cps.filter((c) => cpEnabled(c, g.diff) && !c.start).map((c) => `<i class="cp" style="bottom:${(c.y / top) * 100}%"></i>`).join('');
-    $('#hAlt .marks').innerHTML = cps + [...g.s.players.keys()].filter((s) => s === g.slot || !g.hidden.has(s)).map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
+    // Where the relics still to find are: the height their course starts at.
+    const rel = (L.relics || []).filter((r) => !hasRelic(r.id) && pathOn(r.kind, g.diff, g.custom)).map((r) => `<i class="rl ${r.kind}" style="bottom:${(((r.gate || r).y) / top) * 100}%"></i>`).join('');
+    $('#hAlt .marks').innerHTML = cps + rel + [...g.s.players.keys()].filter((s) => s === g.slot || !g.hidden.has(s)).map((s) => `<i data-s="${s}" style="color:${pcol(g.s, s)}"></i>`).join('');
     $('#hPlayers').innerHTML = g.solo ? '' : [...g.s.players.values()].filter((p) => p.slot === g.slot || !g.hidden.has(p.slot)).map((p) => `<div data-s="${p.slot}" style="color:${pcol(g.s, p.slot)}"><i></i><span>${esc(p.name)}${p.slot === g.slot ? ' (you)' : ''}</span>${roleTag(p)}<small></small></div>`).join('');
     $('#tags').innerHTML = '';
   },
@@ -250,6 +258,27 @@ const ui = (app.ui = {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s), pl = g.s.players.get(s);
       putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
     }
+  },
+  // The marker on the screen for the nearest relic still to find (game.js relicAim): over its gate, or on the edge of the screen
+  // on the side it is on, with how far it is.
+  relicMark(g) {
+    const el = this.relicEl || (this.relicEl = $('#hRelic')), a = settings.relicMark && !g.won && !g.aiming && g.relicAim;
+    if (!a) { if (!el.hidden) el.hidden = true; return; }
+    const cam = app.renderer.camera, v = this.relicV || (this.relicV = new THREE.Vector3()), W = window.innerWidth, H = window.innerHeight;
+    v.set(a.x, a.y + 2.4, a.z).applyMatrix4(cam.matrixWorldInverse);
+    const behind = v.z > -0.2;
+    v.applyMatrix4(cam.projectionMatrix);
+    let x = behind ? -v.x : v.x, y = behind ? -v.y : v.y;
+    // It keeps clear of the edges of the screen and a phone's notch, and stays below the clock and the way up arrow.
+    const mx = 1 - 120 / W, my = 1 - 96 / H, over = Math.max(Math.abs(x) / mx, Math.abs(y) / my);
+    // Behind the camera it always goes on the edge; in front only if it is off the screen.
+    if (behind || over > 1) { const k = 1 / (over || 1); x *= k; y *= k; }
+    if (el.hidden) el.hidden = false;
+    if (el.__k !== a.kind) { el.__k = a.kind; el.className = a.kind; }
+    const tf = `translate(${((x * 0.5 + 0.5) * W).toFixed(1)}px,${Math.max(116, (0.5 - y * 0.5) * H).toFixed(1)}px)`;
+    if (el.__tf !== tf) { el.__tf = tf; el.style.transform = tf; }
+    const b = el.__b || (el.__b = el.querySelector('b')), t = Math.round(a.d) + ' m';
+    if (el.__t !== t) { el.__t = t; b.textContent = t; }
   },
   // The arrow under the clock that shows the way up (Settings can turn it off). navpath.js works out where on the climb you
   // are and the next place to go; here it turns into a direction on the screen: from where the climber is drawn to where
@@ -575,6 +604,7 @@ function soloPick() {
     ${mapCards(settings.map)}
     <div class="kind" style="margin:14px 0 0">Rules</div>
     ${rulesHtml(settings.rules, true, true)}
+    ${relicLine(settings.map)}
     <p class="sub" style="margin-top:14px">Pick a difficulty to start. Solo has no cord partner, so the teamwork tricks aren't needed${save ? '. Starting a new climb replaces your saved one.' : '.'}</p>
     ${diffCards(-1)}</div>`, {
     back: title,
@@ -590,7 +620,7 @@ function soloPick() {
 
 function startSolo(map, diff, save) {
   const s = new Session('solo', settings.name, null, myColor(), myLook(), myRole());
-  beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
+  beginGame(s, { map, diff, rules: save ? save.rules || {} : cleanRules(Object.assign({}, settings.rules, { rope: -1 })), t0: 0, rest: save ? save.rest : null, base: save ? save.t : 0, cp: save ? save.cp : 0, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0, doors: save ? save.doors : null, pos: save ? { 0: save.pos } : null });
 }
 
 app.startSolo = startSolo;
@@ -1133,7 +1163,7 @@ function settingsScreen(back) {
     ${app.game ? '' : '<button class="btn sm" data-a="wardrobe">Your look: open the shop</button>'}
     ${app.game ? '' : '<button class="btn sm" data-a="account">Account and sign in</button>'}
     ${app.game ? '' : '<button class="btn sm donate" data-a="donate">♥ Donate to the makers</button>'}
-    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}${chk('nav', 'Arrow that shows the way up')}</div>
+    <div class="chks full">${N ? chk('haptics', 'Vibration') : ''}${chk('fps', 'Show FPS')}${chk('tips', 'Show tips and ! markers')}${chk('nav', 'Arrow that shows the way up')}${chk('relicMark', 'Marker that shows the nearest relic')}</div>
     <button class="btn sm" data-a="tips">Show all tips again</button>
     <button class="btn sm" data-a="movefps">Move FPS counter...</button>
     <p class="sub full" style="margin:0">Graphics chip: ${esc(app.renderer.gpu)}${getSafe() ? ` · safe mode ${getSafe()} of ${MAX_SAFE}` : ''}</p>
@@ -1507,7 +1537,8 @@ function howTo(back) {
     <div><b>GRAPPLE</b>Near a glowing hook the action button says GRAPPLE. Tap it to zip up to the hook and get thrown across the gap.</div>
     <div><b>Jumpers</b>Angry dummies guard the ledges from about 500 m up (on Hardcore and Insane already from 50 m). Come close and they run at you and jump kick you off. Jump past them, or SHOOT to paralyse them for over a minute.</div>
     <div><b>Coins and the shop</b>Coins hang all along the route. Each is worth 1 on Easy, 2 on Normal, 3 on Hardcore and 4 on Insane, and the top pays a big bonus. A coin you took stays gone after a fall. Spend them in the shop on colours, flags, faces, hats and costumes.</div>
-    <div><b>Legendary suits</b>Some can be bought for a lot of coins. Some are earned by what you do on Hardcore, the rest are hidden on the maps, on any difficulty: on secret paths and in the maze gardens. Those who know, know.</div>
+    <div><b>Legendary suits</b>Some can be bought for a lot of coins. Some are earned by what you do on Hardcore. The rest are relics, on the maps on any difficulty: at the end of the relic courses and in the maze gardens.</div>
+    <div><b>Relic courses</b>Each map has four hard parkour courses out past the route, each with a relic at the end that opens things in the shop. Look for a gate with a pillar of light: a marker on the screen and gems on the height bar show where the nearest ones are. A fall brings you back to the last green marker on the course, and the ring at the end takes you back to the route.</div>
     <div><b>Records</b>The title screen keeps your best climbs on every map: how high you got, on which difficulty, how many falls, how long and how many coins.</div>
     <div><b>SHOOT</b>Doors block some bridges. Hold SHOOT to aim at the round target and let go to open the door for the whole team. A shot paralyses monsters, bats and jumpers for over a minute, and longer with better weapons. Weapons are in the shop.</div>
     <div><b>Storm Tower</b>When a yellow ring appears under you, lightning is coming for you: tap SHIELD right away. Rods glow before they strike: get away from them or SHIELD. Laser bars spin low (jump them) and laser gates switch on and off. Fans and gusts blow you around: GRAB or wait for them to stop. Ice is slippery, cracked floors fall away, pads launch you up.</div>

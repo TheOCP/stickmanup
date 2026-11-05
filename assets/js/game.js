@@ -146,6 +146,12 @@ export class Game {
     this.coinAcc = 0;
     this.relicNear = new Set();
     this.nearRelic = null;
+    this.relicAim = null;
+    // The last marker reached on a hidden course, as [relic, marker]. A saved climb keeps it (so does the server's).
+    this.rest = Array.isArray(g.rest) && g.rest.length === 2 ? g.rest : null;
+    this.onCourse = this.rest ? this.rest[0] : -1;
+    this.splashT = 0;
+    app.view.markRelics(hasRelic);
     this.recAcc = 0;
     this.run = (sv && sv.run) || { id: Date.now().toString(36) + ((Math.random() * 1296) | 0).toString(36), map: this.map, diff: this.diff, custom: this.custom, h: 0, falls: 0, t: 0, coins: 0, won: false, when: Date.now(), players: 1 };
     if (!sv) addTotals(0, 1);
@@ -500,7 +506,8 @@ export class Game {
     this.W.setTime(t);
     this.crumbles(STEP);
     const S = this.storm;
-    for (const c of this.L.blinks) { c.on = !S.on(c.blink) || S.blink(c.blink, t).on; if (!c.on && me.anchorCol === c) me.release(); }
+    // A blinking stone stays solid where its hazard setting is off, but one on a hidden course that isn't there stays away.
+    for (const c of this.L.blinks) { c.on = S.on(c.blink) ? S.blink(c.blink, t).on : c.kind !== 'secret'; if (!c.on && me.anchorCol === c) me.release(); }
     for (const c of this.L.traps) { c.on = !S.on(c.trap) || !S.trap(c.trap, t).open; if (!c.on && me.anchorCol === c) me.release(); }
     if (this.flying) {
       // The map goes on around it, and a host still runs its creatures for the others.
@@ -563,6 +570,11 @@ export class Game {
         this.relicNear.add(r.id);
         this.app.sound.relicHum();
         this.app.ui.toast(r.kind === 'suit' ? 'Something is humming nearby...' : r.kind === 'epic' ? 'The epic vault is close' : 'The legendary vault is close', 'gold');
+      } else if (r.gate && !this.relicNear.has(r.id + 'g') && Math.hypot(r.gate.x - me.x, r.gate.y - me.y, r.gate.z - me.z) < 22) {
+        // The gate to its course.
+        this.relicNear.add(r.id + 'g');
+        this.app.sound.relicHum();
+        this.app.ui.toast(r.kind === 'suit' ? 'A relic course starts near here. Find the gate.' : r.kind === 'epic' ? 'The epic course starts near here. Find the gate.' : 'The legendary course starts near here. Find the gate.', 'gold');
       }
     }
   }
@@ -587,6 +599,9 @@ export class Game {
     this.app.ui.haptic('heavy');
     if (got && got.name) this.app.ui.banner(got.title, got.name, got.sub, r.kind === 'epic' ? '#c070ff' : '#ff9a2e');
     this.nearRelic = null;
+    this.relicAim = null;
+    this.app.view.markRelics(hasRelic);
+    if (this.app.ui.players) this.app.ui.players(this);
   }
 
   // Writes this climb into the records.
@@ -736,6 +751,36 @@ export class Game {
           if (along > 0.2 && along < o.range && lat < 0.55 + along * 0.12 && Math.abs(me.y - o.y) < 1.0) this.zapKnock(o.dx * 7, 3, o.dz * 7, 'obstacle', o.name);
           break;
         }
+        // What only the hidden courses have.
+        case 'windmill': {
+          const dx = me.x - o.x, dy = me.y - o.y, dz = me.z - o.z;
+          if (Math.abs(dx * o.ux + dz * o.uz) > 0.6) break;
+          const l = dx * o.uz - dz * o.ux;
+          for (let k = 0; k < o.n; k++) {
+            const a = S.blade(o, t, k), c = Math.cos(a), sn = Math.sin(a), q = clamp(l * c + dy * sn, 0, o.R), ex = l - c * q, ey = dy - sn * q;
+            if (ex * ex + ey * ey < 0.34) {
+              // Knocked the way the blade is going.
+              const sg = (-sn * Math.sign(o.per)) >= 0 ? 1 : -1;
+              this.zapKnock(o.uz * sg * 7, 4, -o.ux * sg * 7, 'obstacle', o.name);
+              break;
+            }
+          }
+          break;
+        }
+        case 'ring': {
+          if (feet > o.y + 0.6 || feet < o.y - 0.8) break;
+          const r = S.ring(o, t, P).r;
+          if (r > 0.5 && Math.abs(Math.hypot(me.x - o.x, me.z - o.z) - r) < 0.38) away(o.x, o.z, 7, 4, o.name);
+          break;
+        }
+        case 'comet': {
+          const p = S.comet(o, t, P);
+          if (p.fly && Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z) < o.r + PR) this.zapKnock(o.dx * 8, 3.5, o.dz * 8, 'obstacle', o.name);
+          break;
+        }
+        case 'well':
+          if (Math.hypot(o.x - me.x, o.y - me.y, o.z - me.z) < o.r + PR) away(o.x, o.z, 9, 5, o.name);
+          break;
       }
     }
     // Bumpers: bouncy posts that throw you away (no stun).
@@ -1191,12 +1236,16 @@ export class Game {
   checks() {
     const me = this.me, L = this.L;
     if (!isFinite(me.x + me.y + me.z)) { const p = this.spawnPos(this.cp, this.slot); me.spawn(p[0], p[1], p[2]); }
+    // A fall right after a respawn hits the host's short lock and is ignored, so if nothing has happened after two seconds it is said again.
+    if (this.splashed && this.simT > this.splashT + 2) this.splashed = false;
     if (me.y < 0.3 && !this.splashed) {
       this.splashed = true;
+      this.splashT = this.simT;
       this.app.sound.splash();
       this.app.ui.haptic('heavy');
       this.s.toHost({ k: 'splash' });
     }
+    this.courseChecks();
     for (const cp of L.cps) {
       if (cp.i <= this.cp || this.cpSent.has(cp.i) || !cpEnabled(cp, this.cpl)) continue;
       if (Math.hypot(me.x - cp.x, me.z - cp.z) < 3 && Math.abs(me.y - PR - cp.y) < 1.3) { this.cpSent.add(cp.i); this.s.toHost({ k: 'cp', i: cp.i }); }
@@ -1213,6 +1262,48 @@ export class Game {
       this.maxZone = z;
       this.app.ui.zoneTitle(z);
     }
+  }
+
+  // The hidden courses: the markers along them, a fall back to the last marker, and the ring at the end that takes you back to the route.
+  courseChecks() {
+    const me = this.me, L = this.L, g = me.grounded && me.ground;
+    if (g) {
+      this.onCourse = g.kind === 'secret' ? g.ri : -1;
+      if (g.kind === 'secret') {
+        if (g.rest !== undefined && (!this.rest || this.rest[0] !== g.ri || this.rest[1] !== g.rest)) {
+          this.rest = [g.ri, g.rest];
+          this.app.sound.checkpoint();
+          this.app.ui.haptic('tick');
+          this.app.ui.toast('Course marker reached: a fall brings you back here', 'good');
+        }
+      } else this.rest = null;
+    }
+    if (this.rest && !this.splashed) {
+      const r = L.relics[this.rest[0]], q = r && r.rests && r.rests[this.rest[1]];
+      if (!q) this.rest = null;
+      else if (me.y < q.y - 14) {
+        this.splashed = true;
+        this.splashT = this.simT;
+        this.app.ui.haptic('heavy');
+        this.s.toHost({ k: 'course', r: this.rest[0], n: this.rest[1], fall: 1 });
+      }
+    }
+    if (this.onCourse >= 0 && g && !this.splashed) {
+      const r = L.relics[this.onCourse], x = r && r.exit;
+      if (x && Math.hypot(me.x - x.x, me.z - x.z) < 1 && Math.abs(me.y - PR - x.y) < 1.2) {
+        this.splashed = true;
+        this.splashT = this.simT;
+        this.s.toHost({ k: 'course', r: this.onCourse, n: -1 });
+      }
+    }
+  }
+
+  // Where a course sends someone: marker n of relic r, or with n -1 the route platform the course starts from.
+  coursePos(r, n, slot) {
+    const q = this.L.relics[r], a = (slot / 4) * Math.PI * 2 + 0.4;
+    if (!q || !q.rests) return null;
+    const p = n >= 0 ? q.rests[n] : { x: q.start.x, y: q.start.y + q.start.hy, z: q.start.z };
+    return p ? [p.x + Math.cos(a) * 0.5, p.y + PR + 0.4, p.z + Math.sin(a) * 0.5] : null;
   }
 
   // ----- host-only team rules -----
@@ -1239,6 +1330,19 @@ export class Game {
         const cp = one === null ? this.cp : this.pcp[one] || 0, pos = {}, at = this.cpl === 2 ? 0 : cp;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.spawnPos(at, slot);
         this.s.toAll({ k: 'respawn', cp, at, pos, falls: this.falls, mz: this.mz, why: e.k, only: one });
+        break;
+      }
+      case 'course': {
+        // As with any fall: tied together, the whole team goes; without the cord, only the one it happened to.
+        const one = (this.noCord || this.loose.has(from)) && from !== undefined ? from : null, key = one === null ? 'team' : one, pos = {};
+        this.locks = this.locks || {};
+        if (T < (this.locks[key] || 0)) return;
+        if (!this.coursePos(e.r, e.n, 0)) return;
+        this.locks[key] = T + 1.5;
+        if (e.fall) this.falls++;
+        for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.coursePos(e.r, e.n, slot);
+        const cp = one === null ? this.cp : this.pcp[one] || 0;
+        this.s.toAll({ k: 'respawn', cp, at: cp, pos, falls: this.falls, mz: this.mz, why: e.fall ? 'course' : 'courseout', only: one, rest: [e.r, e.n] });
         break;
       }
       case 'resetcp': {
@@ -1313,16 +1417,22 @@ export class Game {
         }
         const p = (e.pos && e.pos[this.slot]) || this.spawnPos(e.at ?? e.cp, this.slot);
         this.me.spawn(p[0], p[1], p[2]);
+        // Back at a marker it still counts, anywhere else it starts over.
+        this.rest = e.rest && e.rest[1] >= 0 ? e.rest : null;
+        this.onCourse = this.rest ? this.rest[0] : -1;
         // The host of a tied team, moved by the team and off the cord for now: only their own fall, not the team's checkpoint.
         if (!this.ownFall(e)) this.cp = e.cp;
         this.falls = e.falls;
-        if (e.why === 'splash') addTotals(1, 0);
+        if (e.why === 'splash' || e.why === 'course') addTotals(1, 0);
         this.splashed = false;
         this.cpSent.clear();
         for (const l of this.links) l.chain.ok = false;
         if (e.only === null || e.only === undefined) for (const pl of this.s.players.values()) if (pl.slot !== this.slot) pl.samples.length = 0;
-        Object.assign(this.cam, { yaw: this.startYaw(p[0], p[2], e.at ?? e.cp), x: p[0], y: p[1] + 0.7, z: p[2] });
+        // Back on a course, looking the way it goes on.
+        const mark = this.rest && this.L.relics[this.rest[0]].rests[this.rest[1]];
+        Object.assign(this.cam, { yaw: mark ? Math.atan2(-Math.cos(mark.a), -Math.sin(mark.a)) : this.startYaw(p[0], p[2], e.at ?? e.cp), x: p[0], y: p[1] + 0.7, z: p[2] });
         this.app.view.setCheckpoints(this.cpl, this.cp);
+        if (e.why === 'course' || e.why === 'courseout') { ui.toast(e.why === 'course' ? 'Back to the last course marker' : 'Back on the route', ''); break; }
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
         ui.toast(e.why === 'reset' ? 'The team sent you back to the start of the map.' : e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;
@@ -1404,7 +1514,7 @@ export class Game {
     if (this.flying && this.solo) return;
     const m = this.me, rs = this.rec ? this.rec.save() : undefined;
     cloud.climbSaved();
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
   }
 
   finish(e) {
@@ -1593,7 +1703,15 @@ export class Game {
       this.action = this.findAction(T);
       this.reelMode = this.cordMode();
       this.nearRelic = null;
-      for (const r of this.L.relics) if (!hasRelic(r.id) && pathOn(r.kind, this.diff, this.custom) && Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
+      this.relicAim = null;
+      let aimD = Infinity;
+      for (const r of this.L.relics) {
+        if (hasRelic(r.id) || !pathOn(r.kind, this.diff, this.custom)) continue;
+        if (Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z) < 80) this.nearRelic = r;
+        // The marker on the screen points at the gate, and once you are on the course at the relic.
+        const q = r.gate && this.onCourse !== r.i ? r.gate : r, d = Math.hypot(q.x - me.x, q.y - me.y, q.z - me.z);
+        if ((Math.abs(q.y - me.y) < 45 || this.onCourse === r.i) && d < aimD) { aimD = d; this.relicAim = { x: q.x, y: q.y, z: q.z, kind: r.kind, d }; }
+      }
       const z0 = this.zaps.get(this.slot), th0 = this.storm.thunder(T, this.slot);
       app.ui.hud(this, { T, zone: zi, ev, thunder: th0 && !this.flying && !(z0 && z0.k === th0.k && z0.struck) && !this.mazeAround(me) ? th0 : null });
     }
@@ -1607,6 +1725,7 @@ export class Game {
     app.ui.tags(this);
     app.ui.tips(this);
     if (app.ui.nav) app.ui.nav(this);
+    if (app.ui.relicMark) app.ui.relicMark(this);
   }
 
   // The maze garden a climber is inside, under its roof (the doorways too), or null.

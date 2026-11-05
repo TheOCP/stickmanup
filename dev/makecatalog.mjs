@@ -44,15 +44,21 @@ const relicCount = SUIT_RELICS.length;
 const team = Object.fromEntries(OWNERS.map((o) => [o.id, o.team]));
 const catalog = { team, items: sorted(items), names: sorted(names), kinds: sorted(kinds), need: sorted(need), maps, diffs: DIFFS.map((d) => ({ coin: d.coin, summit: d.summit, first: d.first })), relicCount, suitRelics: SUIT_RELICS, relicSuits };
 
+// Where each course starts, for the shop to tell (it doesn't build a whole map just to say that).
+const spots = {};
+for (const M of MAPS) for (const r of generateLevel(M.id).relics) if (r.gate) spots[r.id] = Math.round(r.gate.y - 2);
+const spotFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '../assets/js/relicspots.js');
+const spotText = `// Written by dev/makecatalog.mjs: how high each relic course starts.\nexport const RELIC_AT = ${JSON.stringify(spots)};\n`;
 const file = path.join(path.dirname(fileURLToPath(import.meta.url)), '../server/lib/catalog.json');
 const text = JSON.stringify(catalog) + '\n';
 if (process.argv.includes('--check')) {
-  if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== text) {
-    console.error('server/lib/catalog.json is out of date. Run: node dev/makecatalog.mjs');
+  if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== text || !fs.existsSync(spotFile) || fs.readFileSync(spotFile, 'utf8') !== spotText) {
+    console.error('server/lib/catalog.json or assets/js/relicspots.js is out of date. Run: node dev/makecatalog.mjs');
     process.exit(1);
   }
   console.log('catalog is up to date');
 } else {
   fs.writeFileSync(file, text);
+  fs.writeFileSync(spotFile, spotText);
   console.log(`catalog: ${Object.keys(items).length} things for sale, ${maps.length} maps, ${maps.reduce((n, m) => n + m.coins, 0)} coins`);
 }

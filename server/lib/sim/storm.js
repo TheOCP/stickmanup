@@ -63,11 +63,11 @@ export class Storm {
     return out;
   }
 
-  // Hazard setting 0 calm, 1 normal, 2 wild: how hard knocks are, how fast obstacles move, and which
+  // Hazard setting 0 calm, 1 normal, 2 wild, 3 insane: how hard knocks are, how fast obstacles move, and which
   // of them are switched on at all (each has a lvl; it's active from that setting up).
   setHaz(h) {
     this.haz = h;
-    this.k = [0.7, 1.0, 1.15][h];
+    this.k = [0.7, 1.0, 1.15, 1.3][h];
     this.hs = [0.8, 1.0, 1.22, 1.38][h];
     this.th = THUNDER[h] || THUNDER[1];
   }
@@ -144,6 +144,28 @@ export class Storm {
   pulse(o, t, lead = 0.6) {
     const u = ((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1, left = (1 - u) * o.per;
     return { on: u < o.duty, warn: u >= o.duty && left < lead ? 1 - left / lead : 0, k: u < o.duty ? u / o.duty : 0 };
+  }
+
+  // Shock ring: grows along the floor from its middle, over and over. out: r how far it has got, k 0 to 1.
+  ring(o, t, out) {
+    const u = ((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1;
+    out.r = u * o.rmax; out.k = u;
+    return out;
+  }
+
+  // Comet: flies along its line and comes round again. out: where it is, fly while it is on its way, warn 0 to 1 just before.
+  comet(o, t, out) {
+    const u = (((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1) * o.per, flight = (2 * o.span) / o.speed;
+    const d = Math.min(u, flight) * o.speed - o.span;
+    out.fly = u < flight;
+    out.x = o.x + o.dx * d; out.y = o.y; out.z = o.z + o.dz * d;
+    out.warn = o.per - u < 0.8 ? 1 - (o.per - u) / 0.8 : 0;
+    return out;
+  }
+
+  // Windmill: the angle of blade k, in the plane across the bridge.
+  blade(o, t, k = 0) {
+    return TAU * ((t * this.hs * (o.sp || 1)) / o.per + o.ph) + (k * TAU) / o.n;
   }
 
   // Blinking platforms: solid for `duty` of the period, flickering for the last 0.6 s before they go.
@@ -256,6 +278,15 @@ export class Storm {
       if (Math.abs(b.y - f.y) > 4 || !this.fanOn(f, t) || !inBox(f.reg, b.x, b.y, b.z)) continue;
       out.x += f.dx * 34 * this.k;
       out.z += f.dz * 34 * this.k;
+    }
+    // Gravity wells on the hidden courses: on and off, they pull you toward them, in the air as well.
+    for (const w of this.L.wells) {
+      const dx = w.x - b.x, dy = w.y - b.y, dz = w.z - b.z;
+      if (Math.abs(dy) > w.reach || Math.abs(dx) + Math.abs(dz) > w.reach * 1.5 || !this.on(w) || !this.pulse(w, t).on) continue;
+      const d = Math.hypot(dx, dy, dz);
+      if (d > w.reach || d < 0.01) continue;
+      out.x += (dx / d) * w.str * this.k;
+      out.z += (dz / d) * w.str * this.k;
     }
     const g = this.gust(t, zone);
     if (g && g.on) {

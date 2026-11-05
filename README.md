@@ -195,8 +195,17 @@ next try, starts with 3 again.
 courses out past the route, on every difficulty and with any rules: two to legendary suits, one to the epic vault and one to the legendary
 weapon. Each starts at a gate with a pillar of light that can be seen from far away, and a marker on the screen and gems
 on the height bar show where the nearest ones are. The shop says on which map and from what height each thing is found.
-A course wears its map's looks: stones, gate, sign and vault in the map's own surfaces, spikes on the gate, vines or cables
-hanging under the stones and trees or masts around it on islets of their own. Its obstacles work the same everywhere but
+There are no shortcuts to a relic. A course runs straight out from the tower to a ring of its own, well past what a jump or a
+drop from the route can reach, and climbs as it goes round: the legendary ones 40 to 100 m. On the volcano the gate is a portal
+to a course round the outside of the mountain, with a ring where you arrive to go back. And the game checks it, the server's rerun too: land on a stone further on than
+you have come and you are sent back, a relic only counts at the end of the way, and a course doesn't take you up the route.
+`node dev/courseshortcuttest.js` says if any of it can be reached from anywhere else.
+
+A course wears its map's looks: stones, gate, sign and vault in the map's own surfaces, spikes on the gate. What is around it
+fits the map, and each thing has room of its own: rope under planks, vines under the forest's rock, little engines under the
+pads in the city and the storm, drips of lava under basalt. Around them are islets with a tree on each in the forest, on the
+beach and by the waterfall, torn steel in the storm, basalt spires round the volcano and in the city skyscrapers going down
+to the bay, with what belongs on a roof on their roofs. Its obstacles work the same everywhere but
 are something else on each map: the spinning bars are a flock of attacking birds in the forest, diving gulls on the beach,
 crackling lightning in the storm, a fire bar in the volcano, a laser in the city and water jets by the waterfall, and what
 falls is a beehive, a coconut, a boulder, a drone or a lava bomb. A course mixes parts picked by chance from twenty kinds, and six of them are found nowhere else: a big wheel you ride

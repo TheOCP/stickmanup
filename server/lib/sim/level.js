@@ -9,7 +9,7 @@ import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
 
-export const LEVEL_VERSION = 20;
+export const LEVEL_VERSION = 21;
 // How far a cloud reaches from its centre, as a share of its size (the puffs are placed in worldview.js), and how far
 // the camera can get from the climber (6.2 m normally, up to 8 m in a long fall).
 export const CLOUD_W = 2.3, CLOUD_H = 0.9, CAM_ROOM = 10;
@@ -2126,13 +2126,17 @@ export function generateLevel(mapId = 0) {
   // ---------- hidden places ----------
   // Every relic but the ones in the maze gardens waits at the end of its own parkour course, out in the open air past the
   // route. The course is put together from COURSE parts in a random order, with random sizes, heights and timing, so no two
-  // are alike. The camera looks in at the tower from outside, so a course runs round the tower (seen side on) and not away
-  // from it. Each map's are fixed by its seed: everyone on a team has to see the same stones, and so does the server's rerun.
-  //   suit    two per map: a legendary suit each.
-  //   epic    one per map: a vault that opens the epic things of this map in the shop.
-  //   weapon  one per map, the longest and hardest: a vault with the map's legendary weapon.
+  // are alike. Each map's are fixed by its seed: everyone on a team has to see the same stones, and so does the server's rerun.
+  //   suit    two per map: a legendary suit each. Long, hard and well above where they start.
+  //   epic    one per map: a vault that opens the epic things of this map in the shop. The easiest.
+  //   weapon  one per map, the longest, hardest and highest: a vault with the map's legendary weapon.
   // All of them start at a gate on a route platform with a pillar of light (worldview.js) and end at a ring that takes you
   // back to that platform. Markers along the way are where a fall brings you back to (game.js).
+  // Nobody gets to a relic any other way. A course first runs straight out from the tower, and from the second marker on it
+  // goes round on a ring of its own, past what a jump or a drop from the route can reach, climbing as it goes (offRoute). A
+  // crater has no room inside it, so there the gate is a portal to a course round the outside of the mountain (portal). And
+  // game.js checks the rest wherever it is played, the server's rerun too: landing on a stone further on than you have come
+  // sends you back (way, entry, COURSE_SKIP).
   function buildSecrets() {
     const SR = rng(MAP.seed ^ 0x51ec7e7), sr = (a, b) => a + SR() * (b - a), shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (SR() * (i + 1)) | 0, t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
     out.relics = [];
@@ -2148,7 +2152,20 @@ export function generateLevel(mapId = 0) {
         }
       }
     };
-    const INNER = ROUTE === 'crater', MAX_R = INNER ? 16.5 : 64, TURNS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4];
+    let routeR = 0;
+    for (const q of recs) if (standsOn(q)) routeR = Math.max(routeR, Math.hypot(q.x, q.z) + q.rad);
+    const PORTAL = ROUTE === 'crater', MIN_R = PORTAL ? 33 : 0, MAX_R = routeR + 50, TURNS = [0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4];
+    // How far a jump with a dash carries from a piece of route dy above something, edge to edge, with some to spare.
+    const dropReach = (dy) => 6.2 * ((9.4 + Math.sqrt(88.36 + 48 * dy)) / 24) + 3;
+    const routeOf = (st) => {
+      let best = null, bd = 1e9;
+      for (const q of recs) {
+        if (q.guard || q.tag === 'secret') continue;
+        const d = Math.abs(q.x - st.x) + Math.abs(q.z - st.z) + Math.abs(q.y - (st.y + st.hy));
+        if (d < bd) { bd = d; best = q; }
+      }
+      return best ? best.pl : pathLen;
+    };
     // How far you can jump, edge to edge, to a stone dy higher.
     const jumpGap = (dy) => 6.2 * ((9.4 + Math.sqrt(Math.max(0, 88.36 - 48 * dy))) / 24) - 0.2;
     // Everything on a course wears its map's looks (c colour, g glow, p surface pattern, e how much it glows, s shape).
@@ -2163,17 +2180,34 @@ export function generateLevel(mapId = 0) {
     function layCourse(plan, st, ang0, side, wantR) {
       const A = { cols: [], obs: [], own: [], rests: [], recs: [], wells: [], way: [] }, sec = plan.kind === 'epic' ? 'open' : 'hard', look = LOOKS[plan.kind];
       const K = () => sr(plan.k[0], plan.k[1]), hard = plan.k[1] > 0.8, gapOf = (dy, f = 1) => jumpGap(dy) * K() * f;
+      // Until the second marker the course is still on its way out: it may be near the route where it starts, but nowhere else.
+      let leading = !PORTAL;
+      const stPl = routeOf(st);
+      const offRoute = (x, y, z, h) => {
+        const near = leading || PORTAL, a = { x, z, hx: h, hz: h, c: 1, s: 0 }, k1 = Math.max(0, Math.floor((y + (near ? 3 : 60)) / 4));
+        for (let k = Math.max(0, Math.floor((y - 3.5) / 4)); k <= k1; k++) {
+          for (const q of buckets[k] || []) {
+            if (q.guard || q.tag === 'secret' || (leading && Math.abs(q.pl - stPl) <= SHORT_SKIP)) continue;
+            const dy = q.y - y;
+            if (dy < -3.5 || dy > (near ? 3 : 60)) continue;
+            const g = near || dy <= 0 ? 8 : dropReach(dy);
+            if (Math.hypot(q.x - x, q.z - z) <= q.rad + h * 1.5 + g && overlap(a, q, g)) return false;
+          }
+        }
+        return true;
+      };
       const support = (a) => {
         const ux = Math.cos(a), uz = Math.sin(a), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);
         return Math.abs(ux * acx + uz * acz) * st.hx + Math.abs(ux * bcx + uz * bcz) * st.hz;
       };
-      let cur = { x: st.x, y: st.y + st.hy, z: st.z, a: ang0, hl: support(ang0), hw: 0 }, steps = 0;
+      // Through a portal it starts round the outside of the mountain, level with the gate.
+      let cur = PORTAL ? { x: Math.cos(ang0) * wantR, y: st.y + st.hy, z: Math.sin(ang0) * wantR, a: ang0 + side * Math.PI / 2, hl: 0.5, hw: 0.5 } : { x: st.x, y: st.y + st.hy, z: st.z, a: ang0, hl: support(ang0), hw: 0 }, steps = 0;
       const sup = (a) => cur.hl * Math.abs(Math.cos(a - cur.a)) + cur.hw * Math.abs(Math.sin(a - cur.a));
       const steer = () => {
         const rad = Math.hypot(cur.x, cur.z), e = clamp((wantR - rad) / 12, -0.8, 0.8);
         return Math.atan2(cur.z, cur.x) + side * (Math.PI / 2 - e);
       };
-      const inBounds = (x, z) => Math.hypot(x, z) <= MAX_R;
+      const inBounds = (x, z) => { const r = Math.hypot(x, z); return r <= MAX_R && r >= MIN_R; };
       // Clear of everything: colliders, route footprints, hazards, trees, and the rest of this course.
       const clearAt = (x, y, z, h, up = HEAD + 0.8, down = 1.6, skip = null, last = null) => {
         const m = h + 1.1, y0 = y - down, y1 = y + up;
@@ -2183,6 +2217,8 @@ export function generateLevel(mapId = 0) {
         }
         const a = { x, z, hx: h, hz: h, c: 1, s: 0 };
         for (const q of recs) {
+          // Another course: out of a jump's reach of this one.
+          if (q.tag === 'secret' && q.y > y0 - 4 && q.y < y1 + 4 && Math.hypot(q.x - x, q.z - z) < q.rad + h + 9) return false;
           if (q.y + q.h < y0 + 0.4 || q.y > y1 || Math.hypot(q.x - x, q.z - z) > q.rad + h * 1.5 + 1.2) continue;
           if (overlap(a, q, 1.0)) return false;
         }
@@ -2192,16 +2228,15 @@ export function generateLevel(mapId = 0) {
           if (q === last || q.y1 < y0 || q.y0 > y1) continue;
           if (Math.hypot(q.x - x, q.z - z) < q.r + h + 0.9) return false;
         }
-        return true;
+        return offRoute(x, y, z, h);
       };
       // Where the next thing goes: a jump on from the last one, bending round whatever is in the way.
       const place = (hl, hw, gap, dy, o = {}) => {
         const base = o.a ?? steer();
-        // In a crater there is only the middle, so a course winds up it like a spiral staircase, with shorter gaps for the climb.
-        const lift = INNER && !o.a ? 0.85 : 0;
-        if (lift) gap *= jumpGap(dy + lift) / jumpGap(dy);
+        // The small stones are smaller still on the legendary courses.
+        if (hl < 1.3 && hw < 1.3) { hl = Math.max(0.46, hl * plan.tiny); hw = Math.max(0.46, hw * plan.tiny); }
         for (const turn of o.turns || TURNS) {
-          const a = base + turn, d = sup(a) + gap + hl, x = cur.x + Math.cos(a) * d, z = cur.z + Math.sin(a) * d, y = cur.y + dy + lift;
+          const a = base + turn, d = sup(a) + gap + hl, x = cur.x + Math.cos(a) * d, z = cur.z + Math.sin(a) * d, y = cur.y + dy;
           if (!inBounds(x, z) || y < 12 || y > top - 40) continue;
           if (!clearAt(x, y, z, Math.hypot(hl, hw) + (o.pad || 0), o.up, o.down, o.skip, A.own[A.own.length - 1])) continue;
           return { x, y, z, a, hl, hw };
@@ -2234,6 +2269,16 @@ export function generateLevel(mapId = 0) {
       };
 
       const PARTS = {
+        // Up: small stones, each one higher than the last.
+        stairs() {
+          const n = 4 + ((SR() * 3) | 0);
+          for (let j = 0; j < n; j++) {
+            const h = sr(0.66, 0.85), dy = sr(1, 1.5), p = place(h, h, gapOf(dy, 0.86), dy);
+            if (!p) return false;
+            stone(p);
+          }
+          return true;
+        },
         // Stones hardly bigger than a foot. Some of them keep fading out of sight, though they are still there.
         needle() {
           const n = 3 + ((SR() * 3) | 0), ghost = SR() < 0.45;
@@ -2349,11 +2394,11 @@ export function generateLevel(mapId = 0) {
         },
         // Two walls facing each other, too high to jump: wall jump up between them and out over the low one.
         shaft() {
-          const W = 3.1, t = 0.5, deep = 3, front = 2, F = sr(5, 7), H = F + 2.4, sx = W + t * 2, sz = deep + front, base = steer();
+          const W = 3.1, t = 0.5, deep = 3, front = 2, F = hard ? sr(7, 10.5) : sr(5, 7), H = F + 2.4, sx = W + t * 2, sz = deep + front, base = steer();
           for (const turn of TURNS) {
             const a = base + turn, ux = Math.cos(a), uz = Math.sin(a), rad = Math.atan2(cur.z, cur.x), [vx, vz] = sidev(a);
-            // The open front faces the camera: away from the tower, or in a crater toward its middle.
-            const f = (vx * Math.cos(rad) + vz * Math.sin(rad) > 0 ? 1 : -1) * (INNER ? -1 : 1), ox = vx * f, oz = vz * f;
+            // The open front faces the camera: away from the tower.
+            const f = vx * Math.cos(rad) + vz * Math.sin(rad) > 0 ? 1 : -1, ox = vx * f, oz = vz * f;
             const y = cur.y + sr(-0.1, 0.25), d = sup(a) + sr(1, 1.5) + sx / 2, back = sz / 2 - front / 2, fx = cur.x + ux * d - ox * back, fz = cur.z + uz * d - oz * back;
             const in2 = sz / 2 - deep / 2, cx = fx - ox * in2, cz = fz - oz * in2;
             const ex0 = W / 2 + t + 1.5 + 0.05, ex = cx + ux * ex0, ez = cz + uz * ex0, ey = y + F - 1;
@@ -2503,37 +2548,58 @@ export function generateLevel(mapId = 0) {
         },
       };
 
-      // Two hops down off the route, out of sight, then the first marker.
-      let p = place(0.95, 0.95, sr(1.7, 2.1), sr(-1, -0.7), { a: ang0, turns: [0], skip: st });
-      if (!p) return false;
-      stone(p);
-      p = place(0.95, 0.95, sr(1.9, 2.3), sr(-0.2, 0.3));
-      if (!p) return false;
-      stone(p);
-      const marker = () => {
-        const q = place(1.75, 1.75, gapOf(0, 0.6), sr(0, 0.4));
+      // Two hops down off the route, out of sight, then the first marker. Through a portal, you arrive on that marker.
+      if (!PORTAL) {
+        let p = place(0.95, 0.95, sr(1.7, 2.1), sr(-1, -0.7), { a: ang0, turns: [0], skip: st });
+        if (!p) return false;
+        stone(p);
+        p = place(0.95, 0.95, sr(1.9, 2.3), sr(-0.2, 0.3));
+        if (!p) return false;
+        stone(p);
+      }
+      const marker = (size = 1.75) => {
+        const q = place(size, size, gapOf(0, 0.6), sr(0, 0.4));
         if (!q) return false;
         const c = stone(q, { rest: A.rests.length, look: LOOKS.rest });
         A.rests.push({ c, x: q.x, y: q.y, z: q.z, a: q.a });
         return true;
       };
-      if (!marker()) return false;
+      // Through a portal you arrive on a wider one, with a ring behind you that takes you back.
+      if (!marker(PORTAL ? 2.5 : 1.75)) return false;
+      // Straight out from the tower, until the course is past what can be reached from the route.
+      if (!PORTAL) {
+        for (let k = 0; k < 30 && Math.hypot(cur.x, cur.z) < wantR - 3; k++) {
+          const h = sr(0.85, 1.05), dy = sr(-0.2, 0.35);
+          const q = place(h, h, gapOf(dy, 0.72), dy, { a: Math.atan2(cur.z, cur.x), turns: [0, 0.3, -0.3, 0.6, -0.6, 0.95, -0.95] });
+          if (!q) return false;
+          stone(q);
+        }
+        if (Math.hypot(cur.x, cur.z) < wantR - 3 || !marker()) return false;
+        leading = false;
+      }
       // At least three of the kinds found nowhere else on the map, the rest from all of them, in any order.
       const SPECIAL = shuffle(['wheel', 'mill', 'ringdeck', 'cometrun', 'wellgap', 'phase']), OTHER = shuffle(['needle', 'leap', 'crumbles', 'carousel', 'shuttle', 'pistons', 'shaft', 'spindeck', 'tiltbeam', 'ice', 'padshot', 'spikerun', 'crushrun', 'swingrun']);
-      const list = shuffle([...SPECIAL.slice(0, 3), ...OTHER.slice(0, plan.parts - 3)]).concat(SPECIAL.slice(3), OTHER.slice(plan.parts - 3));
-      let done = 0;
+      const list = shuffle([...SPECIAL.slice(0, 3), ...OTHER.slice(0, plan.parts - 3)]).concat(SPECIAL.slice(3), OTHER.slice(plan.parts - 3), shuffle([...SPECIAL, ...OTHER]));
+      const CLIMBS = ['stairs', 'stairs', 'padshot', 'shaft', 'pistons'], y0 = cur.y;
+      let done = 0, markY = cur.y, markStep = steps;
       const made = [];
+      const tryPart = (name) => {
+        const m = { cols: A.cols.length, obs: A.obs.length, own: A.own.length, recs: A.recs.length, wells: A.wells.length, way: A.way.length, rests: A.rests.length, cur, steps };
+        if (PARTS[name]()) { made.push(name); return true; }
+        A.cols.length = m.cols; A.obs.length = m.obs; A.own.length = m.own; A.recs.length = m.recs; A.wells.length = m.wells; A.way.length = m.way; A.rests.length = m.rests; cur = m.cur; steps = m.steps;
+        return false;
+      };
+      // A marker now and then and not too far below you, so a fall doesn't cost the whole course.
+      const markIfDue = () => { if ((steps - markStep >= plan.mark || cur.y > markY + 26) && marker()) { markY = cur.y; markStep = steps; } };
       for (const name of list) {
         if (done >= plan.parts) break;
-        const m = { cols: A.cols.length, obs: A.obs.length, own: A.own.length, recs: A.recs.length, wells: A.wells.length, way: A.way.length, rests: A.rests.length, cur, steps };
-        if (!PARTS[name]()) {
-          A.cols.length = m.cols; A.obs.length = m.obs; A.own.length = m.own; A.recs.length = m.recs; A.wells.length = m.wells; A.way.length = m.way; A.rests.length = m.rests; cur = m.cur; steps = m.steps;
-          continue;
-        }
+        if (!tryPart(name)) continue;
         done++;
-        made.push(name);
-        // A marker every third part, so a fall doesn't cost the whole course.
-        if (done % 3 === 0 && done < plan.parts && !marker()) return false;
+        // And it keeps climbing: as high by now as it should be by now.
+        for (let k = 0; k < 10 && cur.y < y0 + (plan.rise * done) / plan.parts; k++) {
+          if (tryPart(CLIMBS[(SR() * CLIMBS.length) | 0])) markIfDue();
+        }
+        if (done < plan.parts) markIfDue();
       }
       if (done < plan.parts) return false;
       const dyEnd = sr(0.2, 0.5), e = place(plan.end / 2, plan.end / 2, gapOf(dyEnd, 0.7), dyEnd, { up: HEAD + 2 });
@@ -2548,7 +2614,11 @@ export function generateLevel(mapId = 0) {
       TAG = 'secret';
       pathLen += 2000;
       const i = out.relics.length, ux = Math.cos(e.a), uz = Math.sin(e.a), sx = st.x + Math.cos(ang0) * Math.max(0.3, ph0 - 0.45), sz = st.z + Math.sin(ang0) * Math.max(0.3, ph0 - 0.45);
+      // How far along the course each thing is: walls count as the floor they stand on.
+      A.way.forEach((w, n) => { for (const c of w) c.wi = n; });
+      let wi = 0;
       for (const c of A.cols) {
+        if (c.wi === undefined) c.wi = wi; else wi = c.wi;
         c.ri = i;
         out.cols.push(c);
         if (c.crumble) { c.crumble.i = out.crumbles.length; out.crumbles.push(c); }
@@ -2559,26 +2629,29 @@ export function generateLevel(mapId = 0) {
       for (const o of A.obs) { o.i = out.obs.length; out.obs.push(o); }
       for (const w of A.wells) out.wells.push(w);
       out.relics.push({
-        i, id, kind: plan.kind, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones: A.cols, way: A.way, rests: A.rests, made,
+        i, id, kind: plan.kind, x: e.x, y: e.y + 1.05, z: e.z, start: st, stones: A.cols, way: A.way, rests: A.rests, made, entry: PORTAL ? 0 : A.rests[1].c.wi, portal: PORTAL,
         vault: { x: e.x, y: e.y, z: e.z, s: plan.end, ry: -e.a }, exit: { x: e.x + ux * (plan.end / 2 - 0.75), y: e.y, z: e.z + uz * (plan.end / 2 - 0.75) },
         gate: { x: sx, y: st.y + st.hy, z: sz, a: ang0 },
+        back: PORTAL ? { x: A.rests[0].x - Math.cos(A.rests[0].a) * 1.7, y: A.rests[0].y, z: A.rests[0].z - Math.sin(A.rests[0].a) * 1.7 } : null,
       });
     }
 
+    // parts how many, k how near the limit of a jump its gaps are, tiny how small its small stones are, rise how much higher it
+    // ends than it starts, mark how many stones to a marker, out how far past the others its ring is.
     const plans = [
-      { kind: 'suit', id: '0', y: [170, 300], parts: 5, k: [0.6, 0.74], end: 4.4 },
-      { kind: 'suit', id: '1', y: [560, 720], parts: 7, k: [0.68, 0.84], end: 4.4 },
-      { kind: 'epic', id: 'e', y: [100, 440], parts: 6, k: [0.64, 0.78], end: 4.6 },
-      { kind: 'weapon', id: 'w', y: [380, 700], parts: 9, k: [0.72, 0.9], end: 4.8 },
+      { kind: 'suit', id: '0', y: [170, 300], parts: 10, k: [0.74, 0.86], tiny: 0.9, end: 4.4, rise: 40, mark: 22, out: 4 },
+      { kind: 'suit', id: '1', y: [560, 720], parts: 13, k: [0.78, 0.9], tiny: 0.85, end: 4.4, rise: 60, mark: 24, out: 8 },
+      { kind: 'epic', id: 'e', y: [100, 440], parts: 7, k: [0.66, 0.8], tiny: 1, end: 4.6, rise: 18, mark: 18, out: 0 },
+      { kind: 'weapon', id: 'w', y: [400, 720], parts: 16, k: [0.8, 0.94], tiny: 0.85, end: 4.8, rise: 90, mark: 26, out: 12 },
     ];
     for (const plan of plans) {
       noteHazards();
       const list = shuffle(pool.filter((c) => c.y + c.hy - 2 > plan.y[0] && c.y + c.hy - 2 < plan.y[1]));
       let done = false;
-      // Where there is little room (a narrow crater) a course can come out a part or two shorter. There always is one.
+      // Where there is little room a course can come out a part or two shorter. There always is one.
       for (let parts = plan.parts; parts >= 2 && !done; parts--) for (const st of list) {
         if (done) break;
-        const out0 = Math.atan2(st.z, st.x) + (INNER ? Math.PI : 0), rad = Math.hypot(st.x, st.z), wantR = INNER ? 6.5 : clamp(rad + 16, 36, 56);
+        const out0 = Math.atan2(st.z, st.x), wantR = PORTAL ? 38 + plan.out : routeR + 24 + plan.out;
         for (const side of SR() < 0.5 ? [1, -1] : [-1, 1]) {
           for (const jit of [0, 0.5, -0.5, 1.0, -1.0]) {
             const ang0 = out0 + jit, ux = Math.cos(ang0), uz = Math.sin(ang0), acx = Math.cos(st.ry), acz = -Math.sin(st.ry), bcx = Math.sin(st.ry), bcz = Math.cos(st.ry);

@@ -177,8 +177,9 @@ for (const M of MAPS) {
   for (const r of L.relics) {
     if (!r.way || (onlyRelic && r.id !== onlyRelic)) continue;
     const bad = [], hitOnly = [];
-    let prev = [r.start];
-    for (let w = 0; w < r.way.length; w++) {
+    // Through a portal you arrive on the first stone.
+    let prev = r.portal ? r.way[0] : [r.start];
+    for (let w = r.portal ? 1 : 0; w < r.way.length; w++) {
       const to = r.way[w], from = prev;
       prev = to;
       if (onlyStep >= 0 && w !== onlyStep) continue;

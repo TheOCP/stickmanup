@@ -210,6 +210,7 @@ export class WorldView {
     this.secretParts = [];
     this.relicBeams = [];
     this.facing = [];
+    this.taken = [];
     if (!courses.length) return;
     const tint = (kind) => (kind === 'epic' ? 0xc070ff : kind === 'weapon' ? 0xffd040 : 0xffa030);
     const stone = postMat(this.key);
@@ -247,23 +248,33 @@ export class WorldView {
       ped.position.y = 0.21;
       g.add(ring, ped);
       // The way back: a ring on the floor with a curtain of light, and a board saying what it is.
-      const out = new THREE.Group(), outM = new THREE.MeshBasicMaterial({ color: HDR(0x7ff8d8, 3) });
-      out.position.set(v.s / 2 - 0.75, 0, 0);
-      const oRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 6, 32), outM);
-      oRing.rotation.x = Math.PI / 2;
-      oRing.position.y = 0.05;
-      const curtain = this.lightBeam(0.62, 2.2, 0x7ff8d8, 0.55);
-      curtain.position.y = 1.1;
-      this.relicBeams.push({ o: curtain, part: true });
-      const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: signTex(this.key, 512, 144, 0x7ff8d8, tr('WAY BACK')) }));
-      label.position.y = 2.5;
-      // It turns to whoever looks at it, so it can be read from anywhere.
-      label.userData.anim = true;
-      this.facing.push({ o: label, x: v.x + Math.cos(v.ry) * out.position.x, z: v.z - Math.sin(v.ry) * out.position.x, ry: v.ry });
-      out.add(oRing, curtain, label);
-      g.add(out);
+      const wayBack = (parent, lx, ry, wx, wz) => {
+        const out = new THREE.Group(), outM = new THREE.MeshBasicMaterial({ color: HDR(0x7ff8d8, 3) });
+        out.position.set(lx, 0, 0);
+        const oRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.05, 6, 32), outM);
+        oRing.rotation.x = Math.PI / 2;
+        oRing.position.y = 0.05;
+        const curtain = this.lightBeam(0.62, 2.2, 0x7ff8d8, 0.55);
+        curtain.position.y = 1.1;
+        this.relicBeams.push({ o: curtain, part: true });
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), new THREE.MeshBasicMaterial({ map: signTex(this.key, 512, 144, 0x7ff8d8, tr('WAY BACK')) }));
+        label.position.y = 2.5;
+        // It turns to whoever looks at it, so it can be read from anywhere.
+        label.userData.anim = true;
+        this.facing.push({ o: label, x: wx, z: wz, ry });
+        out.add(oRing, curtain, label);
+        parent.add(out);
+      };
+      wayBack(g, v.s / 2 - 0.75, v.ry, v.x + Math.cos(v.ry) * (v.s / 2 - 0.75), v.z - Math.sin(v.ry) * (v.s / 2 - 0.75));
       keep(g);
       this.add(g, false);
+      if (r.back) {
+        const b = new THREE.Group();
+        b.position.set(r.back.x, r.back.y, r.back.z);
+        wayBack(b, 0, 0, r.back.x, r.back.z);
+        keep(b);
+        this.add(b, false);
+      }
       beam(r, r.id, 110, 0.5, 0.55).position.set(v.x, v.y + 55, v.z);
       const G = r.gate;
       courseGate(this, r, tint(r.kind), keep);

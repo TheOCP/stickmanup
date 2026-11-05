@@ -4,17 +4,23 @@
 import * as THREE from 'three';
 import { TAU, rng } from './util.js';
 import { tr } from './i18n.js';
-import { coreRadius } from './level.js';
+import { standsOn } from './level.js';
 import { styleFor, shapeGeo, patMat, noTrim, modelGeo, vegMat, mergedModels, detail } from './scenery.js';
-import { HDR, mat4, canvasTex, merge, trimParts } from './worldview.js';
+import { HDR, mat4, canvasTex, merge, trimParts, panelMat } from './worldview.js';
+import { facadeTex } from './coreview.js';
 
+// What each map has around its courses (around):
+//   isle    islets of their own, well below the stones, each with one tree and a few plants round it: the map's own floating islands.
+//   wreck   torn steel blown about by the storm.
+//   column  basalt spires going all the way down, round the outside of the volcano.
+//   tower   skyscrapers going all the way down to the bay, with neon on their roofs, and what belongs on a roof.
 const SKIN = {
-  storm: { post: [1, 0x5a6272], hot: 0x3ff0d0, trees: ['antenna', 'lamp', 'tank', 'debris', 'antenna'], bits: ['debris', 'acunit', 'pylon'], hang: ['hangcable'], hangN: 0.8, isle: 'isletM', wrap: 'postcable', cap: 'pylon', capS: 1.4, round: false, trees0: 10 },
-  sunny: { post: [3, 0xc9a06a], hot: 0xffb04a, trees: ['palm', 'palm', 'palm', 'cactus', 'palm'], bits: ['rocks', 'coral', 'grass'], hang: ['hangrope'], hangN: 0.9, isle: 'isletS', wrap: 'postrope', cap: 'coral', capS: 0.8, round: true, trees0: 12 },
-  forest: { post: [16, 0x8a6a4a], hot: 0x9be564, trees: ['oak', 'pine', 'birch', 'oak', 'pine', 'bamboo', 'shroom', 'glowshroom'], bits: ['fern', 'bush', 'grass', 'flowers'], hang: ['hangvine0', 'hangvine1'], hangN: 1.7, isle: 'isletG', wrap: 'postvine', cap: 'bush', capS: 1.2, round: true, trees0: 20 },
-  volcano: { post: [7, 0x8a7068], hot: 0xff5a2a, trees: ['dead', 'dead', 'obsidian', 'ember', 'dead'], bits: ['ember', 'obsidian', 'brazier'], hang: ['hangchain'], hangN: 0.8, isle: 'isletB', wrap: 'postchain', cap: 'brazier', capS: 2, round: false, trees0: 8 },
-  city: { post: [1, 0x5a5e6e], hot: 0xff4fd8, trees: ['antenna', 'lamp', 'antenna', 'tank'], bits: ['acunit', 'neonpost', 'planter'], hang: ['hangneon', 'hangcable'], hangN: 0.8, isle: 'isletC', wrap: 'postneon', cap: 'neonpost', capS: 2, round: false, trees0: 10 },
-  waterfall: { post: [13, 0xffffff], hot: 0x7fe8ff, trees: ['bamboo', 'oak', 'bamboo', 'pine', 'reeds'], bits: ['fern', 'reeds', 'mosscap', 'grass'], hang: ['hangvine0', 'hangvine1'], hangN: 1.4, isle: 'isletW', wrap: 'postvine', cap: 'fern', capS: 1.4, round: true, trees0: 16 },
+  storm: { post: [1, 0x5a6272], hot: 0x3ff0d0, wrap: 'postcable', round: false, around: 'wreck', want: 16 },
+  sunny: { post: [3, 0xc9a06a], hot: 0xffb04a, wrap: 'postrope', round: true, around: 'isle', isle: 'isletS', trees: ['palm'], small: ['rocks', 'grass', 'coral'], want: 12 },
+  forest: { post: [16, 0x8a6a4a], hot: 0x9be564, wrap: 'postvine', cap: 'bush', capS: 1.2, round: true, around: 'isle', isle: 'isletG', trees: ['oak', 'pine', 'birch'], small: ['fern', 'bush', 'grass', 'flowers'], want: 16 },
+  volcano: { post: [7, 0x8a7068], hot: 0xff5a2a, wrap: 'postchain', cap: 'brazier', capS: 2, round: false, around: 'column', want: 10 },
+  city: { post: [1, 0x5a5e6e], hot: 0xff4fd8, wrap: 'postneon', round: false, around: 'tower', want: 7 },
+  waterfall: { post: [13, 0xffffff], hot: 0x7fe8ff, wrap: 'postvine', cap: 'fern', capS: 1.4, round: true, around: 'isle', isle: 'isletW', trees: ['bamboo', 'oak', 'pine'], small: ['fern', 'reeds', 'grass'], want: 14 },
 };
 export const skinOf = (key) => SKIN[key] || SKIN.storm;
 const BOXG = new THREE.BoxGeometry(1, 1, 1);
@@ -23,18 +29,22 @@ const pick = (R, a) => a[(R() * a.length) | 0];
 // The material of a course's gate and vault.
 export const postMat = (key) => { const s = skinOf(key); return patMat(s.post[0], s.post[1]); };
 
-// The stones that stay put, shaped and surfaced like the map's own platforms. Ice and bounce pads keep their looks, because what
-// they do has to show. A marker keeps its green ring and lamp, so it can be told from the rest.
+// How a stone that stays put is shaped and surfaced. Ice and bounce pads have none: what they do has to show.
+const styleOf = (key, c) => (c.surf === 'ice' || c.surf === 'pad' ? null : styleFor(key, { kind: 'plat' }, c.zone, rng(c.x * 7 + c.z * 13)));
+
+// The stones that stay put, shaped and surfaced like the map's own platforms. A marker keeps its green ring and lamp, so it can
+// be told from the rest.
 export function courseStones(view, r, keep) {
   const key = view.key, L = view.level, groups = new Map(), green = HDR(0x7ff8d8, 3.4), lampG = new THREE.CylinderGeometry(0.06, 0.09, 1.7, 6), ballG = new THREE.SphereGeometry(0.17, 10, 8);
+  const groupOf = (gk, mat) => { if (!groups.has(gk)) groups.set(gk, { parts: [], mat: mat() }); return groups.get(gk).parts; };
   for (const c of r.stones) {
     if (c.dyn || c.crumble || c.blink || c.ghost) continue;
-    const m = mat4(c.x, c.y, c.z, 1, 1, 1, c.rx, c.ry, c.rz), plain = c.surf === 'ice' || c.surf === 'pad';
-    const st = plain ? null : styleFor(key, { kind: 'plat' }, c.zone, rng(c.x * 7 + c.z * 13));
-    const col = st ? (st.col === null ? L.zones[c.zone].tint : st.col) : 0, gk = st ? st.pat + ':' + col : c.look;
-    if (!groups.has(gk)) groups.set(gk, { parts: [], mat: st ? patMat(st.pat, col) : view.lookMat(c.look) });
-    const parts = groups.get(gk).parts, glow = c.rest !== undefined ? HDR(0x7ff8d8, view.glowK) : HDR(c.look.g, view.glowK);
-    parts.push({ geo: st ? shapeGeo(st.shape) : BOXG, m: m.clone().scale(new THREE.Vector3(c.hx * 2, c.hy * 2, c.hz * 2)), glow: null });
+    const m = mat4(c.x, c.y, c.z, 1, 1, 1, c.rx, c.ry, c.rz), st = styleOf(key, c), size = new THREE.Vector3(c.hx * 2, c.hy * 2, c.hz * 2);
+    const col = st ? (st.col === null ? L.zones[c.zone].tint : st.col) : 0;
+    const parts = groupOf(st ? st.pat + ':' + col : c.look, () => (st ? patMat(st.pat, col) : view.lookMat(c.look))), glow = c.rest !== undefined ? HDR(0x7ff8d8, view.glowK) : HDR(c.look.g, view.glowK);
+    parts.push({ geo: st ? shapeGeo(st.shape) : BOXG, m: m.clone().scale(size), glow: null });
+    // A mushroom has its stem.
+    if (st && st.under) groupOf(st.under.pat + ':' + st.under.col, () => patMat(st.under.pat, st.under.col)).push({ geo: shapeGeo(st.under.shape), m: m.clone().scale(size), glow: null });
     if (!st || !noTrim(key, st.shape)) for (const t of trimParts(c.hx, c.hy, c.hz, glow, true)) parts.push({ geo: t.geo, m: m.clone().multiply(t.m), glow: t.glow });
     if (c.rest !== undefined) {
       const ring = new THREE.TorusGeometry(Math.min(c.hx, c.hz) * 0.82, 0.05, 6, 28);
@@ -46,48 +56,114 @@ export function courseStones(view, r, keep) {
   for (const g of groups.values()) keep(view.add(new THREE.Mesh(merge(g.parts), g.mat)));
 }
 
-// Vines and the like under the stones, plants on the big ones, wound round the vault's pillars, and trees all around on islets of
-// their own, wherever there is room for them. It only looks: there is nothing here to stand on or bump into.
+// What hangs under a stone depends on what the stone is: rope under planks, vines under the forest's rock, little engines under the
+// pads that float in the city and the storm. Glass-smooth things have nothing.
+function underOf(key, st) {
+  if (!st) return null;
+  const sh = st.shape;
+  if (/^(planks|raft)/.test(sh)) return ['hangrope'];
+  if (/^basalt/.test(sh) || (key === 'volcano' && /^rock/.test(sh))) return ['stalact'];
+  if (/^rock/.test(sh)) return key === 'forest' || key === 'waterfall' ? ['hangvine0', 'hangvine1'] : key === 'sunny' ? ['hangweed'] : null;
+  if (sh === 'chamfer' && key === 'city') return ['thrustC'];
+  if (sh === 'chamfer' && key === 'storm') return ['thrustS'];
+  return null;
+}
+
+// Windows for the city's skyscrapers: a tile of the texture is 12.57 m wide and 42 m tall, as on the map's own towers.
+function towerMesh(view, list) {
+  const pos = [], nor = [], uv = [], glo = [];
+  const face = (ax, az, bx, bz, nx, nz, w, h) => {
+    const u = w / 12.57, v = h / 42, tri = [[ax, 0, az, 0, 0], [bx, 0, bz, u, 0], [bx, h, bz, u, v], [ax, 0, az, 0, 0], [bx, h, bz, u, v], [ax, h, az, 0, v]];
+    for (const q of tri) { pos.push(q[0], q[1], q[2]); nor.push(nx, 0, nz); uv.push(q[3], q[4]); glo.push(0, 0, 0); }
+  };
+  for (const t of list) {
+    const e = t.w / 2, x0 = t.x - e, x1 = t.x + e, z0 = t.z - e, z1 = t.z + e;
+    face(x0, z1, x1, z1, 0, 1, t.w, t.top);
+    face(x1, z1, x1, z0, 1, 0, t.w, t.top);
+    face(x1, z0, x0, z0, 0, -1, t.w, t.top);
+    face(x0, z0, x0, z1, -1, 0, t.w, t.top);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aGlow', new THREE.Float32BufferAttribute(glo, 3));
+  if (!view.courseFacade) {
+    const { map, glow } = facadeTex(61, true);
+    view.courseFacade = panelMat(0xffffff, { map, metalness: 0.55, roughness: 0.4, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 1.0, pattern: 0 });
+  }
+  return new THREE.Mesh(g, view.courseFacade);
+}
+
+// Decoration, with nothing inside anything else: every piece has its own room (view.taken), and none of it is near enough to a stone
+// to be taken for something to stand on. It only looks: there is nothing here to stand on or bump into.
 export function courseDecor(view, r, keep) {
-  const key = view.key, L = view.level, sk = skinOf(key), R = rng(r.i * 977 + 31), low = detail() === 0, list = [];
+  const key = view.key, L = view.level, sk = skinOf(key), R = rng(r.i * 977 + 31), low = detail() === 0, list = [], towers = [];
   const put = (name, x, y, z, s = 1, ry = 0, sy = s) => list.push([name, mat4(x, y, z, s, sy, s, 0, ry, 0)]);
   const stay = r.stones.filter((c) => !c.dyn && !c.ghost && !c.blink && !c.crumble);
+  // Under the stones, spread evenly round each one so no two strands touch, and only where nothing is below to hang into.
+  const clearBelow = (x, z, y0, len, self) => r.stones.every((o) => o === self || o.y + o.hy > y0 || o.y + o.hy < y0 - len - 0.5 || Math.hypot(o.x - x, o.z - z) > Math.hypot(o.hx, o.hz) + 0.5);
   for (const c of stay) {
-    const small = Math.min(c.hx, c.hz);
-    for (let k = sk.hangN * (low ? 0.5 : 1); k > 0; k--) {
-      if (k < 1 && R() > k) break;
-      const a = R() * TAU, d = small * (0.3 + R() * 0.5);
-      put(pick(R, sk.hang), c.x + Math.cos(a) * d, c.y - c.hy, c.z + Math.sin(a) * d, 0.8 + R() * 0.5, R() * TAU);
+    const st = styleOf(key, c), under = underOf(key, st), small = Math.min(c.hx, c.hz);
+    if (!under) continue;
+    const engine = /^thrust/.test(under[0]), n = engine ? (small > 1.2 ? 4 : 1) : Math.max(1, Math.round(Math.min(small * 2.4, 6) * (low ? 0.5 : 1))), a0 = R() * TAU, cs = Math.cos(c.ry), sn = Math.sin(c.ry);
+    for (let k = 0; k < n; k++) {
+      const a = a0 + (k * TAU) / n, d = n === 1 ? 0 : small * 0.62, u = Math.cos(a) * d, v = Math.sin(a) * d, x = c.x + cs * u + sn * v, z = c.z - sn * u + cs * v, y = c.y - c.hy;
+      if (clearBelow(x, z, y, 3.2, c)) put(under[k % under.length], x, y, z, engine ? 1 : 0.85 + R() * 0.3, R() * TAU);
     }
-    if (small > 1 && c.rest === undefined && R() < 0.8) {
-      const a = R() * TAU, d = small * 0.8;
-      put(pick(R, sk.bits), c.x + Math.cos(a) * d, c.y + c.hy, c.z + Math.sin(a) * d, 0.7 + R() * 0.5, R() * TAU);
+    // On the bigger natural stones, one plant at the edge, unless there is something dangerous to watch for on it.
+    if (sk.small && st.pat !== 3 && small > 1.25 && c.rest === undefined && R() < 0.6 && !L.obs.some((o) => o.sec && Math.hypot(o.x - c.x, o.z - c.z) < 6)) {
+      const a = R() * TAU;
+      put(pick(R, sk.small), c.x + Math.cos(a) * small * 0.72, c.y + c.hy, c.z + Math.sin(a) * small * 0.72, 0.7 + R() * 0.3, R() * TAU);
     }
   }
   const v = r.vault, h = v.s / 2 - 0.35, cs = Math.cos(v.ry), sn = Math.sin(v.ry);
   for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) put(sk.wrap, v.x + (a * h * cs + b * h * sn), v.y, v.z + (b * h * cs - a * h * sn), 1, R() * TAU, 0.76);
-  // Trees, more the longer the course. Never in the way of the route or the tower.
-  const towers = L.towers || [], crater = key === 'volcano', want = Math.round((sk.trees0 + stay.length * 0.4) * (low ? 0.4 : 1)), far = 3.4;
-  const free = (x, y, z) => {
-    const rad = Math.hypot(x, z);
-    if (crater ? rad > 14.5 : !towers.length && rad < coreRadius(key, y) + 3) return false;
-    for (const t of towers) if (Math.hypot(x - t.x, z - t.z) < (t.r || 7) + 3) return false;
-    for (const t of L.trees || []) if (Math.hypot(x - t.x, z - t.z) < 5) return false;
-    for (const c of L.cols) if (c.maxx >= x - far && c.minx <= x + far && c.maxz >= z - far && c.minz <= z + far && c.maxy >= y - 1.5 && c.miny <= y + 7) return false;
+  // All around the course, out past the route and the map's own islands. Nothing touches anything: not a stone and not another piece.
+  if (!view.courseOut) { view.courseOut = 0; for (const q of L.recs) if (standsOn(q)) view.courseOut = Math.max(view.courseOut, Math.hypot(q.x, q.z) + q.rad); view.courseOut += 9; }
+  const taken = view.taken, fits = (x, z, y0, y1, rad) => {
+    if (y0 < -1 || Math.hypot(x, z) < view.courseOut + rad) return false;
+    for (const t of taken) if (t.y1 > y0 && t.y0 < y1 && Math.hypot(t.x - x, t.z - z) < t.r + rad) return false;
+    for (const c of L.cols) if (c.maxx >= x - rad && c.minx <= x + rad && c.maxz >= z - rad && c.minz <= z + rad && c.maxy >= y0 && c.miny <= y1) return false;
     return true;
   };
-  for (let tries = 0, made = 0; tries < want * 6 && made < want; tries++) {
-    const q = stay[(R() * stay.length) | 0], a = R() * TAU, d = 4.5 + R() * 6, x = q.x + Math.cos(a) * d, z = q.z + Math.sin(a) * d, y = q.y - 1.5 - R() * 6;
-    if (!free(x, y, z)) continue;
-    made++;
-    put(sk.isle, x, y, z, 1 + R() * 0.5, R() * TAU);
-    for (let n = 1 + ((R() * 3) | 0); n > 0; n--) {
-      const b = R() * TAU, e = R() * 0.8;
-      put(pick(R, sk.trees), x + Math.cos(b) * e, y + 0.06, z + Math.sin(b) * e, 1.4 + R() * 1.2, R() * TAU);
+  const want = Math.round((sk.want + stay.length * 0.2) * (low ? 0.4 : 1));
+  for (let tries = 0, made = 0; tries < want * 10 && made < want; tries++) {
+    const q = stay[(R() * stay.length) | 0], a = R() * TAU, far = 7 + R() * 10, x = q.x + Math.cos(a) * far, z = q.z + Math.sin(a) * far;
+    if (sk.around === 'isle') {
+      const y = q.y - 11 - R() * 13, s = 1.3 + R() * 0.6, ts = 1.5 + R() * 0.9, rad = 2.2 + ts * 0.7;
+      if (!fits(x, z, y - 2.5, y + ts * 5, rad)) continue;
+      taken.push({ x, z, y0: y - 2.5, y1: y + ts * 5, r: rad });
+      put(sk.isle, x, y, z, s, R() * TAU);
+      put(pick(R, sk.trees), x, y + 0.08, z, ts, R() * TAU);
+      // Round the tree, on the rim, on opposite sides.
+      const b = R() * TAU;
+      for (let k = 0; k < 2; k++) put(pick(R, sk.small), x + Math.cos(b + k * Math.PI) * s * 0.9, y + 0.08, z + Math.sin(b + k * Math.PI) * s * 0.9, 0.7 + R() * 0.4, R() * TAU);
+    } else if (sk.around === 'wreck') {
+      const y = q.y - 3 - R() * 12, s = 1 + R() * 0.8, rad = 1.8 * s;
+      if (!fits(x, z, y - rad, y + rad, rad)) continue;
+      taken.push({ x, z, y0: y - rad, y1: y + rad, r: rad });
+      list.push(['wreck' + ((R() * 3) | 0), mat4(x, y, z, s, s, s, R() * 3, R() * 6, R() * 3)]);
+    } else if (sk.around === 'column') {
+      const top = q.y - 15 - R() * 18, w = 1.3 + R() * 1.1, rad = w * 1.2;
+      if (!fits(x, z, 0, top + 6, rad)) continue;
+      taken.push({ x, z, y0: 0, y1: top + 6, r: rad });
+      list.push(['basaltcol', mat4(x, top, z, w, top, w, 0, R() * 6, 0)]);
+      put('basalttop', x, top, z, w, R() * 6);
+      if (R() < 0.5) put('dead', x, top + 0.05, z, 1.4 + R() * 0.6, R() * 6);
+    } else {
+      const w = 7 + R() * 4, d = far + w * 0.7, tx = q.x + Math.cos(a) * d, tz = q.z + Math.sin(a) * d, top = q.y - 17 - R() * 18, rad = w * 0.75 + 1;
+      if (!fits(tx, tz, 0, top + 7, rad)) continue;
+      taken.push({ x: tx, z: tz, y0: 0, y1: top + 7, r: rad });
+      towers.push({ x: tx, z: tz, w, top });
+      list.push(['roofbox', mat4(tx, top + 0.4, tz, w, 0.4, w)], ['roofneon', mat4(tx, top + 0.4, tz, w, 1, w)]);
+      // One thing to a corner of the roof.
+      for (const [u, k] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) if (R() < 0.75) put(pick(R, ['acunit', 'acunit', 'tank', 'antenna', 'lamp']), tx + u * w * 0.26, top + 0.4, tz + k * w * 0.26, 1.1, R() * 6);
     }
-    put(pick(R, sk.bits), x + (R() - 0.5) * 1.6, y + 0.06, z + (R() - 0.5) * 1.6, 0.8 + R() * 0.5, R() * TAU);
+    made++;
   }
   if (list.length) keep(view.add(new THREE.Mesh(mergedModels(list), vegMat()), false));
+  if (towers.length) keep(view.add(towerMesh(view, towers), false));
 }
 
 // A board in the map's own style, with the words on it in a dark outline so they can always be read.
@@ -141,11 +217,11 @@ export function courseGate(view, r, tint, keep) {
   const key = view.key, sk = skinOf(key), G = r.gate, gate = new THREE.Group(), kind = HDR(tint, 2.6), parts = [];
   gate.position.set(G.x, G.y, G.z);
   gate.rotation.y = Math.PI / 2 - G.a;
-  const postG = sk.round ? new THREE.CylinderGeometry(0.2, 0.27, 3.5, 8) : new THREE.BoxGeometry(0.28, 3.5, 0.28), spike = new THREE.ConeGeometry(0.06, 0.34, 4);
+  const postG = sk.round ? new THREE.CylinderGeometry(0.2, 0.27, 3.5, 8) : new THREE.BoxGeometry(0.28, 3.5, 0.28), spike = new THREE.ConeGeometry(0.06, 0.34, 4), side = sk.round ? 0.23 : 0.14;
   const hotGlow = HDR(sk.hot, 1.6);
   for (const s of [-1, 1]) {
     parts.push({ geo: postG, m: mat4(s * 1.35, 1.75, 0, 1, 1, 1), glow: null });
-    for (const y of [1.1, 1.95, 2.8]) parts.push({ geo: spike, m: mat4(s * 1.62, y, 0, 1, 1, 1, 0, 0, -s * Math.PI / 2), glow: hotGlow });
+    for (const y of [1.1, 1.95, 2.8]) parts.push({ geo: spike, m: mat4(s * (1.35 + side + 0.15), y, 0, 1, 1, 1, 0, 0, -s * Math.PI / 2), glow: hotGlow });
     parts.push({ geo: spike, m: mat4(s * 1.3, 3.72, 0, 1, 1, 1), glow: hotGlow });
   }
   parts.push({ geo: new THREE.BoxGeometry(3.3, 0.28, 0.34), m: mat4(0, 3.4, 0, 1, 1, 1), glow: null });
@@ -153,9 +229,9 @@ export function courseGate(view, r, tint, keep) {
   const grow = [];
   for (const s of [-1, 1]) {
     grow.push([sk.wrap, mat4(s * 1.35, 0, 0, 1, 1, 1, 0, s, 0)]);
-    grow.push([sk.cap, mat4(s * 1.5, 3.55, 0, sk.capS, sk.capS, sk.capS, 0, s, 0)]);
+    if (sk.cap) grow.push([sk.cap, mat4(s * 1.35, 3.55, 0, sk.capS, sk.capS, sk.capS, 0, s, 0)]);
   }
-  const veil = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 3.1), new THREE.MeshBasicMaterial({ color: HDR(tint, 0.5), transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
+  const veil = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 3.1), new THREE.MeshBasicMaterial({ color: HDR(tint, r.portal ? 1.6 : 0.5), transparent: true, opacity: r.portal ? 0.72 : 0.32, depthWrite: false, side: THREE.DoubleSide }));
   veil.position.y = 1.55;
   gate.add(new THREE.Mesh(merge(parts), postMat(key)), new THREE.Mesh(mergedModels(grow), vegMat()), veil);
   // On the near side of the pillar of light that goes up through the gate, so the light never washes over the words.

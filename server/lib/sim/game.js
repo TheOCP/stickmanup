@@ -28,6 +28,8 @@ const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {},
 // What a maze garden's creature does to you, by map.
 // In each maze you have this many hearts. A bite takes one, and with none left you go back to the checkpoint.
 export const MAZE_HEARTS = 3;
+// How many stones of a course you may jump past: more than this is not a jump but a shortcut (courseChecks).
+const COURSE_SKIP = 3;
 // How fast creatures come after you (you run at 6.2), and from how many cells away they notice you in a maze, by hazard setting.
 const HUNT_SPEED = [2.2, 2.8, 3.4, 4.0], HUNT_CELLS = [3, 4, 5, 6];
 const MAZE_BITE = { storm: 'A storm crab pinched you!', sunny: 'A scorpion stung you!', forest: 'A wild boar charged you!', volcano: 'A fire imp burned you!', city: 'A robot dog bit you!', waterfall: 'A crocodile snapped at you!' };
@@ -157,6 +159,9 @@ export class Game {
     // The last marker reached on a hidden course, as [relic, marker]. A saved climb keeps it (so does the server's).
     this.rest = Array.isArray(g.rest) && g.rest.length === 2 ? g.rest : null;
     this.onCourse = this.rest ? this.rest[0] : -1;
+    this.wayAt = this.wayOf(this.rest);
+    this.wayFree = false;
+    this.gateOff = -1;
     this.splashT = 0;
     app.view.markRelics(hasRelic);
     this.recAcc = 0;
@@ -274,6 +279,8 @@ export class Game {
     }
     // Moved while flying is just more flying: where it ends is written down when it ends.
     if (!this.flying) this.stopEarning('moved');
+    // Moved by the team, so where you land is no shortcut on a course.
+    this.wayFree = true;
     // A fall from here goes back to the last checkpoint below it. On a tied team they come off the cord until they reach the
     // others again, or it would drag everyone along.
     let cp = 0;
@@ -312,6 +319,8 @@ export class Game {
     const me = this.me;
     me.spawn(me.x, me.y, me.z);
     this.aiming = me.aim = false;
+    // Wherever they come down is fine: it wasn't a jump.
+    this.wayFree = true;
     if (this.rec) { if (on) this.rec.act('f', 1); else this.rec.act('f', 0, me.x, me.y, me.z, this.cp); }
     if (on) {
       this.bees = null;
@@ -571,9 +580,10 @@ export class Game {
     for (const r of this.L.relics) {
       if (hasRelic(r.id)) continue;
       const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
-      // In a maze garden it has to be from its own cell, not through the wall next to it.
-      if (d < (r.maze !== undefined ? 1.35 : 1.9)) this.takeRelic(r);
-      else if (d < 25 && !this.relicNear.has(r.id)) {
+      // In a maze garden it has to be from its own cell, not through the wall next to it. At the end of a course, by way of the course.
+      if (d < (r.maze !== undefined ? 1.35 : 1.9)) {
+        if (!r.way || (this.onCourse === r.i && this.wayAt >= r.way.length - 1 - COURSE_SKIP)) this.takeRelic(r);
+      } else if (d < 25 && !this.relicNear.has(r.id)) {
         this.relicNear.add(r.id);
         this.app.sound.relicHum();
         this.app.ui.toast(r.kind === 'suit' ? 'Something is humming nearby...' : r.kind === 'epic' ? 'The epic vault is close' : 'The legendary vault is close', 'gold');
@@ -1338,18 +1348,70 @@ export class Game {
   }
 
   // The hidden courses: the markers along them, a fall back to the last marker, and the ring at the end that takes you back to the route.
+  // How far along a course a marker is, -1 for none.
+  wayOf(rest) {
+    const r = rest && this.L.relics[rest[0]], q = r && r.rests && r.rests[rest[1]];
+    return q ? q.c.wi : -1;
+  }
+
+  // Nobody gets anywhere on a course but along it. Anywhere up to the second marker is a way in, and from there on only a few
+  // stones further on than you have been. Nor is a course a way up the route: off it and onto the route above where it
+  // started, you are back where it started.
+  courseSkip(r, n) {
+    this.splashed = true;
+    this.splashT = this.simT;
+    this.s.toHost({ k: 'course', r, n, skip: 1 });
+  }
+
   courseChecks() {
     const me = this.me, L = this.L, g = me.grounded && me.ground;
+    // A gate that is a portal: walk into it.
+    if (!this.splashed) {
+      for (const r of L.relics) {
+        const G = r.portal && this.onCourse !== r.i && r.gate;
+        if (!G) continue;
+        const d = Math.hypot(me.x - G.x, me.z - G.z);
+        // Just sent back here: the gate only takes you again once you have stepped away from it.
+        if (this.gateOff === r.i) { if (d > 2) this.gateOff = -1; continue; }
+        if (d < 1.15 && me.y - PR > G.y - 0.4 && me.y - PR < G.y + 3) {
+          this.splashed = true;
+          this.splashT = this.simT;
+          this.s.toHost({ k: 'course', r: r.i, n: 0, in: 1 });
+          return;
+        }
+      }
+    }
     if (g) {
-      this.onCourse = g.kind === 'secret' ? g.ri : -1;
+      if (this.wayFree) {
+        this.wayFree = false;
+        this.onCourse = -1;
+        this.wayAt = -1;
+        if (g.kind === 'secret') { this.onCourse = g.ri; this.wayAt = g.wi; }
+      }
       if (g.kind === 'secret') {
+        const r = L.relics[g.ri], been = this.onCourse === g.ri ? this.wayAt : -1;
+        if (g.wi > (been < 0 ? r.entry : been + COURSE_SKIP)) {
+          if (!this.splashed) this.courseSkip(g.ri, been >= 0 && this.rest && this.rest[0] === g.ri ? this.rest[1] : -1);
+          return;
+        }
+        this.onCourse = g.ri;
+        this.wayAt = Math.max(been, g.wi);
         if (g.rest !== undefined && (!this.rest || this.rest[0] !== g.ri || this.rest[1] !== g.rest)) {
           this.rest = [g.ri, g.rest];
           this.app.sound.checkpoint();
           this.app.ui.haptic('tick');
           this.app.ui.toast('Course marker reached: a fall brings you back here', 'good');
         }
-      } else this.rest = null;
+      } else {
+        const r = this.onCourse >= 0 && L.relics[this.onCourse], st = r && r.start;
+        if (st && me.y - PR > st.y + st.hy + 3) {
+          if (!this.splashed) this.courseSkip(r.i, -1);
+          return;
+        }
+        this.onCourse = -1;
+        this.wayAt = -1;
+        this.rest = null;
+      }
     }
     if (this.rest && !this.splashed) {
       const r = L.relics[this.rest[0]], q = r && r.rests && r.rests[this.rest[1]];
@@ -1362,8 +1424,9 @@ export class Game {
       }
     }
     if (this.onCourse >= 0 && g && !this.splashed) {
-      const r = L.relics[this.onCourse], x = r && r.exit;
-      if (x && Math.hypot(me.x - x.x, me.z - x.z) < 1 && Math.abs(me.y - PR - x.y) < 1.2) {
+      // The ring at its end, and through a portal one where you arrive too: there is no other way off that course.
+      const r = L.relics[this.onCourse], x = r && r.exit, b = r && r.back;
+      if ((x && Math.hypot(me.x - x.x, me.z - x.z) < 1 && Math.abs(me.y - PR - x.y) < 1.2) || (b && Math.hypot(me.x - b.x, me.z - b.z) < 0.75 && Math.abs(me.y - PR - b.y) < 1.2)) {
         this.splashed = true;
         this.splashT = this.simT;
         this.s.toHost({ k: 'course', r: this.onCourse, n: -1 });
@@ -1416,7 +1479,7 @@ export class Game {
         if (e.fall) this.falls++;
         for (const slot of one === null ? this.s.players.keys() : [one]) pos[slot] = this.coursePos(e.r, e.n, slot);
         const cp = one === null ? this.cp : this.pcp[one] || 0;
-        this.s.toAll({ k: 'respawn', cp, at: cp, pos, falls: this.falls, mz: this.mz, why: e.fall ? 'course' : 'courseout', only: one, rest: [e.r, e.n] });
+        this.s.toAll({ k: 'respawn', cp, at: cp, pos, falls: this.falls, mz: this.mz, why: e.fall ? 'course' : e.skip ? 'courseskip' : e.in ? 'coursein' : 'courseout', only: one, rest: [e.r, e.n] });
         break;
       }
       case 'resetcp': {
@@ -1494,6 +1557,8 @@ export class Game {
         // Back at a marker it still counts, anywhere else it starts over.
         this.rest = e.rest && e.rest[1] >= 0 ? e.rest : null;
         this.onCourse = this.rest ? this.rest[0] : -1;
+        this.wayAt = this.wayOf(this.rest);
+        this.gateOff = e.rest && e.rest[1] < 0 ? e.rest[0] : -1;
         // The host of a tied team, moved by the team and off the cord for now: only their own fall, not the team's checkpoint.
         if (!this.ownFall(e)) this.cp = e.cp;
         this.falls = e.falls;
@@ -1512,6 +1577,8 @@ export class Game {
         this.app.view.setCheckpoints(this.cpl, this.cp);
         if (e.why === 'course' || e.why === 'courseout') { ui.toast(e.why === 'course' ? 'Back to the last course marker' : 'Back on the route', ''); break; }
         if (e.why === 'hearts') break;
+        if (e.why === 'coursein') { this.app.sound.relicHum(); ui.toast('Through the gate: this course runs outside the crater', 'gold'); break; }
+        if (e.why === 'courseskip') { ui.toast('No shortcuts: a course only counts from its gate, all the way', 'bad'); break; }
         const into = { volcano: 'Into the lava.', city: 'Into the bay.', forest: 'All the way down.', waterfall: 'Splash! Into the lagoon.' }[this.L.mapKey] || 'Into the sea.';
         ui.toast(e.why === 'reset' ? 'The team sent you back to the start of the map.' : e.why === 'restart' ? 'Restarting from the checkpoint' : this.cpl === 2 ? into + ' Back to the start!' : into + ' Back to the checkpoint.', 'bad');
         break;

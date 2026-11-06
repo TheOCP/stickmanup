@@ -30,6 +30,10 @@ export const MAZE_HEARTS = 3;
 const RELIC_NEAR = 3;
 // How fast creatures come after you (you run at 6.2), and from how many cells away they notice you in a maze, by hazard setting.
 const HUNT_SPEED = [2.2, 2.8, 3.4, 4.0], HUNT_CELLS = [3, 4, 5, 6];
+// Volcano: the lava rises while you climb, in metres a second by difficulty: slow on Easy, faster the harder it gets.
+// After a fall it is back LAVA_GAP under where you start again, and reaching a checkpoint lifts it to that far under the
+// checkpoint if it was lower. It waits while you are in a maze garden or out on a course outside the crater.
+const LAVA_RISE = [0.16, 0.28, 0.4, 0.52], LAVA_GAP = 26;
 const MAZE_BITE = { storm: 'A storm crab pinched you!', sunny: 'A scorpion stung you!', forest: 'A wild boar charged you!', volcano: 'A fire imp burned you!', city: 'A robot dog bit you!', waterfall: 'A crocodile snapped at you!' };
 const RANGE = 70, skipSoft = (c) => c.kind === 'hook';
 // Seconds of aiming before a shot can leave: an accidental tap or click fires nothing.
@@ -162,6 +166,9 @@ export class Game {
     this.wayFree = false;
     this.gateOff = -1;
     this.splashT = 0;
+    this.lavaY = this.L.mapKey === 'volcano' ? (this.L.cps[this.cp] ? this.L.cps[this.cp].y : 2) - LAVA_GAP : null;
+    this.lavaCp = this.cp;
+    this.lavaWarn = false;
     app.view.markRelics(hasRelic);
     this.recAcc = 0;
     this.run = (sv && sv.run) || { id: Date.now().toString(36) + ((Math.random() * 1296) | 0).toString(36), map: this.map, diff: this.diff, custom: this.custom, h: 0, falls: 0, t: 0, coins: 0, won: false, when: Date.now(), players: 1 };
@@ -750,6 +757,7 @@ export class Game {
   // Monsters and bats knock you off on contact; lightning (sunny) strikes where it warned.
   hazards(t) {
     const me = this.me, L = this.L, k = this.storm.k, inMaze = this.huntStep(t);
+    this.inMazeNow = !!inMaze;
     this.knockCd = Math.max(0, this.knockCd - STEP);
     const knock = (fx, fz, src) => {
       if (this.knockCd > 0) return false;
@@ -796,6 +804,13 @@ export class Game {
             const s = Math.sign(l.per);
             this.zapKnock(uz * s * 7, 5, -ux * s * 7, 'laser');
           }
+        }
+      } else if (l.k === 'bar') {
+        // Over a flying car's way: hop over it as the car carries you through.
+        const px = me.x - l.x, pz = me.z - l.z, a = px * l.ux + pz * l.uz, b = px * -l.uz + pz * l.ux;
+        if (Math.abs(a) < 0.35 && Math.abs(b) < l.w && Math.abs(me.y - l.y) < 0.55) {
+          const back = Math.sign(a) || -Math.sign(me.vx * l.ux + me.vz * l.uz) || 1;
+          this.zapKnock(l.ux * back * 5, 4, l.uz * back * 5, 'laser');
         }
       } else if (S.gate(l, t).on) {
         const px = me.x - l.x, pz = me.z - l.z, a = px * l.ux + pz * l.uz, b = px * -l.uz + pz * l.ux;
@@ -1376,12 +1391,23 @@ export class Game {
     }
   }
 
+  // Volcano: the lava going up (LAVA_RISE), and a warning when it gets close below you.
+  lavaStep() {
+    const cp = this.L.cps[this.cp], me = this.me;
+    if (this.lavaCp !== this.cp) { this.lavaCp = this.cp; if (cp) this.lavaY = Math.max(this.lavaY, cp.y - LAVA_GAP); }
+    if (this.onCourse < 0 && !this.inMazeNow && !this.won) this.lavaY = Math.min(this.L.top - 12, this.lavaY + (LAVA_RISE[this.storm.haz] ?? LAVA_RISE[1]) * STEP);
+    const below = me.y - PR - this.lavaY;
+    if (below < 9 && !this.lavaWarn) { this.lavaWarn = true; this.app.ui.toast('The lava is close!', 'bad'); this.app.ui.haptic('tick'); }
+    else if (below > 20) this.lavaWarn = false;
+  }
+
   checks() {
     const me = this.me, L = this.L;
     if (!isFinite(me.x + me.y + me.z)) { const p = this.spawnPos(this.cp, this.slot); me.spawn(p[0], p[1], p[2]); }
     // A fall right after a respawn hits the host's short lock and is ignored, so if nothing has happened after two seconds it is said again.
     if (this.splashed && this.simT > this.splashT + 2) this.splashed = false;
-    if (me.y < 0.3 && !this.splashed) {
+    if (this.lavaY !== null) this.lavaStep();
+    if ((me.y < 0.3 || (this.lavaY !== null && me.y - PR < this.lavaY)) && !this.splashed) {
       this.splashed = true;
       this.splashT = this.simT;
       this.app.sound.splash();
@@ -1630,6 +1656,7 @@ export class Game {
         }
         const p = (e.pos && e.pos[this.slot]) || this.spawnPos(e.at ?? e.cp, this.slot);
         this.me.spawn(p[0], p[1], p[2]);
+        if (this.lavaY !== null) { this.lavaY = p[1] - PR - LAVA_GAP; this.lavaWarn = false; }
         // Back at a marker it still counts, anywhere else it starts over.
         this.rest = e.rest && e.rest[1] >= 0 ? e.rest : null;
         this.onCourse = this.rest ? this.rest[0] : -1;
@@ -1929,6 +1956,7 @@ export class Game {
     app.sound.ambient(0.2 + (me.y / this.L.top) * 0.6 + roar, me.reel > 0.05 && app.input.btn.reel, me.charge,
       this.L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, this.L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
+    app.view.lavaY = this.lavaY;
     // One step back in time, the same moment the climber is drawn at: standing on a moving platform stays exact.
     app.view.update(T - STEP, dt, this.storm, this.alpha ?? 1);
     app.pool.coins.update(dt, T, this.L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, this.coinB);

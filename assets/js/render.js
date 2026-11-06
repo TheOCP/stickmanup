@@ -19,8 +19,8 @@ const BOLT_PTS = 15;
 
 // Look of each map: sky, sun, sea, lights, rain and glow. Fog colours come from the level's zones.
 const THEMES = {
-  storm: { key: 'storm', top: 0x0d1426, glow: 0xffd890, day: 0, sun: 0, sunCol: 0xffe2b0, cloud: 1, horK: 1.6, seaK: 1.8, hemiSky: 0x8a98c8, hemiGround: 0x141824,
-    hemi: 0.6, light: 0xb8c4ff, lightI: 1.15, dir: [0.45, 1, 0.3], deep: 0x03080c, shallow: 0x03080c, shallowR: 0, amp: 1.0, foam: 0.55, scatter: 0x0b2a30, clear: 0, shore: 0, rain: 1, fog: 0.0085, exposure: 1.1, bloom: [0.9, 0.5, 0.62] },
+  storm: { key: 'storm', top: 0x182436, glow: 0xffd890, day: 0, sun: 0, sunCol: 0xffe2b0, cloud: 1, horK: 1.6, seaK: 1.8, hemiSky: 0x9aa8c8, hemiGround: 0x202630,
+    hemi: 0.85, light: 0xc0ccf0, lightI: 1.35, dir: [0.45, 1, 0.3], deep: 0x03080c, shallow: 0x03080c, shallowR: 0, amp: 1.0, foam: 0.55, scatter: 0x0b2a30, clear: 0, shore: 0, rain: 1, fog: 0.0085, exposure: 1.22, bloom: [0.9, 0.5, 0.62] },
   sunny: { key: 'sunny', top: 0x2f7fd0, glow: 0xfff2c0, day: 1, sun: 1, sunCol: 0xfff0d2, cloud: 0.55, horK: 1.0, seaK: 0.75, hemiSky: 0xcfe8ff, hemiGround: 0xd8c39a,
     hemi: 1.15, light: 0xfff2de, lightI: 2.7, dir: [0.55, 0.75, 0.38], deep: 0x0a4a72, shallow: 0x3fd8c8, shallowR: 70, amp: 0.5, foam: 0.22, scatter: 0x2ad0c0, clear: 1, shore: 41.2, rain: 0, fog: 0.0036, exposure: 1.0, bloom: [0.32, 0.4, 0.95] },
   forest: { key: 'forest', top: 0x4a7f9a, glow: 0xffe8b0, day: 0.8, sun: 0.75, sunCol: 0xffd49a, cloud: 0.7, horK: 1.05, seaK: 0.8, hemiSky: 0xb9d9c4, hemiGround: 0x3c4a2a,

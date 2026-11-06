@@ -9,7 +9,7 @@ import { TAU, rng } from './util.js';
 // Per map: the board (background, frame and text colours, a wood grain or not), the glow of the arrow, the post, and the
 // props along the dock's edges ([model, weight]).
 const LOOK = {
-  storm: { bg: '#141a26', frame: '#5af0ff', text: '#bff8ff', grain: false, glow: 0x5af0ff, post: [1, 0x4a5466], props: [['debris', 2], ['acunit', 2], ['pylon', 3], ['antenna', 1], ['tank', 1]] },
+  storm: { bg: '#20252c', frame: '#ffa83a', text: '#ffe6c0', grain: false, glow: 0xffa83a, post: [8, 0x5a6068], props: [['debris', 2], ['acunit', 1], ['coil', 2], ['dish', 1], ['vane', 2], ['tank', 1], ['lamp', 2]] },
   sunny: { bg: '#c89a5a', frame: '#7a4e22', text: '#fff6e0', grain: true, glow: 0xffb030, post: [3, 0xb08458], props: [['umbrella', 2], ['urn', 3], ['flowers', 3], ['rocks', 2], ['palm', 1]] },
   forest: { bg: '#6a4628', frame: '#3a2414', text: '#f4ecd0', grain: true, glow: 0x9be564, post: [16, 0x8a6a4a], props: [['fern', 3], ['shroom', 2], ['glowshroom', 2], ['bush', 2], ['flowers', 2], ['rocks', 1], ['topiary', 1]] },
   volcano: { bg: '#1e1412', frame: '#ff6a1a', text: '#ffd080', grain: false, glow: 0xff7a1a, post: [7, 0x6a5a56], props: [['brazier', 3], ['obsidian', 2], ['ember', 3], ['dead', 1], ['rocks', 1]] },

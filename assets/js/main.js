@@ -19,6 +19,7 @@ import { Sound } from './audio.js';
 import { Storm } from './storm.js';
 import * as cloud from './cloud.js';
 import { Session, PROTO, makeLink, MAX_PLAYERS } from './net.js';
+import { fitText } from './fit.js';
 import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keepAwake } from './platform.js';
 import * as live from './live.js';
 import { initUpdater } from './updater.js';
@@ -2297,6 +2298,7 @@ function boot() {
     window.addEventListener('pagehide', () => window.SMU_leave());
   }
   initUpdater(app);
+  fitText($('#menu'));
   startLive();
   title();
   requestAnimationFrame(frame);
@@ -2549,6 +2551,7 @@ function titleScene(dt) {
   if (g) R.shadowFocus(g.center.x, g.center.y, g.center.z);
   else R.shadowFocus(cam.position.x, cam.position.y - 2, cam.position.z);
   app.view.camPos = cam.position;
+  app.view.lavaY = null;
   app.view.update(titleT, dt, app.titleStorm);
   if ((bolt -= dt) <= 0 && app.level.mapKey === 'storm') {
     bolt = 3 + Math.random() * 6;

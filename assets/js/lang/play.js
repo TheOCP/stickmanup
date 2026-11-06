@@ -62,6 +62,7 @@ export default [
   ["Your shield took the strike", "Tu escudo aguantó el rayo", "Seu escudo aguentou o raio", "Ton bouclier a encaissé l'impact", "Dein Schild hat den Einschlag abgefangen", "Щит принял удар", "Kalkanın darbeyi aldı"],
   ["{} fell and went back", "{} cayó y volvió atrás", "{} caiu e voltou", "{} est tombé et revient en arrière", "{} ist gefallen und zurück", "{} упал и вернулся назад", "{} düştü ve geri döndü"],
   ["Into the lava.", "A la lava.", "Na lava.", "Dans la lave.", "In die Lava.", "В лаву.", "Lavaya."],
+  ["The lava is close!", "¡La lava está cerca!", "A lava está perto!", "La lave est proche !", "Die Lava ist nah!", "Лава близко!", "Lav yaklaşıyor!"],
   ["Into the bay.", "A la bahía.", "Na baía.", "Dans la baie.", "In die Bucht.", "В залив.", "Koya."],
   ["All the way down.", "Hasta el fondo.", "Até lá embaixo.", "Tout en bas.", "Ganz nach unten.", "До самого низа.", "Ta en aşağıya."],
   ["Splash! Into the lagoon.", "¡Chof! A la laguna.", "Tchibum! Na lagoa.", "Plouf ! Dans le lagon.", "Platsch! In die Lagune.", "Плюх! В лагуну.", "Şap! Lagüne."],

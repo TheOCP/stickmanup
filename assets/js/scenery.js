@@ -394,6 +394,21 @@ const MODELS = {
     return parts;
   },
   reeds: () => [0, 1, 2, 3, 4, 5].map((k) => [P(cyl(0.02, 0.025, 1.4 + (k % 3) * 0.3, 4), M(Math.cos(k * 1.7) * 0.2, 0.7 + (k % 3) * 0.15, Math.sin(k * 1.7) * 0.2), 0x6a9a3a), P(cyl(0.05, 0.05, 0.25, 6), M(Math.cos(k * 1.7) * 0.2, 1.45 + (k % 3) * 0.3, Math.sin(k * 1.7) * 0.2), 0x6a4a2a)]).flat(),
+  // Storm station gear. A tesla coil: copper column in rings, a steel doughnut and a glowing tip.
+  coil: () => [P(box(0.8, 0.4, 0.8), M(0, 0.2, 0), 0x3a3e46), P(cyl(0.16, 0.2, 2.2, 10), M(0, 1.5, 0), 0x8a6a4a),
+    ...[0, 1, 2, 3, 4, 5].map((k) => P(new THREE.TorusGeometry(0.22, 0.035, 5, 14), M(0, 0.6 + k * 0.34, 0, 1, 1, 1, Math.PI / 2), 0x5a4a3a)),
+    P(new THREE.TorusGeometry(0.42, 0.14, 8, 18), M(0, 2.7, 0, 1, 1, 1, Math.PI / 2), 0xb8bcc4), P(ico(0.16, 1), M(0, 2.95, 0), 0x9ae8ff, 0x7fd8ff, 3.0)],
+  // A radar dish on a steel frame, a red light on top.
+  dish: () => [...[0, 1, 2].map((k) => P(cyl(0.04, 0.06, 1.6, 5), M(Math.cos(k * 2.09) * 0.35, 0.75, Math.sin(k * 2.09) * 0.35, 1, 1, 1, Math.sin(k * 2.09) * 0.22, 0, -Math.cos(k * 2.09) * 0.22), 0x6a6e76)),
+    P(box(0.4, 0.3, 0.4), M(0, 1.6, 0), 0x3a3e46), P(new THREE.SphereGeometry(1.1, 14, 5, 0, TAU, 0, 0.75), M(0, 2.6, 0.25, 1, 1, 1, -1.9), 0xeeeae2),
+    P(cyl(0.03, 0.03, 0.9, 5), M(0, 2.2, 0.55, 1, 1, 1, -0.35), 0x3a3e46), P(ico(0.08, 0), M(0, 1.82, 0), 0x200404, 0xff3050, 3)],
+  // A weather mast: anemometer cups up top, a vane under them, the four points.
+  vane: () => [P(cyl(0.04, 0.06, 2.8, 6), M(0, 1.4, 0), 0x3a3e46), ...[0, 1, 2].map((k) => [P(box(0.5, 0.025, 0.025), M(Math.cos(k * 2.09) * 0.25, 2.85, Math.sin(k * 2.09) * 0.25, 1, 1, 1, 0, -k * 2.09, 0), 0x8a8e96),
+    P(new THREE.SphereGeometry(0.08, 8, 4, 0, TAU, 0, Math.PI / 2), M(Math.cos(k * 2.09) * 0.5, 2.85, Math.sin(k * 2.09) * 0.5, 1, 1, 1, 0, -k * 2.09, Math.PI / 2), 0xb8bcc4)]).flat(),
+    P(box(0.9, 0.03, 0.03), M(0, 2.5, 0), 0x3a3e46), P(box(0.03, 0.03, 0.9), M(0, 2.5, 0), 0x3a3e46), P(box(0.7, 0.16, 0.02), M(0.15, 2.68, 0), 0xd8b020), P(cone(0.08, 0.22, 4), M(-0.3, 2.68, 0, 1, 1, 1, 0, 0, Math.PI / 2), 0xc83030)],
+  // A small wind turbine's tower and nacelle (the rotor spins on its own, worldview.js stormGear).
+  turbine: () => [P(cyl(0.1, 0.2, 5.6, 8), M(0, 2.8, 0), 0xeeeae2), P(box(0.36, 0.34, 0.9), M(0, 5.7, -0.15), 0xb8bcc4), P(cyl(0.2, 0.3, 0.3, 8), M(0, 0.15, 0), 0x6a6e76), P(ico(0.05, 0), M(0, 5.92, -0.4), 0x200404, 0xff3050, 3)],
+  rotor: () => [P(cone(0.13, 0.3, 8), M(0, 0, 0.12, 1, 1, 1, Math.PI / 2), 0xb8bcc4), ...[0, 1, 2].map((k) => P(box(0.16, 2.2, 0.03), M(Math.cos(k * 2.09 + 1.57) * 1.1, Math.sin(k * 2.09 + 1.57) * 1.1, 0, 1, 1, 1, 0, 0, k * 2.09), 0xeeeae2))],
   antenna: () => [P(cyl(0.05, 0.08, 3.2, 6), M(0, 1.6, 0), 0x8a8e96), P(box(0.9, 0.04, 0.04), M(0, 2.4, 0), 0x8a8e96), P(box(0.6, 0.04, 0.04), M(0, 2.9, 0), 0x8a8e96),
     P(cone(0.32, 0.18, 12), M(0.3, 1.6, 0, 1, 1, 1, 0, 0, Math.PI / 2), 0xd8dce4), P(ico(0.07, 0), M(0, 3.25, 0), 0xff3030, 0xff3030, 2.5)],
   acunit: () => [P(box(0.9, 0.6, 0.7), M(0, 0.3, 0), 0xb8bcc4), P(cyl(0.24, 0.24, 0.04, 12), M(0, 0.62, 0), 0x3a3e46), P(box(0.92, 0.05, 0.05), M(0, 0.45, 0.36), 0x6a6e76)],
@@ -456,7 +471,7 @@ function ringsGeo(rings, n, seed) {
   g.computeVertexNormals();
   return g;
 }
-function mergeGeos(list) {
+export function mergeGeos(list) {
   const pos = [], nor = [];
   for (const [geo, m] of list) {
     const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m);
@@ -528,7 +543,7 @@ export function patMat(pat, color = 0xffffff, o = {}) {
 
 // Natural shapes on the daytime maps go without the glowing edge trim (it outlines the box, not the rock).
 const NATURAL = /^(rock|isle|disc|lily|cloud|mushcap|basalt|planks|raft|log)/;
-export const noTrim = (key, shape) => (key === 'sunny' || key === 'forest' || key === 'waterfall') && NATURAL.test(shape);
+export const noTrim = (key, shape) => (key === 'sunny' || key === 'forest' || key === 'waterfall' || key === 'storm') && NATURAL.test(shape);
 
 const KICKWALL = {
   storm: { shape: 'box', pat: 8, col: 0x8a94a4 }, sunny: { shape: 'box', pat: 2, col: 0xf2e8d4 }, forest: { shape: 'box', pat: 18, col: 0xffffff },
@@ -553,11 +568,14 @@ export function styleFor(key, c, zi, R) {
   if (c.look || c.surf === 'ice' || c.surf === 'mud') return null;
   const rock = 'rock' + ((R() * 3) | 0);
   switch (key) {
-    case 'storm':
-      if (beam) return { shape: 'girder', pat: 1, col: 0x4a5260 };
-      if (zi === 4) return { shape: rock, pat: 8, col: 0x5a6070 };
+    case 'storm': {
+      // Riveted steel decks and wet concrete slabs, weathered, on sea stacks higher up.
+      if (beam) return { shape: 'girder', pat: 1, col: 0x5a6068 };
+      if (zi === 4) return { shape: rock, pat: 2, col: 0x6a6e74 };
       if (zi === 5 || zi === 8) return { shape: rock, pat: 14, col: 0xffffff };
-      return { shape: 'chamfer', pat: R() < 0.5 ? 8 : 4, col: null };
+      const r = R();
+      return r < 0.45 ? { shape: 'chamfer', pat: 8, col: [0x7a8088, 0x8a8478, 0x6e7680][(R() * 3) | 0] } : r < 0.8 ? { shape: 'chamfer', pat: 12, col: [0x9a9c9e, 0x8c9094][(R() * 2) | 0] } : { shape: rock, pat: 2, col: 0x7a7e84 };
+    }
     case 'sunny':
       if (beam) return { shape: 'box', pat: 3, col: 0xc9a36b };
       if (zi <= 1) return { shape: 'planks', pat: 3, col: 0xd0aa70 };
@@ -590,9 +608,9 @@ export function styleFor(key, c, zi, R) {
 // Per map, per zone: island top (pattern), trees, small things. [model, weight].
 const T = (isle, trees, small) => ({ isle, trees, small });
 const FLORA = {
-  storm: [T(8, [['lamp', 2], ['acunit', 1], ['tank', 1], ['debris', 2]], [['debris', 1]]), T(8, [['acunit', 2], ['antenna', 1], ['lamp', 1]], [['debris', 1]]),
-    T(8, [['antenna', 3], ['lamp', 1]], [['debris', 1]]), T(8, [['debris', 3], ['lamp', 1]], [['debris', 1]]), T(8, [['debris', 4], ['antenna', 1]], [['debris', 1]]),
-    T(14, [['frostpine', 3], ['crystal', 2]], [['crystal', 1]]), T(8, [['antenna', 2], ['crystal', 2]], [['crystal', 1]]), T(8, [['crystal', 3], ['antenna', 1]], [['crystal', 1]]), T(14, [['crystal', 4]], [['crystal', 1]])],
+  storm: [T(2, [['turbine', 3], ['lamp', 1], ['tank', 1], ['acunit', 1]], [['debris', 1]]), T(2, [['dish', 2], ['coil', 1], ['acunit', 1], ['antenna', 1]], [['debris', 1]]),
+    T(2, [['coil', 3], ['vane', 1], ['antenna', 1]], [['debris', 1]]), T(2, [['turbine', 2], ['vane', 2], ['lamp', 1]], [['debris', 1]]), T(2, [['dish', 2], ['coil', 2], ['debris', 1]], [['debris', 1]]),
+    T(14, [['frostpine', 3], ['crystal', 2], ['vane', 1]], [['crystal', 1]]), T(2, [['coil', 2], ['turbine', 1], ['crystal', 1]], [['crystal', 1]]), T(2, [['dish', 1], ['coil', 2], ['crystal', 1]], [['crystal', 1]]), T(14, [['crystal', 3], ['vane', 1]], [['crystal', 1]])],
   sunny: [T(6, [['palm', 3], ['hut', 1], ['umbrella', 1]], [['rocks', 1], ['grass', 1]]), T(6, [['palm', 2], ['coral', 2], ['bush', 1]], [['coral', 1], ['flowers', 1]]),
     T(5, [['palm', 2], ['bush', 2], ['flowers', 1]], [['flowers', 2], ['grass', 1]]), T(5, [['blossom', 2], ['flowers', 3], ['bush', 1]], [['flowers', 2]]),
     T(6, [['palm', 3], ['umbrella', 1]], [['grass', 1], ['rocks', 1]]), T(6, [['cactus', 3], ['palm', 1]], [['rocks', 1]]), T(5, [['palm', 2], ['flowers', 2]], [['flowers', 1]]),
@@ -607,10 +625,10 @@ const FLORA = {
   city: [T(12, [['acunit', 3], ['tank', 1], ['antenna', 1]], [['acunit', 1]]), T(12, [['acunit', 2], ['lamp', 2]], [['planter', 1]]), T(12, [['antenna', 2], ['acunit', 2]], [['acunit', 1]]),
     T(12, [['tank', 2], ['acunit', 2]], [['planter', 1]]), T(5, [['oak', 2], ['bush', 2], ['flowers', 1]], [['planter', 2]]), T(12, [['antenna', 4]], [['acunit', 1]]),
     T(12, [['acunit', 2], ['lamp', 1]], [['planter', 1]]), T(5, [['bush', 2], ['oak', 1], ['flowers', 1]], [['planter', 1]]), T(12, [['antenna', 2], ['lamp', 1]], [['planter', 1]])],
-  waterfall: [T(6, [['palm', 3], ['bush', 1], ['umbrella', 1]], [['flowers', 1], ['grass', 1]]), T(5, [['reeds', 2], ['fern', 2], ['bush', 1], ['flowers', 1]], [['reeds', 1], ['flowers', 1]]),
-    T(13, [['bamboo', 4], ['fern', 1]], [['fern', 2]]), T(5, [['blossom', 2], ['flowers', 3]], [['flowers', 2]]), T(5, [['palm', 2], ['umbrella', 2]], [['flowers', 1], ['grass', 1]]),
-    T(11, [['coral', 4]], [['coral', 2]]), T(5, [['pine', 2], ['bush', 2], ['flowers', 1]], [['flowers', 1], ['bush', 1]]), T(13, [['birch', 2], ['fern', 2]], [['fern', 1]]),
-    T(5, [['blossom', 3], ['flowers', 2]], [['flowers', 2]])],
+  waterfall: [T(5, [['palm', 3], ['bush', 1], ['blossom', 1]], [['flowers', 1], ['tuftT', 3], ['grass', 1]]), T(5, [['reeds', 2], ['fern', 2], ['bush', 1], ['flowers', 1]], [['reeds', 1], ['flowers', 1], ['tuftT', 2]]),
+    T(13, [['bamboo', 4], ['fern', 1]], [['fern', 2], ['tuftT', 2]]), T(5, [['blossom', 2], ['palm', 1], ['flowers', 2]], [['flowers', 2], ['tuftT', 2]]), T(5, [['palm', 3], ['fern', 1]], [['flowers', 1], ['tuftT', 3]]),
+    T(13, [['fern', 2], ['bamboo', 2], ['bush', 1]], [['fernT', 2], ['tuftT', 1]]), T(5, [['palm', 2], ['bush', 2], ['flowers', 1]], [['flowers', 1], ['tuftT', 2]]), T(13, [['birch', 2], ['fern', 2]], [['fern', 1], ['tuftT', 2]]),
+    T(5, [['blossom', 3], ['flowers', 2]], [['flowers', 2], ['tuftT', 2]])],
 };
 const pick = (list, R) => { let s = 0; for (const [, w] of list) s += w; let x = R() * s; for (const [k, w] of list) if ((x -= w) <= 0) return k; return list[0][0]; };
 
@@ -626,7 +644,7 @@ export function buildScenery(view) {
   const towers = L.cols.filter((c) => c.kind === 'tower'), trees = L.trees || [];
   const tint = new THREE.Color();
   L.zones.forEach((z, zi) => {
-    const f = F[Math.min(zi, F.length - 1)], n = (key === 'city' ? 14 : 9) - (DETAIL === 0 ? 4 : 0);
+    const f = F[Math.min(zi, F.length - 1)], n = (key === 'city' ? 14 : key === 'waterfall' ? 13 : 9) - (DETAIL === 0 ? 4 : 0);
     // The lowest islands float well clear of the ground: low down they sank into the beach, a palm or a pier.
     const y0 = zi === 0 && key !== 'volcano' && key !== 'city' ? z.y0 + 12 : z.y0;
     for (let k = 0; k < n; k++) {
@@ -647,27 +665,51 @@ export function buildScenery(view) {
         if (trees.some((t) => Math.hypot(t.x - x, t.z - zz) < 10)) continue;
       }
       top = y;
-      if (key === 'city') put('planter', M(x, top, zz, 1.4, 1.4, 1.4, 0, ry), null);
+      if (key === 'city') { put('planter', M(x, top, zz, 1.4, 1.4, 1.4, 0, ry), null); (view.balconies || (view.balconies = [])).push({ x, y: top, z: zz, ry }); }
       putIsle(key === 'city' ? 'chamfer' : 'isle' + ((R() * 3) | 0), f.isle, M(x, top - 0.5 * (key === 'city' ? 0.5 : 1.2), zz, s, key === 'city' ? 0.5 : 1.2, s * (0.75 + R() * 0.25), 0, ry));
       const nt = key === 'city' ? 1 : 1 + ((R() * 2.6) | 0);
       for (let j = 0; j < nt; j++) {
         const a = R() * TAU, d = R() * s * 0.28, sc = 0.8 + R() * 0.7;
         tint.setHSL(0, 0, 0.85 + R() * 0.3);
-        put(pick(f.trees, R), M(x + Math.cos(a) * d, top, zz + Math.sin(a) * d, sc, sc, sc, 0, R() * TAU), tint.getHex());
+        const model = pick(f.trees, R), tx = x + Math.cos(a) * d, tz = zz + Math.sin(a) * d, try_ = R() * TAU;
+        put(model, M(tx, top, tz, sc, sc, sc, 0, try_), tint.getHex());
+        if (model === 'turbine') (view.rotors || (view.rotors = [])).push({ x: tx, y: top, z: tz, ry: try_, s: sc });
+        if (model === 'coil') (view.coils || (view.coils = [])).push({ x: tx, y: top, z: tz, s: sc });
       }
-      for (let j = 0; j < 2 + ((R() * 3) | 0); j++) {
-        const a = R() * TAU, d = s * (0.2 + R() * 0.22), sc = 0.7 + R() * 0.6;
+      for (let j = 0, ns = (key === 'waterfall' ? 6 : 2) + ((R() * 3) | 0); j < ns; j++) {
+        const a = R() * TAU, d = s * (0.12 + R() * 0.3), sc = 0.7 + R() * 0.6;
         put(pick(f.small, R), M(x + Math.cos(a) * d, top, zz + Math.sin(a) * d, sc, sc, sc, 0, R() * TAU), null);
       }
       // Waterfall: some islands spill a little waterfall off one edge.
       if (key === 'waterfall' && R() < 0.45) view.islandFalls.push({ x: x + Math.cos(ry) * s * 0.42, y: top, z: zz - Math.sin(ry) * s * 0.42, w: s * 0.35, h: 6 + R() * 10, ry });
     }
   });
+  // Waterfall: small green islets out in the lagoon, palms and bushes on them, a fall off some into the sea.
+  if (key === 'waterfall') {
+    const f = F[0], nI = [6, 12, 16][DETAIL];
+    for (let k = 0, tries = 0; k < nI && tries < 200; tries++) {
+      const a = R() * TAU, r = 52 + R() * 70, x = Math.cos(a) * r, zz = Math.sin(a) * r, s = 4 + R() * 5;
+      if (trees.some((t) => Math.hypot(t.x - x, t.z - zz) < 12) || L.decor.some((d) => d.k === 'boat' && Math.hypot(d.x - x, d.z - zz) < 10)) continue;
+      const top = 0.5 + R() * 0.7, ry = R() * TAU;
+      putIsle('isle' + ((R() * 3) | 0), k % 3 ? 5 : 6, M(x, top - 0.3, zz, s, 0.6, s * (0.75 + R() * 0.25), 0, ry));
+      for (let j = 0, nt = 1 + ((R() * 3) | 0); j < nt; j++) {
+        const b = R() * TAU, d = R() * s * 0.3, sc = 0.9 + R() * 0.7;
+        put(R() < 0.65 ? 'palm' : pick(f.trees, R), M(x + Math.cos(b) * d, top, zz + Math.sin(b) * d, sc, sc, sc, 0, R() * TAU), null);
+      }
+      for (let j = 0; j < 6; j++) {
+        const b = R() * TAU, d = s * (0.1 + R() * 0.32), sc = 0.7 + R() * 0.6;
+        put(pick(f.small, R), M(x + Math.cos(b) * d, top, zz + Math.sin(b) * d, sc, sc, sc, 0, R() * TAU), null);
+      }
+      k++;
+    }
+  }
   // Small plants near the edges of the bigger route ledges (they don't get in the way: no collision).
   for (const c of DETAIL ? L.cols : []) {
-    if (c.kind !== 'plat' || c.dyn || c.look || Math.min(c.hx, c.hz) < 1.3 || R() > 0.4) continue;
+    // Waterfall: grass on every mossy rock of the route (not on the lily pads, rafts and marble).
+    const wf = key === 'waterfall' && ![1, 2, 6, 8].includes(c.zone);
+    if (c.kind !== 'plat' || c.dyn || c.look || Math.min(c.hx, c.hz) < (wf ? 0.9 : 1.3) || R() > (wf ? 0.85 : 0.4)) continue;
     const f = F[Math.min(c.zone, F.length - 1)], ax = Math.cos(c.ry), az = -Math.sin(c.ry), bx = Math.sin(c.ry), bz = Math.cos(c.ry);
-    for (let j = 0; j < 1 + ((R() * 2) | 0); j++) {
+    for (let j = 0; j < (wf ? 2 : 1) + ((R() * (wf ? 3 : 2)) | 0); j++) {
       const u = (R() < 0.5 ? -1 : 1) * (c.hx - 0.25), v = (R() * 2 - 1) * (c.hz - 0.3), sw = R() < 0.5, sc = 0.45 + R() * 0.35;
       const px = sw ? u : (R() * 2 - 1) * (c.hx - 0.3), pz = sw ? v : (R() < 0.5 ? -1 : 1) * (c.hz - 0.25);
       put(pick(f.small, R), M(c.x + ax * px + bx * pz, c.y + c.hy, c.z + az * px + bz * pz, sc, sc, sc, 0, R() * TAU), null);
@@ -751,6 +793,32 @@ const ANIMALS = {
     A(ico(0.025, 0), M(0.07, 0.23, 0.13), 0x111111), A(ico(0.025, 0), M(-0.07, 0.23, 0.13), 0x111111), A(box(0.07, 0.05, 0.2), M(0.13, 0.05, -0.08), 0x3aa83a, 2), A(box(0.07, 0.05, 0.2), M(-0.13, 0.05, -0.08), 0x3aa83a, 2)],
   turtle: () => [A(new THREE.SphereGeometry(0.4, 6, 3, 0, TAU, 0, Math.PI / 2), M(0, 0, 0, 1, 0.6, 1.2), 0x4a6a3a), A(lo(0.12), M(0, 0.02, 0.55), 0x8aa86a),
     ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.22, 0.04, 0.1), M(s * 0.4, 0, f * 0.3, 1, 1, 1, 0, s * f * 0.4), 0x8aa86a, 2))],
+  // City robots: a helper on one wheel with arms and a visor, and a little delivery box on four wheels. Their lights
+  // are a second flock drawn glowing in the same place (…L).
+  robot: () => [A(cyl(0.16, 0.16, 0.08, 12).rotateZ(Math.PI / 2), M(0, 0.16, 0), 0x2a2a2a), A(box(0.12, 0.3, 0.2), M(0, 0.38, 0), 0x6a6e76),
+    A(lo(0.3), M(0, 0.8, 0, 0.85, 1, 0.65), 0xeeeae2), A(box(0.44, 0.08, 0.3), M(0, 0.58, 0), 0x8a8e96), A(box(0.3, 0.24, 0.26), M(0, 1.22, 0), 0xeeeae2),
+    A(box(0.07, 0.42, 0.09), M(0.3, 0.82, 0.02, 1, 1, 1, 0.25, 0, 0.12), 0x8a8e96), A(box(0.07, 0.42, 0.09), M(-0.3, 0.82, 0.02, 1, 1, 1, -0.2, 0, -0.12), 0x8a8e96),
+    A(box(0.02, 0.16, 0.02), M(0.08, 1.42, 0), 0x6a6e76)],
+  robotL: () => [A(box(0.24, 0.06, 0.02), M(0, 1.24, 0.135), 0x7fd8ff), A(box(0.14, 0.06, 0.02), M(0, 0.86, 0.2), 0x7fd8ff), A(ico(0.03, 0), M(0.08, 1.51, 0), 0xff3050)],
+  deliv: () => [A(box(0.6, 0.42, 0.8), M(0, 0.36, 0), 0xeeeae2), A(box(0.62, 0.04, 0.82), M(0, 0.58, 0), 0x3a3e46),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => A(cyl(0.1, 0.1, 0.06, 10).rotateZ(Math.PI / 2), M(x * 0.31, 0.1, z * 0.28), 0x2a2a2a)),
+    A(box(0.02, 0.4, 0.02), M(0.22, 0.78, -0.3), 0x6a6e76)],
+  delivL: () => [A(box(0.4, 0.05, 0.02), M(0, 0.48, 0.41), 0x7fd8ff), A(ico(0.035, 0), M(0.22, 0.99, -0.3), 0xd8b020)],
+  // A flying car out in the city's traffic, about 4.4 m long. Lights in hovercarL.
+  hovercar: () => [A(box(1.9, 0.5, 4.2), M(0, 0, 0), 0xffffff), A(box(1.7, 0.3, 0.9), M(0, -0.06, 2.4, 1, 1, 1, 0.25), 0xffffff),
+    A(box(1.62, 0.44, 2.1), M(0, 0.46, -0.25), 0x1a2433), A(box(1.66, 0.06, 2.0), M(0, 0.7, -0.3), 0xffffff), A(box(1.8, 0.28, 0.5), M(0, 0.3, -2.0), 0xffffff),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => A(cyl(0.3, 0.34, 0.24, 10), M(x * 0.95, -0.32, z * 1.45), 0x3a3e46))],
+  hovercarL: () => [A(box(0.5, 0.12, 0.04), M(0.55, 0.0, 2.11), 0xffffff), A(box(0.5, 0.12, 0.04), M(-0.55, 0.0, 2.11), 0xffffff),
+    A(box(1.6, 0.08, 0.04), M(0, 0.12, -2.11), 0xff2030), A(box(1.7, 0.02, 3.8), M(0, -0.26, 0), 0x3fd0ff),
+    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => A(cyl(0.24, 0.24, 0.02, 10), M(x * 0.95, -0.45, z * 1.45), 0x9ae8ff))],
+  // A grey heron wading in the shallows, about 1.4 m tall.
+  heron: () => [A(lo(0.16), M(0, 0.86, 0, 0.9, 0.85, 2.2), 0xa8acb8), A(box(0.05, 0.42, 0.05), M(0, 1.1, 0.33, 1, 1, 1, 0.35), 0xeeeae2),
+    A(lo(0.065), M(0, 1.3, 0.42, 0.8, 0.8, 1.4), 0xeeeae2), A(box(0.02, 0.02, 0.16), M(0, 1.35, 0.33), 0x2a2a2a), A(cone(0.024, 0.2, 4), M(0, 1.29, 0.56, 1, 1, 1, Math.PI / 2), 0xd8b020),
+    A(box(0.05, 0.07, 0.32), M(0.13, 0.86, -0.1), 0x5a5e6a), A(box(0.05, 0.07, 0.32), M(-0.13, 0.86, -0.1), 0x5a5e6a), A(quad(0.14, 0.2), M(0, 0.8, -0.4), 0x8a8e96),
+    A(box(0.025, 0.8, 0.025), M(0.06, 0.4, 0), 0x6a6e76), A(box(0.025, 0.8, 0.025), M(-0.06, 0.4, 0.02), 0x6a6e76)],
+  // A fish leaping out of the lagoon.
+  fish: () => [A(lo(0.1), M(0, 0, 0, 0.55, 1, 2.6), 0x9ab8cc), A(lo(0.07), M(0, -0.02, 0.06, 0.5, 0.8, 2.4), 0xeeeae2),
+    A(new THREE.PlaneGeometry(0.2, 0.18).rotateY(Math.PI / 2), M(0, 0, -0.3), 0x6a8aa0), A(new THREE.PlaneGeometry(0.16, 0.08).rotateY(Math.PI / 2), M(0, 0.1, 0.02), 0x6a8aa0)],
   // Deer (scenery.js mode 5): w 3 neck, 4 head, 5 tail, 6 upper leg, 7 lower leg, moved by the shader as they walk and graze.
   deer: () => deerParts(0),
   stag: () => deerParts(1),
@@ -811,7 +879,7 @@ function deerParts(kind) {
   return parts;
 }
 const SWARM_VS = `#include <fog_pars_vertex>
-  uniform float uT, uMode, uFlap, uSide;
+  uniform float uT, uMode, uFlap, uSide, uBank;
   attribute vec3 aCol; attribute float aW; attribute vec4 aP; attribute vec4 aQ;
   varying vec3 vC; varying float vL;
   vec2 rot2(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
@@ -882,6 +950,7 @@ const SWARM_VS = `#include <fog_pars_vertex>
       p = q * sz; n = nn;
     }
     p.yz = rot2(p.yz, pitch); n.yz = rot2(n.yz, pitch);
+    bank *= uBank;
     p.xy = rot2(p.xy, bank); n.xy = rot2(n.xy, bank);
     float yaw = atan(d.x, d.z) + uSide, cy = cos(yaw), sy = sin(yaw);
     p = vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
@@ -931,7 +1000,7 @@ export function swarm(view, animal, list, o = {}) {
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), rad);
   const m = new THREE.ShaderMaterial({
     fog: true, side: THREE.DoubleSide,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uT: { value: 0 }, uMode: { value: o.mode ?? 0 }, uFlap: { value: o.flap ?? 9 }, uSide: { value: o.side ?? 0 }, uLight: { value: o.light ?? 1 }, uGlow: { value: o.glow ?? 0 } }]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uT: { value: 0 }, uMode: { value: o.mode ?? 0 }, uFlap: { value: o.flap ?? 9 }, uSide: { value: o.side ?? 0 }, uBank: { value: o.bank ?? 1 }, uLight: { value: o.light ?? 1 }, uGlow: { value: o.glow ?? 0 } }]),
     vertexShader: SWARM_VS, fragmentShader: SWARM_FS,
   });
   view.timeMats.push(m);
@@ -1004,7 +1073,38 @@ export function buildAnimals(view) {
   if (key === 'waterfall') {
     const lilies = L.decor.filter((d) => d.k === 'lily');
     swarm(view, 'frog', lilies.filter((d, i) => i % 3 === 0).map((d) => ({ x: d.x, y: d.y + 0.03, z: d.z, ph: R(), R: 0.25, sp: 0.4 + R() * 0.3, amp: 0.35, sz: 1.4, tint: null })), { mode: 3 });
+    // Herons wading slowly along the edge of the beach, fish leaping out in the lagoon.
+    swarm(view, 'heron', ring(8, 37.6, 39.2, -0.3, () => ({ R: 0.8 + R() * 1.2, sp: 0.12 + R() * 0.1, amp: 0, sz: 1.1 })), { mode: 2 });
+    const koi = [0xffffff, 0xffffff, 0xffb070, 0xffd8a0];
+    swarm(view, 'fish', ring(18, 46, 110, 0.2, () => ({ R: 0.6 + R() * 0.5, sp: (4 + R() * 1.6) * (R() < 0.5 ? 1 : -1), amp: 1.1, sz: 1.2, tint: koi[(R() * 4) | 0] })), { mode: 4 });
     swarm(view, 'turtle', ring(10, 42, 80, 0.12, () => ({ R: 4 + R() * 6, sp: (0.06 + R() * 0.05) * (R() < 0.5 ? 1 : -1), amp: 0, sz: 1.6 })), { mode: 4 });
+  }
+  if (key === 'city') {
+    // Traffic: flying cars in lanes round the city, each height its own way round, lights on.
+    const paint = [0xc83030, 0xffffff, 0x5a5e66, 0xd8b020, 0x2a6ae8, 0xff4fd8, 0x7cff6a, 0x9a9aa8], cars = new Map();
+    const nCar = [36, 80, 120][DETAIL];
+    for (let k = 0; k < nCar; k++) {
+      const lane = (R() * Math.floor(top / 22)) | 0, y = 12 + lane * 22 + R() * 3, b = Math.floor(y / 120), r = 42 + R() * 70;
+      if (!cars.has(b)) cars.set(b, []);
+      cars.get(b).push({ x: 0, y, z: 0, ph: R(), R: r, sp: ((11 + R() * 7) / r) * (lane % 2 ? 1 : -1), amp: 0.8, sz: 1, tint: paint[(R() * paint.length) | 0] });
+    }
+    for (const list of cars.values()) {
+      swarm(view, 'hovercar', list, { light: 0.9, bank: 0.25 });
+      swarm(view, 'hovercarL', list.map((c) => Object.assign({}, c, { tint: null })), { light: 0, glow: 2.6, bank: 0.25 });
+    }
+    // Robots on the square at the foot of the spire and on the balcony gardens, going to and fro.
+    const bots = [], boxes = [];
+    for (let k = 0; k < 10; k++) {
+      const a = 0.9 + (k / 10) * (TAU - 1.8) + R() * 0.3, r = 15.5 + R() * 2.5;
+      (k % 3 ? bots : boxes).push({ x: Math.cos(a) * r, y: 2, z: Math.sin(a) * r, ph: R(), R: 1 + R() * 1.6, sp: 0.35 + R() * 0.25, amp: 0, sz: 1.1, tint: null });
+    }
+    for (const b of (view.balconies || []).slice(0, [8, 18, 28][DETAIL])) bots.push({ x: b.x, y: b.y, z: b.z, ph: R(), R: 0.5, sp: 0.3 + R() * 0.2, amp: 0, sz: 1, tint: null });
+    for (const [k, list] of [['robot', bots], ['deliv', boxes]]) {
+      if (!list.length) continue;
+      const byBand = new Map();
+      for (const s of list) { const b = Math.floor(s.y / 120); if (!byBand.has(b)) byBand.set(b, []); byBand.get(b).push(s); }
+      for (const l of byBand.values()) { swarm(view, k, l, { mode: 2, light: 0.95 }); swarm(view, k + 'L', l, { mode: 2, light: 0, glow: 2.4 }); }
+    }
   }
   if (key === 'volcano') swarm(view, 'lizard', ring(16, 21.2, 21.8, 0, () => ({ R: 1.2, sp: 0.4, amp: 0, sz: 2.2 })).map((s) => Object.assign(s, { y: 6 + R() * (top - 20) })), { mode: 2, glow: 0.2 });
 }
@@ -1012,31 +1112,47 @@ export function buildAnimals(view) {
 // ---------------------------------------------------------------- waterfalls
 // Falling water: deep blue-white layers streaming down, foam clumps, ragged see-through edges.
 export function fallMat(view, o = {}) {
+  // fade: the fall carries a 0..1 attribute aK from its lip to its foot, spreads out and dissolves into spray at the
+  // bottom (falls off floating islands, which have nothing to land on).
+  const fade = !!o.fade;
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uT: { value: 0 }, uS: { value: o.speed ?? 0.5 }, uA: { value: o.alpha ?? 0.92 },
-      uC: { value: new THREE.Color(o.color ?? 0xcff2fa) }, uD: { value: new THREE.Color(o.deep ?? 0x3a9ac0) },
+      uC: { value: new THREE.Color(o.color ?? 0xdaf4fa) }, uD: { value: new THREE.Color(o.deep ?? 0x2f8ab0) },
     }]),
     vertexShader: `#include <fog_pars_vertex>
-      varying vec2 vUv;
-      void main(){ vUv = uv; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition;
+      varying vec2 vUv; varying float vK;
+      ${fade ? 'attribute float aK;' : ''}
+      void main(){ vUv = uv; vK = ${fade ? 'aK' : '0.0'};
+        vec3 p = position;
+        ${fade ? 'p.x *= 1.0 + aK * aK * 0.9;' : ''}
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
     fragmentShader: `#include <fog_pars_fragment>
-      uniform float uT, uS, uA; uniform vec3 uC, uD; varying vec2 vUv;
+      uniform float uT, uS, uA; uniform vec3 uC, uD; varying vec2 vUv; varying float vK;
       ${noiseGlsl()}
       void main(){
-        float v = vUv.y + uT * uS;
-        float n1 = n21(vec2(vUv.x * 16.0, v * 0.8));
-        float n2 = n21(vec2(vUv.x * 38.0 + 3.1, v * 2.4 + uT * 0.7));
-        float n3 = n21(vec2(vUv.x * 7.0 + 9.7, v * 0.35 + uT * 0.2));
-        float streak = smoothstep(0.3, 0.95, n1 * 0.55 + n2 * 0.45);
-        float foam = smoothstep(0.6, 0.88, n3 * 0.55 + n2 * 0.45);
-        vec3 col = mix(uD, uC, 0.35 + 0.65 * streak);
-        col = mix(col, vec3(1.0), foam * 0.8);
-        float edge = smoothstep(0.0, 0.1 + 0.1 * n1, vUv.x) * (1.0 - smoothstep(0.9 - 0.1 * n2, 1.0, vUv.x));
-        gl_FragColor = vec4(col * (0.85 + 0.3 * streak), uA * edge * (0.7 + 0.3 * max(streak, foam)));
+        float x = vUv.x, v = vUv.y + uT * uS;
+        // Ropes of water: noise drawn out along the flow at three sizes, each sliding at its own speed.
+        float s1 = n21(vec2(x * 22.0, v * 0.55));
+        float s2 = n21(vec2(x * 58.0 + 5.0, v * 1.5 + uT * uS * 0.8));
+        float s3 = n21(vec2(x * 8.0 + 2.0, v * 0.22 + uT * uS * 0.3));
+        float streak = smoothstep(0.32, 0.82, s1 * 0.45 + s2 * 0.35 + s3 * 0.2);
+        // Clumps of white water tumbling down faster.
+        float clump = smoothstep(0.6, 0.9, n21(vec2(x * 13.0 + 11.0, v * 3.2 + uT * uS * 1.7)) * 0.6 + s2 * 0.4);
+        vec3 col = mix(uD, uC, 0.22 + 0.78 * streak);
+        col = mix(col, vec3(1.0), clump * 0.85);
+        // See-through gaps between the ropes, more of them toward the edges.
+        float edge = smoothstep(0.0, 0.08 + 0.14 * s3, x) * (1.0 - smoothstep(0.92 - 0.14 * s1, 1.0, x));
+        float a = uA * edge * (0.5 + 0.5 * max(streak, clump));
+        // Foam where it pours over the lip, and spray that dissolves at the foot.
+        float lip = 1.0 - smoothstep(0.0, 0.06, vK);
+        float spray = smoothstep(0.45, 1.0, vK + (s2 - 0.5) * 0.25);
+        col = mix(col, vec3(1.0), max(lip * 0.7 * ${fade ? '1.0' : '0.0'}, spray * 0.8));
+        a *= 1.0 - spray * spray;
+        gl_FragColor = vec4(col * (0.9 + 0.25 * streak), a);
         #include <colorspace_fragment>
         #include <fog_fragment>
       }`,

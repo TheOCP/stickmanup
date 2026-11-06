@@ -29,20 +29,28 @@ a hundred more, with a new climb every day. If one falls, everyone feels it. And
 Each map is a 1000 m climb in nine zones, and each one climbs its own way. The higher you get, the harder it gets:
 smaller platforms, more obstacles, and everything moves faster.
 
-* **Storm Tower**: round and round a neon tower in a lightning storm at night. Lightning hunts you: when a ring in
-  your colour appears under you, tap **SHIELD**. Lightning rods, spinning laser bars, laser gates, fans and ice.
+* **Storm Tower**: round and round a weather station of concrete and riveted iron in a lightning storm at night,
+  searchlights sweeping the rain, wind turbines and arcing coils on the platforms around it. Lightning hunts you: when a
+  ring in your colour appears under you, tap **SHIELD**. Lightning rods, spinning laser bars, laser gates, fans and ice.
 * **Sunny Isles**: back and forth across a white lighthouse in two lanes, hopping over at each turn. Arrow traps
   and swinging platforms.
 * **Wild Forest**: round a giant tree, with branch walks out to smaller trees that you climb around before coming
   back. Monsters, bats and arrow traps.
-* **Magma Chimney**: up the inside of a hollow volcano above a lava lake. Stand on a vent when it erupts and it
-  launches you to the ledge above; stand next to it and it shoves you off. Shadows show where boulders will land.
-* **Neon Skyline**: a ring of skyscrapers round a central spire at sunset. Climb round one tower, cross to the next
-  over a sky bridge or by zipline, and work your way round the ring to the top. Conveyor belts, drones and laser
-  gates.
+* **Magma Chimney**: up the inside of a hollow volcano, its rock veined with glowing lava, falls of lava pouring down
+  it and obsidian growing out of it. The lava lake rises while you climb: slowly on Easy, faster on the harder
+  difficulties. After a fall it starts again below you, and a checkpoint lifts it to just under the checkpoint. It waits
+  while you are in a maze garden or on a course outside. Stand on a vent when it erupts and it launches you to the ledge
+  above; stand next to it and it shoves you off. Shadows show where boulders will land.
+* **Neon Skyline**: a ring of skyscrapers round a central spire at sunset, each its own kind of building (mirror
+  glass, concrete, neon panels, brick, white modules) with neon signs, adverts and its own roof. Climb round one tower,
+  cross to the next over a sky bridge, by zipline or on the roof of a flying car, and work your way round the ring to the
+  top. Hop over the laser bars across a flying car's way while it carries you. Flying cars stream round the city and
+  robots go about the square and the balconies. Conveyor belts, drones and laser gates.
 * **Waterfall**: a water paradise. Zigzag up the face of a mossy rock in two lanes, short legs back and forth, with
   waterfalls pouring down it into a clear lagoon, past
-  palms, lily pads, fountains and far off cliffs with their own falls. Fight up water slides while inner tubes roll
+  palms, lily pads, fountains, grass, herons wading and fish leaping in the lagoon, small islands with palms, and far
+  off cliffs under jungle with their own big falls. Falls off the floating islands turn to spray on the way down.
+  Fight up water slides while inner tubes roll
   down at you, fly off launch slides onto higher ledges, dodge
   fish leaping across the bridges, ride fountains up and keep your footing on lazy rivers.
 

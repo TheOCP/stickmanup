@@ -61,9 +61,11 @@ vec3 smuPattern(int pat, vec3 w, vec3 n){
     }
     if (k > 0.001) {
       float cn = smuNoise(uv * (pat == 6 ? 6.0 : 3.0));
-      coat = pat == 5 ? vec3(0.36, 0.68, 0.24) * (0.78 + 0.42 * cn)
+      // Grass: patches of lighter and darker green, and a fine grain of blades.
+      float bl = pat == 5 || pat == 13 ? smuNoise(uv * 24.0) * 0.6 + smuNoise(uv * 9.0 + 3.0) * 0.4 : 0.5;
+      coat = pat == 5 ? mix(vec3(0.24, 0.48, 0.14), vec3(0.46, 0.74, 0.25), cn) * (0.72 + 0.56 * bl)
            : pat == 6 ? vec3(0.96, 0.87, 0.62) * (0.88 + 0.2 * cn)
-           : pat == 13 ? vec3(0.3, 0.6, 0.28) * (0.72 + 0.48 * cn)
+           : pat == 13 ? mix(vec3(0.18, 0.4, 0.14), vec3(0.4, 0.66, 0.25), cn) * (0.72 + 0.56 * bl)
            : vec3(0.95, 0.97, 1.0) * (0.92 + 0.1 * cn);
     }
     return mix(rock, coat, k);

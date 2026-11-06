@@ -380,6 +380,7 @@ export class Spectator {
     }
     app.sound.ambient(0.2 + (at.y / L.top) * 0.6 + (ev && (ev.kind === 'gust' || ev.kind === 'wave') && ev.on ? 0.8 : 0), false, 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
+    app.view.lavaY = null;
     app.view.update(T - STEP, dt, this.storm, 1);
     app.pool.coins.update(dt, T, L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, L.coinB);
     app.sound.setStyle(L.mapKey);

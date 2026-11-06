@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { TAU, rng } from './util.js';
 import { noiseGlsl } from './pattern.js';
-import { detail } from './scenery.js';
+import { detail, fallMat } from './scenery.js';
 import { HDR } from './worldview.js';
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -98,9 +98,12 @@ const landFs = () => `#include <fog_pars_fragment>
           float k = mix(smoothstep(0.32, 0.06, length(f)) * step(0.3, h) * street, 0.025, far);
           em = mix(uGlow, uGlow2, h21(id + 7.3)) * g * k * (0.75 + 0.25 * sin(uT * 3.0 + h * 50.0));
         } else {
-          // White water running down the rock.
-          float s = n21(vec2((vW.x + vW.z) * 0.5, vW.y * 0.04 + uT * 0.7)) * 0.5 + n21(vec2((vW.x - vW.z) * 1.3, vW.y * 0.09 + uT * 1.6)) * 0.5;
-          col = mix(col, vec3(0.92, 0.96, 1.0), g * (0.55 + 0.45 * smoothstep(0.3, 0.65, s)));
+          // White water running down the rock: ropes of it with dark wet rock between, sliding down, foam at the foot.
+          float hz = atan(vW.z, vW.x) * length(vW.xz);
+          float s = n21(vec2(hz * 0.22, vW.y * 0.025 + uT * 0.7)) * 0.55 + n21(vec2(hz * 0.55 + 7.0, vW.y * 0.05 + uT * 1.5)) * 0.45;
+          float rope = smoothstep(0.3, 0.7, s), foam = 1.0 - smoothstep(2.0, 16.0, vW.y);
+          col = mix(col * 0.7, vec3(0.94, 0.97, 1.0), g * max(0.35 + 0.65 * rope, foam));
+          em = vec3(0.1, 0.12, 0.14) * g * rope;
         }
       }
     }
@@ -654,8 +657,15 @@ export function cityLands(view) {
 // ---------------------------------------------------------------- Waterfall
 export function fallLands(view) {
   const d = detail(), R = rng(5150), N1 = vnoise(101), N2 = vnoise(102), N3 = vnoise(103), N4 = vnoise(104), fbm = fbmOf(N1), ridged = ridgedOf(N2);
-  const mat = landMat(view, { mode: 'falls', fogK: 0.4 });
-  const ROCK = [C(0x6c6456), C(0x9a8f7a)], DARK = C(0x3e3a34), MOSS = [C(0x2f6a2a), C(0x58963c)], _c = new THREE.Color();
+  const mat = landMat(view, { mode: 'falls', fogK: 0.24 });
+  const ROCK = [C(0x564f44), C(0x80755f)], DARK = C(0x2a2723), MOSS = [C(0x1f5420), C(0x4a8a30)], _c = new THREE.Color();
+  // Jungle on the tops and ledges, and the falls themselves as sheets of water, a build step of their own.
+  const bits = new Bits(), sheets = [], col = new THREE.Color();
+  const jungle = (x, y, z, s, k = 1) => {
+    col.copy(MOSS[0]).lerp(MOSS[1], R()).multiplyScalar(0.8 + R() * 0.4);
+    if (R() < 0.18 * k) bits.add(PALM, M(x, y - 0.5, z, s * 0.55, s * (0.5 + R() * 0.3), s * 0.55, 0, R() * TAU, 0), col, [0.3, 0, 0], 0.55);
+    else bits.add(CROWN, M(x, y - s * 0.3, z, s, s * (0.6 + R() * 0.4), s, R(), R() * TAU, 0), col, [0.8, 0, 0], 0.55);
+  };
   // Rock pillars with green on their ledges and tops; white water down the side that faces the lagoon on some.
   const pillars = [], nPil = [8, 11, 14][d];
   for (let tries = 0; pillars.length < nPil && tries < 400; tries++) {
@@ -695,9 +705,18 @@ export function fallLands(view) {
       }
     }, mat, true);
     view.root.add(mesh);
+    // A crown of jungle over the top, trees hanging on round its rim.
+    const nC = [14, 26, 36][d];
+    for (let k = 0; k < nC; k++) {
+      const a = R() * TAU, u = Math.sqrt(R()) * 0.85, x = P.x + Math.cos(a) * P.rad * 0.9 * u, z = P.z + Math.sin(a) * P.rad * 0.9 * u;
+      jungle(x, P.h + 7 * Math.cos(u * Math.PI * 0.5) - 1, z, 4 + R() * 4);
+    }
     if (P.fall) {
-      const fd = P.rad * 1.08;
-      view.mistSpots.push({ x: P.x + Math.cos(P.face) * (fd + 3), y: 0, z: P.z + Math.sin(P.face) * (fd + 3), r: 6, n: 14, rise: 10 });
+      // Pouring off the lip and clear of the rock all the way down.
+      const w = 5 + P.rad * 0.18, top = P.h + 2, ca = Math.cos(P.face), sa = Math.sin(P.face);
+      sheets.push({ x0: P.x + ca * P.rad * 0.86, z0: P.z + sa * P.rad * 0.86, x1: P.x + ca * (P.rad * 1.45 + 6), z1: P.z + sa * (P.rad * 1.45 + 6), y0: top, y1: -2, w, face: P.face });
+      const fd = P.rad * 1.45 + 6;
+      view.mistSpots.push({ x: P.x + ca * fd, y: 0, z: P.z + sa * fd, r: w * 0.7, n: 16, rise: 14 });
     }
   }
   // All round, far off: high green cliffs with a jungle on top and many falls down their faces.
@@ -708,7 +727,7 @@ export function fallLands(view) {
     const c1 = smooth(edge - 22, edge + 6, r), c2 = smooth(edge2 - 20, edge2 + 8, r);
     return -8 + smooth(520, 560, r) * (6 + 14 * fbm(x * 0.01, z * 0.01)) + c1 * (95 + 55 * N4(x * 0.004, z * 0.004)) + c2 * (90 + 130 * N4(x * 0.0025 + 5, z * 0.0025) + 60 * ridged(x * 0.005, z * 0.005));
   };
-  const fallAt = (a) => smooth(0.7, 0.74, N1(Math.cos(a) * 26 + 4, Math.sin(a) * 26 + 4));
+  const fallAt = (a) => smooth(0.66, 0.7, N1(Math.cos(a) * 26 + 4, Math.sin(a) * 26 + 4));
   view.root.add(ringMesh([128, 220, 300][d], [26, 34, 42][d], 500, 1150, height, (p, n, o) => {
     const a = Math.atan2(p.z, p.x), m = N4(p.x * 0.02, p.z * 0.02), steep = 1 - smooth(0.35, 0.65, n.y);
     o.c.copy(ROCK[0]).lerp(ROCK[1], N1(a * 30, p.y * 0.05));
@@ -719,4 +738,37 @@ export function fallLands(view) {
     o.d[1] = steep;
     o.d[2] = steep * fallAt(a) * smooth(4, 20, p.y);
   }, mat));
+  // The jungle along the tops of the cliffs and on the ledge between the two steps.
+  const nJ = [700, 1600, 2400][d];
+  for (let n = 0, tries = 0; n < nJ && tries < nJ * 10; tries++) {
+    const a = R() * TAU, r = 520 + R() * 600, x = Math.cos(a) * r, z = Math.sin(a) * r, y = height(x, z);
+    if (y < 30 || upOf(height, x, z) < 0.86) continue;
+    jungle(x, y, z, (6 + R() * 6) * (r > 800 ? 1.4 : 1), 0.6);
+    n++;
+  }
+  const finish = () => {
+    const m = bits.mesh(mat);
+    if (m) view.root.add(m);
+    // The big falls off the pillars: a sheet each, wider at the foot, pouring at the speed of a long drop.
+    const fm = fallMat(view, { speed: 0.9, alpha: 0.95 }), pos = [], uv = [], idx = [];
+    for (const f of sheets) {
+      const NS = 10, sx = -Math.sin(f.face), sz = Math.cos(f.face), b = pos.length / 3;
+      for (let j = 0; j <= NS; j++) {
+        const t = j / NS, q = Math.sqrt(t), x = f.x0 + (f.x1 - f.x0) * q, z = f.z0 + (f.z1 - f.z0) * q, y = f.y0 + (f.y1 - f.y0) * t, w = f.w * (0.8 + 0.5 * t);
+        pos.push(x - sx * w, y, z - sz * w, x + sx * w, y, z + sz * w);
+        uv.push(0, y * 0.04, 1, y * 0.04);
+        if (j) idx.push(b + j * 2 - 2, b + j * 2 - 1, b + j * 2, b + j * 2 - 1, b + j * 2 + 1, b + j * 2);
+      }
+    }
+    if (pos.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeBoundingSphere();
+      view.root.add(new THREE.Mesh(g, fm));
+    }
+  };
+  if (view.steps && view.steps.length) view.steps.unshift(finish);
+  else finish();
 }

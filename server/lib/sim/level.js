@@ -90,18 +90,18 @@ export const MAPS = [
     ],
   },
   {
-    id: 4, key: 'city', name: 'Neon Skyline', desc: 'Hop around a ring of skyscrapers on sky bridges and ziplines. Conveyors, drones and laser gates.',
+    id: 4, key: 'city', name: 'Neon Skyline', desc: 'Hop around a ring of skyscrapers on sky bridges, ziplines and flying cars. Conveyors, drones and laser gates.',
     seed: 64229, core: 'spire', pattern: 1, accent: '#ff4fd8', route: 'towers',
     zones: [
       Z('Harbor Roofs', 'Climb a tower, cross to the next', 100, 0x3fd0ff, 0x2a3040, 0x3a2a4a, [3.0, 4.4], [2.6, 3.6], [1.0, 2.2], { gap: 5, stairs: 2, beam: 2, conveyor: 2, crates: 1 }),
-      Z('Neon Alley', 'Conveyors everywhere', 208, 0xff4fd8, 0x2e2a3e, 0x40284a, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { conveyor: 3, gap: 3, gate: 2, mover: 2, grapple: 1 }),
+      Z('Neon Alley', 'Conveyors everywhere', 208, 0xff4fd8, 0x2e2a3e, 0x40284a, [2.4, 3.6], [2.2, 3.2], [1.4, 2.6], { conveyor: 3, gap: 3, gate: 2, mover: 1, car: 2, grapple: 1 }),
       Z('Drone Patrol', 'Shoot them down', 316, 0x7cff6a, 0x283440, 0x2a3048, [2.2, 3.2], [2.0, 3.0], [1.6, 2.8], { bats: 3, gap: 3, conveyor: 2, lift: 2, door: 1 }),
-      Z('Billboard Heights', 'Ride the lifts', 424, 0xffb43d, 0x34303a, 0x4a2e3a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { lift: 3, mover: 3, gap: 2, swing: 1, gate: 1, conveyor: 1 }),
+      Z('Billboard Heights', 'Ride the lifts', 424, 0xffb43d, 0x34303a, 0x4a2e3a, [2.0, 3.0], [2.0, 2.8], [1.6, 2.8], { lift: 3, mover: 1, car: 3, gap: 2, swing: 1, gate: 1, conveyor: 1 }),
       Z('Sky Gardens', 'Green on the roofs', 532, 0x6aff9e, 0x2c3a34, 0x36344a, [1.8, 3.0], [1.8, 2.8], [1.8, 2.9], { gap: 3, bob: 2, tilt: 2, crumble: 2, bats: 2, grapple: 1 }),
-      Z('Antenna Forest', 'Lasers and wind', 640, 0xa080ff, 0x2a2840, 0x241c3a, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gate: 3, laser: 2, conveyor: 2, gap: 2, bats: 1, door: 1 }),
-      Z('Helipad Deck', 'Choppers overhead', 760, 0x3dffd0, 0x263a3a, 0x1e3040, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { bats: 3, conveyor: 2, gate: 2, gap: 2, lift: 1, grapple: 1 }),
+      Z('Antenna Forest', 'Lasers and wind', 640, 0xa080ff, 0x2a2840, 0x241c3a, [1.7, 2.6], [1.7, 2.4], [1.7, 2.7], { gate: 3, laser: 2, car: 2, conveyor: 2, gap: 2, bats: 1, door: 1 }),
+      Z('Helipad Deck', 'Choppers overhead', 760, 0x3dffd0, 0x263a3a, 0x1e3040, [1.6, 2.5], [1.6, 2.4], [1.8, 2.9], { bats: 3, conveyor: 2, gate: 2, gap: 2, car: 2, lift: 1, grapple: 1 }),
       Z('Glass Canopy', 'Do not look down', 880, 0x9ad8ff, 0x2a3446, 0x22284a, [1.6, 2.4], [1.5, 2.3], [1.9, 3.0], { gap: 3, gate: 2, laser: 2, crumble: 2, conveyor: 1, bats: 1, door: 1 }),
-      Z('Spire Crown', 'The tallest roof in town', 977, 0xffe066, 0x3a3440, 0x2a1e3a, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, mover: 1, grapple: 1 }),
+      Z('Spire Crown', 'The tallest roof in town', 977, 0xffe066, 0x3a3440, 0x2a1e3a, [1.5, 2.3], [1.5, 2.2], [2.0, 3.0], { gap: 2, conveyor: 2, gate: 2, bats: 2, lift: 1, car: 2, grapple: 1 }),
     ],
   },
   {
@@ -771,6 +771,21 @@ export function generateLevel(mapId = 0) {
     out.towers = TOWERS;
   }
   function newVisit(p) { visitStart = p.th; visitLaps = rr(0.75, 1.05); }
+  // City: a flying car going to and fro between the platforms a and b, its roof level with them, and laser bars
+  // across its way a little over its roof: ride it and hop over them. The second bar from Normal up.
+  function flyCar(a, b) {
+    const w = between(a, b, -2.15), len = Math.hypot(w.bx - w.ax, w.bz - w.az);
+    const c = makeBox(w.ax, a.y - 0.55, w.az, 1.95, 0.55, 1.1, 0, w.ry, 0);
+    c.dyn = { k: 'pp', ax: w.ax, ay: a.y - 0.55, az: w.az, bx: w.bx, by: b.y - 0.55, bz: w.bz, per: rr(7, 8.5), ph: R() };
+    add(c, 'car');
+    recBox((w.ax + w.bx) / 2, (w.az + w.bz) / 2, len / 2 + 1.95, 1.1, w.ry, Math.max(a.y, b.y));
+    const n = len > 4.5 ? 2 : 1;
+    for (let k = 0; k < n; k++) {
+      const f = (k + 1) / (n + 1), l = { i: out.lasers.length, k: 'bar', x: w.ax + (w.bx - w.ax) * f, y: a.y + (b.y - a.y) * f + 0.5, z: w.az + (w.bz - w.az) * f, ux: w.ux, uz: w.uz, w: 1.7, zone };
+      if (k) l.lvl = 1;
+      out.lasers.push(l);
+    }
+  }
   let legStart = 0, legLen = 0, legN = 0, sinceTurn = 99;
   function newLeg(p) {
     legStart = p.th;
@@ -1620,6 +1635,18 @@ export function generateLevel(mapId = 0) {
       recBox((b.ax + b.bx) / 2, (b.az + b.bz) / 2, Math.hypot(b.bx - b.ax, b.bz - b.az) / 2 + 1.1, 1.1, b.ry, Math.max(cur.y, nxt.y));
       return nxt;
     },
+    // City: a flying car across a gap too wide to jump, the long way round the tower.
+    car(cur) {
+      if (ROUTE !== 'towers') return T.mover(cur);
+      const sx = rr(2.8, 3.2), sz = rr(2.4, 2.8), r = clamp(BAND.hi - sz / 2 - rr(0, 0.5), rLo(sz), Math.max(rLo(sz), BAND.hi));
+      const th = thetaFor(cur, rr(8.5, 10), r, sx, sz), [x, z] = polar(th, r);
+      // Its way must clear the tower it goes round (5.9 m from the middle to a corner) by the car's width and more.
+      const dx = x - cur.x, dz = z - cur.z, t = clamp(((CX - cur.x) * dx + (CZ - cur.z) * dz) / (dx * dx + dz * dz), 0, 1);
+      if (Math.hypot(cur.x + dx * t - CX, cur.z + dz * t - CZ) < TW * Math.SQRT2 + 1.9) return T.mover(cur);
+      const nxt = plat(th, r, cur.y + rr(-0.2, 0.6), sx, sz);
+      flyCar(cur, nxt);
+      return nxt;
+    },
     spinner(cur) {
       // The hub sits on the straight line between two platforms, further in than they are: leave room for the arms there.
       const armL = rr(3.4, 4.0), [sx, sz] = size();
@@ -2047,12 +2074,18 @@ export function generateLevel(mapId = 0) {
       const nb = (tower + 1) % TOWERS.length, A = TOWERS[tower], B = TOWERS[nb];
       const dx = A.x - B.x, dz = A.z - B.z, d = Math.hypot(dx, dz), ux = dx / d, uz = dz / d, lx = B.x + ux * 9.4, lz = B.z + uz * 9.4;
       let land;
-      if (R() < 0.45) {
+      const how = R();
+      if (how < 0.3) {
         CX = B.x; CZ = B.z; BAND = TBAND;
         land = plat(Math.atan2(lz - CZ, lx - CX), 9.4, cur.y + rr(0.4, 1.6), 3.2, 3.0, { nosign: true });
         const hx = (cur.x + land.x) / 2, hz = (cur.z + land.z) / 2, hy = Math.max(cur.y, land.y) + rr(5, 6);
         out.anchors.push({ i: out.anchors.length, x: hx, y: hy, z: hz, tx: land.x, ty: land.y + PR_TOP, tz: land.z, zone });
         recBox(hx, hz, 1, 1, 0, hy + 1.6, 2.2);
+      } else if (how < 0.65) {
+        // A flying car over to the next tower.
+        CX = B.x; CZ = B.z; BAND = TBAND;
+        land = plat(Math.atan2(lz - CZ, lx - CX), 9.4, cur.y + rr(0.2, 1.0), 3.2, 3.0, { nosign: true });
+        flyCar(cur, land);
       } else {
         land = walkTo(cur, lx, lz, cur.y + rr(1, 2));
         CX = B.x; CZ = B.z; BAND = TBAND;

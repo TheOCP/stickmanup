@@ -206,6 +206,7 @@ export default [
   ["Ultra", "Ultra", "Ultra", "Ultra", "Ultra", "Ультра", "Ultra"],
   ["Resolution", "Resolución", "Resolução", "Résolution", "Auflösung", "Разрешение", "Çözünürlük"],
   ["Sharpness", "Nitidez", "Nitidez", "Netteté", "Schärfe", "Чёткость", "Keskinlik"],
+  ["Brightness", "Brillo", "Brilho", "Luminosité", "Helligkeit", "Яркость", "Parlaklık"],
   ["Glow", "Brillo", "Brilho", "Lueur", "Leuchten", "Свечение", "Parıltı"],
   ["Frame rate (fps)", "Fotogramas (fps)", "Taxa de quadros (fps)", "Images par seconde (fps)", "Bildrate (fps)", "Частота кадров (fps)", "Kare hızı (fps)"],
   ["Smooth edges (anti aliasing)", "Bordes suaves (antialiasing)", "Bordas suaves (antialiasing)", "Bords lisses (anticrénelage)", "Glatte Kanten (Kantenglättung)", "Сглаживание краёв", "Yumuşak kenarlar (kenar yumuşatma)"],

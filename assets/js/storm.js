@@ -134,10 +134,10 @@ export class Storm {
   // Leaping fish: where it is along its arc across the bridge (out.on while in the air, warn just before).
   leap(o, t, out) {
     const u = (((((t * this.hs * (o.sp || 1)) / o.per + o.ph) % 1) + 1) % 1) * o.per, s = u / o.dur, k = Math.min(1, s);
-    const d = (-1 + 2 * k) * o.span * o.dir, H = o.h + 0.8;
+    const lo = o.lo ?? 0.8, d = (-1 + 2 * k) * o.span * o.dir, H = o.h + lo;
     out.on = s < 1;
     out.x = o.x + o.nx * d; out.z = o.z + o.nz * d;
-    out.y = o.y - 0.8 + H * 4 * k * (1 - k);
+    out.y = o.y - lo + H * 4 * k * (1 - k);
     out.vy = H * 4 * (1 - 2 * k) / (2 * o.span);
     out.warn = !out.on && u > o.per - 0.6 ? 1 - (o.per - u) / 0.6 : 0;
     return out;

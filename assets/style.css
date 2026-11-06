@@ -26,7 +26,8 @@ input { font: inherit; color: var(--tx); }
 .logo { font-weight: 900; font-style: italic; font-size: clamp(40px, 7vw, 86px); letter-spacing: -0.02em; line-height: 0.9;
   background: linear-gradient(180deg, #ffffff, #b9d8ff); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 0 18px rgba(63, 240, 208, 0.35)); }
-.logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* The slanted letters reach past their box: room on both sides so the gradient fills all of them (the P's right side too). */
+.logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; padding: 0 0.16em 0 0.06em; margin: 0 -0.16em 0 -0.06em; }
 
 /* ---------- menus ---------- */
 #menu { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 20; display: none; padding: calc(14px + var(--it)) calc(18px + var(--ir)) calc(14px + var(--ib)) calc(18px + var(--il)); }

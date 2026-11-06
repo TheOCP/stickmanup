@@ -3,7 +3,7 @@
 //   storm  - 'spiral': round and round the tower, counter-clockwise
 //   sunny  - 'switchback': back and forth across the lighthouse in two lanes, turning at the ends
 //   forest - 'trees': clockwise round the giant trunk, with branch walks out to side trees and up around them
-import { makeBox, makeCyl, BOX, aabb, toLocal } from './physics.js';
+import { makeBox, makeCyl, BOX, aabb, toLocal, collideSphere } from './physics.js';
 import { RIDE_HANG } from './player.js';
 import { TAU, rng, clamp, angDiff } from './util.js';
 import { zoneObstacles, obstacle, topObstacles, TOP_FROM } from './obstacles.js';
@@ -874,6 +874,8 @@ export function generateLevel(mapId = 0) {
     return p;
   };
   // A zipline from a ledge after cur down to a landing beyond a wide gap; nw weights swinging across the ride.
+  let zipBad = false;
+  const zipHit = {};
   const zipTo = (cur, o, nw) => {
     const s = T.gap(cur, { size: [rr(2.8, 3.2), rr(2.6, 3.0)], g: rr(1.0, 1.4), dy: rr(0.3, 0.7), surf: null });
     const lx = rr(3.4, 3.8), lz = rr(2.8, 3.2), r = nextR(s, lz), G = rr(9, 11.5);
@@ -883,6 +885,17 @@ export function generateLevel(mapId = 0) {
     const ax = s.x + ux * 0.4, az = s.z + uz * 0.4, ay = s.y + 2.9;
     const bx = b.bx + ux * 1.0, bz = b.bz + uz * 1.0, by = t.y + PR_TOP + RIDE_HANG + 0.25;
     const dx = bx - ax, dy = by - ay, dz = bz - az, len = Math.hypot(dx, dy, dz);
+    // A straight cable round the tower can cut into it on the way (or through a skyscraper or a stone pillar): then the
+    // whole section does not fit and is laid again without it (place).
+    for (let f = 0.1; f < 0.95 && !zipBad; f += 0.05) for (const [hang, rad] of [[0, 0.1], [RIDE_HANG, 0.35]]) {
+      const x = ax + dx * f, y = ay + dy * f - hang, z = az + dz * f;
+      if (ROUTE !== 'crater' && Math.hypot(x, z) < coreRadius(MAP.key, y) + CORE_SKIN + rad + 0.1) { zipBad = true; break; }
+      if (TOWERS.some((w) => { const ex = x - w.x, ez = z - w.z, c = Math.cos(w.a), sn = Math.sin(w.a); return Math.abs(ex * c + ez * sn) < TW + rad && Math.abs(ez * c - ex * sn) < TW + rad; })) { zipBad = true; break; }
+      for (const c of out.cols) {
+        if (c.dyn || c === s.col || c === t.col || x + rad < c.minx || x - rad > c.maxx || z + rad < c.minz || z - rad > c.maxz || y + rad < c.miny || y > c.maxy) continue;
+        if (collideSphere(c, x, y, z, rad, zipHit) && zipHit.d > 0.1) { zipBad = true; break; }
+      }
+    }
     // Two posts hold the cable up, on the same straight line: 1 m behind where it can be grabbed, 1.6 m past the end.
     const cx = dx / len, cy = dy / len, cz = dz / len;
     const px0 = ax - cx, py0 = ay - cy, pz0 = az - cz, px1 = bx + cx * 1.6, py1 = by + cy * 1.6, pz1 = bz + cz * 1.6;
@@ -2215,7 +2228,8 @@ export function generateLevel(mapId = 0) {
   function place(fn, at) {
     let lift = 0;
     for (let k = 0; k < 6; k++) {
-      const snap = snapshot(), res = fn(), raise = badness(snap.recs, snap.lows), hit = buried(snap.n.cols) || blocksShaft(snap.n.cols, snap.n.moves);
+      zipBad = false;
+      const snap = snapshot(), res = fn(), raise = badness(snap.recs, snap.lows), hit = buried(snap.n.cols) || blocksShaft(snap.n.cols, snap.n.moves) || zipBad;
       if (raise <= 0 && !hit) return res;
       restore(snap);
       // Cut into a tall solid: try a plain hop along the way first. A little too close to older route: a few steps up.
@@ -2933,7 +2947,7 @@ export function generateLevel(mapId = 0) {
   }
   for (let i = 0; i < 14; i++) {
     const a = 1.4 + i * 0.37, r = rr(13, 17.5), s = rr(0.8, 1.3), [x, z] = polar(a, r);
-    add(makeBox(x, 2 + s / 2, z, s / 2, s / 2, s / 2, 0, rr(0, 3), 0), 'crate');
+    add(makeBox(x, 2 + s / 2, z, s / 2, s / 2, s / 2, 0, rr(0, 3), 0), 'crate', { prop: true });
   }
   if (MAP.key === 'storm') {
     for (let i = 0; i < 12; i++) {
@@ -3323,7 +3337,146 @@ export function generateLevel(mapId = 0) {
   // Forest: no decorative trees standing inside a side tree's climb.
   if (out.trees.length) out.decor = out.decor.filter((d) => d.k !== 'tree' || out.trees.every((t) => Math.hypot(d.x - t.x, d.z - t.z) > 11));
   settleGround();
+  fitHazards();
   return out;
+
+  // Moving hazards fitted to what stands round them. Each is laid across its own bridge or gap without looking at the
+  // tower, a skyscraper or the next platform beside it, so a weight could swing into the wall, a fish leap out of the
+  // rock, a jet blast or an arrow fly on into it, a spinning bar reach into it or a bat circle through a trunk. Here each
+  // one that would goes less far instead (a weight swings less wide, a fish leaps a shorter arc, a blast or a flight is
+  // shorter, a bar shorter, a bat circles tighter), never so little that it stops crossing the way. Nothing random is
+  // drawn here, so the rest of the level stays the same.
+  function fitHazards() {
+    const CELL = 4, G = new Map(), hitO = {};
+    for (const c of out.cols) {
+      if (c.dyn) continue;
+      for (let i = Math.floor((c.minx - 1) / CELL); i <= Math.floor((c.maxx + 1) / CELL); i++) for (let j = Math.floor((c.minz - 1) / CELL); j <= Math.floor((c.maxz + 1) / CELL); j++) {
+        const k = i + ',' + j, a = G.get(k);
+        if (a) a.push(c); else G.set(k, [c]);
+      }
+    }
+    // Anything it only passes over (its own bridge, a deck below) does not count: only walls and what it would go into.
+    // Crates standing about on the docks give way instead (props, gathered at the end).
+    let props = null;
+    const solid = (x, y, z, r, skip) => {
+      for (const c of G.get(Math.floor(x / CELL) + ',' + Math.floor(z / CELL)) || []) {
+        if (c === skip || x + r < c.minx || x - r > c.maxx || z + r < c.minz || z - r > c.maxz || y + r < c.miny || y > c.maxy) continue;
+        if (collideSphere(c, x, y, z, r, hitO) && hitO.d > 0.05) {
+          if (!c.prop) return true;
+          if (props) props.add(c);
+        }
+      }
+      return false;
+    };
+    // The largest of the values from `from` down to `to` (in steps) where nothing the hazard passes is solid.
+    const fit = (from, to, step, clear) => { for (let v = from; v > to + 1e-9; v -= step) if (clear(v)) return v; return to; };
+    const checks = [];
+    // A weight hanging from (x, z) swinging along (nx, nz): clear at this swing? Its bar (across the swing, 1 m each side
+    // unless o.bar says less) is shortened to fit on its own.
+    const pendClear = (o, x, z, nx, nz, amp) => {
+      for (let i = 0; i <= 12; i++) {
+        const a = -amp + (2 * amp * i) / 12, d = Math.sin(a) * o.L, h = Math.cos(a) * o.L;
+        if (solid(x + nx * d, o.y - h, z + nz * d, o.r * 0.95) || solid(x + nx * d * 0.5, o.y - h * 0.5, z + nz * d * 0.5, 0.05)) return false;
+      }
+      return true;
+    };
+    const barClear = (o, hb) => { for (let b = -hb; b <= hb + 1e-9; b += hb / 4) if (solid(o.x + o.nz * b, o.y, o.z - o.nx * b, 0.1)) return false; return true; };
+    // Where a fish leaps: from lo below its bridge (0.8, out of the water; 0 from a nozzle in the floor) up to h above.
+    const arcClear = (o, x, z, span, lo, skip) => {
+      for (let i = 0; i <= 16; i++) {
+        const f = i / 16, d = (-1 + 2 * f) * span, end = i === 0 || i === 16;
+        if (end && !lo) continue;
+        if (solid(x + o.nx * d, o.y - lo + (o.h + lo) * 4 * f * (1 - f) - (end ? 0.2 : 0), z + o.nz * d, end ? 0.22 : 0.3, skip)) return false;
+      }
+      return true;
+    };
+    const flameClear = (o, range) => {
+      for (let d = 1.2; d <= range + 0.3; d += 0.3) if (solid(o.x + o.dx * d, o.y, o.z + o.dz * d, 0.16 + (0.54 * (range + 0.3 - d)) / range)) return false;
+      return true;
+    };
+    const barsClear = (o, len) => { for (let k = 0; k < 32; k++) { const a = (k * TAU) / 32; if (solid(o.x + Math.cos(a) * len, o.y, o.z + Math.sin(a) * len, 0.14)) return false; } return true; };
+    const pends = out.obs.filter((o) => o.prim === 'pendulum');
+    for (const o of out.obs) {
+      if (o.prim === 'pendulum') {
+        // Swinging across its bridge, less wide if it must. Right beside a wall it swings along the bridge instead (clear of
+        // the other weights' swings), or hangs a little further from the wall with a short swing.
+        const amp0 = o.amp, apart = (amp) => pends.every((q) => q === o || Math.abs(q.y - o.y) > 2.5 || Math.hypot(q.x - o.x, q.z - o.z) > o.L * Math.sin(amp) + q.L * Math.sin(q.amp) + o.r + q.r + 0.2);
+        const tryAt = (x, z, nx, nz, min, along) => {
+          const ok = (amp) => (!along || apart(amp)) && pendClear(o, x, z, nx, nz, amp), amp = fit(amp0, min, 0.05, ok);
+          if (amp > min + 1e-9 || ok(min)) { Object.assign(o, { x, z, nx, nz, amp }); return true; }
+          return false;
+        };
+        let done = tryAt(o.x, o.z, o.nx, o.nz, 0.7) || tryAt(o.x, o.z, o.nz, -o.nx, 0.7, true);
+        for (let sh = 0.15; sh < 0.5 && !done; sh += 0.15) for (const sg of [1, -1]) if (!done) done = tryAt(o.x + o.nx * sh * sg, o.z + o.nz * sh * sg, o.nx, o.nz, 0.3);
+        if (!done) done = tryAt(o.x, o.z, o.nz, -o.nx, 0.3, true);
+        // Still no room: a little along its bridge, where the wall is further off, clear of the other weights there.
+        for (const al of [-0.5, 0.5, -1, 1, -1.5, 1.5]) {
+          if (done) break;
+          const x = o.x + o.nz * al, z = o.z - o.nx * al;
+          if (pends.every((q) => q === o || Math.abs(q.y - o.y) > 2.5 || Math.hypot(q.x - x, q.z - z) > o.r + q.r + 0.3)) done = tryAt(x, z, o.nx, o.nz, 0.3);
+        }
+        if (!done) o.amp = 0.3;
+        // A weight whose top is inside the ledge above hangs from it without a bar.
+        const bar = barClear(o, 0.3) ? fit(1, 0.3, 0.1, (hb) => barClear(o, hb)) : 0;
+        if (bar < 1) o.bar = bar;
+        checks.push(() => { pendClear(o, o.x, o.z, o.nx, o.nz, o.amp); if (o.bar !== 0) barClear(o, o.bar ?? 1); });
+      } else if (o.prim === 'leap') {
+        // A fish arc reaching less far, or leaping a little off the middle of the bridge, away from the wall. A bridge
+        // right against the rock has no room on that side: there the fish springs up from under its edge instead. Over
+        // solid ground (the docks) it springs from nozzles in the floor.
+        let deck = null;
+        for (const c of G.get(Math.floor(o.x / CELL) + ',' + Math.floor(o.z / CELL)) || []) if (o.x > c.minx && o.x < c.maxx && o.z > c.minz && o.z < c.maxz && Math.abs(c.maxy - o.y) < 0.4) deck = c;
+        // Last of all, the same a little along the bridge, where the rock is further off.
+        let best = null;
+        for (const al of [0, -0.5, 0.5, -1, 1, -1.5, 1.5]) for (const [first, under, lo] of [[1.5, false, 0.8], [0.6, true, 0.8], [1.5, false, 0]]) for (let sh = 0; sh < 0.65 && !best; sh += 0.15) for (const sg of sh ? [1, -1] : [1]) {
+          if (best || (under && !deck)) break;
+          const x = o.x + o.nx * sh * sg + o.nz * al, z = o.z + o.nz * sh * sg - o.nx * al, min = under ? sh + first : Math.max(first, sh + 0.8), skip = under ? deck : null;
+          const span = fit(o.span, min, 0.1, (sp) => arcClear(o, x, z, sp, lo, skip));
+          if (span > min + 1e-9 || arcClear(o, x, z, min, lo, skip)) best = { x, z, span, lo };
+        }
+        if (best) { Object.assign(o, best); if (best.lo === 0.8) delete o.lo; } else o.span = 1.5;
+        checks.push(() => arcClear(o, o.x, o.z, o.span, o.lo ?? 0.8, deck));
+      } else if (o.prim === 'jet') {
+        // From past its own post to the end of the blast, which is wide at the jet and narrow at its far end. It still
+        // reaches over its bridge.
+        o.range = fit(o.range, 2.6, 0.1, (range) => flameClear(o, range));
+        checks.push(() => flameClear(o, o.range));
+      } else if (o.prim === 'sweep') {
+        o.len = fit(o.len, o.len - 1, 0.05, (len) => barsClear(o, len));
+        checks.push(() => barsClear(o, o.len));
+      }
+    }
+    for (const a of out.arrows) {
+      const clear = (range) => { for (let d = 0.6; d <= range; d += 0.3) if (solid(a.x + a.dx * d, a.y, a.z + a.dz * d, 0.1)) return false; return true; };
+      a.range = fit(a.range, 3, 0.2, clear);
+      checks.push(() => clear(a.range));
+    }
+    for (const b of out.bats) {
+      const clear = (rad) => { for (let k = 0; k < 32; k++) { const a = (k * TAU) / 32; if (solid(b.cx + Math.cos(a) * rad, b.cy, b.cz + Math.sin(a) * rad, b.r)) return false; } return true; };
+      b.rad = fit(b.rad, 1.4, 0.1, clear);
+      checks.push(() => clear(b.rad));
+    }
+    // Grapple hooks: halfway between two ledges, which round the tower can be inside it (or a skyscraper, or the route
+    // above). Such a hook moves the least it must, out from the middle, up or down, to where its ring and stub are clear
+    // and so is the way it flings you to the landing.
+    const hookClear = (a, x, y, z) => {
+      if (solid(x, y, z, 0.9) || solid(x, y + 0.9, z, 0.2) || solid(x, y + 1.4, z, 0.2)) return false;
+      const d = Math.hypot(a.tx - x, a.ty - y, a.tz - z);
+      for (let k = 0.15; k < 1 && d * (1 - k) > 1.6; k += 0.1) if (solid(x + (a.tx - x) * k, y + (a.ty - y) * k, z + (a.tz - z) * k, 0.4)) return false;
+      return true;
+    };
+    for (const a of out.anchors) {
+      if (hookClear(a, a.x, a.y, a.z)) continue;
+      const r = Math.hypot(a.x, a.z) || 1, ox = a.x / r, oz = a.z / r;
+      const dirs = [[ox, 0, oz], [0, 1, 0], [ox * 0.7, 0.7, oz * 0.7], [0, -1, 0], [ox * 0.7, -0.7, oz * 0.7], [-ox, 0, -oz]];
+      let at = null;
+      for (let d = 0.25; d <= 3 + 1e-9 && !at; d += 0.25) for (const [dx, dy, dz] of dirs) if (!at && hookClear(a, a.x + dx * d, a.y + dy * d, a.z + dz * d)) at = [a.x + dx * d, a.y + dy * d, a.z + dz * d];
+      if (at) [a.x, a.y, a.z] = at;
+    }
+    props = new Set();
+    for (const f of checks) f();
+    if (props.size) out.cols = out.cols.filter((c) => !props.has(c));
+  }
 
   // The four piers are laid before the climb, so a side tree's trunk (the Waterfall's stone pillars) or a skyscraper could
   // end up standing on one, or a pier could run into its wall. Once everything is in place, a pier that meets anything

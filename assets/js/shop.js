@@ -155,7 +155,7 @@ function weaponStats(w) {
   const bar = (name, k, val, c) => `<div>${name}<i style="--v:${Math.round(Math.max(0.04, Math.min(1, k)) * 100)}%${c ? ';--c:' + c : ''}"></i><b>${val}</b></div>`;
   const rate = 1 / w.rate;
   return `<p class="wtag">${[HOLD_NAME[w.hold], w.auto && 'automatic', w.scope && 'scope', w.blast && 'blast'].filter(Boolean).join(' · ')}</p><div class="wstats">
-    ${bar('Paralyse', (w.stun - STUN_MIN + 25) / 260, w.stun + ' s', '#7fd8ff')}
+    ${bar('Paralyse', (w.stun - STUN_MIN + 2) / 14, w.stun + ' s', '#7fd8ff')}
     ${bar('Fire rate', Math.sqrt(rate / 25), rate >= 10 ? Math.round(rate) + '/s' : (Math.round(rate * 10) / 10) + '/s', '#ffb040')}
     ${bar('Range', w.range / 320, w.range + ' m', '#70ff90')}
     ${bar('Target size', (w.hit - 0.7) / 1.6, 'x' + w.hit, '#ff70c0')}

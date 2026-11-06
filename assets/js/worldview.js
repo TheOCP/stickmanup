@@ -1366,7 +1366,8 @@ export class WorldView {
         add(o, g, (st, t) => { g.rotation.y = st.laserAngle(o, t); });
       } else if (o.prim === 'pendulum') {
         const g = new THREE.Group(), ux = o.nz, uz = -o.nx;
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.16, 0.16), mat);
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(2 * (o.bar || 1), 0.16, 0.16), mat);
+        bar.visible = o.bar !== 0;
         bar.position.set(o.x, o.y, o.z);
         bar.rotation.y = Math.atan2(-uz, ux);
         const rope = new THREE.Mesh(cyl(0.035, 1, 6), new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.8 }));
@@ -1450,8 +1451,8 @@ export class WorldView {
         // A fish riding an arc of water from one nozzle to the other, across the bridge.
         const g = new THREE.Group(), pts = [], P = {};
         for (let k = 0; k <= 16; k++) {
-          const f = k / 16, d = (-1 + 2 * f) * o.span * o.dir, H = o.h + 0.8;
-          pts.push(new THREE.Vector3(o.x + o.nx * d, o.y - 0.8 + H * 4 * f * (1 - f), o.z + o.nz * d));
+          const lo = o.lo ?? 0.8, f = k / 16, d = (-1 + 2 * f) * o.span * o.dir, H = o.h + lo;
+          pts.push(new THREE.Vector3(o.x + o.nx * d, o.y - lo + H * 4 * f * (1 - f), o.z + o.nz * d));
         }
         const arcG = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.08, 6, false);
         this.flowUV(arcG, 'tube', 6);

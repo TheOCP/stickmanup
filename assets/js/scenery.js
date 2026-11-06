@@ -641,7 +641,7 @@ export function buildScenery(view) {
   // Plants are kept per height band (view.band) so only those near the camera are drawn.
   const put = (model, m, tint) => { const y = m.elements[13], k = model + '|' + Math.floor(y / 50); if (!inst.has(k)) inst.set(k, { model, y, list: [] }); inst.get(k).list.push([m, tint]); };
   const putIsle = (shape, pat, m) => { const k = shape + ':' + pat; if (!isles.has(k)) isles.set(k, { shape, pat, list: [] }); isles.get(k).list.push(m); };
-  const towers = L.cols.filter((c) => c.kind === 'tower'), trees = L.trees || [];
+  const towers = view.cityTowers || [], trees = L.trees || [];
   const tint = new THREE.Color();
   L.zones.forEach((z, zi) => {
     const f = F[Math.min(zi, F.length - 1)], n = (key === 'city' ? 14 : key === 'waterfall' ? 13 : 9) - (DETAIL === 0 ? 4 : 0);
@@ -654,11 +654,12 @@ export function buildScenery(view) {
         // A ledge sticking out of the crater wall.
         const a = R() * TAU; x = Math.cos(a) * 21.8; zz = Math.sin(a) * 21.8; s = 2.5 + R() * 2.5; ry = -a;
       } else if (key === 'city') {
-        // A balcony garden on one face of a skyscraper.
-        const t = towers[(R() * towers.length) | 0];
-        if (!t) continue;
-        const face = ((R() * 4) | 0) * (Math.PI / 2) - t.ry, d = t.hx + 1.0;
-        x = t.x + Math.cos(face) * d; zz = t.z - Math.sin(face) * d; s = 2.2; ry = -face;
+        // A balcony garden on a skyscraper's wall (worldview.js buildCity), kept off the route.
+        const tw = towers[(R() * towers.length) | 0];
+        if (!tw) continue;
+        const a = R() * TAU, d = tw.reach(a, y) + 0.7;
+        x = tw.t.x + Math.cos(a) * d; zz = tw.t.z + Math.sin(a) * d; s = 1.5; ry = -a;
+        if (L.cols.some((c) => c.kind !== 'tower' && Math.abs(c.y - y) < 4 + (c.hy || 0) && Math.hypot(c.x - x, c.z - zz) < 3 + Math.max(c.hx || 0, c.hz || 0, c.r || 0))) continue;
       } else {
         const a = R() * TAU, r = key === 'forest' ? 38 + R() * 10 : 26 + R() * 13;
         x = Math.cos(a) * r; zz = Math.sin(a) * r; s = 3 + R() * 4.5;
@@ -666,7 +667,7 @@ export function buildScenery(view) {
       }
       top = y;
       if (key === 'city') { put('planter', M(x, top, zz, 1.4, 1.4, 1.4, 0, ry), null); (view.balconies || (view.balconies = [])).push({ x, y: top, z: zz, ry }); }
-      putIsle(key === 'city' ? 'chamfer' : 'isle' + ((R() * 3) | 0), f.isle, M(x, top - 0.5 * (key === 'city' ? 0.5 : 1.2), zz, s, key === 'city' ? 0.5 : 1.2, s * (0.75 + R() * 0.25), 0, ry));
+      putIsle(key === 'city' ? 'chamfer' : 'isle' + ((R() * 3) | 0), f.isle, M(x, top - 0.5 * (key === 'city' ? 0.5 : 1.2), zz, s, key === 'city' ? 0.5 : 1.2, key === 'city' ? 2.6 : s * (0.75 + R() * 0.25), 0, ry));
       const nt = key === 'city' ? 1 : 1 + ((R() * 2.6) | 0);
       for (let j = 0; j < nt; j++) {
         const a = R() * TAU, d = R() * s * 0.28, sc = 0.8 + R() * 0.7;

@@ -41,8 +41,9 @@ smaller platforms, more obstacles, and everything moves faster.
   difficulties. After a fall it starts again below you, and a checkpoint lifts it to just under the checkpoint. It waits
   while you are in a maze garden or on a course outside. Stand on a vent when it erupts and it launches you to the ledge
   above; stand next to it and it shoves you off. Shadows show where boulders will land.
-* **Neon Skyline**: a ring of skyscrapers round a central spire at sunset, each its own kind of building (mirror
-  glass, concrete, neon panels, brick, white modules) with neon signs, adverts and its own roof. Climb round one tower,
+* **Neon Skyline**: a ring of skyscrapers round a central spire at sunset, each its own shape and kind of building (a
+  round glass tower with lines of light winding up it, a neon octagon, a rounded concrete tower, a twisting white tower
+  and a twelve sided brick one) with neon signs, curved screens with adverts and its own roof. Climb round one tower,
   cross to the next over a sky bridge, by zipline or on the roof of a flying car, and work your way round the ring to the
   top. Hop over the laser bars across a flying car's way while it carries you. Flying cars stream round the city and
   robots go about the square and the balconies. Conveyor belts, drones and laser gates.

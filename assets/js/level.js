@@ -17,6 +17,8 @@ export const CORE_R = 6, CORE_SKIN = 0.22;
 export const coreFlare = (key) => ({ sunny: 1.08, forest: 1.25, waterfall: 1.18 })[key] || 1;
 export const coreRadius = (key, y) => CORE_R * (1 + (coreFlare(key) - 1) * clamp((1002 - y) / 1042, 0, 1));
 export const HEAD = 4.2; // minimum vertical spacing between layers of the route
+// City: the skyscrapers the route climbs round are solid out to this far from their middle (round, as they are drawn).
+export const TOWER_R = 5.9;
 
 export const DIFFS = [
   { id: 0, name: 'Easy', rope: 7.5, storm: 0.7, grip: 0.7, first: 2000, coin: 1, summit: 100, desc: 'Checkpoints in every zone, a long cord, a calmer storm and fewer, slower obstacles.' },
@@ -3187,7 +3189,7 @@ export function generateLevel(mapId = 0) {
   // The core's solid wall: a little outside what you see (so hands and the glowing rings never sink in), and
   // widening toward the foot exactly as the drawn wall does on the maps where it flares.
   if (ROUTE !== 'crater') add(makeCyl(0, (top - 1.2 - 40) / 2, 0, CORE_R + CORE_SKIN, (top - 1.2 + 40) / 2, coreFlare(MAP.key) > 1 ? { r1: CORE_R * coreFlare(MAP.key) + CORE_SKIN } : undefined), 'core');
-  for (const t of TOWERS) add(makeBox(t.x, (top - 20) / 2, t.z, TW, (top + 20) / 2, TW, 0, -t.a, 0), 'tower');
+  for (const t of TOWERS) add(makeCyl(t.x, (top - 20) / 2, t.z, TOWER_R, (top + 20) / 2), 'tower');
   placePiers();
 
   // Zone decorations, all visual only, different for each map.

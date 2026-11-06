@@ -1,0 +1,37 @@
+StickManUp wird von TheOCProductions und ShortGG gemacht.
+
+Das sind die einfachen Regeln für diesen Spielserver. Wenn du sie lieber nicht annehmen willst, kannst du trotzdem ohne Münzen spielen, allein oder in Räumen unter Online.
+
+1. Deine Münzen und dein Konto
+Münzen, Gegenstände und Relikte werden auf diesem Server gespeichert, so kann sie niemand verlieren oder sich ausdenken. Als Gast bekommst du ein Konto, das nur dieses Handy erreicht: Wenn du das Handy verlierst oder die Daten der App löschst, ist es weg. Melde dich mit Discord, Steam oder Google an, um es für immer zu behalten und auf jedem Handy zu nutzen. Dein Passwort für diese Dienste sehen wir nie.
+
+2. Was wir speichern
+Deine ID und deinen Anzeigenamen von dem Dienst, mit dem du dich angemeldet hast, deine Spielernummer und deinen Namen im Spiel, wann du diese Bedingungen angenommen hast und deinen Spielfortschritt: Münzen, Gegenstände, Rekorde und gespeicherte Klettertouren. Die IP Adressen, von denen aus du verbunden warst, 90 Tage lang. Eine Nummer aus der ID deines Handys, die außerhalb dieses Spiels nichts bedeutet. Nach deiner Mailadresse fragen wir nicht, und wir speichern sie nicht.
+
+3. Der Anticheat
+Jede Klettertour, die Münzen bringt, wird beim Spielen aufgezeichnet (deine Tasten, deine Position und was passiert) und an diesen Server geschickt, der sie noch einmal abspielt, um zu prüfen, dass sie wirklich so passieren konnte. Aufnahmen werden nach ein paar Tagen gelöscht, bei einer Tour, die die Prüfung nicht bestanden hat, nach einigen Monaten. Die App prüft außerdem, ob sie verändert wurde, ob Cheatprogramme laufen oder installiert sind, welches Handymodell du hast und ob es gerootet ist, und bittet die sichere Hardware deines Handys, für die App zu bürgen. Gesendet werden nur die Ergebnisse dieser Prüfungen, nie eine Liste deiner Apps. Root ist erlaubt und wird dir nicht angelastet.
+
+4. Wer das sehen kann
+Die Leute, die diesen Server betreiben, können all das sehen, auch deinen Namen und deine IP Adresse, in einem privaten Kanal auf Discord, wenn du dich anmeldest oder wenn etwas seltsam aussieht. Damit verarbeitet auch Discord diese Daten. Sie können außerdem sehen, was gerade alle im Spiel machen, jeden Raum auf diesem Server ohne sein Passwort betreten und jede Klettertour live ansehen, um nach Cheats oder schlechtem Verhalten zu suchen, ohne in der Liste der Zuschauer aufzutauchen. Nichts davon wird verkauft, und andere Spieler sehen nur, was in Punkt 5 und 6 steht.
+
+5. Online spielen
+Spiele auf diesem Server laufen über ihn, auch Spielernamen und Raumnamen. Ein Raumpasswort wird nur verschlüsselt gespeichert, und nur solange der Raum offen ist. Andere Spieler in deinem Raum sehen deinen Namen und was du trägst.
+
+6. Freunde
+Jeder, der spielt, kann dich über deinen Namen im Spiel oder deine Spielernummer finden und dir eine Freundschaftsanfrage schicken. Deine anderen Namen und deine IP Adresse werden nie gezeigt. Nur Leute, die du angenommen hast, und die du jederzeit wieder entfernen kannst, sehen, dass du online bist, wann du zuletzt online warst, wie viele Klettertouren du gemacht und geschafft hast und, während du spielst, Karte, Schwierigkeit, Höhe, Zeit und Stürze deiner Tour und den Code deines Raums. Freunde können deine Tour auch live ansehen, dabei sehen sie deinen Kletterer und die Leute, die mit dir klettern, mit ihren Namen und dem, was sie tragen. Du siehst, welche Freunde zuschauen, und kannst das unter Freunde ausschalten. Eine Tour, die angesehen wird, schickt ihre Positionen über diesen Server, und sie werden nicht gespeichert.
+
+7. Benimm dich
+Kein Cheaten, kein Belästigen anderer Spieler und kein Angreifen oder Überlasten des Servers. Wer diese Regeln bricht, kann Münzen und Gegenstände verlieren und gesperrt werden, vom Anticheat selbst oder von einem Menschen, auch mit IP Adresse oder Handy. Du erfährst den Grund. Ein gesperrtes Konto behält einen verschlüsselten Eintrag seiner Anmeldekennung, auch nachdem es gelöscht wurde, damit das Löschen die Sperre nicht aufhebt. Wenn du meinst, dass wir uns geirrt haben, frag uns über die Adresse unten.
+
+8. Dein Konto löschen
+Du kannst dein Konto und alles, was dazu gespeichert ist, jederzeit im Spiel unter Konto löschen.
+
+9. Keine Garantie
+StickManUp und dieser Server sind kostenlos und so, wie sie sind. Der Server kann ausfallen, sich ändern oder abgeschaltet werden, und Fortschritt kann verloren gehen.
+
+10. Änderungen
+Wenn sich diese Bedingungen ändern, wirst du gebeten, sie erneut anzunehmen, bevor du weitere Münzen verdienst.
+
+Fragen: github.com/TheOCP/stickmanup
+
+Das ist eine Übersetzung. Wenn sie vom englischen Text abweicht, gilt der englische Text.

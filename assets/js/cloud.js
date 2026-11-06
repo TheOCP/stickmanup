@@ -103,7 +103,8 @@ function setBan(j) {
 
 export async function getInfo() {
   if (!serverUrl()) return null;
-  const r = await call('/api/info', { timeout: 8000 });
+  // The terms come in the language the game is shown in.
+  const r = await call('/api/info?lang=' + encodeURIComponent(document.documentElement.lang || 'en'), { timeout: 8000 });
   const ok = r.ok && r.json && typeof r.json.terms === 'string';
   // The tag and colour of every role, for the flags next to names.
   if (ok && r.json.roles) setRoleTable(r.json.roles);

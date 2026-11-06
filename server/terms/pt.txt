@@ -1,0 +1,37 @@
+StickManUp é feito por TheOCProductions e ShortGG.
+
+Estas são as regras simples para usar este servidor de jogo. Se preferir não aceitar, você ainda pode jogar sem moedas, sozinho ou em salas Online.
+
+1. Suas moedas e sua conta
+Moedas, itens e relíquias ficam guardados neste servidor, então ninguém pode perder nem inventar nada disso. Como convidado você recebe uma conta que só este celular acessa: se você perder o celular ou apagar os dados do app, ela some. Entre com Discord, Steam ou Google para guardar a conta para sempre e usar em qualquer celular. Nunca vemos sua senha desses serviços.
+
+2. O que guardamos
+Seu ID e seu nome de exibição do serviço com que você entrou, seu número de jogador e seu nome no jogo, quando você aceitou estes termos e seu progresso no jogo: moedas, itens, recordes e escaladas salvas. Os endereços IP de onde você se conectou, guardados por 90 dias. Um número feito a partir do ID do seu celular que não significa nada fora deste jogo. Não pedimos nem guardamos seu endereço de email.
+
+3. O anticheat
+Toda escalada que rende moedas é gravada enquanto você joga (seus botões, sua posição e o que acontece) e enviada a este servidor, que a joga de novo para conferir se ela realmente poderia acontecer. As gravações são apagadas depois de alguns dias, ou depois de alguns meses no caso de uma escalada que não passou na conferência. O app também verifica se foi modificado, se há ferramentas de trapaça abertas ou instaladas, o modelo do seu celular e se ele tem root, e pede ao hardware seguro do seu celular que garanta o app. Só os resultados dessas verificações são enviados, nunca uma lista dos seus apps. Ter root é permitido e não conta contra você.
+
+4. Quem pode ver isso
+As pessoas que administram este servidor podem ver tudo isso, incluindo seu nome e seu endereço IP, num canal privado do Discord quando você entra ou quando algo parece errado. Isso significa que o Discord também lida com essas informações. Elas também podem ver o que cada pessoa está fazendo no jogo agora, entrar em qualquer sala deste servidor sem a senha e assistir qualquer escalada ao vivo para procurar trapaças ou mau comportamento, sem aparecer na lista de quem está assistindo. Nada disso é vendido, e os outros jogadores só veem o que dizem os itens 5 e 6.
+
+5. Jogar online
+As partidas neste servidor passam por ele, incluindo nomes de jogadores e de salas. A senha de uma sala só é guardada embaralhada, e só enquanto a sala está aberta. Os outros jogadores da sua sala podem ver seu nome e o que você está vestindo.
+
+6. Amigos
+Qualquer pessoa que joga pode encontrar você pelo seu nome no jogo ou pelo seu número de jogador e pedir sua amizade. Seus outros nomes e seu endereço IP nunca aparecem. Só as pessoas que você aceitou, e você pode remover essas pessoas quando quiser, podem ver que você está online, quando esteve online pela última vez, quantas escaladas você fez e terminou e, enquanto você joga, o mapa, a dificuldade, a altura, o tempo e as quedas da sua escalada e o código da sua sala. Amigos também podem assistir sua escalada ao vivo, o que mostra a eles o seu escalador e as pessoas escalando com você, com seus nomes e o que vestem. Você fica sabendo quais amigos estão assistindo, e pode desligar isso em Amigos. Uma escalada que está sendo assistida envia suas posições por este servidor, e elas não são guardadas.
+
+7. Seja legal
+Nada de trapaça, nada de assediar outros jogadores e nada de atacar ou sobrecarregar o servidor. Se você quebrar estas regras pode perder moedas e itens e ser banido, pelo próprio anticheat ou por uma pessoa, junto com seu endereço IP ou seu celular. Você é informado do motivo. Uma conta banida guarda um registro embaralhado do seu ID de login mesmo depois de apagada, para que apagar a conta não tire o banimento. Se você acha que erramos, fale com a gente no endereço abaixo.
+
+8. Apagar sua conta
+Você pode apagar sua conta e tudo o que foi salvo com ela a qualquer momento no jogo, em Conta.
+
+9. Sem garantias
+StickManUp e este servidor são gratuitos e vêm como estão. O servidor pode ficar fora do ar, mudar ou ser desligado, e o progresso pode ser perdido.
+
+10. Mudanças
+Se estes termos mudarem, você vai precisar aceitar os termos de novo antes de ganhar mais moedas.
+
+Dúvidas: github.com/TheOCP/stickmanup
+
+Esta é uma tradução. Se algo for diferente do texto em inglês, vale o texto em inglês.

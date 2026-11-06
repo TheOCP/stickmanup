@@ -656,6 +656,7 @@ summary() {
  Settings:        $ENV_FILE
  Players' data:   $DATA_DIR (a backup is made every day)
  Your own terms:  copy $PREFIX/app/terms.txt to $ETC_DIR/terms.txt and edit it
+                  (other languages next to it as terms.de.txt, terms.es.txt and so on)
 
  Update:   curl -fsSL https://raw.githubusercontent.com/TheOCP/stickmanup/main/server/install.sh | sudo bash -s -- --update
  Logs:     journalctl -u $SERVICE -f

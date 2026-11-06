@@ -62,6 +62,8 @@ const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
 // The colour you picked before there were suits becomes your first suit.
+// The language picked in Settings, from the phone's own settings when the restart after picking it lost it here.
+if (N && N.lang) { const l = N.lang(); if (l && l !== settings.lang) { settings.lang = l; store.set('settings', settings); } }
 startLang(settings.lang);
 initProfile(settings.color);
 const myColor = () => tagColor(SUIT[myLook().s].c);
@@ -966,7 +968,7 @@ function lobby(s) {
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
-    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)">${esc(p.name)}${i === s.slot ? ' (you)' : ''}${i === 0 ? ' · host' : ''}</span>${roleTag(p)}<small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
+    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)"><span class="frname">${esc(p.name)}</span>${i === s.slot ? ' <span>(you)</span>' : ''}${i === 0 ? ' · <span>host</span>' : ''}</span>${roleTag(p)}<small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
   const lmapNow = resume ? mp.map || 0 : s.lobby.map || 0;
@@ -1398,6 +1400,8 @@ function settingsScreen(back) {
   const val = (k, fmt) => `<span class="val" data-v="${k}">${fmtVal(k, fmt)}</span>`;
   const chk = (k, text) => `<label class="chk"><input type="checkbox" data-c="${k}" ${settings[k] ? 'checked' : ''}> ${text}</label>`;
   show(`<div class="panel">${header('Settings')}<div class="set">
+    <h3>Language</h3>
+    <label class="full">${seg('lang', LANG_NAMES)}</label>
     <h3>Graphics</h3>
     <label class="full">Preset${seg('quality', [['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']])}</label>
     ${ON_PC ? `<label>Frame rate (fps)${seg('cap', [[60, '60'], [90, '90'], [120, '120'], [144, '144']])}</label>` : ''}
@@ -1431,7 +1435,6 @@ function settingsScreen(back) {
     <label>Left stick dead zone ${val('deadL', '%')}${range('deadL', 0, 0.6, 0.02, '%')}</label>
     <label>Right stick dead zone ${val('deadR', '%')}${range('deadR', 0, 0.6, 0.02, '%')}</label>
     <h3>Sound and other</h3>
-    <label class="full">Language${seg('lang', LANG_NAMES)}</label>
     <label>Music${range('music', 0, 1, 0.05)}</label>
     <label>Sound effects${range('sfx', 0, 1, 0.05)}</label>
     <label${app.game ? ' class="full"' : ''}>Your name<input id="nm" maxlength="14" value="${esc(settings.name)}" style="background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none"></label>
@@ -1457,7 +1460,7 @@ function settingsScreen(back) {
       const k = b.dataset.k, v = b.dataset.v;
       settings[k] = k === 'cap' ? +v : k === 'lefty' ? v === 'true' : v;
       for (const x of b.parentNode.children) x.classList.toggle('on', x === b);
-      if (k === 'lang') { saveSettings(); return restartApp('Restarting...'); }
+      if (k === 'lang') { saveSettings(); if (N && N.setLang) N.setLang(v); return restartApp('Restarting...'); }
       if (k === 'quality') {
         if (!nat) { saveSettings(); return restartApp('Restarting to apply graphics...'); }
         Object.assign(settings, PRESETS[v]);

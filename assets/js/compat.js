@@ -61,6 +61,7 @@
   function words() {
     var pick = '';
     try { pick = JSON.parse(localStorage.getItem('smu.settings') || '{}').lang || ''; } catch (e) { pick = ''; }
+    try { if (N && N.lang && N.lang()) pick = N.lang(); } catch (e) {}
     if (!pick || pick === 'auto') pick = String(navigator.language || 'en').slice(0, 2).toLowerCase();
     return TEXT[pick] || TEXT.en;
   }

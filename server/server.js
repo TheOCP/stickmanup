@@ -55,6 +55,18 @@ if (!cfg.publicUrl) cfg.publicUrl = `${tls ? 'https' : 'http'}://127.0.0.1:${cfg
 
 const terms = fs.readFileSync(cfg.termsFile, 'utf8').trim();
 const termsVersion = crypto.createHash('sha256').update(terms).digest('hex').slice(0, 12);
+// The same terms in the game's other languages, shown to players in theirs. The English text is the one accepted.
+// Your own terms can bring their own as terms.es.txt and so on next to them; the shipped ones are used only
+// while the English text is the shipped one.
+const TERMS_LANGS = ['es', 'pt', 'fr', 'de', 'ru', 'tr'], termsTr = {};
+{
+  const read = (f) => { try { return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim() : ''; } catch (e) { return ''; } };
+  const shipped = read(path.join(__dirname, 'terms.txt')) === terms;
+  for (const l of TERMS_LANGS) {
+    const t = read(cfg.termsFile.replace(/\.txt$/i, '') + '.' + l + '.txt') || (shipped ? read(path.join(__dirname, 'terms', l + '.txt')) : '');
+    if (t) termsTr[l] = t;
+  }
+}
 const db = new DB(cfg.dataDir);
 const wallet = new Wallet(db, env);
 const admin = new Admin(db, wallet, env);
@@ -243,7 +255,8 @@ async function route(req, res) {
   if (!limits.api.take(ip)) return json(res, 429, { err: 'Too many requests' });
 
   if (method === 'GET' && p === '/api/info') {
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, daily: admin.dailyPin ? admin.dailyPin.id : undefined, roles: staff.table() });
+    const tl = url.searchParams.get('lang'), termsLang = termsTr[tl] ? tl : 'en';
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms: termsTr[tl] || terms, termsLang, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, daily: admin.dailyPin ? admin.dailyPin.id : undefined, roles: staff.table() });
   }
   // Graffiti on a map, for everyone (lib/sprays.js).
   if (method === 'GET' && p === '/api/sprays') {

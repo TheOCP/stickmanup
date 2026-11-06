@@ -1,0 +1,37 @@
+StickManUp est fait par TheOCProductions et ShortGG.
+
+Voici les règles simples pour utiliser ce serveur de jeu. Si vous préférez ne pas les accepter, vous pouvez quand même jouer sans pièces, seul ou dans des salons En ligne.
+
+1. Vos pièces et votre compte
+Les pièces, les objets et les reliques sont gardés sur ce serveur, donc personne ne peut les perdre ni les inventer. En tant qu'invité, vous avez un compte que seul ce téléphone peut utiliser : si vous perdez le téléphone ou effacez les données de l'appli, il disparaît. Avec une connexion Discord, Steam ou Google, vous le gardez pour toujours et pouvez l'utiliser sur n'importe quel téléphone. Nous ne voyons jamais votre mot de passe pour ces services.
+
+2. Ce que nous gardons
+Votre identifiant et votre nom affiché sur le service avec lequel vous vous êtes connecté, votre numéro de joueur et votre nom dans le jeu, la date à laquelle vous avez accepté ces conditions et votre progression : pièces, objets, records et ascensions sauvegardées. Les adresses IP depuis lesquelles vous vous êtes connecté, gardées 90 jours. Un numéro tiré de l'identifiant de votre téléphone, qui ne veut rien dire en dehors de ce jeu. Nous ne demandons pas et ne gardons pas votre adresse email.
+
+3. L'anticheat
+Chaque ascension qui rapporte des pièces est enregistrée pendant que vous jouez (vos boutons, votre position et ce qui se passe) et envoyée à ce serveur, qui la rejoue pour vérifier qu'elle a vraiment pu se produire. Les enregistrements sont effacés après quelques jours, ou après quelques mois pour une ascension qui n'a pas passé la vérification. L'appli vérifie aussi si elle a été modifiée, si des outils de triche sont lancés ou installés, le modèle de votre téléphone et s'il est rooté, et demande au matériel sécurisé de votre téléphone de garantir l'appli. Seuls les résultats de ces vérifications sont envoyés, jamais une liste de vos applis. Être rooté est autorisé et ne vous est pas reproché.
+
+4. Qui peut voir tout cela
+Les personnes qui gèrent ce serveur peuvent voir tout ce qui précède, y compris votre nom et votre adresse IP, dans un salon privé sur Discord quand vous vous connectez ou quand quelque chose semble anormal. Discord traite donc aussi ces informations. Elles peuvent aussi voir ce que fait chaque joueur en ce moment, entrer dans n'importe quel salon de ce serveur sans son mot de passe et regarder n'importe quelle ascension en direct pour repérer la triche ou les mauvais comportements, sans apparaître dans la liste des spectateurs. Rien de tout cela n'est vendu, et les autres joueurs ne voient que ce que disent les points 5 et 6.
+
+5. Jouer en ligne
+Les parties sur ce serveur passent par lui, y compris les noms des joueurs et des salons. Le mot de passe d'un salon n'est gardé que sous forme brouillée, et seulement tant que le salon est ouvert. Les autres joueurs de votre salon peuvent voir votre nom et ce que vous portez.
+
+6. Amis
+Tout joueur peut vous trouver par votre nom dans le jeu ou votre numéro de joueur et vous demander en ami. Vos autres noms et votre adresse IP ne sont jamais affichés. Seules les personnes que vous avez acceptées, et vous pouvez les retirer à tout moment, peuvent voir que vous êtes en ligne, quand vous l'étiez pour la dernière fois, combien d'ascensions vous avez faites et terminées et, pendant que vous jouez, la carte, la difficulté, la hauteur, le temps et les chutes de votre ascension et le code de votre salon. Vos amis peuvent aussi regarder votre ascension en direct, ce qui leur montre votre grimpeur et les personnes qui grimpent avec vous, avec leurs noms et ce qu'elles portent. Vous savez quels amis regardent, et vous pouvez désactiver cela dans Amis. Une ascension regardée envoie ses positions par ce serveur, et elles ne sont pas gardées.
+
+7. Restez correct
+Pas de triche, pas de harcèlement des autres joueurs et pas d'attaque ni de surcharge du serveur. Si vous enfreignez ces règles, vous pouvez perdre des pièces et des objets et être banni, par l'anticheat ou par une personne, avec votre adresse IP ou votre téléphone. La raison vous est donnée. Un compte banni garde une trace brouillée de son identifiant de connexion même après sa suppression, pour que le supprimer ne lève pas le bannissement. Si vous pensez que nous nous sommes trompés, posez la question à l'adresse en bas.
+
+8. Supprimer votre compte
+Vous pouvez supprimer votre compte et tout ce qui y est sauvegardé à tout moment dans le jeu, sous Compte.
+
+9. Aucune garantie
+StickManUp et ce serveur sont gratuits et fournis tels quels. Le serveur peut être indisponible, changer ou fermer, et la progression peut être perdue.
+
+10. Changements
+Si ces conditions changent, il vous sera demandé de les accepter à nouveau avant de gagner d'autres pièces.
+
+Questions : github.com/TheOCP/stickmanup
+
+Ceci est une traduction. En cas de différence avec le texte anglais, c'est le texte anglais qui compte.

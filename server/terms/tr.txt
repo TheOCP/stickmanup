@@ -1,0 +1,37 @@
+StickManUp, TheOCProductions ve ShortGG tarafından yapıldı.
+
+Bunlar bu oyun sunucusunu kullanmanın basit kurallarıdır. Kabul etmek istemezsen yine de altın kazanmadan, tek başına ya da Çevrimiçi odalarda oynayabilirsin.
+
+1. Altınların ve hesabın
+Altınlar, eşyalar ve kalıntılar bu sunucuda tutulur, böylece kimse onları kaybedemez ya da uyduramaz. Misafir olarak yalnızca bu telefonun ulaşabildiği bir hesabın olur: Telefonu kaybedersen ya da uygulamanın verilerini silersen hesap gider. Hesabını sonsuza kadar saklamak ve her telefonda kullanmak için Discord, Steam ya da Google ile giriş yap. Bu hizmetlerdeki şifreni asla görmeyiz.
+
+2. Neleri saklıyoruz
+Giriş yaptığın hizmetteki kimliğin ve görünen adın, oyuncu numaran ve oyundaki adın, bu şartları ne zaman kabul ettiğin ve oyundaki ilerlemen: altınlar, eşyalar, rekorlar ve kayıtlı tırmanışlar. Bağlandığın IP adresleri, 90 gün boyunca saklanır. Telefonunun kimliğinden üretilen ve bu oyunun dışında hiçbir anlamı olmayan bir sayı. Mail adresini sormayız ve saklamayız.
+
+3. Hile koruması
+Altın kazandıran her tırmanış sen oynarken kaydedilir (tuşların, konumun ve olanlar) ve bu sunucuya gönderilir; sunucu onu yeniden oynatarak gerçekten olabileceğini kontrol eder. Kayıtlar birkaç gün sonra silinir, kontrolü geçemeyen bir tırmanış için ise birkaç ay sonra. Uygulama ayrıca değiştirilip değiştirilmediğini, hile araçlarının açık ya da yüklü olup olmadığını, telefonunun modelini ve root olup olmadığını kontrol eder ve telefonunun güvenli donanımından uygulamaya kefil olmasını ister. Yalnızca bu kontrollerin sonuçları gönderilir, uygulamalarının listesi asla gönderilmez. Root serbesttir ve sana karşı kullanılmaz.
+
+4. Bunu kim görebilir
+Bu sunucuyu yönetenler, adın ve IP adresin dahil yukarıdakilerin hepsini, giriş yaptığında ya da bir şey tuhaf göründüğünde Discord'daki özel bir kanalda görebilir. Yani bu bilgileri Discord da işler. Ayrıca oyundaki herkesin şu anda ne yaptığını görebilir, bu sunucudaki herhangi bir odaya şifresi olmadan girebilir ve hile ya da kötü davranış aramak için herhangi bir tırmanışı, izleyenler listesinde görünmeden canlı izleyebilirler. Bunların hiçbiri satılmaz ve diğer oyuncular yalnızca 5. ve 6. maddelerde yazanları görür.
+
+5. Çevrimiçi oynamak
+Bu sunucudaki oyunlar, oyuncu adları ve oda adları dahil, sunucunun üzerinden geçer. Bir odanın şifresi yalnızca şifrelenmiş olarak ve yalnızca oda açıkken tutulur. Odandaki diğer oyuncular adını ve neler giydiğini görebilir.
+
+6. Arkadaşlar
+Oynayan herkes seni oyundaki adınla ya da oyuncu numaranla bulup arkadaşlık isteği gönderebilir. Diğer adların ve IP adresin asla gösterilmez. Yalnızca kabul ettiğin kişiler, ki onları istediğin zaman çıkarabilirsin, çevrimiçi olduğunu, en son ne zaman çevrimiçi olduğunu, kaç tırmanış yapıp bitirdiğini ve sen oynarken tırmanışının haritasını, zorluğunu, yüksekliğini, süresini, düşüşlerini ve odanın kodunu görebilir. Arkadaşların tırmanışını canlı da izleyebilir; bu onlara tırmanıcını ve seninle tırmananları, adları ve giydikleriyle birlikte gösterir. Hangi arkadaşların izlediği sana söylenir ve bunu Arkadaşlar bölümünden kapatabilirsin. İzlenen bir tırmanış konumlarını bu sunucu üzerinden gönderir ve bunlar saklanmaz.
+
+7. Düzgün ol
+Hile yok, diğer oyunculara taciz yok, sunucuya saldırmak ya da onu aşırı yüklemek yok. Bu kuralları çiğnersen altın ve eşya kaybedebilir, hile korumasının kendisi ya da bir kişi tarafından IP adresin ya da telefonunla birlikte yasaklanabilirsin. Sebebi sana söylenir. Yasaklanan bir hesap, silindikten sonra bile giriş kimliğinin şifrelenmiş bir kaydını tutar, böylece hesabı silmek yasağı kaldırmaz. Yanlış yaptığımızı düşünüyorsan aşağıdaki adresten bize sor.
+
+8. Hesabını silmek
+Hesabını ve onunla kaydedilen her şeyi istediğin zaman oyunda Hesap bölümünden silebilirsin.
+
+9. Garanti yok
+StickManUp ve bu sunucu ücretsizdir ve olduğu gibi sunulur. Sunucu kapalı olabilir, değişebilir ya da tamamen kapanabilir ve ilerleme kaybolabilir.
+
+10. Değişiklikler
+Bu şartlar değişirse, daha fazla altın kazanmadan önce onları yeniden kabul etmen istenir.
+
+Sorular: github.com/TheOCP/stickmanup
+
+Bu bir çeviridir. İngilizce metinden farklı olursa İngilizce metin geçerlidir.

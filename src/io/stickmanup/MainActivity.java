@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.10.33";
+    static final String VERSION = "4.10.34";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Updater updater = new Updater(this);
     private final StringBuilder jsQueue = new StringBuilder();
@@ -501,6 +501,18 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void report(String line) {
             Diag.raw(line);
+        }
+
+        // The language picked in Settings. Kept here too: the app restarts right after the choice, and the
+        // WebView's own storage only reaches the disk a few seconds after a change.
+        @JavascriptInterface
+        public String lang() {
+            return prefs.getString("lang", "");
+        }
+
+        @JavascriptInterface
+        public void setLang(String l) {
+            prefs.edit().putString("lang", l == null ? "" : l).commit();
         }
 
         @JavascriptInterface

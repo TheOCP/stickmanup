@@ -3,6 +3,7 @@
 import * as THREE from './stub-three.js';
 import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
+import { placeDyn, toLocal, toWorld, BOX } from './physics.js';
 import { COLORS } from './colors.js';
 import { Storm, QUAKE_AT, WAVE_H, BEE_R, LASER_R, CANNON_R, markShots, beeStep } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
@@ -424,6 +425,42 @@ export class Game {
     }
     out.vx = s[3]; out.vy = s[4]; out.vz = s[5]; out.yaw = s[6]; out.flags = s[7]; out.reel = s[8]; out.charge = s[9]; out.elev = s[10] || 0;
     return out;
+  }
+
+  // Seen from here only (their own phone does their physics): another climber is drawn as they were DELAY ago, but a lift or
+  // any moving platform as it is now, so one riding a lift sank into it on the way up (up to a metre on the fast ones) and
+  // hung above it on the way down. One standing on a moving platform is carried along with it to where it is drawn now,
+  // right on its top. Eased in and out, so stepping on or off doesn't jump.
+  rideShift(o, slot, dt) {
+    const sh = this.rideSh || (this.rideSh = new Map());
+    let s = sh.get(slot);
+    if (!s) sh.set(slot, (s = { x: 0, y: 0, z: 0 }));
+    let tx = 0, ty = 0, tz = 0;
+    if (o.flags & F.GROUND) {
+      const k = this.rideK || (this.rideK = {}), L = this.rideL || (this.rideL = {}), P = this.rideP || (this.rideP = {});
+      const t0 = this.time - DELAY, t1 = this.simT - STEP + (this.alpha ?? 1) * STEP;
+      for (const c of this.W.dyn) {
+        if (!c.dyn || !c.on || o.x < c.minx - 3 || o.x > c.maxx + 3 || o.z < c.minz - 3 || o.z > c.maxz + 3 || o.y < c.miny - 3 || o.y > c.maxy + 4) continue;
+        // A copy, so the platform the physics uses stays where it is.
+        const m = k.m;
+        Object.assign(k, c);
+        k.m = m && m.length === c.m.length ? m : new Float64Array(c.m.length);
+        k.m.set(c.m);
+        placeDyn(k, t0);
+        toLocal(k, o.x, o.y, o.z, false, L);
+        const box = k.t === BOX, top = box ? k.hy : k.hh;
+        if (box ? Math.abs(L.x) > k.hx + 0.15 || Math.abs(L.z) > k.hz + 0.15 : Math.hypot(L.x, L.z) > k.r + 0.15) continue;
+        if (L.y < -top || L.y > top + PR + 0.6) continue;
+        L.y = top + PR;
+        placeDyn(k, t1);
+        toWorld(k, L, P);
+        tx = P.x - o.x; ty = P.y - o.y; tz = P.z - o.z;
+        break;
+      }
+    }
+    const f = Math.min(1, dt * 14);
+    s.x += (tx - s.x) * f; s.y += (ty - s.y) * f; s.z += (tz - s.z) * f;
+    return s;
   }
 
   latest(slot, out) {
@@ -1757,6 +1794,7 @@ export class Game {
   // ----- per-frame visuals -----
   draw(dt) {
     const app = this.app, R = this.R, me = this.me, T = this.time;
+    this.drawAt = this.drawAt || new Map();
     if (!this.robots.has(this.slot)) this.syncRoster();
     const W = this.W;
     const faceYaw = Math.atan2(-Math.sin(this.cam.yaw), -Math.cos(this.cam.yaw));
@@ -1768,7 +1806,10 @@ export class Game {
       const o = this.vis && this.vis.get(slot);
       r.g.visible = !!o;
       if (!o) { r.hide(); continue; }
-      r.update(dt, o.x, o.y, o.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(o.x, o.y, o.z, 30), o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
+      const d = this.rideShift(o, slot, dt), at = this.drawAt.get(slot) || {};
+      at.x = o.x + d.x; at.y = o.y + d.y; at.z = o.z + d.z; at.reel = o.reel;
+      this.drawAt.set(slot, at);
+      r.update(dt, at.x, at.y, at.z, o.vx, o.vy, o.vz, o.flags, o.charge, W.floorBelow(at.x, at.y, at.z, 30), o.yaw, T - (this.shotAt.get(slot) ?? -9), o.elev);
       const th = this.storm.thunder(T, slot);
       if (th) this.zap(slot, th, o, false);
       // The lasers, cannonballs and bees after them, from where they are seen (their own phone does the hitting).
@@ -1779,7 +1820,7 @@ export class Game {
     }
     for (const slot of this.evOther.keys()) if (!this.vis || !this.vis.get(slot)) { this.evOther.delete(slot); this.beesOther.delete(slot); }
     this.drawJumpers(dt, T);
-    const pos = (slot) => (slot === this.slot ? me : this.vis && this.vis.get(slot));
+    const pos = (slot) => (slot === this.slot ? me : this.vis && this.vis.get(slot) && this.drawAt.get(slot));
     // Cords are draped visually (beads settle over ledges) but only the straight line pulls.
     for (const lk of this.links) {
       const A = pos(lk.a), B = pos(lk.b);

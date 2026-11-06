@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.10.25";
+    static final String VERSION = "4.10.26";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Updater updater = new Updater(this);
     private final StringBuilder jsQueue = new StringBuilder();

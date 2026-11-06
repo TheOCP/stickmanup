@@ -79,6 +79,8 @@ public final class DeskGL implements GLApi {
     public void framebufferRenderbuffer(int target, int att, int rbTarget, int r) { g.glFramebufferRenderbuffer(target, att, rbTarget, r); }
     public int checkFramebufferStatus(int target) { return g.glCheckFramebufferStatus(target); }
     public void deleteTexture(int t) { one[0] = t; g.glDeleteTextures(1, one, 0); }
+    public void deleteBuffer(int b) { one[0] = b; g.glDeleteBuffers(1, one, 0); }
+    public void deleteVertexArray(int v) { one[0] = v; g.glDeleteVertexArrays(1, one, 0); }
     public void deleteFramebuffer(int f) { one[0] = f; g.glDeleteFramebuffers(1, one, 0); }
     public void deleteRenderbuffer(int r) { one[0] = r; g.glDeleteRenderbuffers(1, one, 0); }
     public int getError() { return g.glGetError(); }

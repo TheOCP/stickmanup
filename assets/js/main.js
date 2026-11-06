@@ -639,6 +639,8 @@ function loadMap(id) {
   app.level = w.level;
   app.world = w.world;
   app.view = w.view;
+  // The phone's renderer frees the map that just left at the next frame, before this one is sent (mirror.js).
+  if (R.mirror) R.mirror.sweepSoon();
   if (auto) auto.settle();
   app.view.setCheckpoints(1, 0);
   app.titleStorm = new Storm(app.level, 1);

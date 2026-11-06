@@ -24,6 +24,11 @@ const FAR = 125;
 // A still object this far from the camera is only looked at one frame in eight. Most of the scene is like that.
 const NAP2 = 40 * 40;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+// Out of the scene this many frames: forgotten here and freed on the phone (a map change frees at once).
+const GONE_AFTER = 600, SWEEP_EVERY = 120;
+// One definition message at most about this many characters: a map is tens of megabytes, and one string that big
+// could run the phone's Java side out of memory on its own.
+const PIECE = 1500000;
 
 export class Mirror {
   constructor(send) {
@@ -54,6 +59,90 @@ export class Mirror {
     this.awake = true;
     this.geoHot = []; // geometries whose buffers really get rewritten
     this.geoAt = 0;
+    this.sweepAt = 0;
+    this.sweepNow = false;
+    this.lost = 0; // messages the phone could not take
+  }
+
+  // Something big left the scene (another map): free what only it used at the next frame, before the new one is sent.
+  sweepSoon() {
+    this.sweepNow = true;
+  }
+
+  // Objects out of the scene for a while are forgotten, and with them the geometry, materials and textures nothing
+  // left uses; the phone is told to free them too. Without this every map ever loaded stayed in the phone's memory
+  // until the app ran out of it. Brought back later, an object is simply defined again under the same id.
+  sweep(scene, now) {
+    const seen = this.seen, keep = [], gone = [];
+    for (const e of this.list) {
+      let r = e.obj;
+      while (r.parent) r = r.parent;
+      if (r === scene) { e.out = 0; keep.push(e); continue; }
+      if (!e.out) e.out = seen;
+      if (now || seen - e.out >= GONE_AFTER) gone.push(e);
+      else keep.push(e);
+    }
+    if (!gone.length) return;
+    const drop = { o: [], g: [], m: [], t: [] };
+    for (const e of gone) {
+      drop.o.push(e.id);
+      this.objs.delete(e.id);
+      const n = e.obj.__mn;
+      if (n && n.e === e) { n.e = null; n.nap = false; n.fresh = true; }
+    }
+    this.list = keep;
+    const gUse = new Set(), mUse = new Set(), tUse = new Set();
+    for (const e of keep) {
+      if (e.gid) gUse.add(e.gid);
+      if (e.me) mUse.add(e.me.id);
+      // Out of the scene but not yet gone: what it uses stays.
+    }
+    this.geoList = this.geoList.filter((g) => {
+      if (gUse.has(g.id)) return true;
+      this.geos.delete(g.id);
+      drop.g.push(g.id);
+      return false;
+    });
+    this.geoHot = this.geoHot.filter((g) => gUse.has(g.id));
+    this.geoAt = 0;
+    this.matList = this.matList.filter((m) => {
+      if (mUse.has(m.id)) { for (const t of m.tx) tUse.add(t); return true; }
+      this.mats.delete(m.id);
+      drop.m.push(m.id);
+      return false;
+    });
+    this.live = this.live.filter((m) => mUse.has(m.id));
+    for (const t of [...this.texs]) if (!tUse.has(t)) { this.texs.delete(t); drop.t.push(t); }
+    const d = this.defs();
+    if (d.drop) for (const k of ['o', 'g', 'm', 't']) d.drop[k].push(...drop[k]);
+    else d.drop = drop;
+  }
+
+  // The definitions of this frame, in pieces of a size the phone takes easily: geometry and textures first, then the
+  // materials that use them, then the objects, so every piece only needs what came before it.
+  flush() {
+    const d = this.def;
+    this.def = null;
+    let cur = { g: [], t: [], m: [], o: [] }, size = 0;
+    if (d.drop) cur.drop = d.drop;
+    const add = (k, x, n) => {
+      if (size > 0 && size + n > PIECE) { this.post('def', cur); cur = { g: [], t: [], m: [], o: [] }; size = 0; }
+      cur[k].push(x);
+      size += n;
+    };
+    for (const x of d.g) { let n = 80 + (x.idx ? x.idx.length : 0); for (const k in x.attrs) n += x.attrs[k].d.length; add('g', x, n); }
+    for (const x of d.t) add('t', x, 80 + x.url.length);
+    for (const x of d.m) add('m', x, 200 + (x.vs ? x.vs.length + x.fs.length : 0));
+    for (const x of d.o) add('o', x, 100 + (x.im ? x.im.length : 0) + (x.ic ? x.ic.length : 0));
+    this.post('def', cur);
+  }
+
+  post(kind, o) {
+    try {
+      this.send(kind, typeof o === 'string' ? o : JSON.stringify(o));
+    } catch (e) {
+      this.lost++;
+    }
   }
 
   // How far the picture reaches right now (0: as far as the fog allows). Nothing past that needs updates.
@@ -156,7 +245,7 @@ export class Mirror {
     const id = this.id(m);
     if (this.mats.has(id)) return id;
     const keys = m.isShaderMaterial ? Object.keys(m.uniforms).sort() : null;
-    const e = { id, mat: m, unis: keys ? keys.map((k) => m.uniforms[k]) : null, cur: new Array(9 + 4 * (keys ? keys.length : 0)).fill(0), last: null, used: 0, n: 0 };
+    const e = { id, mat: m, unis: keys ? keys.map((k) => m.uniforms[k]) : null, cur: new Array(9 + 4 * (keys ? keys.length : 0)).fill(0), last: null, used: 0, n: 0, tx: [] };
     e.n = this.fillMat(e);
     e.last = new Float64Array(e.cur.length).fill(NaN);
     for (let i = 0; i < e.n; i++) e.last[i] = Math.round(e.cur[i] * 1e4);
@@ -187,6 +276,8 @@ export class Mirror {
       if (m.map) d.map = this.defineTexture(m.map);
       if (m.emissiveMap) d.em = this.defineTexture(m.emissiveMap);
     }
+    if (d.map) e.tx.push(d.map);
+    if (d.em) e.tx.push(d.em);
     this.mats.set(id, e);
     this.matList.push(e);
     if (m.isShaderMaterial || m.userData.live) this.live.push(e);
@@ -215,7 +306,7 @@ export class Mirror {
     const geoOff = o.isSprite || o.isInstancedMesh ? 0 : o.geometry.boundingSphere.center.length();
     const e = { id, obj: o, vis: -1, dirty: true, stamp: 0, imv: o.isInstancedMesh ? o.instanceMatrix.version : 0,
       always: !o.frustumCulled || o.isInstancedMesh || geoR > 40 || geoOff > 20, bs: o.isInstancedMesh && o.frustumCulled ? d.bs : null,
-      mat: o.material, me: this.mats.get(d.m), eye: !!o.userData.eye };
+      mat: o.material, me: this.mats.get(d.m), eye: !!o.userData.eye, gid: d.g, out: 0 };
     if (e.eye) d.eye = 1;
     this.objs.set(id, e);
     this.list.push(e);
@@ -417,7 +508,13 @@ export class Mirror {
       for (let c = (geos.length >> 5) + 1; c > 0 && i < geos.length; c--) this.checkGeo(geos[i++], au);
       this.geoAt = i;
     }
-    if (this.def) { this.send('def', JSON.stringify(this.def)); this.def = null; }
+    if (this.sweepNow || stamp - this.sweepAt >= SWEEP_EVERY) {
+      const now = this.sweepNow;
+      this.sweepNow = false;
+      this.sweepAt = stamp;
+      this.sweep(scene, now);
+    }
+    if (this.def) this.flush();
     let msg = '';
     // Lights and fog: only when something changed.
     const el = this.envLast, eo = this.envOut;
@@ -446,6 +543,6 @@ export class Mirror {
     if (ou.length) msg += 'u:' + ou.join() + '\n';
     if (au.length) msg += 'a:' + au.join(';') + '\n';
     this.bytes = msg.length;
-    this.send('frame', msg);
+    this.post('frame', msg);
   }
 }

@@ -74,6 +74,8 @@ public final class AndroidGL implements GLApi {
     public void framebufferRenderbuffer(int target, int att, int rbTarget, int r) { GLES30.glFramebufferRenderbuffer(target, att, rbTarget, r); }
     public int checkFramebufferStatus(int target) { return GLES30.glCheckFramebufferStatus(target); }
     public void deleteTexture(int t) { one[0] = t; GLES30.glDeleteTextures(1, one, 0); }
+    public void deleteBuffer(int b) { one[0] = b; GLES30.glDeleteBuffers(1, one, 0); }
+    public void deleteVertexArray(int v) { one[0] = v; GLES30.glDeleteVertexArrays(1, one, 0); }
     public void deleteFramebuffer(int f) { one[0] = f; GLES30.glDeleteFramebuffers(1, one, 0); }
     public void deleteRenderbuffer(int r) { one[0] = r; GLES30.glDeleteRenderbuffers(1, one, 0); }
     public int getError() { return GLES30.glGetError(); }

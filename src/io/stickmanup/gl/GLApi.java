@@ -70,6 +70,8 @@ public interface GLApi {
     void framebufferRenderbuffer(int target, int att, int rbTarget, int r);
     int checkFramebufferStatus(int target);
     void deleteTexture(int t);
+    void deleteBuffer(int b);
+    void deleteVertexArray(int v);
     void deleteFramebuffer(int f);
     void deleteRenderbuffer(int r);
     int getError();

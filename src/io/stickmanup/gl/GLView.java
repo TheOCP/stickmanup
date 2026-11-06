@@ -48,9 +48,11 @@ public final class GLView extends GLSurfaceView implements GLSurfaceView.Rendere
     private boolean canPace;
     private EGLDisplay eglDisplay;
     private EGLSurface eglSurface;
+    private final NRender.Log log;
 
     public GLView(Context ctx, NRender.Log log) {
         super(ctx);
+        this.log = log;
         setEGLContextClientVersion(3);
         setEGLConfigChooser(8, 8, 8, 8, 24, 0);
         setPreserveEGLContextOnPause(true);
@@ -221,7 +223,12 @@ public final class GLView extends GLSurfaceView implements GLSurfaceView.Rendere
 
     @Override
     public void onDrawFrame(GL10 unused) {
-        scene.draw();
+        // Never let a picture take the app down: out of memory or anything else, it is skipped and the next one tried.
+        try {
+            scene.draw();
+        } catch (Throwable t) {
+            log.log("frame failed: " + t);
+        }
         long now = System.nanoTime();
         pace(now);
         if (lastEnd != 0 && now - lastEnd > frameNs + frameNs / 2) slowSec++;

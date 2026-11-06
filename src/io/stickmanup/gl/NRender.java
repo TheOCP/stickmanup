@@ -165,7 +165,8 @@ public final class NRender {
                 if ("def".equals(m[0])) define(m[1]);
                 else if ("forget".equals(m[0])) forget();
                 else { frame(m[1]); frames++; }
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Out of memory included: that message is lost, the app goes on.
                 log.log("message failed: " + e);
             }
         }
@@ -225,9 +226,58 @@ public final class NRender {
     }
 
     @SuppressWarnings("unchecked")
+    private static List<Object> list(Object o) {
+        return o instanceof List ? (List<Object>) o : java.util.Collections.emptyList();
+    }
+
+    /**
+     * What the game no longer has in its scene (an old map, mostly): the objects, and the geometry, materials and
+     * textures nothing else uses, freed here and on the GPU. Without it every map ever loaded stayed in memory.
+     */
+    @SuppressWarnings("unchecked")
+    private void drop(Map<String, Object> d) {
+        java.util.Set<Obj> gone = new java.util.HashSet<>();
+        for (Object x : list(d.get("o"))) {
+            int id = i(x);
+            Obj o = id >= 0 && id < byId.length ? byId[id] : null;
+            if (o == null) continue;
+            byId[id] = null;
+            gone.add(o);
+            if (o.vao != 0) gl.deleteVertexArray(o.vao);
+            if (o.imVbo != 0) gl.deleteBuffer(o.imVbo);
+            if (o.icVbo != 0) gl.deleteBuffer(o.icVbo);
+            o.vao = o.imVbo = o.icVbo = 0;
+        }
+        if (!gone.isEmpty()) {
+            List<Obj> keep = new ArrayList<>(objs.size());
+            for (Obj o : objs) if (!gone.contains(o)) keep.add(o);
+            objs.clear();
+            objs.addAll(keep);
+        }
+        for (Object x : list(d.get("g"))) {
+            int id = i(x);
+            Geo g = id >= 0 && id < geos.length ? geos[id] : null;
+            if (g == null) continue;
+            geos[id] = null;
+            for (Attr a : g.attrs) if (a.vbo != 0) gl.deleteBuffer(a.vbo);
+            if (g.ibo != 0) gl.deleteBuffer(g.ibo);
+        }
+        for (Object x : list(d.get("m"))) {
+            int id = i(x);
+            if (id >= 0 && id < mats.length) mats[id] = null;
+        }
+        for (Object x : list(d.get("t"))) {
+            Tex t = texs.remove(i(x));
+            if (t != null && t.gl != 0) gl.deleteTexture(t.gl);
+        }
+        sVao = sTex = sEmTex = -1;
+    }
+
+    @SuppressWarnings("unchecked")
     private void define(String json) {
         Map<String, Object> d = (Map<String, Object>) Json.parse(json);
-        for (Object go : (List<Object>) d.get("g")) {
+        if (d.get("drop") instanceof Map) drop((Map<String, Object>) d.get("drop"));
+        for (Object go : list(d.get("g"))) {
             Map<String, Object> g = (Map<String, Object>) go;
             Geo geo = new Geo();
             Map<String, Object> attrs = (Map<String, Object>) g.get("attrs");
@@ -260,7 +310,7 @@ public final class NRender {
             geos = grow(geos, id);
             geos[id] = geo;
         }
-        for (Object to : (List<Object>) d.get("t")) {
+        for (Object to : list(d.get("t"))) {
             Map<String, Object> t = (Map<String, Object>) to;
             Tex tx = new Tex();
             String url = (String) t.get("url");
@@ -276,7 +326,7 @@ public final class NRender {
             tx.uv = new float[]{f(rep.get(0)), 0, 0, 0, f(rep.get(1)), 0, f(off.get(0)), f(off.get(1)), 1};
             texs.put(i(t.get("id")), tx);
         }
-        for (Object mo : (List<Object>) d.get("m")) {
+        for (Object mo : list(d.get("m"))) {
             Map<String, Object> m = (Map<String, Object>) mo;
             Mat mt = new Mat();
             String type = (String) m.get("type");
@@ -317,7 +367,7 @@ public final class NRender {
             mats = grow(mats, id);
             mats[id] = mt;
         }
-        for (Object oo : (List<Object>) d.get("o")) {
+        for (Object oo : list(d.get("o"))) {
             Map<String, Object> o = (Map<String, Object>) oo;
             Obj ob = new Obj();
             ob.id = i(o.get("id"));
@@ -554,7 +604,7 @@ public final class NRender {
             for (int k = 0; k < nTransparent; k++) drawObj(transparent[k]);
             gl.bindVertexArray(0);
             if (postOn) post(bloom);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             if (!failed) log.log("draw failed: " + e);
             failed = true;
         }

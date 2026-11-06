@@ -750,7 +750,7 @@ export const LEGENDS = [
   L('l_voidking', 'Void Emperor', 9, 0x040108, 0x5a1ab0, 0xe8b0ff, { relic: 'storm:m1', hint: maze('Storm Tower', 710), price: 50000, face: 'hollow', gear: ['crown_void', 'orbs_void', 'wings_void'], cape: 'shader', trail: 0xa040ff }),
   L('l_prism', 'Prismatic', 14, 0x14141c, 0x8080a0, 0xffffff, { relic: 'city:m1', hint: maze('Neon Skyline', 645), price: 55000, face: 'cool', gear: ['ring_prism', 'wings_energy'], trail: 0xff70e0 }),
   L('l_dragonlord', 'Dragon Emperor', 11, 0x2a0604, 0xa0200c, 0xffc040, { relic: 'volcano:m1', hint: maze('Magma Chimney', 705), price: 60000, face: 'angry', hat: 'l_crown', gear: ['wings_dragon', 'horns_dragon'], cape: 'shader', trail: 0xff8a20 }),
-  // For sale for a fortune, no relic needed.
+  // Each at the end of a long hidden course (relics.js LEGEND_SPOTS), then for coins.
   L('l_phoenixk', 'Phoenix King', 0, 0x2a0602, 0xff5a10, 0xffe060, { price: 32000, face: 'l_inferno', hat: 'l_phoenix', gear: ['wings_fire'], cape: 'shader', trail: 0xff9a30 }),
   L('l_starborn', 'Starborn', 3, 0x05061a, 0x4a2ab0, 0xffffff, { price: 34000, face: 'l_galaxyeyes', hat: 'l_galaxy', gear: ['wings_energy'], trail: 0xc8a8ff }),
   L('l_glacier', 'Glacier Monarch', 8, 0x0a3060, 0x9ae8ff, 0xffffff, { price: 30000, face: 'l_frostbite', hat: 'l_frostcrown', gear: ['wings_ice'], cape: 'shader', trail: 0xa8f0ff }),

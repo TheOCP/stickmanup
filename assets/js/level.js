@@ -396,15 +396,17 @@ export const MAZE_RELICS = { storm: 2, sunny: 2, forest: 1, volcano: 2, city: 2,
 // [epic spots, legendary spots]. A spot is only there on one difficulty, so every difficulty hides different ones: some at the
 // end of a hidden course (the harder the difficulty, the longer), some in a corner of a maze garden, and the legendary ones at
 // the end of a long course of their own.
-export const HIDE = { storm: [17, 2], sunny: [17, 2], forest: [17, 2], volcano: [16, 2], city: [19, 2], waterfall: [14, 2] };
+// The legendary ones hold the legendary graffiti first, then the legendary suits of relics.js LEGEND_SPOTS.
+export const HIDE = { storm: [17, 4], sunny: [17, 3], forest: [17, 3], volcano: [16, 3], city: [19, 4], waterfall: [14, 3] };
 const HIDE_MAPS = ['storm', 'sunny', 'forest', 'volcano', 'city', 'waterfall'];
 // Every hidden spot of a map: j its number, id its relic (map:h0, map:h1 ...), dv the one difficulty it is there on, maze if it is
 // in a maze garden, legend if it is a legendary one.
 export function hideSpots(key) {
   const [E, G] = HIDE[key] || [0, 0], m = Math.max(0, HIDE_MAPS.indexOf(key)), out = [];
   for (let j = 0; j < E + G; j++) {
-    const legend = j >= E;
-    out.push({ j, id: key + ':h' + j, dv: legend ? (m + 2 + 2 * (j - E)) % 4 : j % 4, maze: !legend && Math.floor(j / 4) % 2 === 1, legend });
+    // The first two legendary ones on two difficulties, the suits after them on the other two.
+    const legend = j >= E, i = j - E, dv = !legend ? j % 4 : i < 2 ? (m + 2 + 2 * i) % 4 : (m + 1 + 2 * (i - 2)) % 4;
+    out.push({ j, id: key + ':h' + j, dv, maze: !legend && Math.floor(j / 4) % 2 === 1, legend });
   }
   return out;
 }

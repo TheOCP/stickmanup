@@ -124,6 +124,8 @@ export class Renderer {
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 2600);
+    // For things that turn to face whoever is looking (the hearts and Zs of emotes).
+    this.scene.userData.view = this.camera;
     this.fogCol = new THREE.Color(0x0b1820);
     this.scene.fog = new THREE.FogExp2(this.fogCol.getHex(), 0.0085);
     this.scene.background = this.fogCol.clone();

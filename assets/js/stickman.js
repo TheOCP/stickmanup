@@ -11,7 +11,22 @@ import { BEAMS } from './weapons.js';
 
 const HDR = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 const WHITE = new THREE.Color(0xffffff);
-const EP = {}, EV = new THREE.Vector3(), EMOTE_PIVOT = 0.35;
+const EP = {}, EV = new THREE.Vector3(), EE = new THREE.Euler(), EMOTE_PIVOT = 0.35;
+// The middle of the head in the torso's space, and the floor under a standing climber in its own space.
+const HEAD_C = 0.72, FLOOR_Y = -0.43;
+// What some emotes give off: tears (cry), hearts (heart hands) and Zs (sleep). The same shapes for every climber.
+const FX = (() => {
+  const h = new THREE.Shape();
+  h.moveTo(0, -0.05); h.bezierCurveTo(-0.02, -0.03, -0.06, -0.005, -0.06, 0.022); h.bezierCurveTo(-0.06, 0.05, -0.025, 0.06, 0, 0.035);
+  h.bezierCurveTo(0.025, 0.06, 0.06, 0.05, 0.06, 0.022); h.bezierCurveTo(0.06, -0.005, 0.02, -0.03, 0, -0.05);
+  const z = join(new THREE.BoxGeometry(0.1, 0.022, 0.022).translate(0, 0.045, 0), new THREE.BoxGeometry(0.1, 0.022, 0.022).translate(0, -0.045, 0),
+    new THREE.BoxGeometry(0.13, 0.022, 0.022).rotateZ(0.8));
+  return {
+    tear: { geo: new THREE.SphereGeometry(0.03, 8, 6), mat: new THREE.MeshBasicMaterial({ color: 0x7cc8ff }) },
+    heart: { geo: new THREE.ExtrudeGeometry(h, { depth: 0.02, bevelEnabled: false, curveSegments: 6 }).translate(0, 0, -0.01), mat: new THREE.MeshBasicMaterial({ color: HDR(0xff4d7a, 1.15) }) },
+    zz: { geo: z, mat: new THREE.MeshBasicMaterial({ color: 0xe6f2ff }) },
+  };
+})(), TQ = new THREE.Quaternion(), TQ2 = new THREE.Quaternion();
 
 // How each kind of weapon is held, in the torso's own space: at is where the gun's grip sits, lean and crouch the body, hx and
 // hz the head (a cheek down on the stock), stance the legs when standing still [legX, legX, knee, knee], and kick the recoil
@@ -899,7 +914,7 @@ export class Stickman {
     }
     // An emote takes over the pose. Poses stop when you run or leave the ground; flips keep going. Getting hit,
     // grabbing, aiming, zipping or dashing stops anything.
-    let legZ = [0, 0], rx = 0, ry = 0, rz = 0, lift = 0;
+    let legZ = [0, 0], rx = 0, ry = 0, rz = 0, lift = 0, hands = null, onFloor = false, tears = 0, hearts = 0, zz = 0;
     const E = this.emote;
     if (E) {
       this.emoteT += dt;
@@ -909,13 +924,35 @@ export class Stickman {
         const p = EP;
         p.lean = lean; p.crouch = crouch; p.armX = armX; p.armZ = armZ; p.elbow = elbow; p.legX = legX; p.legZ = legZ; p.knee = knee;
         p.headX = headX; p.headY = headY; p.headZ = headZ; p.twist = twist; p.bounce = bounce; p.mouthO = mouthO;
-        p.rx = p.ry = p.rz = p.lift = 0;
+        p.rx = p.ry = p.rz = p.lift = 0; p.hand = null; p.floor = false; p.tears = p.hearts = p.zz = 0;
         E.pose(p, u, k);
+        hands = p.hand; onFloor = p.floor; tears = p.tears; hearts = p.hearts; zz = p.zz;
         lean = p.lean; crouch = p.crouch; armX = p.armX; armZ = p.armZ; elbow = p.elbow; legX = p.legX; legZ = p.legZ; knee = p.knee;
         headX = p.headX; headY = p.headY; headZ = p.headZ; twist = p.twist; bounce = p.bounce; mouthO = p.mouthO;
         rx = p.rx; ry = p.ry; rz = p.rz; lift = p.lift;
         // A flip with no real jump under it (the shop, or the moment before the jump shows up from another phone).
         if (E.hop && ground) lift += Math.sin(Math.min(1, k) * Math.PI) * 0.7;
+        // Hands put somewhere exact: [x, y, z] in the torso's space, then which way the elbow points, and a last
+        // 1 for a place on the head (round its middle, turning with it), like in front of the eyes or under the chin.
+        if (hands) for (let i = 0; i < 2; i++) {
+          const h = hands[i];
+          if (!h) continue;
+          let hx = h[0], hy = h[1], hz = h[2];
+          if (h[6]) { EV.set(hx, hy, hz).applyEuler(EE.set(headX, headY, headZ)); hx = EV.x; hy = EV.y + HEAD_C; hz = EV.z; }
+          const a = reach(hx - A[i].s * SHOULDER_X, hy - 0.46, hz, h[3] ?? A[i].s, h[4] ?? -1, h[5] ?? 0);
+          armX[i] = a.ax; armZ[i] = A[i].s * a.az; armY[i] = a.ay; elbow[i] = a.el;
+        }
+        // Standing: a crouch bends the knees, so the feet stay on the floor instead of going into it.
+        if (!E.flip && !onFloor && !rx && !rz) {
+          const want = 0.73 - crouch + bounce + lift;
+          for (let i = 0; i < 2; i++) {
+            const c = Math.cos(legZ[i]), reachOf = (s) => (0.34 * Math.cos(legX[i] - s) + 0.39 * Math.cos(legX[i] + knee[i] + s)) * c;
+            if (reachOf(0) <= want + 0.004) continue;
+            let lo = 0, hi = 1.5;
+            for (let n = 0; n < 14; n++) { const m = (lo + hi) / 2; if (reachOf(m) > want) lo = m; else hi = m; }
+            legX[i] -= hi; knee[i] += 2 * hi;
+          }
+        }
       }
     }
     // The weapon comes to the hands while aiming and a moment after a shot, and each kind has its own way of being held: both
@@ -997,6 +1034,30 @@ export class Stickman {
       EV.set(0, EMOTE_PIVOT, 0).applyEuler(this.body.rotation);
       this.body.position.set(-EV.x, EMOTE_PIVOT - EV.y + this.emLift, -EV.z);
     } else this.body.position.set(0, 0, 0);
+    // Standing in an emote: the knees bend as the legs ease from one pose to the next, so a foot never goes through the floor.
+    if (this.emote && !this.emote.flip && !onFloor && !R.x && !R.z) {
+      const want = this.hips.position.y + this.body.position.y - FLOOR_Y;
+      for (const l of L) {
+        const hp = l.hp.rotation, kn = l.kn.rotation, c = Math.cos(hp.z), reachOf = (q) => (0.34 * Math.cos(hp.x - q) + 0.39 * Math.cos(hp.x + kn.x + q)) * c;
+        if (reachOf(0) <= want + 0.002) continue;
+        let lo = 0, hi = 1.5;
+        for (let n = 0; n < 14; n++) { const m = (lo + hi) / 2; if (reachOf(m) > want) lo = m; else hi = m; }
+        hp.x -= hi; kn.x += 2 * hi;
+      }
+    }
+    // Lying, kneeling or upside down: whatever is lowest rests on the floor (plus the pose's own lift).
+    if (onFloor && this.emote) {
+      this.g.updateMatrixWorld(true);
+      let m = Infinity;
+      const low = (o, px, py, pz, r) => { EV.set(px, py, pz); o.localToWorld(EV); this.g.worldToLocal(EV); if (EV.y - r < m) m = EV.y - r; };
+      low(this.head, 0, 0, 0, 0.2);
+      low(this.spine, 0, 0.08, 0, 0.105); low(this.spine, 0, 0.46, 0, 0.105);
+      for (const a of A) { low(a.el, 0, 0, 0, 0.066); low(a.el, 0, -0.29, 0, 0.078); }
+      for (const l of L) { low(l.kn, 0, 0, 0, 0.068); for (const fx of [-0.065, 0.065]) for (const fz of [-0.07, 0.17]) { low(l.kn, fx, -0.39, fz, 0); low(l.kn, fx, -0.31, fz, 0); } }
+      const c = FLOOR_Y + lift - m;
+      this.body.position.y += c; this.emLift += c;
+    }
+    if (tears || hearts || zz || this.fx) this.fxStep(dt, tears, hearts, zz);
     this.mouth.scale.y += (mouthO - this.mouth.scale.y) * ease;
     this.blinkT -= dt;
     const blink = this.blinkT < 0.1 ? 0.15 : 1;
@@ -1036,6 +1097,100 @@ export class Stickman {
       this.blob.position.set(x, gy + 0.03, z);
       this.blob.scale.set(k, 1, k);
       this.blob.material.opacity = k;
+    }
+  }
+
+  // Tears from the cheeks that fall and splash on the floor, hearts that float up from between the hands, Zs that drift
+  // up from a sleeping head. Each rate is how many a second; at 0 the last ones finish.
+  fxStep(dt, tears, hearts, zz) {
+    if (!this.fx) {
+      this.fx = [];
+      this.fxN = 0; this.fxAcc = { tear: 0, heart: 0, zz: 0 };
+    }
+    const head = this.head;
+    const make = (kind) => {
+      let d = this.fx.find((x) => !x.on && x.kind === kind);
+      if (!d) {
+        if (this.fx.length >= 24) return null;
+        d = { kind, m: new THREE.Mesh(FX[kind].geo, FX[kind].mat), v: new THREE.Vector3(), t: 0, on: false, splash: 0, s: 1 };
+        d.m.castShadow = false;
+        this.g.add(d.m);
+        this.fx.push(d);
+      }
+      d.t = 0; d.on = true; d.splash = 0; d.m.visible = true; d.m.rotation.set(0, 0, 0);
+      return d;
+    };
+    // A point on the head, and a direction in the head's own space, as the climber's space sees them.
+    const onHead = (d, px, py, pz, vx, vy, vz) => {
+      EV.set(px, py, pz); head.localToWorld(EV); this.g.worldToLocal(EV); d.m.position.copy(EV);
+      d.v.set(vx, vy, vz).applyQuaternion(head.getWorldQuaternion(TQ)).applyQuaternion(this.g.getWorldQuaternion(TQ2).invert());
+    };
+    const rate = { tear: tears, heart: hearts, zz };
+    if (tears || hearts || zz) head.updateWorldMatrix(true, false);
+    for (const kind of ['tear', 'heart', 'zz']) {
+      if (!rate[kind]) { this.fxAcc[kind] = 0.6; continue; }
+      this.fxAcc[kind] += dt * rate[kind];
+      while (this.fxAcc[kind] >= 1) {
+        this.fxAcc[kind] -= 1;
+        const d = make(kind);
+        if (!d) break;
+        const side = this.fxN++ % 2 ? -1 : 1;
+        if (kind === 'tear') {
+          // On the cheek just under an eye, pushed a little outwards and forwards.
+          onHead(d, side * (0.085 + Math.random() * 0.02), -0.05 - Math.random() * 0.02, 0.168, side * (0.25 + Math.random() * 0.2), 0.1 + Math.random() * 0.2, 0.22 + Math.random() * 0.15);
+          d.m.scale.set(1, 1.45, 1);
+        } else if (kind === 'heart') {
+          // From between the hands, up and away.
+          const a = this.arms;
+          EV.set(0, -0.29, 0); a[0].el.localToWorld(EV); this.g.worldToLocal(EV);
+          d.m.position.copy(EV);
+          EV.set(0, -0.29, 0); a[1].el.localToWorld(EV); this.g.worldToLocal(EV);
+          d.m.position.add(EV).multiplyScalar(0.5);
+          d.v.set((Math.random() - 0.5) * 0.25, 0.55 + Math.random() * 0.2, 0.15);
+          d.s = 0.8 + Math.random() * 0.5;
+        } else {
+          // Off the top of the head, to one side.
+          onHead(d, 0.12, 0.2, 0.05, 0.12, 0.3, 0.05);
+          d.s = 0.7 + this.fxN % 3 * 0.25;
+        }
+      }
+    }
+    let any = false;
+    for (const d of this.fx) {
+      if (!d.on) continue;
+      any = true;
+      d.t += dt;
+      if (d.kind === 'tear') {
+        if (d.splash) {
+          // A small flat splash that shrinks away.
+          d.splash -= dt;
+          const k = Math.max(0, d.splash / 0.35);
+          d.m.scale.set(2 * k + 0.2, 0.2, 2 * k + 0.2);
+          if (d.splash <= 0) { d.on = false; d.m.visible = false; }
+          continue;
+        }
+        d.v.y -= 7 * dt;
+        d.m.position.addScaledVector(d.v, dt);
+        if (d.m.position.y < FLOOR_Y + 0.01) { d.m.position.y = FLOOR_Y + 0.006; d.splash = 0.35; }
+        else if (d.t > 2.5) { d.on = false; d.m.visible = false; }
+        continue;
+      }
+      // Hearts and Zs grow in, drift up swaying, and shrink away.
+      const life = d.kind === 'heart' ? 1.4 : 1.8, k = d.t / life;
+      if (k >= 1) { d.on = false; d.m.visible = false; continue; }
+      d.m.position.addScaledVector(d.v, dt);
+      d.m.position.x += Math.sin(d.t * 5 + d.s * 9) * dt * 0.12;
+      const sc = d.s * Math.min(1, k * 6) * (k > 0.75 ? (1 - k) * 4 : 1);
+      d.m.scale.set(sc, sc, sc);
+      // Turned to whoever is looking, so a Z never reads backwards.
+      const view = this.scene && this.scene.userData.view;
+      const sway = Math.sin(d.t * 3 + d.s * 5) * 0.25;
+      if (view) { d.m.updateWorldMatrix(true, false); d.m.lookAt(view.getWorldPosition(EV)); d.m.rotateZ(sway); }
+      else d.m.rotation.set(0, 0, sway);
+    }
+    if (!any && !tears && !hearts && !zz) {
+      for (const d of this.fx) this.g.remove(d.m);
+      this.fx = null;
     }
   }
 

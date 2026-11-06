@@ -5,8 +5,8 @@
 //   map:0, map:1  the two hidden paths: a legendary suit each (LEGENDS, relic)
 //   map:m0, m1    in the maze gardens: the legendary suits that are for sale
 //   map:w         the hardest path: the map's legendary weapon. All six open the Void Cannon too.
-//   map:h0, h1... the hidden spots (level.js hideSpots): one thing each, every epic thing below and every epic and legendary
-//                 graffiti. Each spot is on one difficulty only.
+//   map:h0, h1... the hidden spots (level.js hideSpots): one thing each, every epic thing below, every epic and legendary
+//                 graffiti and the legendary suits of LEGEND_SPOTS. Each spot is on one difficulty only.
 //   map:e         the old epic vault, which opened all of a map's epic things at once. Whoever found it keeps them (LEGACY).
 import { LEGENDS, SUIT, FACE, HAT } from './skins.js';
 import { WEAPON } from './weapons.js';
@@ -36,16 +36,21 @@ export const EPIC_VAULT = {
   waterfall: [['suit', 'frost'], ['suit', 'snowcamo'], ['suit', 'rainbow'], ['suit', 'santa'], ['suit', 'wizard'], ['hat', 'wizard'], ['hat', 'halo'], ['weapon', 'w_phantom'],
     ['suit', 'diver'], ['suit', 'koi'], ['suit', 'sakura'], ['weapon', 'w_cryo']],
 };
+// The legendary suits at the end of a long hidden course of their own, after the map's legendary graffiti. Only add to the end.
+export const LEGEND_SPOTS = {
+  storm: ['l_stormrider', 'l_starborn'], sunny: ['l_archangel'], forest: ['l_shadow'], volcano: ['l_phoenixk'], city: ['l_neonking', 'l_spectrum'], waterfall: ['l_glacier'],
+};
 const WEAPON_AT = new Map(Object.entries(VAULT_WEAPON).map(([map, id]) => [id, map]));
 
-// What each hidden spot holds, in the order of level.js hideSpots: the map's epic things, its epic graffiti, its legendary ones.
+// What each hidden spot holds, in the order of level.js hideSpots: the map's epic things, its epic graffiti, its legendary ones,
+// then its legendary suits.
 export const SPOT_ITEMS = {};
 const SPOT_OF = new Map(), SPOT_THING = new Map();
 // The old vault still counts for the things it opened.
 export const LEGACY = {};
 for (const k of MAP_KEYS) {
   const mine = (r) => SPRAYS.filter((s) => s.map === k && s.r === r).map((s) => ['spray', s.id]);
-  const list = SPOT_ITEMS[k] = [...EPIC_VAULT[k], ...mine(2), ...mine(3)];
+  const list = SPOT_ITEMS[k] = [...EPIC_VAULT[k], ...mine(2), ...mine(3), ...LEGEND_SPOTS[k].map((id) => ['suit', id])];
   list.forEach(([kind, id], j) => {
     SPOT_OF.set(kind + ':' + id, k + ':h' + j);
     SPOT_THING.set(k + ':h' + j, [kind, id]);
@@ -66,7 +71,7 @@ export function spotThing(id) {
 // For dev/makecatalog.mjs: is every spot in level.js HIDE given exactly one thing, legendary ones the legendary graffiti?
 export function checkSpots() {
   for (const k of MAP_KEYS) {
-    const [E, G] = HIDE[k], list = SPOT_ITEMS[k], legend = list.filter(([kind, id]) => kind === 'spray' && SPRAY[id].r === 3).length;
+    const [E, G] = HIDE[k], list = SPOT_ITEMS[k], legend = list.filter(([kind, id]) => (kind === 'spray' ? SPRAY[id] : kind === 'suit' ? SUIT[id] : null)?.r === 3).length;
     if (list.length !== E + G || legend !== G) throw new Error(`${k}: ${list.length} things (${legend} legendary) for ${E} epic and ${G} legendary hidden spots. Change HIDE in level.js.`);
     for (const [kind, id] of list) if (!spotThing(SPOT_OF.get(kind + ':' + id))) throw new Error(`${kind} ${id} on ${k} does not exist`);
   }

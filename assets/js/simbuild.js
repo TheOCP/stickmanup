@@ -1,2 +1,2 @@
 // Written by dev/makesim.mjs: a fingerprint of the physics code, the same one the server has.
-export const SIM_BUILD = '2831e40ae60866ce';
+export const SIM_BUILD = '5e1031ee38dcf4e6';

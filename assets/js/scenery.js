@@ -418,35 +418,6 @@ const MODELS = {
   mosscap: () => [P(cyl(0.22, 0.2, 0.08, 8), M(0, 0.04, 0), 0x6a7a6a), P(ico(0.14, 0), M(0.06, 0.12, 0), 0x3a8a3a), P(cyl(0.025, 0.03, 0.14, 5), M(-0.07, 0.13, 0.05), 0xe8f0e0), P(new THREE.SphereGeometry(0.08, 8, 4, 0, TAU, 0, Math.PI / 2), M(-0.07, 0.2, 0.05, 1, 0.6, 1), 0x3fd8c0, 0x3fe0c8, 1.2)],
   shrine: () => [P(cyl(0.42, 0.5, 0.14, 12), M(0, 0.07, 0), 0x6a5e72), P(cyl(0.22, 0.3, 0.42, 10), M(0, 0.35, 0), 0x524860), P(cyl(0.34, 0.28, 0.1, 12), M(0, 0.61, 0), 0x6a5e72),
     P(new THREE.TorusGeometry(0.31, 0.03, 4, 24).rotateX(Math.PI / 2), M(0, 0.67, 0), 0xffc040, 0xffa030, 2.4)],
-  boar: () => [P(ico(0.42, 1), M(0, 0.58, 0, 0.9, 0.8, 1.35), 0x5a3a26), P(ico(0.28, 1), M(0, 0.58, 0.55, 0.9, 0.85, 1.1), 0x4a2e1e), P(cyl(0.12, 0.14, 0.18, 8), M(0, 0.5, 0.84, 1, 1, 1, Math.PI / 2), 0xc88a7a),
-    P(cone(0.035, 0.24, 5), M(0.11, 0.52, 0.84, 1, 1, 1, -0.5, 0, -0.3), 0xf4ecd8), P(cone(0.035, 0.24, 5), M(-0.11, 0.52, 0.84, 1, 1, 1, -0.5, 0, 0.3), 0xf4ecd8),
-    P(ico(0.045, 0), M(0.13, 0.68, 0.74), 0xff3a2a, 0xff3a2a, 2.4), P(ico(0.045, 0), M(-0.13, 0.68, 0.74), 0xff3a2a, 0xff3a2a, 2.4),
-    P(cone(0.08, 0.18, 4), M(0.17, 0.85, 0.5, 1, 1, 1, 0, 0, -0.4), 0x3a2416), P(cone(0.08, 0.18, 4), M(-0.17, 0.85, 0.5, 1, 1, 1, 0, 0, 0.4), 0x3a2416),
-    P(box(0.1, 0.16, 0.8), M(0, 0.95, 0.02), 0x2a1a10), P(cyl(0.025, 0.02, 0.24, 4), M(0, 0.66, -0.62, 1, 1, 1, -0.6), 0x3a2416),
-    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => P(cyl(0.07, 0.055, 0.42, 6), M(x * 0.2, 0.21, z * 0.32), 0x3a2416))],
-  scorpion: () => [P(ico(0.3, 1), M(0, 0.26, 0, 1, 0.45, 1.5), 0xc08a3a), P(ico(0.22, 1), M(0, 0.28, 0.42, 1.1, 0.5, 0.9), 0x8a5a22),
-    ...[1, -1].flatMap((s) => [P(cyl(0.04, 0.04, 0.4, 5), M(s * 0.22, 0.26, 0.58, 1, 1, 1, Math.PI / 2, 0, s * 0.5), 0x8a5a22), P(ico(0.11, 1), M(s * 0.32, 0.27, 0.8, 1.2, 0.6, 1.6), 0xb07a2e)]),
-    ...[[0.32, -0.42], [0.5, -0.6], [0.7, -0.6], [0.86, -0.46], [0.94, -0.28]].map(([y, z], k) => P(ico(0.1 - k * 0.008, 0), M(0, y, z), k % 2 ? 0x9a6a2a : 0xc08a3a)),
-    P(cone(0.05, 0.22, 5), M(0, 0.86, -0.14, 1, 1, 1, 2.3), 0xff3060, 0xff3060, 2.2),
-    P(ico(0.03, 0), M(0.06, 0.38, 0.55), 0xff4020, 0xff4020, 2.4), P(ico(0.03, 0), M(-0.06, 0.38, 0.55), 0xff4020, 0xff4020, 2.4),
-    ...[1, -1].flatMap((s) => [-0.2, 0, 0.2].map((z) => P(box(0.42, 0.03, 0.03), M(s * 0.3, 0.15, z, 1, 1, 1, 0, s * 0.2, s * 0.5), 0x7a4a1a)))],
-  stormcrab: () => [P(ico(0.45, 1), M(0, 0.48, 0, 1.35, 0.5, 1), 0x2a3a5a), P(box(0.9, 0.04, 0.04), M(0, 0.66, 0.28), 0x5af0ff, 0x5af0ff, 2.2), P(box(0.6, 0.04, 0.04), M(0, 0.7, 0), 0x5af0ff, 0x5af0ff, 1.6),
-    ...[1, -1].flatMap((s) => [P(cyl(0.06, 0.06, 0.4, 6), M(s * 0.45, 0.45, 0.3, 1, 1, 1, Math.PI / 2, 0, s * 0.6), 0x3a4a6a), P(ico(0.18, 1), M(s * 0.58, 0.48, 0.5, 1.2, 0.7, 1.5), 0x3a4a6a),
-      P(cyl(0.025, 0.025, 0.22, 4), M(s * 0.12, 0.72, 0.3), 0x22304a), P(ico(0.06, 0), M(s * 0.12, 0.85, 0.32), 0x7ff8ff, 0x7ff8ff, 2.6),
-      ...[-0.25, -0.02, 0.2].map((z) => P(box(0.55, 0.05, 0.05), M(s * 0.6, 0.27, z, 1, 1, 1, 0, s * 0.15, s * 0.6), 0x22304a))])],
-  imp: () => [P(ico(0.3, 1), M(0, 0.76, 0, 1, 1.1, 0.9), 0x8a1a10, 0xff4a10, 0.4), P(ico(0.24, 1), M(0, 1.16, 0.05), 0xa02414),
-    P(cone(0.06, 0.26, 5), M(0.12, 1.4, 0, 1, 1, 1, 0, 0, -0.4), 0x2a1a14), P(cone(0.06, 0.26, 5), M(-0.12, 1.4, 0, 1, 1, 1, 0, 0, 0.4), 0x2a1a14),
-    P(ico(0.045, 0), M(0.08, 1.2, 0.24), 0xffe040, 0xffe040, 3), P(ico(0.045, 0), M(-0.08, 1.2, 0.24), 0xffe040, 0xffe040, 3),
-    P(cone(0.13, 0.36, 6), M(0, 1.46, -0.06), 0xffa030, 0xff8a1a, 2.6), P(cone(0.07, 0.24, 5), M(0.04, 1.58, -0.04), 0xffe070, 0xffd040, 3),
-    P(cyl(0.05, 0.04, 0.42, 5), M(0.3, 0.8, 0.05, 1, 1, 1, 0, 0, -0.5), 0x8a1a10), P(cyl(0.05, 0.04, 0.42, 5), M(-0.3, 0.8, 0.05, 1, 1, 1, 0, 0, 0.5), 0x8a1a10),
-    P(cyl(0.07, 0.06, 0.46, 5), M(0.12, 0.25, 0), 0x6a120a), P(cyl(0.07, 0.06, 0.46, 5), M(-0.12, 0.25, 0), 0x6a120a),
-    P(box(0.42, 0.28, 0.02), M(0.3, 0.98, -0.18, 1, 1, 1, 0, 0.7, 0), 0x3a0a08), P(box(0.42, 0.28, 0.02), M(-0.3, 0.98, -0.18, 1, 1, 1, 0, -0.7, 0), 0x3a0a08),
-    P(cyl(0.025, 0.02, 0.5, 4), M(0, 0.55, -0.35, 1, 1, 1, -1.0), 0x6a120a), P(cone(0.06, 0.12, 4), M(0, 0.4, -0.58, 1, 1, 1, -2.2), 0xffa030, 0xff6a10, 2)],
-  robodog: () => [P(box(0.45, 0.34, 0.9), M(0, 0.58, 0), 0x3a3e4a), P(box(0.32, 0.28, 0.36), M(0, 0.82, 0.56), 0x4a4e5a), P(box(0.27, 0.07, 0.02), M(0, 0.85, 0.745), 0xff2a4a, 0xff2a4a, 3),
-    P(box(0.04, 0.2, 0.08), M(0.1, 1.04, 0.5), 0x2a2e38), P(box(0.04, 0.2, 0.08), M(-0.1, 1.04, 0.5), 0x2a2e38),
-    P(box(0.02, 0.04, 0.72), M(0.235, 0.62, 0), 0x30f0ff, 0x30f0ff, 2.2), P(box(0.02, 0.04, 0.72), M(-0.235, 0.62, 0), 0x30f0ff, 0x30f0ff, 2.2),
-    P(cyl(0.02, 0.02, 0.36, 4), M(0, 0.86, -0.56, 1, 1, 1, -0.7), 0x2a2e38), P(ico(0.04, 0), M(0, 1.0, -0.7), 0xff2a4a, 0xff2a4a, 2.6),
-    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].flatMap(([x, z]) => [P(box(0.09, 0.44, 0.09), M(x * 0.19, 0.22, z * 0.32), 0x2a2e38), P(ico(0.06, 0), M(x * 0.19, 0.38, z * 0.32), 0x6a6e7a)])],
   // Foliage for the big trees (worldview.js and coreview.js): crowns and branch tips, ivy and shelf fungi on bark,
   // and the mossy ferny clumps on the waterfall's rock stacks.
   canopy: () => clump(11, 84, [0x2f6a2a, 0x3c8030, 0x58993c], 0x22501f),
@@ -454,12 +425,6 @@ const MODELS = {
   mossclump: () => clump(13, 70, [0x4a8a3a, 0x63a446, 0x8cc05a], 0x3a6e2e, 0.5),
   ivy: () => ivy(5, [0x2c5a24, 0x3b6e2c, 0x548a38], 0x4a3a26),
   bracket: () => bracket([0xc89a5a, 0xa8743e, 0xeee0c0]),
-  croc: () => [P(ico(0.3, 1), M(0, 0.26, -0.1, 1.3, 0.55, 2.4), 0x3a6a2a), P(box(0.5, 0.06, 1.1), M(0, 0.12, -0.1), 0x9ab86a), P(box(0.32, 0.15, 0.62), M(0, 0.25, 0.78), 0x3a6a2a),
-    P(box(0.3, 0.06, 0.56), M(0, 0.37, 0.8, 1, 1, 1, -0.22), 0x34622a), ...[-1, 1].flatMap((s) => [0.6, 0.78, 0.96].map((z) => P(cone(0.02, 0.06, 3), M(s * 0.13, 0.32, z, 1, 1, 1, Math.PI), 0xf4f0e0))),
-    P(ico(0.06, 0), M(0.1, 0.42, 0.52), 0xffd23a, 0xffd23a, 2), P(ico(0.06, 0), M(-0.1, 0.42, 0.52), 0xffd23a, 0xffd23a, 2),
-    ...[-0.5, -0.3, -0.1, 0.1, 0.3].map((z) => P(cone(0.05, 0.12, 4), M(0, 0.43, z), 0x2e5a22)),
-    P(cone(0.18, 1.1, 6), M(0, 0.22, -1.2, 1, 0.6, 1, -Math.PI / 2), 0x3a6a2a),
-    ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([x, z]) => P(box(0.14, 0.14, 0.26), M(x * 0.36, 0.08, z * 0.4, 1, 1, 1, 0, x * z * 0.4), 0x2e5a22))],
 };
 
 // ---------------------------------------------------------------- platform shapes
@@ -758,6 +723,7 @@ export function vegMat() {
   // Otherwise trees that first appear on a later map come out black there.
   if (!VEG) {
     for (const k of Object.keys(MODELS)) modelGeo(k);
+    for (const k of BEAST_KINDS) beastRig(k);
     VEG = panelMat(0xffffff, { map: paletteTex(), roughness: 0.82, metalness: 0, pattern: 0 });
   }
   return VEG;
@@ -1128,3 +1094,194 @@ export function buildMist(view, spots) {
   view.root.add(new THREE.Mesh(g, m));
 }
 export { FLORA, pick as pickWeighted };
+
+// ---------------------------------------------------------------- creatures (worldview.js buildCreatures)
+// Each one a body and the limbs that move as it goes, every limb its own model turning about its joint (at). They face +z
+// with their feet at 0. move: leg (swings fore and aft), side (an insect's or a crab's legs, swinging round), arm, wing,
+// tail, jaw, claw. ph: where in the stride (a trot: each fore leg with the hind leg across from it).
+const Eg = (x, y, z, rx, ry, rz, c, ax = 0, ay = 0, az = 0, d = 10, glow, gk) => P(egg(rx, ry, rz, d, Math.max(5, d - 3)), M(x, y, z, 1, 1, 1, ax, ay, az), c, glow, gk);
+const Sg = (a, b, ra, rb, c, s = 7, glow, gk) => P(seg(a, b, ra, rb, s), I(), c, glow, gk);
+const Cn = (x, y, z, r, h, c, ax = 0, ay = 0, az = 0, s = 5, glow, gk) => P(cone(r, h, s), M(x, y, z, 1, 1, 1, ax, ay, az), c, glow, gk);
+const SIDES = [-1, 1], PI = Math.PI;
+// A thin sheet seen from both sides (a wing): a fan of corners round the first.
+function sheet(pts) {
+  const p = [];
+  for (let k = 1; k < pts.length - 1; k++) {
+    const a = pts[0], b = pts[k], c = pts[k + 1];
+    p.push(...a, ...b, ...c, ...a, ...c, ...b);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  g.computeVertexNormals();
+  return g;
+}
+const BEASTS = {
+  // The Wild Forest: a grey wolf with a thick ruff, amber eyes and a bushy tail.
+  wolf: () => {
+    const coat = 0x6e6a64, back = 0x4a4642, pale = 0xc8c0b4, dark = 0x1e1c1a;
+    const body = [
+      Eg(0, 0.68, -0.04, 0.15, 0.17, 0.4, coat), Eg(0, 0.68, 0.26, 0.17, 0.21, 0.21, coat), Eg(0, 0.7, -0.36, 0.15, 0.16, 0.17, coat),
+      Eg(0, 0.79, -0.04, 0.1, 0.07, 0.36, back), Eg(0, 0.55, 0.04, 0.09, 0.06, 0.26, pale),
+      Eg(0, 0.77, 0.36, 0.19, 0.2, 0.15, back, -0.4), Sg([0, 0.74, 0.38], [0, 0.86, 0.54], 0.13, 0.1, coat, 8), Eg(0, 0.64, 0.42, 0.11, 0.12, 0.08, pale, -0.3),
+      Eg(0, 0.9, 0.6, 0.1, 0.095, 0.12, coat), Eg(0, 0.86, 0.6, 0.12, 0.07, 0.09, pale),
+      Sg([0, 0.88, 0.66], [0, 0.83, 0.85], 0.06, 0.034, coat, 8), Eg(0, 0.81, 0.79, 0.045, 0.028, 0.08, pale), Eg(0, 0.845, 0.865, 0.026, 0.02, 0.02, dark, 0, 0, 0, 6),
+      ...SIDES.flatMap((sx) => [
+        Eg(sx * 0.046, 0.92, 0.69, 0.02, 0.016, 0.012, 0xffd23a, 0, 0, 0, 6, 0xffc030, 2.4),
+        Cn(sx * 0.055, 1.0, 0.56, 0.042, 0.12, back, -0.15, 0, -sx * 0.25, 4), Cn(sx * 0.055, 0.995, 0.57, 0.024, 0.08, pale, -0.15, 0, -sx * 0.25, 4),
+      ]),
+    ];
+    const fore = (sx) => ({ at: [sx * 0.085, 0.66, 0.3], move: 'leg', ph: sx > 0 ? 0 : PI, amp: 0.45, parts: [
+      Eg(0, -0.06, 0, 0.055, 0.12, 0.075, coat), Sg([0, -0.04, 0], [0, -0.33, 0.03], 0.058, 0.04, coat), Sg([0, -0.33, 0.03], [0, -0.6, 0.01], 0.036, 0.028, coat),
+      Eg(0, -0.635, 0.03, 0.034, 0.022, 0.05, dark, 0, 0, 0, 7)] });
+    const hind = (sx) => ({ at: [sx * 0.09, 0.67, -0.36], move: 'leg', ph: sx > 0 ? PI : 0, amp: 0.45, parts: [
+      Eg(0, -0.07, 0, 0.065, 0.15, 0.1, coat), Sg([0, -0.1, 0], [0, -0.36, -0.1], 0.062, 0.04, coat), Sg([0, -0.36, -0.1], [0, -0.62, -0.05], 0.036, 0.028, coat),
+      Eg(0, -0.645, -0.03, 0.034, 0.022, 0.05, dark, 0, 0, 0, 7)] });
+    const tail = { at: [0, 0.74, -0.5], move: 'tail', ph: 0, amp: 0.35, parts: [
+      Sg([0, 0, 0], [0, -0.1, -0.18], 0.05, 0.06, coat), Eg(0, -0.2, -0.3, 0.065, 0.07, 0.2, coat, -0.6), Eg(0, -0.31, -0.42, 0.042, 0.046, 0.08, back, -0.6)] };
+    return { body, limbs: [fore(-1), fore(1), hind(-1), hind(1), tail] };
+  },
+  // The Wild Forest's mazes: a wild boar, all shoulders, with a bristly mane, a long snout and tusks.
+  boar: () => {
+    const hide = 0x4a3426, bristle = 0x2e2018, snout = 0x9a7a6a, tusk = 0xf4ecd8, dark = 0x1e1c1a;
+    const body = [
+      Eg(0, 0.6, -0.06, 0.24, 0.27, 0.46, hide), Eg(0, 0.66, 0.24, 0.25, 0.3, 0.24, hide), Eg(0, 0.58, -0.38, 0.22, 0.24, 0.2, hide),
+      Eg(0, 0.86, 0.12, 0.08, 0.06, 0.4, bristle),
+      ...[0.42, 0.3, 0.18, 0.06, -0.06, -0.18].map((z, k) => Cn(0, 0.92 - k * 0.012, z, 0.05, 0.17 - k * 0.016, bristle, -0.45, 0, 0, 4)),
+      Eg(0, 0.62, 0.52, 0.17, 0.19, 0.2, hide, 0.35), Sg([0, 0.56, 0.6], [0, 0.46, 0.86], 0.12, 0.075, hide, 8),
+      P(cyl(0.078, 0.078, 0.04, 10), M(0, 0.455, 0.88, 1, 1, 1, PI / 2 - 0.35), snout),
+      ...SIDES.flatMap((sx) => [
+        Eg(sx * 0.03, 0.455, 0.9, 0.014, 0.018, 0.006, dark, 0, 0, 0, 5),
+        Sg([sx * 0.075, 0.45, 0.76], [sx * 0.11, 0.5, 0.82], 0.022, 0.016, tusk, 5), Sg([sx * 0.11, 0.5, 0.82], [sx * 0.12, 0.58, 0.79], 0.016, 0.005, tusk, 5),
+        Eg(sx * 0.12, 0.68, 0.63, 0.022, 0.02, 0.016, 0xff3a2a, 0, 0, 0, 6, 0xff3a2a, 2.4),
+        Cn(sx * 0.12, 0.8, 0.47, 0.055, 0.13, bristle, -0.3, 0, -sx * 0.5, 4),
+      ]),
+    ];
+    const leg = (sx, z, ph, thigh) => ({ at: [sx * 0.13, 0.47, z], move: 'leg', ph, amp: 0.4, parts: [
+      Eg(0, -0.04, 0, 0.08, thigh, 0.1, hide), Sg([0, -0.06, 0], [0, -0.27, 0.02], 0.07, 0.05, hide), Sg([0, -0.27, 0.02], [0, -0.42, 0.03], 0.045, 0.036, bristle),
+      P(cyl(0.04, 0.045, 0.05, 6), M(0, -0.445, 0.035), dark)] });
+    const tail = { at: [0, 0.66, -0.56], move: 'tail', ph: 0, amp: 0.5, parts: [Sg([0, 0, 0], [0, -0.2, -0.06], 0.022, 0.012, hide, 4), Eg(0, -0.24, -0.07, 0.03, 0.05, 0.03, bristle, 0, 0, 0, 6)] };
+    return { body, limbs: [leg(-1, 0.3, PI, 0.14), leg(1, 0.3, 0, 0.14), leg(-1, -0.38, 0, 0.17), leg(1, -0.38, PI, 0.17), tail] };
+  },
+  // Waterfall: a crocodile, armoured down its back and tail, its lower jaw dropping as it comes for you.
+  croc: () => {
+    const skin = 0x4a5e2e, dark = 0x2e3c1e, belly = 0xb8b07a, tooth = 0xf4ecd8;
+    const teeth = (y, down) => SIDES.flatMap((sx) => [0.72, 0.82, 0.92, 1.02, 1.12, 1.2].map((z) => Cn(sx * 0.1 * (1 - (z - 0.7) * 0.45), y, z, 0.012, 0.05, tooth, down ? PI : 0, 0, 0, 4)));
+    const body = [
+      Eg(0, 0.24, -0.02, 0.3, 0.15, 0.6, skin, 0, 0, 0, 12), Eg(0, 0.15, 0, 0.26, 0.08, 0.55, belly),
+      ...[-0.5, -0.38, -0.26, -0.14, -0.02, 0.1, 0.22, 0.34, 0.46].flatMap((z) => SIDES.map((sx) => Eg(sx * 0.1, 0.37 - Math.abs(z) * 0.04, z, 0.045, 0.035, 0.05, dark, 0, 0, 0, 5))),
+      Eg(0, 0.24, 0.58, 0.2, 0.12, 0.22, skin), Eg(0, 0.26, 0.95, 0.13, 0.065, 0.36, skin), Eg(0, 0.3, 1.27, 0.05, 0.03, 0.04, dark, 0, 0, 0, 6),
+      ...SIDES.flatMap((sx) => [Eg(sx * 0.09, 0.33, 0.66, 0.045, 0.04, 0.05, skin, 0, 0, 0, 7), Eg(sx * 0.095, 0.355, 0.68, 0.02, 0.018, 0.02, 0xffd23a, 0, 0, 0, 6, 0xffd23a, 2)]),
+      ...teeth(0.2, true),
+    ];
+    const jaw = { at: [0, 0.2, 0.66], move: 'jaw', ph: 0, amp: 1, parts: [Eg(0, -0.02, 0.3, 0.12, 0.045, 0.34, skin), Eg(0, -0.04, 0.3, 0.1, 0.03, 0.3, belly), ...teeth(0.025, false).map((p) => ({ ...p, m: M(0, 0, -0.66).multiply(p.m) }))] };
+    const crest = Array.from({ length: 9 }, (_, k) => { const z = -0.1 - k * 0.12, f = -z / 1.15; return Cn(0, 0.17 * (1 - f * 0.85) - 0.09 * f + 0.02, z, 0.03, 0.07, dark, 0, 0, 0, 4); });
+    const tail = { at: [0, 0.24, -0.58], move: 'tail', ph: 0, amp: 0.3, parts: [Sg([0, 0, 0], [0, -0.05, -0.55], 0.17, 0.1, skin, 8), Sg([0, -0.05, -0.55], [0, -0.1, -1.15], 0.1, 0.025, skin, 7), ...crest] };
+    const leg = (sx, z, ph, k) => ({ at: [sx * 0.24, 0.2, z], move: 'side', ph, amp: 0.35, parts: [
+      Sg([0, 0, 0], [sx * 0.16, -0.04, 0.02], 0.07 * k, 0.055 * k, skin), Sg([sx * 0.16, -0.04, 0.02], [sx * 0.2, -0.18, 0.05], 0.05 * k, 0.04 * k, skin),
+      Eg(sx * 0.21, -0.185, 0.09, 0.06, 0.02, 0.08, dark, 0, 0, 0, 7), ...[-1, 0, 1].map((c) => Cn(sx * 0.21 + c * 0.035, -0.19, 0.17, 0.01, 0.05, tooth, PI / 2, 0, 0, 3))] });
+    return { body, limbs: [leg(-1, 0.32, 0, 1), leg(1, 0.32, PI, 1), leg(-1, -0.36, PI, 1.15), leg(1, -0.36, 0, 1.15), jaw, tail] };
+  },
+  // Sunny Isles: a sand scorpion, its tail curled over its back with a glowing sting.
+  scorpion: () => {
+    const shell = 0xc08a3a, plate = 0x8a5a22, legC = 0x7a4a1a, claw = 0xb07a2e;
+    const body = [
+      Eg(0, 0.22, 0.24, 0.19, 0.08, 0.22, shell), ...[0.06, -0.08, -0.2, -0.3].map((z, k) => Eg(0, 0.22 - k * 0.005, z, 0.2 - k * 0.025, 0.085, 0.09, k % 2 ? plate : shell)),
+      ...SIDES.flatMap((sx) => [Eg(sx * 0.04, 0.31, 0.36, 0.02, 0.02, 0.02, 0xff4020, 0, 0, 0, 6, 0xff4020, 2.4), Cn(sx * 0.03, 0.2, 0.46, 0.018, 0.07, legC, PI / 2, 0, 0, 4)]),
+    ];
+    const pts = [[0, 0, 0], [0, 0.1, -0.13], [0, 0.26, -0.2], [0, 0.42, -0.16], [0, 0.54, -0.04], [0, 0.58, 0.08]];
+    const tail = { at: [0, 0.24, -0.36], move: 'tail', ph: 0, amp: 0.25, parts: [
+      ...pts.slice(0, -1).flatMap((a, k) => [Sg(a, pts[k + 1], 0.07 - k * 0.008, 0.06 - k * 0.008, k % 2 ? plate : shell), Eg(...a, 0.07 - k * 0.008, 0.06 - k * 0.008, 0.06 - k * 0.008, k % 2 ? shell : plate, 0, 0, 0, 7)]),
+      Eg(0, 0.56, 0.14, 0.055, 0.05, 0.07, claw), Cn(0, 0.5, 0.2, 0.025, 0.12, 0xff3060, 2.4, 0, 0, 5, 0xff3060, 2.2)] };
+    const claws = SIDES.map((sx) => ({ at: [sx * 0.13, 0.22, 0.42], move: 'claw', side: sx, ph: sx > 0 ? 0 : 1.3, amp: 1, parts: [
+      Sg([0, 0, 0], [sx * 0.1, 0.02, 0.15], 0.035, 0.03, legC), Sg([sx * 0.1, 0.02, 0.15], [sx * 0.08, 0.03, 0.3], 0.03, 0.028, legC), Eg(sx * 0.08, 0.03, 0.4, 0.065, 0.04, 0.1, claw),
+      Cn(sx * 0.05, 0.03, 0.52, 0.02, 0.1, claw, PI / 2, 0, 0, 4), Cn(sx * 0.11, 0.03, 0.51, 0.018, 0.09, plate, PI / 2, 0, 0, 4)] }));
+    const legs = (g) => ({ at: [0, 0.22, 0.1], move: 'side', ph: g ? PI : 0, amp: 0.22, parts: [0, 1, 2, 3].flatMap((k) => {
+      const sx = (k + g) % 2 ? 1 : -1, z = 0.2 - k * 0.12, dz = (k - 1.5) * 0.06;
+      return [Sg([sx * 0.14, 0, z], [sx * 0.3, 0.1, z + dz], 0.022, 0.018, legC, 5), Sg([sx * 0.3, 0.1, z + dz], [sx * 0.42, -0.22, z + dz * 1.6], 0.018, 0.01, legC, 5)];
+    }) });
+    return { body, limbs: [...claws, legs(0), legs(1), tail] };
+  },
+  // Storm Tower: a storm crab, lightning running in lines over its shell, eyes on stalks, one claw bigger than the other.
+  stormcrab: () => {
+    const shell = 0x2a3a5a, under = 0x22304a, limb = 0x3a4a6a, glow = 0x5af0ff;
+    const body = [
+      Eg(0, 0.42, 0, 0.42, 0.16, 0.32, shell, 0, 0, 0, 14), Eg(0, 0.34, 0, 0.36, 0.1, 0.27, under),
+      ...SIDES.flatMap((sx) => [0, 1, 2, 3].map((k) => Cn(sx * (0.08 + k * 0.09), 0.45, 0.3 - k * 0.045, 0.03, 0.09, shell, PI / 2 - 0.25, 0, 0, 4))),
+      P(box(0.5, 0.012, 0.02), M(0, 0.575, 0.05), glow, glow, 2.2), P(box(0.02, 0.012, 0.42), M(0, 0.578, 0), glow, glow, 2.2),
+      ...SIDES.flatMap((sx) => [
+        P(box(0.22, 0.012, 0.02), M(sx * 0.22, 0.55, -0.08, 1, 1, 1, 0, sx * 0.6, sx * 0.2), glow, glow, 2),
+        Sg([sx * 0.08, 0.5, 0.24], [sx * 0.1, 0.68, 0.28], 0.02, 0.016, limb, 5), Eg(sx * 0.1, 0.7, 0.285, 0.035, 0.035, 0.035, 0x7ff8ff, 0, 0, 0, 7, 0x7ff8ff, 2.6),
+      ]),
+      P(box(0.14, 0.06, 0.03), M(0, 0.38, 0.31), under),
+    ];
+    const claws = SIDES.map((sx) => { const k = sx > 0 ? 1.3 : 1; return { at: [sx * 0.3, 0.4, 0.22], move: 'claw', side: sx, ph: sx > 0 ? 0 : 1.7, amp: 1, parts: [
+      Sg([0, 0, 0], [sx * 0.16, 0.02, 0.14], 0.05, 0.045, limb), Sg([sx * 0.16, 0.02, 0.14], [sx * 0.2, 0.06, 0.3], 0.045, 0.04, limb),
+      Eg(sx * 0.21, 0.07, 0.42, 0.09 * k, 0.06 * k, 0.13 * k, shell), Cn(sx * 0.18, 0.07, 0.42 + 0.15 * k, 0.03 * k, 0.14 * k, shell, PI / 2, 0, 0, 4),
+      Cn(sx * 0.26, 0.05, 0.42 + 0.13 * k, 0.025 * k, 0.11 * k, limb, PI / 2, 0, 0, 4), P(box(0.012, 0.012, 0.16 * k), M(sx * 0.21, 0.07 + 0.06 * k, 0.42), glow, glow, 2)] }; });
+    const legs = (g) => ({ at: [0, 0.38, -0.02], move: 'side', ph: g ? PI : 0, amp: 0.2, parts: [0, 1, 2, 3].flatMap((k) => {
+      const sx = (k + g) % 2 ? 1 : -1, z = 0.12 - k * 0.11;
+      return [Sg([sx * 0.36, 0, z], [sx * 0.62, 0.12, z + (k - 1.5) * 0.06], 0.035, 0.03, limb, 5), Sg([sx * 0.62, 0.12, z + (k - 1.5) * 0.06], [sx * 0.78, -0.38, z + (k - 1.5) * 0.1], 0.03, 0.012, limb, 5)];
+    }) });
+    return { body, limbs: [...claws, legs(0), legs(1)] };
+  },
+  // Volcano: an imp, a small fire devil with horns, bat wings, glowing eyes and mouth, flames for hair and on its tail.
+  imp: () => {
+    const skin = 0x8a1a10, deep = 0x6a120a, light = 0xa02414, horn = 0x2a1a14, wing = 0x3a0a08;
+    const body = [
+      Eg(0, 0.84, 0, 0.16, 0.22, 0.13, skin, 0, 0, 0, 10, 0xff4a10, 0.35), Eg(0, 0.66, 0.01, 0.13, 0.1, 0.11, deep), Eg(0, 0.8, 0.07, 0.11, 0.13, 0.07, light),
+      Eg(0, 1.2, 0.04, 0.14, 0.13, 0.13, skin), Eg(0, 1.12, 0.1, 0.1, 0.06, 0.08, deep), P(box(0.1, 0.015, 0.02), M(0, 1.13, 0.17), 0xffa030, 0xff8a1a, 2.6),
+      Cn(0, 1.4, -0.02, 0.1, 0.3, 0xffa030, 0, 0, 0, 6, 0xff8a1a, 2.6), Cn(0.03, 1.5, -0.01, 0.05, 0.2, 0xffe070, 0, 0, 0, 5, 0xffd040, 3),
+      ...SIDES.flatMap((sx) => [
+        Eg(sx * 0.055, 1.22, 0.15, 0.026, 0.02, 0.015, 0xffe040, 0, 0, 0, 6, 0xffe040, 3),
+        Sg([sx * 0.08, 1.3, 0.02], [sx * 0.15, 1.42, -0.04], 0.035, 0.022, horn, 6), Sg([sx * 0.15, 1.42, -0.04], [sx * 0.13, 1.52, -0.14], 0.022, 0.006, horn, 5),
+        Cn(sx * 0.15, 1.22, 0.02, 0.03, 0.12, skin, 0, 0, -sx * 1.2, 4),
+        Sg([sx * 0.17, 0.98, 0], [sx * 0.24, 0.78, 0.04], 0.045, 0.035, skin), Sg([sx * 0.24, 0.78, 0.04], [sx * 0.25, 0.6, 0.12], 0.035, 0.028, skin),
+        ...[-1, 0, 1].map((c) => Cn(sx * 0.25 + c * 0.02, 0.55, 0.15, 0.012, 0.07, horn, PI - 0.3, 0, 0, 3)),
+      ]),
+    ];
+    const leg = (sx) => ({ at: [sx * 0.08, 0.6, 0], move: 'leg', ph: sx > 0 ? 0 : PI, amp: 0.5, parts: [
+      Eg(0, -0.06, 0, 0.06, 0.1, 0.07, deep), Sg([0, -0.08, 0], [0, -0.3, 0.08], 0.05, 0.035, skin), Sg([0, -0.3, 0.08], [0, -0.48, -0.04], 0.035, 0.028, skin),
+      Sg([0, -0.48, -0.04], [0, -0.58, 0.02], 0.028, 0.022, skin), Eg(0, -0.585, 0.06, 0.04, 0.02, 0.07, horn, 0, 0, 0, 6)] });
+    const wingL = (sx) => ({ at: [sx * 0.07, 0.98, -0.1], move: 'wing', side: sx, ph: 0, amp: 1, parts: [
+      P(sheet([[0, 0, 0], [sx * 0.55, 0.25, -0.15], [sx * 0.6, -0.05, -0.2], [sx * 0.42, -0.25, -0.15], [sx * 0.18, -0.2, -0.08]]), I(), wing),
+      Sg([0, 0, 0], [sx * 0.55, 0.25, -0.15], 0.02, 0.01, horn, 4)] });
+    const tail = { at: [0, 0.66, -0.1], move: 'tail', ph: 0, amp: 0.4, parts: [Sg([0, 0, 0], [0, -0.15, -0.2], 0.03, 0.022, skin, 5), Sg([0, -0.15, -0.2], [0, -0.1, -0.42], 0.022, 0.012, skin, 5),
+      Cn(0, -0.06, -0.46, 0.035, 0.1, 0xffa030, -1.2, 0, 0, 5, 0xff6a10, 2.2)] };
+    return { body, limbs: [leg(-1), leg(1), wingL(-1), wingL(1), tail] };
+  },
+  // Neon City: a robot dog, plated, with a red visor, cyan running lights and knees that bend backwards.
+  robodog: () => {
+    const shell = 0x3a3e4a, top = 0x4a4e5a, joint = 0x6a6e7a, black = 0x2a2e38, red = 0xff2a4a, cyan = 0x30f0ff;
+    const body = [
+      P(box(0.36, 0.2, 0.84), M(0, 0.62, 0), shell), P(box(0.3, 0.06, 0.74), M(0, 0.745, 0), top), P(box(0.22, 0.05, 0.2), M(0, 0.79, -0.18), black),
+      P(box(0.3, 0.18, 0.2), M(0, 0.66, 0.5), top), P(box(0.24, 0.06, 0.02), M(0, 0.68, 0.605), red, red, 3), P(box(0.2, 0.04, 0.02), M(0, 0.64, -0.425), red, red, 2.4),
+      ...SIDES.flatMap((sx) => [
+        P(box(0.02, 0.03, 0.7), M(sx * 0.185, 0.64, 0), cyan, cyan, 2.2), Eg(sx * 0.16, 0.66, 0.52, 0.03, 0.03, 0.03, black, 0, 0, 0, 7),
+        Sg([sx * 0.08, 0.75, 0.45], [sx * 0.1, 0.95, 0.4], 0.012, 0.008, black, 4), Eg(sx * 0.1, 0.96, 0.4, 0.022, 0.022, 0.022, red, 0, 0, 0, 6, red, 2.6),
+        ...[0.32, -0.32].map((z) => P(cyl(0.07, 0.07, 0.06, 10), M(sx * 0.21, 0.58, z, 1, 1, 1, 0, 0, PI / 2), joint)),
+      ]),
+    ];
+    const leg = (sx, z, ph) => ({ at: [sx * 0.25, 0.58, z], move: 'leg', ph, amp: 0.4, parts: [
+      P(box(0.07, 0.3, 0.08), M(0, -0.13, -0.06, 1, 1, 1, 0.4), shell), P(cyl(0.045, 0.045, 0.08, 8), M(0, -0.27, -0.11, 1, 1, 1, 0, 0, PI / 2), joint),
+      P(box(0.05, 0.32, 0.06), M(0, -0.42, -0.04, 1, 1, 1, -0.45), black), Eg(0, -0.56, 0.02, 0.04, 0.025, 0.05, black, 0, 0, 0, 7)] });
+    return { body, limbs: [leg(-1, 0.32, 0), leg(1, 0.32, PI), leg(-1, -0.32, PI), leg(1, -0.32, 0)] };
+  },
+};
+// A creature's models, made once: { body, limbs: [{ geo, at, move, ph, amp, side }], hl: half its length, zc: its middle }.
+const rigs = new Map();
+export function beastRig(kind) {
+  if (rigs.has(kind)) return rigs.get(kind);
+  const spec = BEASTS[kind]();
+  const body = build(spec.body), limbs = spec.limbs.map((l) => ({ at: l.at, move: l.move, ph: l.ph || 0, amp: l.amp || 1, side: l.side || 1, geo: build(l.parts) }));
+  const all = new THREE.Box3(), b = new THREE.Box3();
+  body.computeBoundingBox();
+  all.copy(body.boundingBox);
+  for (const l of limbs) {
+    l.geo.computeBoundingBox();
+    all.union(b.copy(l.geo.boundingBox).translate(new THREE.Vector3(...l.at)));
+  }
+  const rig = { body, limbs, hl: (all.max.z - all.min.z) / 2, zc: (all.max.z + all.min.z) / 2 };
+  rigs.set(kind, rig);
+  return rig;
+}
+export const BEAST_KINDS = Object.keys(BEASTS);

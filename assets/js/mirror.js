@@ -31,6 +31,10 @@ const KEEP = 120e6, LONG_GONE = 36000, SWEEP_EVERY = 120;
 // New definitions sent in one frame at most (characters): a whole map at once froze the picture for a moment. The rest
 // of a new map follows over the next frames.
 const FRAME_DEFS = 4e6;
+// What isn't in sight yet (the hidden courses, the rest of the tower, climbers waiting in the pool) is sent ahead in the
+// room a quiet frame leaves, at most this much a frame and for a few milliseconds. Otherwise all of it came at once
+// the moment a climb began, and the first second of it stuttered.
+const AHEAD_DEFS = 6e5, AHEAD_MS = 3;
 // One definition message at most about this many characters: a map is tens of megabytes, and one string that big
 // could run the phone's Java side out of memory on its own.
 const PIECE = 1500000;
@@ -362,6 +366,27 @@ export class Mirror {
     return n;
   }
 
+  // A walk through the whole scene a little each frame, defining what isn't yet. Defined, a thing stays hidden on the
+  // phone until it is really shown, and the phone gets its shader, buffers and textures ready meanwhile (NRender prewarm).
+  ahead(scene) {
+    let st = this.aheadSt;
+    if (!st || !st.length) {
+      if (this.seen < (this.aheadAt || 0)) return;
+      st = this.aheadSt = [scene];
+      this.aheadAt = this.seen + 90;
+    }
+    const t0 = performance.now();
+    for (let visits = 0; st.length && visits < 800; visits++) {
+      const o = st.pop(), ch = o.children;
+      for (let i = ch.length - 1; i >= 0; i--) st.push(ch[i]);
+      if (!(o.isMesh || o.isSprite || o.isLineSegments) || !o.material || Array.isArray(o.material) || (!o.isSprite && !o.geometry)) continue;
+      const id = this.ids.get(o);
+      if (id && this.objs.has(id)) continue;
+      this.defineObject(o);
+      if (this.defUsed >= AHEAD_DEFS || performance.now() - t0 > AHEAD_MS) break;
+    }
+  }
+
   // One node: update its world matrix if it (or a parent) moved, send what changed, then its children.
   walk(n, parentVis, parentMoved) {
     const o = n.o, vis = parentVis && o.visible, all = this.all;
@@ -547,6 +572,7 @@ export class Mirror {
       for (let c = (geos.length >> 5) + 1; c > 0 && i < geos.length; c--) this.checkGeo(geos[i++], au);
       this.geoAt = i;
     }
+    if (!all && this.defUsed < AHEAD_DEFS) this.ahead(scene);
     // Over what the phone may keep (a new map coming in): looked at every few frames, not only every two seconds.
     if (this.sweepNow || stamp - this.sweepAt >= (this.total > KEEP ? 10 : SWEEP_EVERY)) {
       this.sweepNow = false;

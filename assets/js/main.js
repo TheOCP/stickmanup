@@ -661,6 +661,13 @@ function loadMap(id) {
   soonId = -1; // a map being made slowly for a menu is not wanted any more
   if (app.level && app.level.map === id) return;
   let w = worlds.get(id);
+  // Being made behind the menu already: finished here, not started over.
+  if (!w && making && making.id === id) {
+    making.view.finish();
+    making.taken = true;
+    w = { level: making.level, world: new World(making.level.cols), view: making.view };
+    making = null;
+  }
   if (!w) {
     const level = generateLevel(id);
     applyDetail(getSafe());
@@ -688,6 +695,7 @@ function useWorld(id, w) {
   app.level = w.level;
   app.world = w.world;
   app.view = w.view;
+  w.view.app = app;
   // The phone's renderer frees what is too much of what just left (mirror.js).
   if (R.mirror) R.mirror.sweepSoon();
   if (auto) auto.settle();
@@ -733,13 +741,17 @@ function loadMapSoon(id) {
   soonId = id;
   soonT = setTimeout(() => makeSlowly(id), id < MAPS.length ? 0 : 350);
 }
+let making = null;
 async function makeSlowly(id) {
   const stop = () => soonId !== id || !!app.game;
   const level = await levelOf(id);
   if (stop()) return;
   applyDetail(getSafe());
-  const view = new WorldView(app.renderer.scene, level, true);
+  const view = new WorldView(app.renderer.scene, level, true), me = { id, level, view, taken: false };
+  making = me;
   const done = await view.buildSlowly(stop);
+  if (making === me) making = null;
+  if (me.taken) return;
   if (!done || stop() || worlds.has(id)) {
     view.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     return;

@@ -130,11 +130,91 @@ export class Sound {
     o.stop(t + dur + 0.05);
   }
 
-  noiseHit(type, f, dur, vol, delay = 0, q = 1) {
+  noiseHit(type, f, dur, vol, delay = 0, q = 1, a = 0.005) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay, g = this.gain(0, this.sfxG);
-    this.burst(dur, this.chain(this.filter(type, f, q), g), delay);
-    this.env(g, t, 0.005, vol, dur);
+    this.burst(dur + a, this.chain(this.filter(type, f, q), g), delay);
+    this.env(g, t, a, vol, dur);
+  }
+
+  // An animal voice: an oscillator through a mouth shaped filter, its loudness shaken fast for a growl.
+  voice(f0, f1, dur, vol, o = {}) {
+    if (!this.ctx || vol < 0.004) return;
+    const c = this.ctx, t = c.currentTime + (o.delay || 0), osc = c.createOscillator(), g = this.gain(0, this.sfxG);
+    osc.type = o.type || 'sawtooth';
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    let out = g;
+    if (o.trem) {
+      const depth = o.depth ?? 0.7, r = this.gain(1 - depth / 2, g), l = c.createOscillator(), lg = this.gain(depth / 2, r.gain);
+      l.frequency.value = o.trem; l.connect(lg); l.start(t); l.stop(t + dur + 0.1);
+      out = r;
+    }
+    osc.connect(this.chain(this.filter('bandpass', o.form || 800, o.q || 2), out));
+    this.env(g, t, Math.min(0.06, dur * 0.3), vol, dur);
+    osc.start(t);
+    osc.stop(t + dur + 0.1);
+  }
+
+  // The creatures: ev is 'hunt' (it comes for you), 'bite' or 'stun'; v is how near it is (0..1).
+  beast(kind, ev, v = 1) {
+    if (!this.ctx || v <= 0.02) return;
+    const V = (f0, f1, d, q, o) => this.voice(f0, f1, d, q * v, o), N = (t, f, d, q, w = 0, Q = 1, a) => this.noiseHit(t, f, d, q * v, w, Q, a);
+    const clicks = (n, f, gap, q, w = 0) => { for (let i = 0; i < n; i++) N('bandpass', f * (0.9 + 0.2 * Math.random()), 0.025, q, w + i * gap * (0.8 + 0.4 * Math.random()), 5); };
+    const r = 0.92 + Math.random() * 0.16;
+    switch (kind + ' ' + ev) {
+      case 'wolf hunt':
+        V(92 * r, 80 * r, 1.0, 0.42, { form: 380, q: 1.4, trem: 27, depth: 0.85 });
+        V(185 * r, 160 * r, 1.0, 0.12, { form: 1100, q: 3, trem: 27, depth: 0.9 });
+        N('lowpass', 700, 0.9, 0.1, 0, 1, 0.12); break;
+      case 'wolf bite':
+        V(320 * r, 170 * r, 0.16, 0.42, { form: 750, q: 1.6 }); N('bandpass', 1400, 0.12, 0.3, 0, 1.2);
+        V(300 * r, 160 * r, 0.14, 0.32, { form: 700, q: 1.6, delay: 0.2 }); N('bandpass', 1300, 0.1, 0.22, 0.2, 1.2); break;
+      case 'wolf stun':
+        V(900 * r, 1500 * r, 0.07, 0.2, { type: 'triangle', form: 1400, q: 1 });
+        V(1500 * r, 650 * r, 0.32, 0.22, { form: 1500, q: 1.2, delay: 0.07 }); break;
+      case 'boar hunt':
+        for (let i = 0; i < 3; i++) V((150 - i * 8) * r, 105 * r, 0.13, 0.4, { form: 520, q: 2.5, trem: 45, depth: 0.8, delay: i * 0.21 });
+        N('lowpass', 450, 0.6, 0.12); break;
+      case 'boar bite':
+        V(460 * r, 250 * r, 0.22, 0.32, { form: 1300, q: 1.6, trem: 38 }); V(140 * r, 100 * r, 0.16, 0.4, { form: 480, q: 2.5, trem: 45 }); break;
+      case 'boar stun':
+        V(950 * r, 1700 * r, 0.12, 0.2, { form: 2000, q: 1.3 }); V(1700 * r, 700 * r, 0.42, 0.22, { form: 1800, q: 1.3, trem: 18, depth: 0.4, delay: 0.12 }); break;
+      case 'croc hunt':
+        N('bandpass', 3400, 0.95, 0.2, 0, 0.7, 0.18);
+        V(58 * r, 50 * r, 0.9, 0.5, { form: 180, q: 1, trem: 16, depth: 0.9 }); break;
+      case 'croc bite':
+        N('highpass', 1600, 0.05, 0.32); V(220, 60, 0.12, 0.35, { type: 'square', form: 500, q: 1 }); N('highpass', 1800, 0.04, 0.24, 0.09); break;
+      case 'croc stun':
+        V(80 * r, 42 * r, 0.6, 0.5, { form: 200, q: 1, trem: 12 }); N('bandpass', 3000, 0.4, 0.18, 0.05, 0.7, 0.05); break;
+      case 'scorpion hunt':
+        clicks(9, 4200, 0.045, 0.32); N('highpass', 5200, 0.5, 0.1, 0.05, 1, 0.08); break;
+      case 'scorpion bite':
+        clicks(2, 3600, 0.05, 0.4); this.tone(2600, 500, 0.14, 'sawtooth', 0.12 * v, 0.08); break;
+      case 'scorpion stun':
+        clicks(6, 3000, 0.09, 0.3); this.tone(1900, 900, 0.3, 'triangle', 0.08 * v); break;
+      case 'stormcrab hunt':
+        clicks(2, 2600, 0.15, 0.5); clicks(2, 2900, 0.15, 0.45, 0.5);
+        for (let i = 0; i < 4; i++) this.tone(260 + Math.random() * 200, 700 + Math.random() * 300, 0.06, 'sine', 0.12 * v, 0.2 + i * 0.07); break;
+      case 'stormcrab bite':
+        clicks(3, 2400, 0.05, 0.6); this.tone(800, 250, 0.1, 'square', 0.12 * v); break;
+      case 'stormcrab stun':
+        for (let i = 0; i < 6; i++) this.tone(900 - i * 110, 450 - i * 50, 0.07, 'sine', 0.13 * v, i * 0.06); break;
+      case 'imp hunt':
+        for (let i = 0; i < 4; i++) V((640 + i * 70) * r, (820 + i * 70) * r, 0.07, 0.17, { type: 'square', form: 1500, q: 2, delay: i * 0.1 });
+        V(140 * r, 120 * r, 0.5, 0.1, { form: 400, q: 1, trem: 22, delay: 0.05 }); break;
+      case 'imp bite':
+        V(1100 * r, 1900 * r, 0.26, 0.18, { form: 2400, q: 1.2, trem: 55, depth: 0.6 }); N('highpass', 2500, 0.15, 0.15); break;
+      case 'imp stun':
+        V(1500 * r, 380 * r, 0.55, 0.18, { type: 'triangle', form: 1200, q: 1 }); break;
+      case 'robodog hunt':
+        this.tone(560, 280, 0.09, 'square', 0.13 * v); this.tone(560, 280, 0.09, 'square', 0.12 * v, 0.17);
+        this.tone(1700, 2500, 0.32, 'sawtooth', 0.025 * v, 0.05); break;
+      case 'robodog bite':
+        this.tone(760, 190, 0.13, 'square', 0.16 * v); N('highpass', 3000, 0.08, 0.2); break;
+      case 'robodog stun':
+        this.tone(1000, 50, 0.7, 'sawtooth', 0.17 * v); N('bandpass', 2000, 0.3, 0.12, 0, 3); break;
+    }
   }
 
   jump() { this.tone(300, 640, 0.13, 'triangle', 0.22); }

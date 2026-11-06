@@ -162,7 +162,16 @@ export function courseDecor(view, r, keep) {
     }
     made++;
   }
-  if (list.length) keep(view.add(new THREE.Mesh(mergedModels(list), vegMat()), false));
+  // One instanced set per model: the same few tree and rock models over and over. Merged, a course was a mesh of up to a
+  // hundred thousand corners, and all of them went to the phone the moment a climb began.
+  const by = new Map();
+  for (const [name, m] of list) (by.get(name) || by.set(name, []).get(name)).push(m);
+  for (const [name, ms] of by) {
+    const im = new THREE.InstancedMesh(modelGeo(name), vegMat(), ms.length);
+    ms.forEach((m, i) => im.setMatrixAt(i, m));
+    im.computeBoundingSphere();
+    keep(view.add(im, false));
+  }
   if (towers.length) keep(view.add(towerMesh(view, towers), false));
 }
 

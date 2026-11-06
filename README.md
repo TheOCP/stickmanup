@@ -432,8 +432,11 @@ To play or debug in a desktop browser, serve the `assets` folder with any static
   * `evfx.js`: what each map's event looks like: the wave, laser and cannon marks, cannonballs, beams, blasts, the
     quake's shock ring and the bee swarms (storm.js has what they do)
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
-    waterfalls and spray
+    the creatures with their moving legs, jaws, tails and wings, waterfalls and spray
   * `wildview.js`: the Wild Forest's island forest (trees, ferns, logs, long grass) and the mountains round its lake
+  * `backdrop.js`: the far lands round the other maps: the storm coast and its lighthouse, the tropical islands, the
+    volcano's crater wall with lava falls, the city skyline and bridge, and the waterfall cliffs
+  * `audio.js`: every sound, made live: effects, creature voices, rain, wind and the music
   * `mirror.js` streams the scene to the native renderer
 * `src/`: a small Java activity that runs the game in a full screen WebView, the native OpenGL ES renderer
   (`src/io/stickmanup/gl/`), and WiFi, internet direct (UPnP and STUN) and Bluetooth sockets for the game

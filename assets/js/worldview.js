@@ -6,8 +6,9 @@ import { CORE_R, coreFlare, cpEnabled, secretOn, dvOn, MAZE_BODY } from './level
 import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
-import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail, modelGeo, vegMat } from './scenery.js';
+import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail, vegMat, beastRig } from './scenery.js';
 import { buildWildForest, buildWildlands } from './wildview.js';
+import { stormLands, sunnyLands, calderaLands, cityLands, fallLands } from './backdrop.js';
 import { buildMazes, showMaze, MAZE_BEAST } from './mazeview.js';
 import { courseStones, courseDecor, courseGate, courseSweep, postMat, signTex, COMET_HEAD, WELL_HEAD, headMesh } from './courseview.js';
 import { buildStart, updateStart } from './startview.js';
@@ -117,6 +118,24 @@ function canvasTex(w, h, draw) {
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
+}
+
+// A creature's limbs at this point of its stride (walk, in radians; faster when it hunts): legs swing, a beetle's or a crab's
+// legs sweep round, wings beat, a tail sways, a jaw drops and claws snap while it comes for you. Still when stunned.
+function poseLimbs(limbs, walk, hunt, stunned, t) {
+  const k = hunt ? 1.35 : 1;
+  for (const { o, l } of limbs) {
+    const s = stunned ? 0 : Math.sin(walk + l.ph), a = l.amp * k;
+    switch (l.move) {
+      case 'leg': o.rotation.x = s * a; break;
+      case 'side': o.rotation.y = s * a; o.position.y = l.at[1] + (stunned ? 0 : Math.max(0, Math.cos(walk + l.ph)) * 0.025); break;
+      case 'arm': o.rotation.x = -s * a; break;
+      case 'wing': o.rotation.z = l.side * (stunned ? -0.6 : 0.15 + 0.55 * Math.sin(t * (hunt ? 16 : 9) + l.ph)); break;
+      case 'tail': o.rotation.y = stunned ? 0 : Math.sin(walk * 0.5 + l.ph) * a; break;
+      case 'jaw': o.rotation.x = stunned ? 0.5 : hunt ? 0.2 + 0.25 * Math.max(0, Math.sin(walk * 0.7)) : 0.03; break;
+      case 'claw': o.rotation.y = l.side * (stunned ? 0.4 : 0.1 + (hunt ? 0.3 : 0.1) * (0.5 + 0.5 * Math.sin(walk * 1.3 + l.ph))); break;
+    }
+  }
 }
 
 export class WorldView {
@@ -246,7 +265,8 @@ export class WorldView {
       this.relicBeams.push({ id, o: b });
       return b;
     };
-    for (const r of courses) {
+    // A build step for each course: all of them in one held up a map being made behind the menu for a third of a second.
+    const one = (r) => {
       const sec = r.kind === 'epic' ? 'open' : 'hard', keep = (o) => { o.visible = false; this.secretParts.push({ sec, o, dv: r.dv }); return o; };
       courseStones(this, r, keep);
       courseDecor(this, r, keep);
@@ -304,7 +324,11 @@ export class WorldView {
       const G = r.gate;
       courseGate(this, r, tint(r.kind), keep);
       beam(r, r.id, 70, 0.3, 0.6).position.set(G.x, G.y + 35, G.z);
-    }
+      // Built after setSecrets ran (a map finished while a climb was starting): shown the way that climb has them.
+      if (this.secNow !== undefined) this.setSecrets(this.secNow);
+    };
+    if (this.steps && this.steps.length) this.steps.unshift(...courses.map((r) => () => one(r)));
+    else for (const r of courses) one(r);
   }
 
   // sec: which hidden paths this climb has ({ hard, open }, level.js ALL_SECRETS), or nothing for none.
@@ -1016,43 +1040,39 @@ export class WorldView {
     e.tMat.color.copy(HDR(0x9cffb0, 1.6));
   }
 
-  // Forest creatures: one merged mesh each (body plus glowing eyes and mouth) to keep draw calls low.
+  // The creatures (scenery.js beastRig): a body and the limbs that move as it walks, each map its own kind; the Wild
+  // Forest's wolves out on the ledges and its boars in the mazes.
+  // Creature sounds: a growl when one comes after you (again now and then while it does), a snarl as it bites and a yelp
+  // when it is stunned. Louder the nearer it is, and never many at once.
+  beastVoice(e, p) {
+    const cam = this.camPos, now = performance.now(), lg = p.hunt ? p.lunge : 0;
+    const was = e.v || (e.v = { hunt: false, stun: false, lg: 0, at: 0 });
+    let ev = null, fresh = p.hunt && !was.hunt;
+    if (p.stunned && !was.stun) ev = 'stun';
+    else if (!p.stunned && lg > was.lg + 0.5) ev = 'bite';
+    else if (p.hunt && !p.stunned && (!was.hunt || now > was.at)) ev = 'hunt';
+    was.hunt = p.hunt; was.stun = p.stunned; was.lg = lg;
+    if (!ev || !cam) return;
+    const d = Math.hypot(p.x - cam.x, e.m.y - cam.y, p.z - cam.z), v = Math.min(1, 1.2 - d / 24);
+    const gap = ev === 'hunt' && !fresh ? 1400 : 250;
+    if (v <= 0.05 || now - (this.voiceAt || 0) < gap) return;
+    this.voiceAt = now;
+    was.at = now + 4000 + Math.random() * 3000;
+    this.app.sound.beast(e.kind, ev, v);
+  }
+
   buildCreatures() {
     const L = this.level;
     this.monsters = [];
     this.bats = [];
     if (!L.monsters.length && !L.bats.length) return;
-    const eye = HDR(0xfff36a, 4), mouth = HDR(0xff5a3c, 3);
-    const mg = merge([
-      { geo: new THREE.SphereGeometry(0.7, 20, 14).scale(1, 0.85, 1), m: mat4(0, 0, 0, 1, 1, 1), glow: null },
-      { geo: new THREE.ConeGeometry(0.16, 0.5, 8), m: mat4(-0.34, 0.66, 0.1, 1, 1, 1, 0, 0, 0.4), glow: HDR(0xff7ad8, 0.6) },
-      { geo: new THREE.ConeGeometry(0.16, 0.5, 8), m: mat4(0.34, 0.66, 0.1, 1, 1, 1, 0, 0, -0.4), glow: HDR(0xff7ad8, 0.6) },
-      { geo: new THREE.SphereGeometry(0.17, 12, 8), m: mat4(-0.24, 0.2, 0.56, 1, 1, 1), glow: eye },
-      { geo: new THREE.SphereGeometry(0.17, 12, 8), m: mat4(0.24, 0.2, 0.56, 1, 1, 1), glow: eye },
-      { geo: new THREE.BoxGeometry(0.5, 0.1, 0.12), m: mat4(0, -0.16, 0.62, 1, 1, 1), glow: mouth },
-      { geo: new THREE.SphereGeometry(0.16, 8, 6), m: mat4(-0.35, -0.5, 0.1, 1, 0.6, 1.3), glow: null },
-      { geo: new THREE.SphereGeometry(0.16, 8, 6), m: mat4(0.35, -0.5, 0.1, 1, 0.6, 1.3), glow: null },
-    ]);
-    const mm = panelMat(0x8a3ab0, { roughness: 0.5, metalness: 0.05, pattern: 0, emissive: 0x2a0a3a, emissiveIntensity: 1 });
-    // In a maze the creature turns about its middle and is no bigger than the corridors let it turn round in (the croc and
-    // the storm crab come out a little smaller there): level.js MAZE_BODY, which keeps it off the walls.
-    let fitted = null;
-    const inMaze = (k) => {
-      if (fitted) return fitted;
-      const g = modelGeo(k).clone();
-      g.computeBoundingBox();
-      const b = g.boundingBox, hl = (b.max.z - b.min.z) / 2, s = Math.min(1, (MAZE_BODY[this.key] || [hl])[0] / hl);
-      g.translate(0, 0, -(b.max.z + b.min.z) / 2).scale(s, s, s);
-      return (fitted = g);
-    };
     for (const m of L.monsters) {
-      // Each map's own creature (mazeview.js), in the maze gardens and on the ledges; the forest keeps its monsters outside.
-      const beast = (m.mz !== undefined || this.key !== 'forest') && MAZE_BEAST[this.key];
-      const o = this.add(beast ? new THREE.Mesh(m.mz !== undefined ? inMaze(beast) : modelGeo(beast), vegMat()) : new THREE.Mesh(mg, mm));
-      this.anim.push(o);
-      this.monsters.push({ m, o, p: {}, beast: !!beast });
+      const kind = m.mz === undefined && this.key === 'forest' ? 'wolf' : MAZE_BEAST[this.key];
+      const o = this.add(this.beastMesh(kind, m.mz !== undefined));
+      this.anim.push(o, ...o.userData.limbs.map((l) => l.o));
+      this.monsters.push({ m, o, p: {}, beast: true, limbs: o.userData.limbs, kind });
     }
-    if (this.key === 'city') return this.buildDrones(mm);
+    if (this.key === 'city') return this.buildDrones();
     const wing = new THREE.BufferGeometry();
     wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -0.15, 0.75, 0.1, -0.05, 0.55, 0, 0.25, 0, 0, -0.15, 0.55, 0, 0.25, 0, 0, 0.2], 3));
     wing.computeVertexNormals();
@@ -1073,35 +1093,30 @@ export class WorldView {
     }
   }
 
-  // City: a skyline of lit buildings all round the bay.
-  buildSkyline() {
-    const R = rng(4244), n = 70;
-    const tex = canvasTex(128, 512, (g, w, h) => {
-      g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
-      for (let y = 4; y < h; y += 10) for (let x = 4; x < w; x += 9) if (R() < 0.35) { g.fillStyle = `hsl(${[40, 200, 290][(R() * 3) | 0]},80%,${45 + R() * 25}%)`; g.fillRect(x, y, 5, 6); }
+  // One creature. In a maze it turns about its middle and is no bigger than the corridors let it turn round in (the croc
+  // and the storm crab come out a little smaller there): level.js MAZE_BODY, which keeps it off the walls.
+  beastMesh(kind, maze) {
+    const rig = beastRig(kind), mat = vegMat(), o = new THREE.Group(), g = new THREE.Group();
+    const s = maze ? Math.min(1, (MAZE_BODY[this.key] || [rig.hl])[0] / rig.hl) : 1;
+    g.scale.setScalar(s);
+    if (maze) g.position.z = -rig.zc * s;
+    const body = new THREE.Mesh(rig.body, mat);
+    body.castShadow = body.receiveShadow = true;
+    g.add(body);
+    o.userData.limbs = rig.limbs.map((l) => {
+      const mm = new THREE.Mesh(l.geo, mat);
+      mm.position.set(l.at[0], l.at[1], l.at[2]);
+      mm.castShadow = mm.receiveShadow = true;
+      g.add(mm);
+      return { o: mm, l };
     });
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 6);
-    const m = new THREE.InstancedMesh(BOXG, new THREE.MeshStandardMaterial({ color: 0x141826, roughness: 0.8, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.9 }), n);
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + R() * 0.05, r = 140 + R() * 220, h = 30 + R() * R() * 260, w = 12 + R() * 20;
-      m.setMatrixAt(i, mat4(Math.cos(a) * r, h / 2 - 2, Math.sin(a) * r, w, h, w * (0.6 + R() * 0.6), 0, R() * 3, 0));
-    }
-    this.root.add(m);
+    o.add(g);
+    return o;
   }
 
   buildDistant() {
     if (this.key !== 'storm') return this.buildDistantAlt();
-    const R = rng(4242), n = 18;
-    const sp = new THREE.InstancedMesh(BOXG, new THREE.MeshStandardMaterial({ color: 0x0c121c, roughness: 0.9 }), n);
-    const lights = new THREE.InstancedMesh(new THREE.SphereGeometry(1.2, 8, 6), new THREE.MeshBasicMaterial({ color: HDR(0xff3040, 3), fog: false }), n);
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + R() * 0.3, r = 130 + R() * 160, h = 120 + R() * 420, w = 8 + R() * 18;
-      sp.setMatrixAt(i, mat4(Math.cos(a) * r, h / 2 - 10, Math.sin(a) * r, w, h, w * (0.6 + R() * 0.8), 0, R() * 3, 0));
-      lights.setMatrixAt(i, mat4(Math.cos(a) * r, h - 9, Math.sin(a) * r, 1, 1, 1));
-    }
-    this.root.add(sp, lights);
-    this.blink.push({ m: lights.material, base: 3, hex: 0xff3040, sp: 1.6, sq: true });
+    stormLands(this);
   }
 
   // Lasers (spinning bars and on/off curtains), arrow traps and the ropes of swinging platforms.
@@ -1717,42 +1732,9 @@ export class WorldView {
     }
   }
 
-  // Far round the lagoon: tall green cliffs with their own waterfalls, and a rainbow.
+  // Waterfall: the rock pillars and cliffs round the lagoon (backdrop.js), and a rainbow.
   buildCliffs() {
-    const R = rng(5150), n = 8;
-    const tex = this.rockTex(77);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(2, 5);
-    const rock = new THREE.MeshStandardMaterial({ map: tex, color: 0xb8d0a8, roughness: 0.95, metalness: 0, flatShading: true });
-    const green = new THREE.MeshStandardMaterial({ color: 0x4f9a48, roughness: 1, flatShading: true });
-    const fallM = fallMat(this, { speed: 0.12 });
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + R() * 0.4, d = 270 + R() * 150, rad = 24 + R() * 18, h = 90 + R() * 120, s1 = R() * 6, s2 = R() * 6;
-      const cx = Math.cos(a) * d, cz = Math.sin(a) * d;
-      // A craggy rock pillar: the radius wobbles with angle and height (same at the seam, so no cracks).
-      const geo = new THREE.CylinderGeometry(rad * 0.8, rad * 1.15, h, 12, 7);
-      const p = geo.attributes.position;
-      for (let k = 0; k < p.count; k++) {
-        const x = p.getX(k), y = p.getY(k), z = p.getZ(k), th = Math.atan2(z, x);
-        const j = 0.86 + 0.12 * Math.sin(th * 3 + y * 0.04 + s1) + 0.08 * Math.sin(th * 7 + y * 0.09 + s2);
-        p.setXYZ(k, x * j, y, z * j);
-      }
-      geo.computeVertexNormals();
-      const cliff = new THREE.Mesh(geo, rock);
-      cliff.position.set(cx, h / 2 - 4, cz);
-      this.root.add(cliff);
-      const top = new THREE.Mesh(new THREE.IcosahedronGeometry(rad * 0.95, 1).scale(1, 0.45, 1), green);
-      top.position.set(cx, h - 4, cz);
-      this.root.add(top);
-      const w = rad * (0.35 + R() * 0.25), g = new THREE.PlaneGeometry(w, h, 1, 1);
-      const pos = g.attributes.position, uv = g.attributes.uv;
-      for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / w + 0.5, pos.getY(k) * 0.02);
-      const fall = new THREE.Mesh(g, fallM), fd = d - rad * 1.12;
-      this.mistSpots.push({ x: Math.cos(a) * (fd - 3), y: 0, z: Math.sin(a) * (fd - 3), r: w * 0.6, n: 18, rise: 10 });
-      fall.position.set(Math.cos(a) * fd, h / 2 - 4, Math.sin(a) * fd);
-      fall.rotation.y = Math.atan2(-Math.cos(a), -Math.sin(a));
-      this.root.add(fall);
-    }
+    fallLands(this);
     // A rainbow arching out of the lagoon.
     const rm = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
@@ -2021,21 +2003,13 @@ export class WorldView {
     this.convFx = mat;
   }
 
-  // Sunny: far-off green islands. Forest: rolling hills of trees on the horizon.
+  // Far-off land round every map (backdrop.js, and wildview.js for the Wild Forest).
   buildDistantAlt() {
-    if (this.key === 'volcano') return;
-    if (this.key === 'city') return this.buildSkyline();
+    if (this.key === 'volcano') return calderaLands(this);
+    if (this.key === 'city') return cityLands(this);
     if (this.key === 'waterfall') return this.buildCliffs();
     if (this.key === 'forest') return buildWildlands(this);
-    const R = rng(4243), sunny = this.key === 'sunny', n = sunny ? 9 : 26;
-    const geo = sunny ? new THREE.SphereGeometry(1, 20, 10, 0, TAU, 0, Math.PI / 2) : new THREE.ConeGeometry(1, 1, 10);
-    const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: sunny ? 0x4f8a48 : 0x2c4a2a, roughness: 1, flatShading: !sunny }), n);
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + R() * 0.4, r = sunny ? 260 + R() * 220 : 170 + R() * 160, w = sunny ? 30 + R() * 50 : 25 + R() * 40;
-      m.setMatrixAt(i, sunny ? mat4(Math.cos(a) * r, -2, Math.sin(a) * r, w, 8 + R() * 22, w * (0.5 + R() * 0.6), 0, R() * 3, 0)
-        : mat4(Math.cos(a) * r, (25 + R() * 60) / 2 - 2, Math.sin(a) * r, w, 25 + R() * 60, w, 0, R() * 3, 0));
-    }
-    this.root.add(m);
+    sunnyLands(this);
   }
 
   // Animate everything that moves. t is shared game time, warn(r) returns rod warning 0..1.
@@ -2213,8 +2187,10 @@ export class WorldView {
         // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned. After
         // you it runs, with its head low, and it snaps forward as it bites.
         const walk = p.stunned ? 0 : t * (p.hunt ? 15 : 9) + m.i, snap = p.hunt ? p.lunge * (m.mz !== undefined ? 0.15 : 0.5) : 0;
-        o.position.set(p.x + dx * snap, m.y - 0.65 + Math.abs(Math.sin(walk)) * (p.hunt ? 0.09 : 0.05), p.z + dz * snap);
-        o.rotation.set(0, dx || dz ? Math.atan2(dx, dz) : o.rotation.y, p.stunned ? Math.sin(t * 25) * 0.25 : Math.sin(walk) * 0.06, 'YXZ');
+        o.position.set(p.x + dx * snap, m.y - 0.65 + Math.abs(Math.sin(walk)) * (p.hunt ? 0.05 : 0.025), p.z + dz * snap);
+        o.rotation.set(0, dx || dz ? Math.atan2(dx, dz) : o.rotation.y, p.stunned ? Math.sin(t * 25) * 0.25 : Math.sin(walk) * 0.03, 'YXZ');
+        if (e.limbs) poseLimbs(e.limbs, p.stunned ? 0 : walk, p.hunt, p.stunned, t);
+        if (this.app && this.app.sound) this.beastVoice(e, p);
         continue;
       }
       o.position.set(p.x, p.y, p.z);

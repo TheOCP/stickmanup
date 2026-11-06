@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('Desktop', {
   quit: () => ipcRenderer.send('quit'),
   fullscreen: () => ipcRenderer.send('fullscreen'),
+  windowSize: (w, h) => ipcRenderer.send('window-size', w, h),
   onAuth: (f) => {
     ipcRenderer.on('auth', (e, code) => f(String(code)));
     ipcRenderer.send('auth-ready');

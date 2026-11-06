@@ -2,7 +2,7 @@
 // (body + glowing edge trim) so the phone draws the whole tower in few draw calls.
 import * as THREE from 'three';
 import { BOX } from './physics.js';
-import { CORE_R, coreFlare, cpEnabled, secretOn, dvOn } from './level.js';
+import { CORE_R, coreFlare, cpEnabled, secretOn, dvOn, MAZE_BODY } from './level.js';
 import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
@@ -1046,10 +1046,21 @@ export class WorldView {
       { geo: new THREE.SphereGeometry(0.16, 8, 6), m: mat4(0.35, -0.5, 0.1, 1, 0.6, 1.3), glow: null },
     ]);
     const mm = panelMat(0x8a3ab0, { roughness: 0.5, metalness: 0.05, pattern: 0, emissive: 0x2a0a3a, emissiveIntensity: 1 });
+    // In a maze the creature turns about its middle and is no bigger than the corridors let it turn round in (the croc and
+    // the storm crab come out a little smaller there): level.js MAZE_BODY, which keeps it off the walls.
+    let fitted = null;
+    const inMaze = (k) => {
+      if (fitted) return fitted;
+      const g = modelGeo(k).clone();
+      g.computeBoundingBox();
+      const b = g.boundingBox, hl = (b.max.z - b.min.z) / 2, s = Math.min(1, (MAZE_BODY[this.key] || [hl])[0] / hl);
+      g.translate(0, 0, -(b.max.z + b.min.z) / 2).scale(s, s, s);
+      return (fitted = g);
+    };
     for (const m of L.monsters) {
       // Each map's own creature (mazeview.js), in the maze gardens and on the ledges; the forest keeps its monsters outside.
       const beast = (m.mz !== undefined || this.key !== 'forest') && MAZE_BEAST[this.key];
-      const o = this.add(beast ? new THREE.Mesh(modelGeo(beast), vegMat()) : new THREE.Mesh(mg, mm));
+      const o = this.add(beast ? new THREE.Mesh(m.mz !== undefined ? inMaze(beast) : modelGeo(beast), vegMat()) : new THREE.Mesh(mg, mm));
       this.anim.push(o);
       this.monsters.push({ m, o, p: {}, beast: !!beast });
     }
@@ -2210,7 +2221,7 @@ export class WorldView {
       if (e.beast) {
         // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned. After
         // you it runs, with its head low, and it snaps forward as it bites.
-        const walk = p.stunned ? 0 : t * (p.hunt ? 15 : 9) + m.i, snap = p.hunt ? p.lunge * 0.5 : 0;
+        const walk = p.stunned ? 0 : t * (p.hunt ? 15 : 9) + m.i, snap = p.hunt ? p.lunge * (m.mz !== undefined ? 0.15 : 0.5) : 0;
         o.position.set(p.x + dx * snap, m.y - 0.65 + Math.abs(Math.sin(walk)) * (p.hunt ? 0.09 : 0.05), p.z + dz * snap);
         o.rotation.set(0, dx || dz ? Math.atan2(dx, dz) : o.rotation.y, p.stunned ? Math.sin(t * 25) * 0.25 : Math.sin(walk) * 0.06, 'YXZ');
         continue;

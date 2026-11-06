@@ -4,7 +4,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS } from './colors.js';
 import { Storm, QUAKE_AT, WAVE_H, BEE_R, LASER_R, CANNON_R, markShots, beeStep } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeCell, MAZE_WALL_H } from './level.js';
+import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -678,13 +678,13 @@ export class Game {
           h = { x: P.x, z: P.z, hx: 0, hz: 1, wait: 0, lunge: 0 };
           hunt.set(m.i, h);
         }
-        const c = mazeCellAt(M, h.x, h.z);
-        mazeWay(M, this.mz, c, you, W);
-        if (W.next === c) { tx = me.x; tz = me.z; }
-        else {
-          const i = W.next % M.N, q = mazeCell(M, i, (W.next - i) / M.N);
-          tx = q[0]; tz = q[1];
-        }
+        // Along the middle of the corridors, never through a wall (level.js mazeChase).
+        h.lunge = Math.max(0, h.lunge - STEP * 3);
+        if (h.wait > 0) { h.wait -= STEP; continue; }
+        const st = S.stun.get(m.i);
+        if (st && t >= st.from && t < st.until) continue;
+        mazeChase(M, this.mz, h, you, me.x, me.z, speed, MAZE_BODY[L.mapKey] || MAZE_BODY.storm);
+        continue;
       } else if (m.hl !== undefined) {
         // On its ledge: toward you if you are on it or coming, else back to its beat.
         if (!h && Math.abs(m.y - me.y) > 2.4) continue;

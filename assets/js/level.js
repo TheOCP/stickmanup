@@ -495,6 +495,45 @@ export function mazeWay(m, v, c, target, out) {
   }
   return out;
 }
+// The creatures of the maze gardens as the corridors take them: half their length and half their width, from their
+// middle (mazeview.js centres each model and shrinks the two that could not turn round in a corridor to this).
+export const MAZE_BODY = { storm: [0.57, 0.79], sunny: [0.83, 0.49], forest: [0.82, 0.38], volcano: [0.46, 0.47], city: [0.74, 0.25], waterfall: [0.92, 0.33] };
+const CHASE = { steps: 0, next: 0 };
+// One step of a creature after you in its maze (h: x z, its heading hx hz). It keeps to the middle of the corridors and
+// turns in the middle of a cell, so it never cuts a corner through a wall end; in your own cell it comes at you, with
+// its body kept off every wall standing round that cell. body: [half length, half width].
+export function mazeChase(m, v, h, you, px, pz, speed, body) {
+  const N = m.N, c = mazeCellAt(m, h.x, h.z), i = c % N, j = (c - i) / N, w = mazeLayout(m, v);
+  mazeWay(m, v, c, you, CHASE);
+  const [qx, qz] = mazeCell(m, i, j);
+  // In the maze's own frame, from the middle of this cell: u grows with i, w as j gets smaller.
+  const U = (x, z) => (x - qx) * m.fx + (z - qz) * m.fz, W = (x, z) => (x - qx) * m.nx + (z - qz) * m.nz;
+  let u = U(h.x, h.z), ww = W(h.x, h.z), tu, tw;
+  if (CHASE.next === c) {
+    tu = clamp(U(px, pz), -0.35, 0.35);
+    tw = clamp(W(px, pz), -0.35, 0.35);
+  } else {
+    const ni = CHASE.next % N, nj = (CHASE.next - ni) / N, alongU = ni !== i, side = alongU ? ww : u, dir = alongU ? ni - i : j - nj;
+    // Off the middle line: a long way (just come round a corner) straight on to the middle first, a little (after
+    // coming at you) back onto it while moving on; on it, on to the next cell.
+    const go = Math.abs(side) <= 0.03 ? dir * MAZE_CELL : Math.abs(side) > 0.4 ? (alongU ? u : ww) : (alongU ? u : ww) + dir * 0.6;
+    if (alongU) { tu = go; tw = 0; } else { tu = 0; tw = go; }
+  }
+  const du = tu - u, dw = tw - ww, d = Math.hypot(du, dw);
+  if (d > 1e-4) {
+    const k = Math.min(1, speed / d);
+    u += du * k; ww += dw * k;
+    h.hx = (du * m.fx + dw * m.nx) / d; h.hz = (du * m.fz + dw * m.nz) / d;
+  }
+  // The walls round this cell (the outer wall too): the body, turned the way it faces, stays clear of each one.
+  const hu = Math.abs(h.hx * m.fx + h.hz * m.fz), hw = Math.abs(h.hx * m.nx + h.hz * m.nz);
+  const eu = hu * body[0] + hw * body[1], ew = hw * body[0] + hu * body[1], F = MAZE_CELL / 2 - MAZE_WALL_T / 2;
+  const fit = (x, e, lo, hi) => { const a = lo ? -(F - e) : -Infinity, b = hi ? F - e : Infinity; return a > b ? 0 : clamp(x, a, b); };
+  u = fit(u, eu, i === 0 || w[edgeV(N, i - 1, j)], i === N - 1 || w[edgeV(N, i, j)]);
+  ww = fit(ww, ew, j === N - 1 || w[edgeH(N, i, j)], j === 0 || w[edgeH(N, i, j - 1)]);
+  h.x = qx + m.fx * u + m.nx * ww;
+  h.z = qz + m.fz * u + m.nz * ww;
+}
 // Where a cell's middle is (x, z).
 export function mazeCell(m, i, j) {
   const u = (i - (m.N - 1) / 2) * MAZE_CELL, w = ((m.N - 1) / 2 - j) * MAZE_CELL;

@@ -107,7 +107,10 @@ export class Renderer {
       this.r = new THREE.WebGLRenderer({ canvas, antialias: !bloom && safe < 2, alpha: safe >= 1, powerPreference: safe >= 2 ? 'default' : 'high-performance' });
       this.r.outputColorSpace = THREE.SRGBColorSpace;
       this.r.toneMapping = THREE.ACESFilmicToneMapping;
-      this.r.toneMappingExposure = 1.1;
+      this.exp = 1.1;
+      this.bright = 1;
+      this.fixH = 0;
+      this.r.toneMappingExposure = this.exp;
       this.r.shadowMap.type = THREE.PCFSoftShadowMap;
       const gl = this.r.getContext(), dbg = gl.getExtension('WEBGL_debug_renderer_info');
       this.gpu = String((dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || 'unknown');
@@ -183,6 +186,20 @@ export class Renderer {
     this.resize();
   }
 
+  // PC brightness: 0.5 is the picture as made, 0 half as bright, 1 twice as bright.
+  setBright(v) {
+    this.bright = 2 ** ((v - 0.5) * 2);
+    if (this.r) this.r.toneMappingExposure = this.exp * this.bright;
+  }
+
+  // PC resolution: the height in pixels to draw the picture at on the whole screen, 0 for automatic.
+  setRes(h) {
+    if (this.native || (h || 0) === this.fixH) return;
+    this.fixH = h || 0;
+    this.w = -1;
+    this.resize();
+  }
+
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     if (w === this.w && h === this.h) return;
@@ -193,7 +210,9 @@ export class Renderer {
       this.camera.updateProjectionMatrix();
       return;
     }
-    const dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, this.q.dpr, Math.sqrt(this.maxPx / (w * h))));
+    // A resolution picked on the PC: drawn that many lines high (fewer only in a window smaller than that), whatever it
+    // costs. Otherwise as sharp as the preset and the graphics chip allow.
+    const dpr = this.fixH ? Math.max(0.25, Math.min(this.fixH, h * (window.devicePixelRatio || 1)) / h) : Math.max(0.5, Math.min(window.devicePixelRatio || 1, this.q.dpr, Math.sqrt(this.maxPx / (w * h))));
     this.r.setPixelRatio(dpr);
     this.r.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -528,7 +547,8 @@ export class Renderer {
     this.hemi.groundColor.setHex(T.hemiGround);
     this.scene.fog.density = T.fog;
     this.rain.visible = T.rain > 0 && this.safe < 3;
-    if (this.r) this.r.toneMappingExposure = T.exposure;
+    this.exp = T.exposure;
+    if (this.r) this.r.toneMappingExposure = this.exp * this.bright;
     // Only what really shines should glow: at full strength these wash out the whole picture.
     if (this.bloom) { this.bloom.strength = T.bloom[0] * 0.45; this.bloom.radius = T.bloom[1] * 0.8; this.bloom.threshold = Math.max(T.bloom[2], 0.9); }
   }

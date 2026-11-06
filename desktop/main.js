@@ -57,6 +57,20 @@ function toggleFull() {
   try { fs.writeFileSync(prefsFile(), JSON.stringify({ full })); } catch (e) { /* it just won't be remembered */ }
 }
 
+// A resolution picked in the game (in pixels) while in a window: the window takes that size, or fills the screen when
+// that is as big as the screen. In fullscreen the game only draws at that resolution.
+function sizeWindow(e, w, h) {
+  if (!win || win.isDestroyed() || win.isFullScreen()) return;
+  const { screen } = require('electron'), d = screen.getDisplayMatching(win.getBounds()), s = d.scaleFactor || 1, a = d.workArea;
+  w = Math.round(+w / s);
+  h = Math.round(+h / s);
+  if (!(w > 0 && h > 0)) return;
+  if (w >= a.width || h >= a.height) { win.maximize(); return; }
+  if (win.isMaximized()) win.unmaximize();
+  win.setContentSize(w, h);
+  win.center();
+}
+
 function checkUpdates() {
   if (!app.isPackaged || SMOKE) return;
   const { autoUpdater } = require('electron-updater');
@@ -204,6 +218,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     ipcMain.on('quit', () => { if (win) win.close(); else app.quit(); });
     ipcMain.on('fullscreen', toggleFull);
+    ipcMain.on('window-size', sizeWindow);
     ipcMain.on('auth-ready', () => { authReady = true; sendAuth(); });
     ipcMain.on('update-listen', () => { updateHeard = true; sayUpdate(); });
     ipcMain.on('install-update', installUpdate);

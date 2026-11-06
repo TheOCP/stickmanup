@@ -57,7 +57,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 1,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, bright: 0.5, pcRes: 'auto', tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
@@ -1362,6 +1362,8 @@ function settingsScreen(back) {
     <h3>Graphics</h3>
     <label class="full">Preset${seg('quality', [['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']])}</label>
     ${ON_PC ? `<label>Frame rate (fps)${seg('cap', [[60, '60'], [90, '90'], [120, '120'], [144, '144']])}</label>` : ''}
+    ${ON_PC && !nat ? `<label>Brightness ${val('bright', '%')}${range('bright', 0, 1, 0.05, '%')}</label>
+    <label class="full">Resolution${seg('pcRes', pcResList())}</label>` : ''}
     ${canFullscreen() ? '<button class="btn sm" data-a="full">Fullscreen</button>' : ''}
     ${ON_PC ? `<p class="sub full" style="margin:0">Your screen sets the real limit: a 60 Hz screen shows 60 frames a second, whatever you pick here.</p>` : ''}
     ${nat ? `<label>Resolution ${val('res', '%')}${range('res', 0.5, 1, 0.05, '%')}</label>
@@ -1432,6 +1434,12 @@ function settingsScreen(back) {
         return settingsScreen(back);
       }
       if (k === 'cap' || k === 'res' || k === 'autoRes' || k === 'lite') restartAuto();
+      if (k === 'pcRes') {
+        applyPc();
+        // In the PC app, in a window: the window takes that size too.
+        const m = /^(\d+)x(\d+)$/.exec(v);
+        if (m && DESK && DESK.windowSize) DESK.windowSize(+m[1], +m[2]);
+      }
       saveSettings();
       applyGraphics();
       applyLayout();
@@ -1461,6 +1469,21 @@ function settingsScreen(back) {
   });
 }
 
+// PC: the resolutions to pick from on this screen, its own first, then the usual smaller ones in its shape.
+function pcResList() {
+  const d = window.devicePixelRatio || 1, W = Math.round(screen.width * d), H = Math.round(screen.height * d), out = [['auto', 'Auto'], [`${W}x${H}`, `${W} × ${H}`]];
+  for (const h of [2160, 1440, 1200, 1080, 900, 720]) if (h < H - 40 && out.length < 6) { const w = Math.round((h * W) / H / 2) * 2; out.push([`${w}x${h}`, `${w} × ${h}`]); }
+  if (!out.some(([v]) => v === settings.pcRes)) settings.pcRes = 'auto';
+  return out;
+}
+// PC picture settings: brightness, and the resolution picked (as lines on the whole screen).
+function applyPc() {
+  const R = app.renderer;
+  if (!ON_PC || !R || R.native) return;
+  R.setBright(settings.bright ?? 0.5);
+  const m = /^(\d+)x(\d+)$/.exec(settings.pcRes || '');
+  R.setRes(m ? +m[2] : 0);
+}
 const fmtVal = (k, fmt) => (fmt === '%' ? Math.round(settings[k] * 100) + '%' : String(settings[k]));
 
 // Native picture settings, applied live.
@@ -1751,6 +1774,7 @@ function applySettings() {
   app.input.deadL = settings.deadL;
   app.input.deadR = settings.deadR;
   applyGraphics();
+  applyPc();
   applyLayout();
   app.sound.setVolumes(settings.music, settings.sfx);
   applyFpsPos();

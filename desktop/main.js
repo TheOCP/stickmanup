@@ -78,6 +78,8 @@ function checkUpdates() {
   autoUpdater.on('error', (e) => console.error('update check failed:', e && e.message));
   autoUpdater.on('update-downloaded', () => { updateReady = true; sayUpdate(); });
   autoUpdater.checkForUpdates().catch(() => {});
+  // And again now and then while the game is open, so a release out since it started shows up too.
+  setInterval(() => { if (!updateReady) autoUpdater.checkForUpdates().catch(() => {}); }, 15 * 60 * 1000);
 }
 // The game shows the card as soon as both are there: the download and the page listening for it.
 function sayUpdate() {

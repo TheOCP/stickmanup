@@ -11,9 +11,10 @@ const WHY = {
   old: 'The new version is not up yet. Try again in a few minutes.',
   install: 'Android did not install it. You can get it from the download page.',
 };
-const AGAIN_EVERY = 3 * 3600 * 1000;
+// Looked for every so often while the game is open, and on coming back to the title screen when the last look is a while ago.
+const AGAIN_EVERY = 15 * 60 * 1000, ON_TITLE_AFTER = 4 * 60 * 1000;
 
-let app = null, el = null, state = '', tag = '', pct = 0, why = '', shown = '';
+let app = null, el = null, state = '', tag = '', pct = 0, why = '', shown = '', lastCheck = 0, looks = false;
 
 const parts = (v) => String(v).replace(/^v/i, '').split('.').map((x) => parseInt(x, 10) || 0);
 export function newer(a, b) {
@@ -25,8 +26,12 @@ export function newer(a, b) {
   return false;
 }
 
-// Never in the middle of a climb: it waits until they are out of it.
+// Never in the middle of a climb: it waits until they are out of it. The offer itself only on the title screen, so it turns
+// up when they come back there from a climb; the download, once started, shows anywhere outside a climb.
 const busy = () => !!(app.game || app.spec);
+const atTitle = () => !busy() && app.screen === 'title';
+const ONLY_TITLE = new Set(['offer', 'allow', 'restart']);
+const showNow = () => (ONLY_TITLE.has(state) ? atTitle() : !busy());
 const canInstall = () => !!(N && N.updateGet);
 
 function card() {
@@ -50,7 +55,7 @@ function card() {
 }
 
 function draw() {
-  const c = !busy() ? card() : null;
+  const c = showNow() ? card() : null;
   if (!el) {
     if (!c) return;
     el = document.createElement('div');
@@ -93,6 +98,7 @@ function act(a) {
 
 async function check() {
   if (state || document.hidden) return;
+  lastCheck = Date.now();
   try {
     const r = await fetch(LATEST, { headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) return;
@@ -121,6 +127,8 @@ export function initUpdater(a) {
   setInterval(() => {
     // Downloaded while they started climbing: Android's screen waits until they are out of it.
     if (state === 'ready' && !busy()) { state = 'confirm'; N.updateInstall(); }
+    // Back on the title screen and the last look is a while ago: look again.
+    if (!state && looks && atTitle() && Date.now() - lastCheck > ON_TITLE_AFTER) check();
     draw();
   }, 1500);
   if (DESK) {
@@ -129,6 +137,7 @@ export function initUpdater(a) {
     return;
   }
   if (!canInstall() && !IS_WEB) return;
+  looks = true;
   // Back from Android's settings, with the switch on: on with it.
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state === 'allow' && N.updateAllowed()) fetchIt();

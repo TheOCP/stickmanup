@@ -3,7 +3,7 @@
 import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
-import { Storm, QUAKE_AT, markShots, beeStep } from './storm.js';
+import { Storm, QUAKE_AT, markShots, beeStep, beeReach } from './storm.js';
 import { DIFFS, MAPS, mapName, mapDef, zoneAt, secretsFor, applyMaze, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
@@ -322,7 +322,9 @@ export class Spectator {
       const ev = this.storm.event(T, zoneAt(L, o.y)), calm = this.inMaze(o);
       if (!evM.has(slot)) evM.set(slot, new Map());
       markShots(this.storm, evM.get(slot), ev, o.x, o.y - PR, o.z, T, calm);
-      evB.set(slot, beeStep(evB.get(slot), ev, o.x, o.y, o.z, dt, calm));
+      const B = beeStep(evB.get(slot), ev, o.x, o.y, o.z, dt, calm);
+      evB.set(slot, B);
+      if (beeReach(B, o.x, o.y, o.z, !!(o.flags & F.SHIELD)) === 'shield') app.fx.blast(slot, B.x, B.y, B.z, { beam: '', blast: 2.4 });
     }
     for (const slot of evM.keys()) if (!this.vis.has(slot)) { evM.delete(slot); evB.delete(slot); }
     for (const lk of this.links) {

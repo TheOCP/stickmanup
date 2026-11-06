@@ -331,6 +331,18 @@ export function markShots(S, marks, ev, x, y, z, t, calm) {
 
 // The swarm after a climber at (x, y, z): it comes out of the trees beside them when the event starts, flies after them a
 // little slower than they run, and gives up when the event is over or they get into a maze garden (calm).
+// How close the swarm must be for a raised shield to drive it off. It flies 4.4 m a second and the shield is up for one.
+export const BEE_SHIELD_R = 3.2;
+// The swarm reaching whoever it is after: a raised shield drives it off from a little way out, otherwise it stings once and
+// is spent. Gives 'shield', 'hit' or ''. Every phone works it out for every climber, so the swarm after someone else goes away
+// on your screen when it does on theirs, instead of sitting on them.
+export function beeReach(B, x, y, z, shield) {
+  if (!B || B.gone) return '';
+  const d = Math.hypot(x - B.x, y + 0.3 - B.y, z - B.z);
+  if (shield && d < BEE_SHIELD_R) { B.gone = true; return 'shield'; }
+  if (d < BEE_R) { B.gone = true; return 'hit'; }
+  return '';
+}
 export function beeStep(B, ev, x, y, z, dt, calm) {
   if (!ev || ev.kind !== 'bees') return B && B.gone ? B : null;
   if ((!B || B.k !== ev.k) && ev.on && !calm) {

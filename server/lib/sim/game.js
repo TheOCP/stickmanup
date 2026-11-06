@@ -5,7 +5,7 @@ import { Body, F, PR, cord } from './player.js';
 import { Chain } from './chain.js';
 import { placeDyn, toLocal, toWorld, BOX } from './physics.js';
 import { COLORS } from './colors.js';
-import { Storm, QUAKE_AT, WAVE_H, BEE_R, LASER_R, CANNON_R, markShots, beeStep } from './storm.js';
+import { Storm, QUAKE_AT, WAVE_H, LASER_R, CANNON_R, markShots, beeStep, beeReach } from './storm.js';
 import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
@@ -22,8 +22,6 @@ const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 const FLY_SPEED = 14, FLY_FAST = 4, FLY_ROOM = 600;
 // Where SHIELD does something: Storm Tower (it takes a lightning strike) and the Wild Forest (it drives the bee swarm off).
 export const SHIELD_MAPS = new Set(['storm', 'forest']);
-// How close the swarm must be for a raised shield to drive it off. It flies 4.4 m a second and the shield is up for one.
-const BEE_SHIELD_R = 3.2;
 const NONE = { mx: 0, mz: 0, jump: false, jumpPressed: false, grab: false, reel: false, act: false, shield: false, aim: false, fire: false };
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 }, fwd = new THREE.Vector3(), tmpP = {}, tmpH = {}, tmpW = { steps: 0, next: 0 };
 // What a maze garden's creature does to you, by map.
@@ -1102,16 +1100,14 @@ export class Game {
         this.zapKnock(Math.cos(a) * 3.2, 7.5, Math.sin(a) * 3.2, 'quake');
       }
     } else if (ev.kind === 'bees') {
-      const B = (this.bees = beeStep(this.bees, ev, me.x, me.y, me.z, STEP, calm)), d = B && !B.gone ? Math.hypot(me.x - B.x, me.y + 0.3 - B.y, me.z - B.z) : 99;
-      if (me.shield > 0 && d < BEE_SHIELD_R) {
+      const B = (this.bees = beeStep(this.bees, ev, me.x, me.y, me.z, STEP, calm)), got = beeReach(B, me.x, me.y, me.z, me.shield > 0);
+      if (got === 'shield') {
         // A raised shield: the bees bounce off it and the swarm scatters.
-        B.gone = true;
         this.app.sound.shield();
         this.app.ui.haptic('tick');
         this.app.ui.toast('Your shield drove the bees off!', 'good');
         this.app.fx.blast(this.slot, B.x, B.y, B.z, { beam: '', blast: 2.4 });
-      } else if (d < BEE_R) {
-        B.gone = true;
+      } else if (got === 'hit') {
         const dx = me.x - B.x, dz = me.z - B.z, d = Math.hypot(dx, dz) || 1;
         this.zapKnock((dx / d) * 6, 4.5, (dz / d) * 6, 'bees');
       }
@@ -1816,7 +1812,10 @@ export class Game {
       const evO = this.storm.event(T, zoneAt(this.L, o.y)), calmO = !!this.mazeAround(o);
       if (!this.evOther.has(slot)) this.evOther.set(slot, new Map());
       markShots(this.storm, this.evOther.get(slot), evO, o.x, o.y - PR, o.z, T, calmO);
-      this.beesOther.set(slot, beeStep(this.beesOther.get(slot), evO, o.x, o.y, o.z, dt, calmO));
+      const BO = beeStep(this.beesOther.get(slot), evO, o.x, o.y, o.z, dt, calmO);
+      this.beesOther.set(slot, BO);
+      // Their shield drives it off, or it stings them: either way it goes, as on their phone.
+      if (beeReach(BO, o.x, o.y, o.z, !!(o.flags & F.SHIELD)) === 'shield') this.app.fx.blast(slot, BO.x, BO.y, BO.z, { beam: '', blast: 2.4 });
     }
     for (const slot of this.evOther.keys()) if (!this.vis || !this.vis.get(slot)) { this.evOther.delete(slot); this.beesOther.delete(slot); }
     this.drawJumpers(dt, T);

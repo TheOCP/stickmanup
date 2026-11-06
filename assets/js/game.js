@@ -1018,10 +1018,6 @@ export class Game {
     if (!rigs || !this.jumpers.length) return;
     const cam = this.R.camera.position, list = [];
     for (const J of this.jumpers) if (J.active && Math.abs(J.y - cam.y) < 45 && Math.hypot(J.x - cam.x, J.z - cam.z) < 50) list.push(J);
-    if (list.length && !this.jumpWarned && !this.flying) {
-      this.jumpWarned = true;
-      this.app.ui.toast(`${list[0].j.name} ahead! Jump past or SHOOT to stun`, 'bad');
-    }
     list.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
     const used = new Set();
     for (const J of list.slice(0, rigs.length)) {
@@ -1929,6 +1925,7 @@ export class Game {
     app.ui.tags(this);
     app.ui.tips(this);
     if (app.ui.nav) app.ui.nav(this);
+    if (app.ui.foes) app.ui.foes(this);
     if (app.ui.relicMark) app.ui.relicMark(this);
     if (app.ui.hearts) app.ui.hearts(this);
   }

@@ -144,6 +144,12 @@ export default [
   ["Ash brute", "Bruto de ceniza", "Brutamontes de cinzas", "Brute de cendres", "Aschenrohling", "Пепельный громила", "Kül canavarı"],
   ["Street punk", "Punk callejero", "Punk de rua", "Punk des rues", "Straßenpunk", "Уличный панк", "Sokak serserisi"],
   ["Splash bully", "Matón acuático", "Valentão aquático", "Brute aquatique", "Wasserrüpel", "Водный хулиган", "Su zorbası"],
+  // The creatures on the ledges, in the warning that one is ahead.
+  ["Storm crab", "Cangrejo de tormenta", "Caranguejo da tempestade", "Crabe d'orage", "Sturmkrabbe", "Штормовой краб", "Fırtına yengeci"],
+  ["Scorpion", "Escorpión", "Escorpião", "Scorpion", "Skorpion", "Скорпион", "Akrep"],
+  ["Fire imp", "Diablillo de fuego", "Diabrete de fogo", "Diablotin de feu", "Feuerkobold", "Огненный бес", "Ateş cini"],
+  ["Robot dog", "Perro robot", "Cão robô", "Chien robot", "Roboterhund", "Робопёс", "Robot köpek"],
+  ["Crocodile", "Cocodrilo", "Crocodilo", "Crocodile", "Krokodil", "Крокодил", "Timsah"],
   // Tips along the way
   ["Climb to the very top. You are tied together: if one falls, everyone feels it.", "Sube hasta lo más alto. Están atados: si uno cae, todos lo sienten.", "Suba até o topo. Vocês estão presos: se um cai, todos sentem.", "Grimpe tout en haut. Vous êtes reliés : si l'un tombe, tous le sentent.", "Kletter ganz nach oben. Ihr seid verbunden: Fällt einer, spüren es alle.", "Поднимайся до самого верха. Вы связаны: если один падает, это чувствуют все.", "En tepeye tırman. Birbirinize bağlısınız: biri düşerse herkes hisseder."],
   ["Jump across the gaps. Stay close: the cord only reaches so far.", "Salta los huecos. Manténganse cerca: la cuerda tiene un límite.", "Pule os vãos. Fiquem perto: a corda tem um limite.", "Saute au dessus des vides. Restez proches : la corde a une limite.", "Spring über die Lücken. Bleibt nah beieinander: Das Seil reicht nur so weit.", "Перепрыгивай пропасти. Держитесь рядом: верёвка не бесконечна.", "Boşluklardan atla. Yakın durun: ipin bir sınırı var."],

@@ -278,6 +278,45 @@ const ui = (app.ui = {
   },
   // The marker on the screen for the nearest relic still to find (game.js relicAim): over its gate, or on the edge of the screen
   // on the side it is on, with how far it is.
+  // A warning of an enemy just ahead of you: an angry dummy, or a creature on a ledge. Only one that is really there
+  // for you: on the next stretch of your way up (the way-up path, navpath.js), close by, not below you and there on this
+  // climb's hazards. One you have passed, one round the far side of the tower, or one near another climber says nothing.
+  // Each one once a climb, and never two within a few seconds.
+  foes(g) {
+    if (g.flying || g.won || !g.L.route) return;
+    const L = g.L, me = g.me, N = L.navPath || (L.navPath = new NavPath(L)), P = N.pts;
+    N.update(me);
+    const k = N.k, now = performance.now();
+    if (k < 0 || N.maze || now - (this.foeT || 0) < 8000) return;
+    if (this.foeGame !== g) { this.foeGame = g; this.foeSeen = new Set(); this.foeAt = new Map(); }
+    // Where an enemy's ledge is on the path: the first place on it there.
+    const at = (key, x, y, z, r) => {
+      if (this.foeAt.has(key)) return this.foeAt.get(key);
+      let bi = -1;
+      for (let i = 0; i < P.length && bi < 0; i++) if (Math.abs(P[i].y - y) < 1.2 && Math.hypot(P[i].x - x, P[i].z - z) < r) bi = i;
+      this.foeAt.set(key, bi);
+      return bi;
+    };
+    const ahead = (i) => {
+      if (i <= k) return false;
+      let d = 0;
+      for (let q = k; q < i; q++) if ((d += Math.hypot(P[q + 1].x - P[q].x, P[q + 1].y - P[q].y, P[q + 1].z - P[q].z)) > 26) return false;
+      return true;
+    };
+    const feet = me.y - PR, near = (x, y, z) => y - feet > -1.5 && y - feet < 12 && Math.hypot(x - me.x, z - me.z) < 22;
+    const warn = (key, name) => { this.foeSeen.add(key); this.foeT = now; ui.toast(`${name} ahead! Jump past or SHOOT to stun`, 'bad'); };
+    for (const J of g.jumpers || []) {
+      const j = J.j, key = 'j' + j.i;
+      if (this.foeSeen.has(key) || !g.storm.on(j) || !near(j.x, j.y, j.z)) continue;
+      if (ahead(at(key, j.x, j.y, j.z, Math.max(j.hx, j.hz) + 1))) return warn(key, j.name);
+    }
+    for (const m of L.monsters) {
+      if (m.mz !== undefined) continue;
+      const key = 'm' + m.i, y = m.y - 0.65;
+      if (this.foeSeen.has(key) || !near(m.cx, y, m.cz)) continue;
+      if (ahead(at(key, m.cx, y, m.cz, m.hl + 1))) return warn(key, LEDGE_FOE[L.mapKey] || 'Monster');
+    }
+  },
   relicMark(g) {
     const el = this.relicEl || (this.relicEl = $('#hRelic')), a = settings.relicMark && !g.won && !g.aiming && g.relicAim;
     if (!a) { if (!el.hidden) el.hidden = true; return; }
@@ -1484,6 +1523,8 @@ function applyPc() {
   const m = /^(\d+)x(\d+)$/.exec(settings.pcRes || '');
   R.setRes(m ? +m[2] : 0);
 }
+// What the creatures on the ledges are called, on each map (the forest keeps its own monsters there).
+const LEDGE_FOE = { storm: 'Storm crab', sunny: 'Scorpion', forest: 'Monster', volcano: 'Fire imp', city: 'Robot dog', waterfall: 'Crocodile' };
 const fmtVal = (k, fmt) => (fmt === '%' ? Math.round(settings[k] * 100) + '%' : String(settings[k]));
 
 // Native picture settings, applied live.

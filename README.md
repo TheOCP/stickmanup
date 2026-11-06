@@ -433,6 +433,7 @@ To play or debug in a desktop browser, serve the `assets` folder with any static
     quake's shock ring and the bee swarms (storm.js has what they do)
   * `scenery.js`, `pattern.js`: platform shapes and surfaces, islands and plants per zone, GPU animated animals,
     waterfalls and spray
+  * `wildview.js`: the Wild Forest's island forest (trees, ferns, logs, long grass) and the mountains round its lake
   * `mirror.js` streams the scene to the native renderer
 * `src/`: a small Java activity that runs the game in a full screen WebView, the native OpenGL ES renderer
   (`src/io/stickmanup/gl/`), and WiFi, internet direct (UPnP and STUN) and Bluetooth sockets for the game

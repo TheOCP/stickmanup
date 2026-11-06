@@ -7,6 +7,7 @@ import { tr } from './i18n.js';
 import { TAU, rng, clamp } from './util.js';
 import { PATTERN_GLSL, noiseGlsl } from './pattern.js';
 import { styleFor, shapeGeo, patMat, noTrim, buildScenery, buildAnimals, fallMat, buildMist, detail, modelGeo, vegMat } from './scenery.js';
+import { buildWildForest, buildWildlands } from './wildview.js';
 import { buildMazes, showMaze, MAZE_BEAST } from './mazeview.js';
 import { courseStones, courseDecor, courseGate, courseSweep, postMat, signTex, COMET_HEAD, WELL_HEAD, headMesh } from './courseview.js';
 import { buildStart, updateStart } from './startview.js';
@@ -129,6 +130,7 @@ export class WorldView {
     this.cps = [];
     this.rods = [];
     this.timeMats = []; // shader materials whose uT follows game time (scenery.js)
+    this.onFrame = []; // called every update with (t, dt): wildview.js keeps its own lights in step with the scene's
     this.bands = new Map(); // height bands: see band()
     this.islandFalls = [];
     this.mistSpots = [];
@@ -828,7 +830,8 @@ export class WorldView {
       return;
     }
     const sunny = this.key === 'sunny', R = sunny ? 40 : 88;
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 9, 3, 96, 1), new THREE.MeshStandardMaterial({ color: sunny ? 0xe9d6a4 : 0x47732f, roughness: 1, metalness: 0 }));
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 9, 3, 96, 1), sunny ? new THREE.MeshStandardMaterial({ color: 0xe9d6a4, roughness: 1, metalness: 0 })
+      : panelMat(0x47732f, { pattern: 19, roughness: 1, metalness: 0 }));
     top.position.y = -1.1;
     this.add(top);
     if (sunny) {
@@ -836,12 +839,8 @@ export class WorldView {
       wet.position.y = 0.06;
       this.add(wet, false);
       // The surf on the beach is drawn by the ocean shader.
-    } else {
-      // Darker grass rings and dirt under the trees for depth.
-      const dirt = new THREE.Mesh(new THREE.RingGeometry(19, 30, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5b4a30, roughness: 1, metalness: 0 }));
-      dirt.position.y = 0.42;
-      this.add(dirt, false);
     }
+    // The forest floor (grass, bare earth round the trunk, moss) is drawn by its surface (pattern.js 19).
   }
 
   buildMapDecor() {
@@ -902,20 +901,9 @@ export class WorldView {
       // Birds: GPU flocks (scenery.js).
       this.gulls = [];
     } else if (this.key === 'forest') {
-      // Trees: trunk plus three stacked foliage cones, instanced, with per-tree colour.
-      const trees = D('tree');
-      const trunk = new THREE.CylinderGeometry(0.35, 0.6, 6, 8).translate(0, 3, 0);
-      const fol = merge([4, 6.5, 9].map((y, j) => ({ geo: new THREE.ConeGeometry(3.4 - j * 0.8, 4.2, 9), m: mat4(0, y, 0, 1, 1, 1, 0, j, 0), glow: null })));
-      const tm = new THREE.InstancedMesh(trunk, new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 1 }), trees.length);
-      const fm = new THREE.InstancedMesh(fol, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true }), trees.length);
+      // Trees, ferns, logs and long grass on the island (wildview.js).
+      buildWildForest(this);
       const col = new THREE.Color();
-      trees.forEach((d, i) => {
-        const m = mat4(d.x, d.y, d.z, d.s, d.s * (0.9 + R() * 0.4), d.s, 0, d.ry, 0);
-        tm.setMatrixAt(i, m);
-        fm.setMatrixAt(i, m);
-        fm.setColorAt(i, col.setHSL(0.26 + R() * 0.08, 0.5, 0.2 + R() * 0.1));
-      });
-      this.add(tm); this.add(fm);
       // Giant branches growing out of the trunk with leafy clumps at the ends.
       const branches = D('branch');
       const limb = new THREE.CylinderGeometry(0.25, 0.6, 1, 8).rotateZ(-Math.PI / 2).translate(0.5, 0, 0);
@@ -2038,6 +2026,7 @@ export class WorldView {
     if (this.key === 'volcano') return;
     if (this.key === 'city') return this.buildSkyline();
     if (this.key === 'waterfall') return this.buildCliffs();
+    if (this.key === 'forest') return buildWildlands(this);
     const R = rng(4243), sunny = this.key === 'sunny', n = sunny ? 9 : 26;
     const geo = sunny ? new THREE.SphereGeometry(1, 20, 10, 0, TAU, 0, Math.PI / 2) : new THREE.ConeGeometry(1, 1, 10);
     const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: sunny ? 0x4f8a48 : 0x2c4a2a, roughness: 1, flatShading: !sunny }), n);
@@ -2203,6 +2192,7 @@ export class WorldView {
     if (this.convFx) this.convFx.uniforms.uTime.value = wt;
     for (const m of this.waters) m.uniforms.uT.value = wt;
     for (const m of this.timeMats) m.uniforms.uT.value = wt;
+    for (const f of this.onFrame) f(t, dt);
     this.updateBands();
     for (const e of this.fishFx) e(t, cam);
     for (const e of this.swingFx) {

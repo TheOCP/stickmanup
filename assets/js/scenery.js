@@ -154,6 +154,99 @@ const bird = (body, wing, beak, k) => [
   P(box(0.34, 0.015, 0.14), M(0.2, k * 0.09, 0, 1, 1, 1, 0, 0, k * 0.55), wing), P(box(0.34, 0.015, 0.14), M(-0.2, k * 0.09, 0, 1, 1, 1, 0, 0, -k * 0.55), wing),
   P(box(0.1, 0.015, 0.16), M(0, 0, -0.2), wing)];
 
+// ---------------------------------------------------------------- the Wild Forest's trees and plants
+const I = () => M(0, 0, 0);
+// The parts of a model moved by the matrix m (a clump placed in a crown, a fern on a log).
+const at = (parts, m) => parts.map((p) => P(p.geo, m.clone().multiply(p.m), p.c, p.glow, p.gk));
+// A limb from a to b ([x, y, z]): radius ra at a, rb at b.
+function seg(a, b, ra, rb, s = 6) {
+  const A0 = new THREE.Vector3(...a), d = new THREE.Vector3(...b).sub(A0), len = d.length();
+  const g = new THREE.CylinderGeometry(rb, ra, len, s, 1).translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+  return g.translate(A0.x, A0.y, A0.z);
+}
+const egg = (rx, ry, rz, w = 10, h = 7) => new THREE.SphereGeometry(1, w, h).scale(rx, ry, rz);
+// A geometry from a flat list of triangles, each corner [position, normal].
+function tris(list) {
+  const pos = [], nor = [];
+  for (const [q, n] of list) { pos.push(q.x, q.y, q.z); nor.push(n.x, n.y, n.z); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return g;
+}
+// One tier of a spruce or fir: branches all round as a jagged skirt with drooping tips, and a darker underside. The
+// normals point out from below the middle, so the tree is lit as one soft cone, not as flat facets.
+function skirt(seed, r, h, n, droop) {
+  const R = rng(seed), ring = [], V = (x, y, z) => new THREE.Vector3(x, y, z);
+  for (let i = 0; i < n * 2; i++) {
+    const a = ((i + (R() - 0.5) * 0.5) / (n * 2)) * TAU, tip = i % 2 === 0, rr = r * (tip ? 0.86 + R() * 0.28 : 0.48 + R() * 0.14);
+    ring.push(V(Math.cos(a) * rr, tip ? -droop * (0.7 + R() * 0.6) : droop * 0.2, Math.sin(a) * rr));
+  }
+  const top = V(0, h, 0), under = V(0, h * 0.3, 0), cu = V(0, -r * 0.6, 0), cd = V(0, h + r, 0);
+  const nu = (q) => q.clone().sub(cu).normalize(), nd = (q) => q.clone().sub(cd).normalize();
+  const up = [], dn = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    up.push([top, nu(top).set(0, 1, 0)], [b, nu(b)], [a, nu(a)]);
+    dn.push([under, V(0, -1, 0)], [a, nd(a)], [b, nd(b)]);
+  }
+  return [tris(up), tris(dn)];
+}
+// A spruce (or fir) H high with its lowest branches R0 out: a straight trunk and tiers of drooping branches.
+function spruce(seed, H, R0, cols, dark, bark, nT) {
+  const R = rng(seed), parts = [P(cyl(0.07, 0.36, H, 7), M(0, H / 2, 0), bark)], y0 = H * 0.13;
+  for (let i = 0; i < nT; i++) {
+    const t = i / (nT - 1), y = y0 + (H * 0.9 - y0) * Math.pow(t, 0.95), r = R0 * Math.pow(1 - t * 0.9, 0.9) * (0.9 + R() * 0.18), ry = R() * TAU;
+    const [g1, g2] = skirt(seed * 31 + i, r, 0.5 + r * 0.42, r > 1.6 ? 10 : 7, 0.16 + r * 0.17);
+    parts.push(P(g1, M(0, y, 0, 1, 1, 1, 0, ry), cols[i % cols.length]), P(g2, M(0, y, 0, 1, 1, 1, 0, ry), dark));
+  }
+  parts.push(P(cone(0.14, 1.2, 5), M(0, H * 0.9 + 0.75, 0), cols[0]));
+  return parts;
+}
+// A broadleaf tree: trunk with a flared foot, limbs reaching out and up, a leafy clump at the end of each and on top.
+function broadleaf(seed, o) {
+  const R = rng(seed), parts = [P(cyl(o.tr * 0.62, o.tr, o.th, 9), M(0, o.th / 2, 0), o.bark), P(cone(o.tr * 1.8, o.tr * 2.4, 9), M(0, o.tr * 1.1, 0), o.bark)];
+  const leaves = clump(seed + 3, o.leaves, o.cols, o.inner, o.flat ?? 0.72), crown = [];
+  for (let k = 0; k < o.limbs; k++) {
+    const a = (k / o.limbs) * TAU + R() * 0.8, lean = o.lean[0] + R() * (o.lean[1] - o.lean[0]), l = o.ll * (0.8 + R() * 0.4), y = o.th * (0.62 + R() * 0.3);
+    const e = [Math.cos(a) * Math.sin(lean) * l, y + Math.cos(lean) * l, Math.sin(a) * Math.sin(lean) * l];
+    parts.push(P(seg([0, y, 0], e, o.tr * 0.42, o.tr * 0.16), I(), o.bark));
+    crown.push([e[0], e[1] + o.cs * 0.3, e[2], o.cs * (0.85 + R() * 0.3)]);
+  }
+  for (const [x, y, z] of o.top) crown.push([x, y, z, o.cs * (1 + R() * 0.2)]);
+  for (const [x, y, z, sc] of crown) parts.push(...at(leaves, M(x, y, z, sc, sc, sc, 0, R() * TAU)));
+  return parts;
+}
+// A fern: fronds of paired leaflets arching out from the middle.
+function fernGeo(seed, n, len, cols) {
+  const R = rng(seed), lists = cols.map(() => []), V = (x, y, z) => new THREE.Vector3(x, y, z);
+  for (let f = 0; f < n; f++) {
+    const a = (f / n) * TAU + R() * 0.5, ca = Math.cos(a), sa = Math.sin(a), L = len * (0.75 + R() * 0.45), up = 0.85 + R() * 0.5;
+    for (let k = 1; k <= 6; k++) {
+      const t = k / 7, c = V(ca * t * L, L * up * (0.9 * t - 0.75 * t * t), sa * t * L);
+      const tan = V(ca, up * (0.9 - 1.5 * t), sa).normalize(), side = V(-sa, 0, ca), nrm = tan.clone().cross(side).normalize().multiplyScalar(-1);
+      if (nrm.y < 0) nrm.negate();
+      const s = 0.3 * L * (1 - t * 0.55);
+      for (const sd of [-1, 1]) lists[(k + f) % cols.length].push({ c: c.clone().addScaledVector(side, sd * s * 0.45), t: side.clone().multiplyScalar(sd).addScaledVector(tan, 0.35).normalize(), b: tan, n: nrm, s, w: s * 0.26 });
+    }
+  }
+  return lists.map((l, i) => P(leafGeo(l), I(), cols[i]));
+}
+// A tuft of long grass: thin blades bending out and over.
+function blades(seed, n, h, cols) {
+  const R = rng(seed), lists = cols.map(() => []), V = (x, y, z) => new THREE.Vector3(x, y, z);
+  for (let i = 0; i < n; i++) {
+    const a = R() * TAU, ca = Math.cos(a), sa = Math.sin(a), r0 = R() * 0.1, hh = h * (0.6 + R() * 0.6), lean = 0.15 + R() * 0.45, w = 0.025 + R() * 0.015;
+    const side = V(-sa, 0, ca), o = V(ca * r0, 0, sa * r0), out = V(ca, 0, sa);
+    const m = o.clone().addScaledVector(out, hh * lean * 0.45).setY(hh * 0.58), tip = o.clone().addScaledVector(out, hh * lean * 1.1).setY(hh * (0.95 - lean * 0.3));
+    const nrm = V(ca * 0.5, 1, sa * 0.5).normalize(), L = lists[i % cols.length];
+    const q = [o.clone().addScaledVector(side, -w), o.clone().addScaledVector(side, w), m.clone().addScaledVector(side, w * 0.6), m.clone().addScaledVector(side, -w * 0.6)];
+    for (const [x, y, z] of [[q[0], q[1], q[2]], [q[0], q[2], q[3]], [q[3], q[2], tip]]) L.push([x, nrm], [y, nrm], [z, nrm], [x, nrm], [z, nrm], [y, nrm]);
+  }
+  return lists.map((l, i) => P(tris(l), I(), cols[i]));
+}
+
 // ---------------------------------------------------------------- plants and props (about 1 unit = 1 m)
 const MODELS = {
   // On the relic courses: what hangs under the stones, is wound round the gates, and what the trees stand on.
@@ -194,6 +287,56 @@ const MODELS = {
   flytrap: () => [P(cyl(0.05, 0.08, 1.5, 5), M(0, -1.05, 0), 0x3a7a32), P(new THREE.SphereGeometry(0.5, 10, 6, 0, TAU, 0, Math.PI / 2), M(0, 0.04, 0, 1, 0.8, 1, -0.35), 0x4f9a3a), P(new THREE.SphereGeometry(0.5, 10, 6, 0, TAU, 0, Math.PI / 2), M(0, -0.04, 0, 1, 0.8, 1, Math.PI + 0.35), 0x4f9a3a), P(ico(0.34, 0), M(0, 0, 0.08), 0x8a1a20, 0xff3040, 0.6),
     ...[-0.36, -0.18, 0, 0.18, 0.36].flatMap((x) => [P(cone(0.035, 0.17, 3), M(x, 0.08, 0.42 - Math.abs(x) * 0.5, 1, 1, 1, Math.PI), 0xf0e6d0), P(cone(0.035, 0.17, 3), M(x, -0.08, 0.42 - Math.abs(x) * 0.5), 0xf0e6d0)])],
   magnet: () => [P(new THREE.TorusGeometry(0.42, 0.13, 6, 12, Math.PI), M(0, 0.05, 0), 0xc83030), P(box(0.26, 0.3, 0.26), M(0.42, -0.1, 0), 0xc8ccd4, 0x40e0ff, 1.2), P(box(0.26, 0.3, 0.26), M(-0.42, -0.1, 0), 0xc8ccd4, 0xff4fd8, 1.2)],
+  // The Wild Forest: tall spruces and firs, oaks, birches, pines, dead snags, fallen logs, ferns and long grass.
+  spruceT: () => spruce(201, 11.5, 3.2, [0x2a5a2e, 0x316634, 0x3a723a], 0x173219, 0x4a3828, 12),
+  firT: () => spruce(203, 12.5, 2.7, [0x1f4a36, 0x26553c, 0x2e6244], 0x11281c, 0x3e3026, 14),
+  oakT: () => broadleaf(205, { tr: 0.5, th: 4.6, bark: 0x4e3e2e, limbs: 4, lean: [0.55, 0.95], ll: 2.6, cs: 2.0, leaves: 60,
+    cols: [0x3a7a30, 0x4a9038, 0x68a844], inner: 0x2a5a22, top: [[0, 8.2, 0], [0.6, 7.0, -0.7]] }),
+  beechT: () => broadleaf(207, { tr: 0.42, th: 5.4, bark: 0x7a7468, limbs: 3, lean: [0.35, 0.7], ll: 2.8, cs: 1.9, leaves: 60,
+    cols: [0x447e2c, 0x5a9634, 0x78aa3c], inner: 0x325e22, top: [[0, 9.0, 0], [-0.8, 7.8, 0.6]] }),
+  birchT: () => {
+    const R = rng(209), parts = [P(cyl(0.11, 0.2, 9.4, 8), M(0, 4.7, 0), 0xe6e2d8)];
+    for (let k = 0; k < 11; k++) { const y = 0.5 + R() * 8, a = R() * TAU, r = 0.2 - y * 0.0095; parts.push(P(box(0.12 + R() * 0.06, 0.04 + R() * 0.05, 0.05), M(Math.cos(a) * r, y, Math.sin(a) * r, 1, 1, 1, 0, -(a + Math.PI / 2)), 0x2a2622)); }
+    const leaves = clump(211, 50, [0x5a9a3a, 0x74b04a, 0x92c45a], 0x3a7028);
+    for (const [x, y, z, sc] of [[0.9, 6.2, 0.3, 1.3], [-0.8, 7.0, -0.4, 1.4], [0.2, 8.0, 0.9, 1.3], [-0.3, 9.2, -0.2, 1.5], [0.6, 8.6, -0.8, 1.1]]) {
+      parts.push(P(seg([0, y - 1.6, 0], [x * 0.8, y, z * 0.8], 0.07, 0.03, 5), I(), 0xe6e2d8), ...at(leaves, M(x, y, z, sc, sc * 1.15, sc, 0, R() * TAU)));
+    }
+    return parts;
+  },
+  pineT: () => {
+    const R = rng(213), parts = [P(cyl(0.2, 0.36, 7.5, 8), M(0, 3.75, 0), 0x5a4434), P(cyl(0.12, 0.2, 4, 7), M(0, 9.3, 0), 0xb0703c)];
+    const leaves = clump(215, 50, [0x2a5a2c, 0x346a34, 0x3f7a3c], 0x1e4220, 0.45);
+    for (let k = 0; k < 5; k++) {
+      const a = k * 1.3 + R() * 0.5, d = k === 4 ? 0 : 1.2 + R() * 0.6, y = 8.4 + R() * 1.2 + (k === 4) * 2.2, x = Math.cos(a) * d, z = Math.sin(a) * d, sc = 1.5 + R() * 0.5;
+      if (d) parts.push(P(seg([0, y - 0.8, 0], [x, y, z], 0.1, 0.05, 5), I(), 0x9a6034));
+      parts.push(...at(leaves, M(x, y, z, sc * 1.2, sc * 0.75, sc * 1.2, 0, R() * TAU)));
+    }
+    return parts;
+  },
+  snagT: () => {
+    const R = rng(217), parts = [P(cyl(0.12, 0.34, 7, 8), M(0, 3.5, 0), 0x6a625a), P(cone(0.13, 0.7, 6), M(0.04, 7.3, 0, 1, 1, 1, 0.2, 0, 0.3), 0x8a8276)];
+    for (let k = 0; k < 5; k++) { const a = R() * TAU, y = 2.8 + R() * 3.6, l = 1 + R() * 1.4; parts.push(P(seg([0, y, 0], [Math.cos(a) * l, y + l * (0.3 + R() * 0.5), Math.sin(a) * l], 0.07, 0.02, 5), I(), 0x6a625a)); }
+    parts.push(...at(bracket([0xc89a5a, 0xa8743e, 0xeee0c0]), M(0, 1.6, 0.3, 0.6)), ...at(bracket([0xd8c8a8, 0xb8a888, 0xf0e8d8]), M(-0.2, 2.6, -0.24, 0.45, 0.45, 0.45, 0, Math.PI)));
+    return parts;
+  },
+  logT: () => {
+    const moss = clump(219, 40, [0x4a8a3a, 0x63a446, 0x8cc05a], 0x3a6e2e, 0.4);
+    return [P(seg([-2.6, 0.36, 0], [2.6, 0.42, 0.1], 0.42, 0.34, 10), I(), 0x5a4632), P(cyl(0.38, 0.38, 0.04, 10), M(-2.62, 0.36, 0, 1, 1, 1, 0, 0, Math.PI / 2), 0xb08a5a),
+      P(cyl(0.3, 0.3, 0.04, 10), M(2.62, 0.42, 0.1, 1, 1, 1, 0, 0, Math.PI / 2), 0xb08a5a), ...at(moss, M(-0.9, 0.74, 0, 1.1, 0.4, 0.42)), ...at(moss, M(1.2, 0.76, 0.06, 0.8, 0.35, 0.36, 0, 1.2)),
+      ...at(bracket([0xc89a5a, 0xa8743e, 0xeee0c0]), M(0.4, 0.4, 0.42, 0.35))];
+  },
+  stumpT: () => [P(cyl(0.42, 0.56, 0.7, 10), M(0, 0.35, 0), 0x5a4632), P(cyl(0.4, 0.4, 0.03, 10), M(0, 0.71, 0), 0xb89a6a), P(cyl(0.2, 0.2, 0.035, 10), M(0, 0.715, 0), 0xa0805a),
+    ...at(clump(221, 30, [0x4a8a3a, 0x63a446], 0x3a6e2e, 0.4), M(0.3, 0.2, 0.3, 0.4, 0.3, 0.4))],
+  fernT: () => fernGeo(223, 7, 0.95, [0x2f7a2c, 0x3f8c34, 0x58a040]),
+  tuftT: () => blades(225, 12, 0.7, [0x5a9a3a, 0x74ae46, 0x8ab84e]),
+  shrubT: () => [...at(clump(227, 46, [0x2f6a2a, 0x3c8030, 0x58993c], 0x22501f), M(0, 0.55, 0, 0.8, 0.62, 0.8)), ...at(clump(228, 30, [0x3c8030, 0x58993c], 0x22501f), M(0.55, 0.42, 0.2, 0.5, 0.42, 0.5))],
+  // The same trees smaller, for the floating islands and ledges up the climb.
+  spruceS: () => at(MODELS.spruceT(), M(0, 0, 0, 0.4)),
+  oakS: () => at(MODELS.oakT(), M(0, 0, 0, 0.4)),
+  birchS: () => at(MODELS.birchT(), M(0, 0, 0, 0.38)),
+  snagS: () => at(MODELS.snagT(), M(0, 0, 0, 0.42)),
+  mossrock: () => [P(new THREE.DodecahedronGeometry(0.62, 1), M(0, 0.28, 0, 1.25, 0.72, 1), 0x7a776e), P(new THREE.DodecahedronGeometry(0.34, 0), M(0.62, 0.12, 0.3), 0x6a675e),
+    ...at(clump(229, 36, [0x4a8a3a, 0x63a446, 0x8cc05a], 0x3a6e2e, 0.4), M(-0.1, 0.62, 0, 0.62, 0.3, 0.52))],
   pine: () => [P(cyl(0.12, 0.2, 1.4), M(0, 0.7, 0), 0x5a3e28), P(cone(1.0, 1.7, 9), M(0, 1.7, 0), 0x24603a), P(cone(0.8, 1.5, 9), M(0, 2.4, 0, 1, 1, 1, 0, 0.4), 0x2c6e40), P(cone(0.55, 1.2, 9), M(0, 3.1, 0, 1, 1, 1, 0, 0.8), 0x347a46)],
   frostpine: () => [P(cyl(0.12, 0.2, 1.4), M(0, 0.7, 0), 0x4a3a30), P(cone(1.0, 1.7, 9), M(0, 1.7, 0), 0xd8eef6), P(cone(0.8, 1.5, 9), M(0, 2.4, 0, 1, 1, 1, 0, 0.4), 0x5a8a8a), P(cone(0.55, 1.2, 9), M(0, 3.1, 0, 1, 1, 1, 0, 0.8), 0xeaf6fa)],
   oak: () => [P(cyl(0.14, 0.24, 1.8), M(0, 0.9, 0), 0x5e4028), P(cyl(0.06, 0.08, 0.9), M(0.3, 1.5, 0, 1, 1, 1, 0, 0, -0.7), 0x5e4028),
@@ -410,7 +553,7 @@ export function shapeGeo(name) {
 
 // Surface pattern ids (pattern.js): 1 metal, 2 stone, 3 wood, 4 hex tiles, 5 grass on rock, 6 sand on rock,
 // 7 basalt, 8 tread plate, 9 bamboo, 10 marble, 11 coral, 12 concrete, 13 moss on wet stone, 14 snow on rock,
-// 15 cloud, 16 bark, 17 hedge.
+// 15 cloud, 16 bark, 17 hedge, 18 upright logs, 19 forest floor.
 const PATMATS = new Map();
 export function patMat(pat, color = 0xffffff, o = {}) {
   const key = pat + ':' + color + ':' + (o.rough ?? '');
@@ -422,6 +565,10 @@ export function patMat(pat, color = 0xffffff, o = {}) {
 const NATURAL = /^(rock|isle|disc|lily|cloud|mushcap|basalt|planks|raft|log)/;
 export const noTrim = (key, shape) => (key === 'sunny' || key === 'forest' || key === 'waterfall') && NATURAL.test(shape);
 
+const KICKWALL = {
+  storm: { shape: 'box', pat: 8, col: 0x8a94a4 }, sunny: { shape: 'box', pat: 2, col: 0xf2e8d4 }, forest: { shape: 'box', pat: 18, col: 0xffffff },
+  volcano: { shape: 'box', pat: 7, col: 0xb09a92 }, city: { shape: 'box', pat: 12, col: 0xb4b8c4 }, waterfall: { shape: 'box', pat: 13, col: 0xffffff },
+};
 // How each map dresses its platforms: { shape, pat, col (hex or null for the zone tint), under (hanging part) }.
 export function styleFor(key, c, zi, R) {
   if (c.kind === 'pier') {
@@ -434,6 +581,8 @@ export function styleFor(key, c, zi, R) {
       default: return { shape: 'chamfer', pat: 4, col: 0x8e98a8 };
     }
   }
+  // The walls of a wall jump shaft: a real surface for each map, not a plain panel.
+  if (c.kind === 'wall' && c.kick && !c.look) return KICKWALL[key] || null;
   const beam = c.kind === 'beam' || c.kind === 'branch';
   if (c.kind !== 'plat' && !beam) return null;
   if (c.look || c.surf === 'ice' || c.surf === 'mud') return null;
@@ -483,10 +632,10 @@ const FLORA = {
     T(5, [['palm', 2], ['bush', 2], ['flowers', 1]], [['flowers', 2], ['grass', 1]]), T(5, [['blossom', 2], ['flowers', 3], ['bush', 1]], [['flowers', 2]]),
     T(6, [['palm', 3], ['umbrella', 1]], [['grass', 1], ['rocks', 1]]), T(6, [['cactus', 3], ['palm', 1]], [['rocks', 1]]), T(5, [['palm', 2], ['flowers', 2]], [['flowers', 1]]),
     T(5, [['blossom', 2], ['flowers', 3]], [['flowers', 2]]), T(6, [['palm', 2], ['blossom', 1]], [['flowers', 1]])],
-  forest: [T(5, [['oak', 3], ['bush', 2], ['fern', 2]], [['fern', 2], ['grass', 1], ['bush', 1]]), T(13, [['shroom', 4], ['fern', 1]], [['glowshroom', 1], ['fern', 1]]),
-    T(5, [['oak', 2], ['pine', 2], ['bush', 1]], [['fern', 1], ['grass', 1]]), T(13, [['oak', 2], ['fern', 2], ['bush', 2]], [['fern', 2]]),
-    T(13, [['glowtree', 3], ['glowshroom', 2]], [['glowshroom', 2]]), T(5, [['dead', 3], ['bush', 1]], [['rocks', 1], ['grass', 1]]), T(5, [['pine', 4]], [['fern', 1], ['rocks', 1]]),
-    T(5, [['oak', 3], ['bush', 1]], [['bush', 1], ['flowers', 1]]), T(5, [['birch', 3], ['blossom', 1], ['flowers', 1]], [['flowers', 2]])],
+  forest: [T(5, [['oakS', 3], ['shrubT', 2], ['fernT', 2]], [['fernT', 2], ['tuftT', 1], ['shrubT', 1]]), T(13, [['shroom', 4], ['fernT', 1]], [['glowshroom', 1], ['fernT', 1]]),
+    T(5, [['oakS', 2], ['spruceS', 2], ['shrubT', 1]], [['fernT', 1], ['tuftT', 1]]), T(13, [['oakS', 2], ['fernT', 2], ['shrubT', 2]], [['fernT', 2]]),
+    T(13, [['glowtree', 3], ['glowshroom', 2]], [['glowshroom', 2]]), T(5, [['snagS', 3], ['shrubT', 1]], [['mossrock', 1], ['tuftT', 1]]), T(5, [['spruceS', 4]], [['fernT', 1], ['mossrock', 1]]),
+    T(5, [['oakS', 3], ['shrubT', 1]], [['shrubT', 1], ['flowers', 1]]), T(5, [['birchS', 3], ['blossom', 1], ['flowers', 1]], [['flowers', 2]])],
   volcano: [T(7, [['dead', 2], ['ember', 2]], [['ember', 1]]), T(7, [['dead', 2], ['ember', 2]], [['ember', 1]]), T(7, [['obsidian', 3], ['ember', 1]], [['obsidian', 1]]),
     T(7, [['dead', 2], ['ember', 2]], [['ember', 1]]), T(7, [['ember', 2], ['dead', 1]], [['ember', 1]]), T(7, [['obsidian', 2], ['ember', 2]], [['ember', 1]]),
     T(7, [['obsidian', 3], ['ember', 1]], [['obsidian', 1]]), T(7, [['dead', 3]], [['ember', 1]]), T(5, [['pine', 3], ['bush', 1]], [['grass', 1]])],
@@ -570,7 +719,7 @@ export function buildScenery(view) {
   for (const { model, y, list } of inst.values()) {
     const geo = modelGeo(model), im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach(([m, t], i) => { im.setMatrixAt(i, m); im.setColorAt(i, col.setHex(t ?? 0xffffff)); });
-    view.add(im, model !== 'grass' && model !== 'flowers' && model !== 'fern');
+    view.add(im, model !== 'grass' && model !== 'flowers' && model !== 'fern' && model !== 'fernT' && model !== 'tuftT');
     view.band(y).near.push(im);
   }
   paletteTex();
@@ -636,9 +785,10 @@ const ANIMALS = {
     A(ico(0.025, 0), M(0.07, 0.23, 0.13), 0x111111), A(ico(0.025, 0), M(-0.07, 0.23, 0.13), 0x111111), A(box(0.07, 0.05, 0.2), M(0.13, 0.05, -0.08), 0x3aa83a, 2), A(box(0.07, 0.05, 0.2), M(-0.13, 0.05, -0.08), 0x3aa83a, 2)],
   turtle: () => [A(new THREE.SphereGeometry(0.4, 6, 3, 0, TAU, 0, Math.PI / 2), M(0, 0, 0, 1, 0.6, 1.2), 0x4a6a3a), A(lo(0.12), M(0, 0.02, 0.55), 0x8aa86a),
     ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.22, 0.04, 0.1), M(s * 0.4, 0, f * 0.3, 1, 1, 1, 0, s * f * 0.4), 0x8aa86a, 2))],
-  deer: () => [A(box(0.3, 0.32, 0.8), M(0, 0.85, 0), 0x9a6a3e), A(box(0.12, 0.38, 0.12), M(0, 1.12, 0.38, 1, 1, 1, -0.5), 0x9a6a3e), A(box(0.16, 0.16, 0.3), M(0, 1.32, 0.52), 0x8a5a32),
-    A(ico(0.04, 0), M(0, 1.3, 0.68), 0x1a1a1a), A(box(0.04, 0.22, 0.04), M(0.06, 1.48, 0.46, 1, 1, 1, -0.3, 0, -0.4), 0x5a3e26), A(box(0.04, 0.22, 0.04), M(-0.06, 1.48, 0.46, 1, 1, 1, -0.3, 0, 0.4), 0x5a3e26),
-    A(box(0.1, 0.12, 0.06), M(0, 0.95, -0.42), 0xf4f0e8), ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.07, 0.7, 0.07), M(s * 0.1, 0.35, f * 0.3), 0x7a5232, 2))],
+  // Deer (scenery.js mode 5): w 3 neck, 4 head, 5 tail, 6 upper leg, 7 lower leg, moved by the shader as they walk and graze.
+  deer: () => deerParts(0),
+  stag: () => deerParts(1),
+  fawn: () => deerParts(2),
   lizard: () => [A(box(0.16, 0.1, 0.5), M(0, 0.06, 0), 0x3a2a24), A(box(0.12, 0.08, 0.14), M(0, 0.06, 0.3), 0x3a2a24), A(cone(0.06, 0.5, 4), M(0, 0.05, -0.48, 1, 0.6, 1, -Math.PI / 2), 0x3a2a24),
     A(ico(0.03, 0), M(0.04, 0.08, 0.08), 0xff6a1a), A(ico(0.03, 0), M(-0.03, 0.08, -0.08), 0xff6a1a), ...[[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([s, f]) => A(box(0.14, 0.03, 0.04), M(s * 0.12, 0.03, f * 0.15), 0x2a1e1a, 2))],
   rabbit: () => [A(lo(0.13), M(0, 0.14, 0, 1, 0.9, 1.3), 0xb89a7a), A(lo(0.09), M(0, 0.24, 0.15), 0xb89a7a), A(box(0.035, 0.16, 0.06), M(0.03, 0.38, 0.12, 1, 1, 1, -0.2, 0, -0.15), 0xa88a6a),
@@ -650,6 +800,50 @@ const ANIMALS = {
   dolphin: () => [A(lo(0.4), M(0, 0, 0, 0.8, 0.8, 2.6), 0x7a8a9a), A(cone(0.08, 0.4, 5), M(0, 0.02, 1.1, 1, 1, 1, Math.PI / 2), 0x8a9aaa), A(cone(0.18, 0.4, 4), M(0, 0.38, -0.1, 0.3, 1, 1), 0x6a7a8a),
     A(quad(0.6, 0.2), M(0, 0, -1.05), 0x6a7a8a), A(box(0.3, 0.04, 0.14), M(0.3, -0.12, 0.3, 1, 1, 1, 0, 0, -0.4), 0x6a7a8a), A(box(0.3, 0.04, 0.14), M(-0.3, -0.12, 0.3, 1, 1, 1, 0, 0, 0.4), 0x6a7a8a)],
 };
+// A deer about 1 m at the shoulder, facing +z: a doe (0), a stag with antlers (1) or a spotted fawn (2).
+function deerParts(kind) {
+  const coat = kind === 1 ? 0x8e6038 : kind === 2 ? 0xa8703e : 0x9a6a40, back = kind === 1 ? 0x6e4a2c : 0x7d5532, leg = 0x80603e, low = 0x6a4c30;
+  const pale = 0xeee6d8, hoof = 0x2a211a, E = (x, y, z, rx, ry, rz, c, w, px = 0, py = 0, pz = 0, d = 10) => A(egg(rx, ry, rz, d, Math.max(5, d - 3)), M(x, y, z, 1, 1, 1, px, py, pz), c, w);
+  const parts = [
+    // Body: barrel, deeper chest, rump, pale belly and rump patch.
+    E(0, 0.86, -0.02, 0.17, 0.2, 0.47, coat, 0), E(0, 0.84, 0.28, 0.16, 0.22, 0.22, coat, 0), E(0, 0.9, -0.34, 0.17, 0.2, 0.22, coat, 0),
+    E(0, 0.69, 0.0, 0.1, 0.07, 0.3, 0xd8c6aa, 0), E(0, 0.92, -0.52, 0.085, 0.1, 0.05, pale, 0),
+    // A soft shadow on the ground under it.
+    A(new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2), M(0, 0.012, 0, 0.3, 1, 0.62), 0x24361a, 0),
+    // Tail.
+    E(0, 0.95, -0.57, 0.05, 0.1, 0.035, back, 5, -0.4), E(0, 0.93, -0.59, 0.042, 0.085, 0.025, pale, 5, -0.4),
+    // Neck from the chest up and forward, a pale throat.
+    A(seg([0, 0.88, 0.4], [0, 1.33, 0.67], 0.11, 0.075, 8), I(), coat, 3), E(0, 1.18, 0.62, 0.05, 0.08, 0.04, pale, 3, -0.6),
+    // Head: skull, tapering snout, pale muzzle, black nose, eyes, ears.
+    E(0, 1.37, 0.73, 0.075, 0.08, 0.12, coat, 4, 0.5), A(seg([0, 1.35, 0.76], [0, 1.26, 0.92], 0.058, 0.034, 8), I(), coat, 4),
+    E(0, 1.255, 0.925, 0.036, 0.03, 0.03, 0xd8c8b4, 4, 0, 0, 0, 6), E(0, 1.262, 0.948, 0.022, 0.018, 0.012, 0x1c1612, 4, 0, 0, 0, 6),
+    E(0.058, 1.395, 0.77, 0.018, 0.018, 0.018, 0x0e0c0a, 4, 0, 0, 0, 6), E(-0.058, 1.395, 0.77, 0.018, 0.018, 0.018, 0x0e0c0a, 4, 0, 0, 0, 6),
+  ];
+  for (const sx of [-1, 1]) {
+    parts.push(E(sx * 0.085, 1.47, 0.69, 0.034, 0.085, 0.014, coat, 4, 0.2, sx * 0.4, -sx * 0.7, 8), E(sx * 0.088, 1.47, 0.698, 0.024, 0.066, 0.008, 0xd8b8a0, 4, 0.2, sx * 0.4, -sx * 0.7, 6));
+    // Forelegs: from the shoulder to the knee, then the slim cannon to the hoof.
+    parts.push(A(seg([sx * 0.09, 0.84, 0.32], [sx * 0.09, 0.47, 0.34], 0.058, 0.036), I(), leg, 6), A(seg([sx * 0.09, 0.47, 0.34], [sx * 0.09, 0.06, 0.34], 0.032, 0.024), I(), low, 7),
+      A(seg([sx * 0.09, 0.065, 0.342], [sx * 0.09, 0, 0.36], 0.026, 0.032, 6), I(), hoof, 7));
+    // Hind legs: a thick thigh, the gaskin back to the hock, the cannon down to the hoof.
+    parts.push(E(sx * 0.1, 0.82, -0.36, 0.075, 0.17, 0.12, coat, 6), A(seg([sx * 0.1, 0.78, -0.36], [sx * 0.1, 0.5, -0.45], 0.06, 0.038), I(), leg, 6),
+      A(seg([sx * 0.1, 0.5, -0.45], [sx * 0.1, 0.06, -0.39], 0.032, 0.024), I(), low, 7), A(seg([sx * 0.1, 0.065, -0.388], [sx * 0.1, 0, -0.37], 0.026, 0.032, 6), I(), hoof, 7));
+    if (kind === 1) {
+      // Antlers: a beam curving up and out, with tines.
+      const b = [[sx * 0.05, 1.45, 0.7], [sx * 0.13, 1.6, 0.66], [sx * 0.18, 1.75, 0.6], [sx * 0.15, 1.9, 0.66]];
+      for (let k = 0; k < 3; k++) parts.push(A(seg(b[k], b[k + 1], 0.017 - k * 0.003, 0.014 - k * 0.003, 5), I(), 0xc8b49a, 4));
+      for (const [a, t] of [[[sx * 0.07, 1.49, 0.7], [sx * 0.08, 1.56, 0.81]], [[sx * 0.13, 1.6, 0.66], [sx * 0.14, 1.73, 0.75]], [[sx * 0.17, 1.73, 0.61], [sx * 0.23, 1.86, 0.68]]]) parts.push(A(seg(a, t, 0.012, 0.007, 4), I(), 0xe0d4c0, 4));
+    }
+  }
+  if (kind === 2) {
+    // Fawn spots along the back and flanks.
+    const R = rng(31);
+    for (let k = 0; k < 22; k++) {
+      const z = -0.4 + R() * 0.75, a = (R() < 0.5 ? -1 : 1) * (0.25 + R() * 0.9), r = 1 - (z / 0.5) ** 2 * 0.3;
+      parts.push(E(Math.sin(a) * 0.17 * r, 0.86 + Math.cos(a) * 0.2 * r, z, 0.016, 0.016, 0.016, 0xf4ece0, 0, 0, 0, 0, 5));
+    }
+  }
+  return parts;
+}
 const SWARM_VS = `#include <fog_pars_vertex>
   uniform float uT, uMode, uFlap, uSide;
   attribute vec3 aCol; attribute float aW; attribute vec4 aP; attribute vec4 aQ;
@@ -657,6 +851,7 @@ const SWARM_VS = `#include <fog_pars_vertex>
   vec2 rot2(vec2 v, float a){ float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
   void main(){
     float ph = aP.w, R = aQ.x, sp = aQ.y, amp = aQ.z, sz = aQ.w, a = uT * sp + ph * 6.2832, bank = 0.0, pitch = 0.0;
+    float dv = 0.0, gait = 0.0, graze = 0.0, look = 0.0;
     vec3 c, d;
     if (uMode < 0.5) {
       c = aP.xyz + vec3(cos(a) * R, sin(a * 0.6 + ph * 5.0) * amp, sin(a) * R);
@@ -670,6 +865,22 @@ const SWARM_VS = `#include <fog_pars_vertex>
     } else if (uMode < 3.5) {
       float h = ph * 6.2832; vec3 f = vec3(sin(h), 0.0, cos(h));
       c = aP.xyz + f * sin(a * 0.5) * R; c.y += max(0.0, sin(a * 3.0)) * amp; d = f * (cos(a * 0.5) >= 0.0 ? 1.0 : -1.0);
+    } else if (uMode > 4.5) {
+      // Deer: walk a figure of eight (two circles of radius R meeting at the spot), slow down, stop to graze for a while,
+      // now and then lift the head to look round, then walk on. amp moves one along the same path (a fawn behind its mother).
+      float Tw = 6.0 + fract(ph * 7.31) * 7.0, Tg = 4.0 + fract(ph * 3.17) * 7.0, Tc = Tw + Tg, e = 1.3;
+      float u = uT / Tc + ph * 5.0, f = fract(u) * Tc;
+      float run = f < e ? 0.5 * f * f / e : f < Tw - e ? f - 0.5 * e : f < Tw ? Tw - e - 0.5 * (Tw - f) * (Tw - f) / e : Tw - e;
+      dv = f < e ? f / e : f < Tw - e ? 1.0 : f < Tw ? (Tw - f) / e : 0.0;
+      float L = (floor(u) * (Tw - e) + run) * sp + amp + ph * 40.0, Lc = 6.2832 * R;
+      float th = fract(L / Lc) * 6.2832, sx = mod(floor(L / Lc), 2.0) < 0.5 ? 1.0 : -1.0, h = ph * 6.2832, ch = cos(h), sh = sin(h);
+      vec3 q = vec3(sx * R * (1.0 - cos(th)), 0.0, R * sin(th)), t = vec3(sx * sin(th), 0.0, cos(th));
+      c = aP.xyz + vec3(ch * q.x + sh * q.z, 0.0, -sh * q.x + ch * q.z);
+      d = vec3(ch * t.x + sh * t.z, 0.0, -sh * t.x + ch * t.z);
+      gait = L / (1.15 * sz) * 6.2832;
+      float m = Tw + Tg * 0.55, alert = Tg > 7.0 ? smoothstep(m - 1.0, m - 0.4, f) * (1.0 - smoothstep(m + 0.8, m + 1.4, f)) : 0.0;
+      graze = smoothstep(Tw + 0.1, Tw + 1.3, f) * (1.0 - smoothstep(Tc - 1.2, Tc - 0.1, f)) * (1.0 - alert);
+      look = alert * sin(ph * 23.0) * 0.7 + dv * sin(uT * 0.6 + ph * 9.0) * 0.12;
     } else {
       // Swimming round a circle at the surface, now and then leaping out (dolphins).
       c = aP.xyz + vec3(cos(a) * R, 0.0, sin(a) * R); d = vec3(-sin(a), 0.0, cos(a)) * sign(sp);
@@ -678,7 +889,32 @@ const SWARM_VS = `#include <fog_pars_vertex>
     }
     vec3 p = position * sz, n = normal;
     if (abs(aW) > 0.5 && abs(aW) < 1.5) { float ang = sin(uT * uFlap + ph * 40.0) * 0.8 * sign(aW); p.xy = rot2(p.xy, ang); n.xy = rot2(n.xy, ang); }
-    if (aW > 1.5) { float ang = sin(uT * 10.0 + ph * 30.0 + position.z * 25.0) * 0.45; p.yz = rot2(p.yz, ang * sign(position.x)); }
+    if (aW > 1.5 && aW < 2.5) { float ang = sin(uT * 10.0 + ph * 30.0 + position.z * 25.0) * 0.45; p.yz = rot2(p.yz, ang * sign(position.x)); }
+    if (uMode > 4.5 && aW > 2.5) {
+      vec3 q = position, nn = normal;
+      if (aW > 5.5) {
+        // Legs swing from the hip and the lower leg folds back as it comes forward. Order: left hind, left fore, right hind, right fore.
+        bool fr = position.z > 0.0;
+        vec2 hip = fr ? vec2(0.84, 0.32) : vec2(0.8, -0.36), knee = fr ? vec2(0.47, 0.34) : vec2(0.5, -0.45);
+        float ga = gait + 6.2832 * ((position.x > 0.0 ? 0.0 : 0.5) + (fr ? 0.25 : 0.0)), am = 0.4 * dv;
+        float sw = -am * sin(ga), bend = am * (fr ? 1.5 : 0.9) * max(0.0, cos(ga));
+        if (aW > 6.5) { q.yz = knee + rot2(q.yz - knee, bend); nn.yz = rot2(nn.yz, bend); }
+        q.yz = hip + rot2(q.yz - hip, sw); nn.yz = rot2(nn.yz, sw);
+      } else if (aW > 4.5) {
+        // The tail flicks up now and then.
+        float fl = abs(sin(uT * 14.0 + ph * 9.0)) * 0.9 * step(0.85, fract(uT * 0.23 + ph * 3.0));
+        vec2 tb = vec2(0.99, -0.53);
+        q.yz = tb + rot2(q.yz - tb, fl); nn.yz = rot2(nn.yz, fl);
+      } else {
+        // Neck and head: stretched down to the grass to graze, a nod with each step, a look round.
+        vec2 nb = vec2(0.88, 0.4), nt = vec2(1.33, 0.67);
+        float a1 = graze * 2.0 + sin(gait * 2.0) * 0.05 * dv, a2 = -graze * 0.2;
+        if (aW > 3.5) { q.yz = nt + rot2(q.yz - nt, a2); nn.yz = rot2(nn.yz, a2); }
+        q.yz = nb + rot2(q.yz - nb, a1); nn.yz = rot2(nn.yz, a1);
+        q.xz = vec2(0.0, nb.y) + rot2(q.xz - vec2(0.0, nb.y), look); nn.xz = rot2(nn.xz, look);
+      }
+      p = q * sz; n = nn;
+    }
     p.yz = rot2(p.yz, pitch); n.yz = rot2(n.yz, pitch);
     p.xy = rot2(p.xy, bank); n.xy = rot2(n.xy, bank);
     float yaw = atan(d.x, d.z) + uSide, cy = cos(yaw), sy = sin(yaw);
@@ -773,7 +1009,32 @@ export function buildAnimals(view) {
     swarm(view, 'crab', ring(14, 31, 39, 0.42, () => ({ R: 0.8 + R(), sp: 0.5 + R() * 0.4, amp: 0, sz: 1.2 })), { mode: 2, side: Math.PI / 2 });
     swarm(view, 'dolphin', ring(8, 60, 140, 0, () => ({ R: 14 + R() * 10, sp: (0.12 + R() * 0.05) * (R() < 0.5 ? 1 : -1), amp: 2.6, sz: 1.3 })), { mode: 4 });
   }
-  if (key === 'forest') swarm(view, 'deer', ring(10, 26, 70, 0.4, () => ({ R: 2 + R() * 4, sp: 0.12 + R() * 0.08, amp: 0, sz: 1.3 })), { mode: 2 });
+  if (key === 'forest') {
+    // A herd: does, some with a fawn trailing behind, and stags. Each walks its figure of eight where the ground is clear
+    // of trees, logs, rocks and the route (wildview.js).
+    const free = view.groundFree || (() => true), does = [], fawns = [], stags = [];
+    const spot = (rr) => {
+      for (let tries = 0; tries < 80; tries++) {
+        const a = R() * TAU, r = 30 + R() * 48, x = Math.cos(a) * r, z = Math.sin(a) * r, ph = R(), h = ph * TAU, ch = Math.cos(h), sh = Math.sin(h);
+        let ok = true;
+        for (let k = 0; k < 40 && ok; k++) {
+          const th = ((k % 20) / 20) * TAU, sx = k < 20 ? 1 : -1, qx = sx * rr * (1 - Math.cos(th)), qz = rr * Math.sin(th);
+          const px = x + ch * qx + sh * qz, pz = z - sh * qx + ch * qz, pr = Math.hypot(px, pz);
+          ok = pr > 24 && pr < 84 && free(px, pz, 1.1);
+        }
+        if (ok) return { x, y: 0.4, z, ph };
+      }
+      return null;
+    };
+    for (let i = 0, n = [5, 9, 12][DETAIL]; i < n; i++) {
+      const rr = 3.4 + R() * 3, s = spot(rr), stag = i % 4 === 1;
+      if (!s) continue;
+      const sp = 0.85 + R() * 0.3;
+      (stag ? stags : does).push(Object.assign({ R: rr, sp, amp: 0, sz: stag ? 1.12 : 1 + R() * 0.06, tint: null }, s));
+      if (!stag && i % 3 === 0) fawns.push(Object.assign({ R: rr, sp, amp: -1.7, sz: 0.62, tint: null }, s));
+    }
+    for (const [k, list] of [['deer', does], ['stag', stags], ['fawn', fawns]]) if (list.length) swarm(view, k, list, { mode: 5 });
+  }
   if (key === 'waterfall') {
     const lilies = L.decor.filter((d) => d.k === 'lily');
     swarm(view, 'frog', lilies.filter((d, i) => i % 3 === 0).map((d) => ({ x: d.x, y: d.y + 0.03, z: d.z, ph: R(), R: 0.25, sp: 0.4 + R() * 0.3, amp: 0.35, sz: 1.4, tint: null })), { mode: 3 });

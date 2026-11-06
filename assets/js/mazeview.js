@@ -280,7 +280,7 @@ export function buildMazes(view) {
   for (const { model, y, list } of inst.values()) {
     const im = new THREE.InstancedMesh(modelGeo(model), mat, list.length);
     list.forEach(([m, t], i) => { im.setMatrixAt(i, m); im.setColorAt(i, col.setHex(t ?? 0xffffff)); });
-    view.add(im, model !== 'grass' && model !== 'flowers' && model !== 'fern' && model !== 'lilypad' && model !== 'lotus');
+    view.add(im, model !== 'grass' && model !== 'flowers' && model !== 'fern' && model !== 'fernT' && model !== 'tuftT' && model !== 'lilypad' && model !== 'lotus');
     view.band(y).near.push(im);
   }
 }

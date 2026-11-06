@@ -2,7 +2,8 @@
 // renderer (NRender.java, regenerated from this file by dev/sync_pattern.py). Returns a colour factor that
 // multiplies the material colour. pat: 1 metal panels, 2 stone blocks, 3 wood planks, 4 hex tiles,
 // 5 grass on rock, 6 sand on rock, 7 basalt, 8 tread plate, 9 bamboo, 10 marble, 11 coral, 12 concrete,
-// 13 moss on wet stone, 14 snow on rock, 15 cloud, 16 bark, 17 hedge.
+// 13 moss on wet stone, 14 snow on rock, 15 cloud, 16 bark, 17 hedge, 18 upright logs with moss,
+// 19 forest floor.
 // The same noise for the other shaders (water, legendary suits). On Android it is read from a texture the native
 // renderer bakes once at startup (NRender.makeNoise) instead of being worked out for every pixel every frame.
 let baked = false;
@@ -112,6 +113,38 @@ vec3 smuPattern(int pat, vec3 w, vec3 n){
     float hollow = smoothstep(0.5, 0.8, smuNoise(uv * 1.3 + 9.0));
     float tip = step(0.9, smuHash(floor(g * 3.0)));
     return mix(vec3(0.2, 0.42, 0.16), vec3(0.42, 0.72, 0.3), l) * (1.0 - 0.38 * hollow) + tip * vec3(0.1, 0.12, 0.04);
+  }
+  if (pat == 18) {
+    // Upright logs side by side (the walls of a wall jump shaft): each log rounder in the middle, bark fibres along it,
+    // dark cracks between the logs, and moss growing in the cracks and in patches. On top the cut ends with their rings.
+    if (an.y > 0.6) {
+      vec2 g = uv * 2.2, f = fract(g) - 0.5;
+      float ring = 0.5 + 0.5 * sin(length(f) * 70.0 + smuNoise(g * 3.0) * 3.0);
+      return vec3(0.86, 0.68, 0.46) * (0.8 + 0.2 * ring) * (1.0 - 0.6 * smoothstep(0.36, 0.5, length(f)));
+    }
+    float g = uv.x * 2.2, id = floor(g), f = fract(g) - 0.5;
+    float rnd = sqrt(max(0.0, 1.0 - 3.4 * f * f));
+    float fib = smuNoise(vec2(g * 9.0, uv.y * 0.8 + id * 3.1)) * 0.6 + smuNoise(vec2(g * 24.0, uv.y * 2.6 + id)) * 0.4;
+    float crack = smoothstep(0.6, 0.78, smuNoise(vec2(g * 4.0 + id * 1.3, uv.y * 0.5)));
+    vec3 bark = vec3(0.6, 0.45, 0.3) * (0.62 + 0.42 * rnd) * (0.7 + 0.5 * fib) * (1.0 - 0.4 * crack) * (0.9 + 0.2 * smuHash(vec2(id, 4.0)));
+    float gap = smoothstep(0.4, 0.5, abs(f));
+    float moss = max(smoothstep(0.52, 0.74, smuFbm(vec2(g * 0.8, uv.y * 0.55) + id * 1.7)), gap * 0.9);
+    vec3 mc = vec3(0.3, 0.55, 0.2) * (0.7 + 0.55 * smuNoise(uv * 8.0));
+    return mix(bark, mc, moss * 0.8) * (1.0 - 0.5 * gap);
+  }
+  if (pat == 19) {
+    // The forest floor: grass in big soft patches, bare earth and fallen needles between them (more of it round the
+    // giant trunk), moss in the damp spots. Large and small noise, so it doesn't repeat across the island.
+    float big = smuFbm(uv * 0.05), mid = smuFbm(uv * 0.32 + 3.0), fine = smuNoise(uv * 3.5) * 0.6 + smuNoise(uv * 10.0) * 0.4;
+    vec3 grass = mix(vec3(0.07, 0.15, 0.03), vec3(0.14, 0.25, 0.05), mid) * (0.78 + 0.4 * fine);
+    vec3 earth = mix(vec3(0.11, 0.075, 0.04), vec3(0.17, 0.11, 0.055), fine);
+    float e = smoothstep(0.58, 0.78, big * 0.65 + mid * 0.5 - 0.06);
+    e = max(e, 1.0 - smoothstep(21.0, 31.0, length(w.xz) + (mid - 0.5) * 8.0));
+    vec3 c = mix(grass, earth, e * 0.9);
+    c = mix(c, vec3(0.05, 0.13, 0.03) * (0.85 + 0.3 * fine), smoothstep(0.6, 0.8, smuNoise(uv * 0.14 + 9.0)) * 0.55 * (1.0 - e));
+    if (an.y < 0.6) c = vec3(0.16, 0.12, 0.08) * (0.7 + 0.5 * smuFbm(uv * 1.3));
+    // A factor on the material's own colour (0x47732f, what the plain renderer shows instead).
+    return c / vec3(0.0612, 0.1714, 0.0284);
   }
   if (pat == 15) return mix(vec3(0.86, 0.9, 1.0), vec3(1.0), smoothstep(-0.3, 0.6, n.y)) * (0.93 + 0.08 * smuNoise(uv * 2.0));
   if (pat == 16) {

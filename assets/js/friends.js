@@ -130,9 +130,7 @@ function paint(v) {
   if (open) { setHtml(main, friendCard(open)); return; }
   v.card = null;
   const sorted = [...friends].sort((x, y) => ORDER[x.st] - ORDER[y.st] || (y.h || 0) - (x.h || 0) || String(x.name).localeCompare(String(y.name)));
-  // A climb alone has nobody to invite to.
-  const note = ctx.app.game && !ctx.myRoom() ? '<p class="sub fnote">Invites work from a game with others: host one, and friends can join even after the climb has started.</p>' : '';
-  setHtml(main, note + (sorted.length ? `<div class="list">${sorted.map(friendRow).join('')}</div>` : '<div class="empty">No friends yet. Tap Find players, or share your ID so friends can add you.</div>'));
+  setHtml(main, (sorted.length ? `<div class="list">${sorted.map(friendRow).join('')}</div>` : '<div class="empty">No friends yet. Tap Find players, or share your ID so friends can add you.</div>'));
 }
 
 async function refresh(v) {

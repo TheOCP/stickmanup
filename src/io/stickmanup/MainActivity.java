@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     /** The app version shown in the game (keep in step with versionName in AndroidManifest.xml). */
-    static final String VERSION = "4.10.30";
+    static final String VERSION = "4.10.31";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Updater updater = new Updater(this);
     private final StringBuilder jsQueue = new StringBuilder();
@@ -273,6 +273,7 @@ public class MainActivity extends Activity {
         if (p.endsWith(".html")) return "text/html";
         if (p.endsWith(".css")) return "text/css";
         if (p.endsWith(".png")) return "image/png";
+        if (p.endsWith(".webp")) return "image/webp";
         if (p.endsWith(".json")) return "application/json";
         if (p.endsWith(".svg")) return "image/svg+xml";
         return "application/octet-stream";

@@ -1404,16 +1404,14 @@ function settingsScreen(back) {
     ${ON_PC && !nat ? `<label>Brightness ${val('bright', '%')}${range('bright', 0, 1, 0.05, '%')}</label>
     <label class="full">Resolution${seg('pcRes', pcResList())}</label>` : ''}
     ${canFullscreen() ? '<button class="btn sm" data-a="full">Fullscreen</button>' : ''}
-    ${ON_PC ? `<p class="sub full" style="margin:0">Your screen sets the real limit: a 60 Hz screen shows 60 frames a second, whatever you pick here.</p>` : ''}
     ${nat ? `<label>Resolution ${val('res', '%')}${range('res', 0.5, 1, 0.05, '%')}</label>
     <label>Sharpness ${val('sharp', '%')}${range('sharp', 0, 1, 0.05, '%')}</label>
     <label>Glow ${val('glow', '%')}${range('glow', 0, 1.5, 0.05, '%')}</label>
     <label>Frame rate (fps)${seg('cap', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}</label>
-    ${chk('aa', 'Smooth edges (anti aliasing)')}
-    ${chk('vsync', 'VSync (frames wait for the screen: smooth, no tearing; off can lower input lag)')}
-    ${chk('autoRes', 'Auto graphics (lowers detail only when needed, to keep the frame rate steady)')}
-    ${chk('lite', 'Simple lighting (the fastest look, for older phones)')}
-    <p class="sub full" style="margin:0">Pixelated? Turn up Resolution and Sharpness and switch on Smooth edges. If it still looks soft with Auto graphics on, your phone is holding the frame rate that way; a lower frame rate gives it more room.</p>` : ''}
+    ${chk('aa', 'Smooth edges')}
+    ${chk('vsync', 'VSync')}
+    ${chk('autoRes', 'Auto graphics')}
+    ${chk('lite', 'Simple lighting')}` : ''}
     <h3>Controls</h3>
     ${ON_PC ? '' : `<label>Button size ${val('btnSize', '%')}${range('btnSize', 0.7, 1.5, 0.05, '%')}</label>
     <label>Button opacity ${val('btnAlpha', '%')}${range('btnAlpha', 0.3, 1, 0.05, '%')}</label>`}
@@ -1424,16 +1422,14 @@ function settingsScreen(back) {
     ${chk('invert', 'Invert camera up and down')}
     <label>Camera follow ${val('camFollow', '%')}${range('camFollow', 0, 2, 0.05, '%')}</label>
     <label>Aim assist ${val('aimHelp', '%')}${range('aimHelp', 0, 1, 0.05, '%')}</label>
-    <p class="sub full" style="margin:0">Camera follow swings the camera behind you while you run (0% is off, higher is faster and further). Aim assist pulls the crosshair onto targets (0% is off).</p>
     <h3>Controller</h3>
     <div class="padtest full" id="padTest">
       <div class="ps"><div class="pc" id="psL"><u></u><i></i></div><span>Left stick</span></div>
       <div class="ps"><div class="pc" id="psR"><u></u><i></i></div><span>Right stick</span></div>
-      <p class="sub"><b id="psN">No controller connected</b><br>Stick drift? Let go of the sticks and raise the dead zone until each dot stays inside its dashed ring and turns grey.</p>
+      <p class="sub"><b id="psN">No controller connected</b></p>
     </div>
     <label>Left stick dead zone ${val('deadL', '%')}${range('deadL', 0, 0.6, 0.02, '%')}</label>
     <label>Right stick dead zone ${val('deadR', '%')}${range('deadR', 0, 0.6, 0.02, '%')}</label>
-    <p class="sub full" style="margin:0">In menus: direction pad or left stick to move, A to select, B to go back, LB and RB to switch tabs. In a climb: Start pauses, and Select opens the pause menu on Back to checkpoint.</p>
     <h3>Sound and other</h3>
     <label class="full">Language${seg('lang', LANG_NAMES)}</label>
     <label>Music${range('music', 0, 1, 0.05)}</label>

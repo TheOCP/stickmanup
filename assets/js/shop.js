@@ -11,6 +11,7 @@ import { EMOTES } from './emotes.js';
 import { SPRAYS, paintSpray, sprayUrl } from './sprays.js';
 import { WEAPONS, STUN_MIN } from './weapons.js';
 import { fmtTime } from './util.js';
+import { THUMB_V, THUMB_HAVE } from './thumbs.js';
 
 const COIN = '<i class="coin"></i>';
 
@@ -81,6 +82,8 @@ function thumbFor(item) {
   // A hat and a suit can share a name (cowboy, santa), so the key has both.
   const key = item.kind + ':' + item.id;
   if (THUMBS.has(key)) return THUMBS.get(key);
+  // Rendered from the 3D climber or weapon itself (dev/makethumbs.py); drawn here only if it has no picture yet.
+  if (THUMB_HAVE.has(key)) { const u = `thumbs/${item.kind}-${item.id}.webp?v=${THUMB_V}`; THUMBS.set(key, u); return u; }
   const W = 120, H = 150, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
@@ -195,20 +198,17 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     return RARITY.map((r) => {
       const items = list.filter((x) => x.r === r.id);
       if (!items.length) return '';
-      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x)).length} of ${items.length}</small></h3>${r.id === 3 && tab === 'suits' ? `<p class="sub lg">Some are for the richest climbers. The hidden ones are found first, on any difficulty, and then bought (${relicCounts().suit[0]} of ${relicCounts().suit[1]} relics found). A few only come from doing something nobody else would.</p>` : ''}<div class="skins">${items.map(card).join('')}</div>`;
+      return `<h3 class="rar" style="--rc:${r.css}"><span></span>${r.name}<small>${items.filter((x) => owned(x)).length} of ${items.length}</small></h3><div class="skins">${items.map(card).join('')}</div>`;
     }).join('');
   }
 
   function sideHtml() {
     const it = sel;
-    if (!it && tab === 'sprays') return `<p class="sub" style="margin:0">Pictures to spray on the towers: during a climb, open your emotes and pick one. It goes on what you stand on, or on the wall you hold, and everyone who climbs there sees it. Every epic and legendary one waits in a hidden spot of its own first.</p>`;
-    if (!it) return tab === 'emotes' ? `<p class="sub" style="margin:0">Tap one to watch it. During a climb the smiley at the top of the screen opens your emotes. Flips work in the air too.</p>`
-      : tab === 'weapons' ? `<p class="sub" style="margin:0">Tap one to see it in your hands. Better weapons paralyse enemies for longer and reach further. The seven legendary ones are in a class of their own. Every epic weapon waits in a hidden spot of its own, legendary ones at the end of the hardest relic courses, on any difficulty: find them, then buy them.</p>`
-      : `<p class="sub" style="margin:0">Tap anything to try it on. Coins come from the climb: the higher the difficulty, the more each one is worth. Every epic thing waits in a hidden spot of its own first: at the end of a course behind a purple gate or in a maze garden, on one map and one difficulty. The shop says where.</p>`;
+    if (!it) return '';
     const r = RARITY[it.r], have = owned(it), on = have && worn(it), open = unlocked(it), where = whereOf(it);
     let act;
     if (it.kind === 'emote' && have) act = '<button class="btn sm primary" data-a="watch">Watch again</button>';
-    else if (it.kind === 'spray' && have) act = '<p class="sub" style="margin:4px 0 0">Yours. Spray it from your emotes during a climb.</p>';
+    else if (it.kind === 'spray' && have) act = '<button class="btn sm" disabled>Owned</button>';
     else if (on) act = `<button class="btn sm" disabled>${it.kind === 'weapon' ? 'Carrying it' : 'Wearing it'}</button>`;
     else if (have) act = `<button class="btn sm primary" data-a="equip">${it.kind === 'weapon' ? 'Carry it' : 'Wear it'}</button>`;
     else if (it.price > 0 && open) act = `<button class="btn sm ${coins() >= it.price ? 'primary' : ''}" data-a="buy" ${coins() >= it.price ? '' : 'disabled'}>Buy for ${it.price} coins</button>`;
@@ -218,7 +218,6 @@ export function openShop(ctx, goBack, startTab = 'suits') {
     if (!have && !open) hint = whereText(it);
     else if (!have && where) hint = 'Found. Now it can be bought.';
     else if (it.hint && !have) hint = it.hint;
-    else if (it.hint && have && !it.team) hint = 'Found it. Well done.';
     hint = hint ? `<p class="hint">${esc(hint)}</p>` : '';
     const big = it.kind === 'spray' ? `<img class="sprbig" src="${sprayUrl(it, 256)}" alt="">` : '';
     return `<b class="sname">${esc(it.name)}</b><span class="srar" style="color:${r.css}">${r.name}</span>${big}${it.kind === 'weapon' ? weaponStats(it) : ''}${hint}${need}${act}`;

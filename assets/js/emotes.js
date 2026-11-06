@@ -102,6 +102,115 @@ export const EMOTES = [
     p.legX = [S(u * 4) * 0.2, -S(u * 4) * 0.2]; p.legZ = [0.75, 0.75]; p.knee = [0.1, 0.1]; p.armX = [-0.2, -0.2]; p.armZ = [1.25, 1.25]; p.elbow = [-0.3, -0.3]; p.mouthO = 1.2;
   } }),
   E('e_double', 'Double backflip', '💫', 2, 1000, { dur: 0.74, flip: true, hop: true, pose(p, u, k) { p.rx = -4 * PI * smooth(k); tuck(p, Math.min(1, k * 1.05)); } }),
+  // ------------------------------------------- added in 4.10.33
+  E('e_bow', 'Bow', '🙇', 0, 0, { dur: 1.8, pose(p, u, k) {
+    const e = S(k * PI); p.lean = 0.95 * e; p.headX = 0.3 * e; p.armX = [0.12 * e, 0.12 * e]; p.armZ = [0.08, 0.08]; p.elbow = [-0.2, -0.2]; p.mouthO = 0.3;
+  } }),
+  E('e_shrug', 'Shrug', '🤷', 0, 0, { dur: 1.6, pose(p, u, k) {
+    const e = Math.min(1, u * 5) * (1 - smooth(Math.max(0, (k - 0.8) * 5)));
+    p.armX = [-0.45 * e, -0.45 * e]; p.armZ = [0.25 + 0.4 * e, 0.25 + 0.4 * e]; p.elbow = [-1.9 * e, -1.9 * e]; p.headZ = 0.2 * e; p.headX = -0.06; p.bounce = 0.03 * e; p.mouthO = 0.5;
+  } }),
+  E('e_think', 'Think', '🤔', 0, 60, { loop: true, pose(p, u) {
+    p.armX = [-1.9, -0.55]; p.armZ = [0.12, -0.25]; p.elbow = [-2.45, -1.65]; p.headX = 0.12; p.headZ = 0.14 + S(u * 1.5) * 0.05; p.legX = [0, -0.12]; p.knee = [0, 0.2]; p.mouthO = 0.3;
+  } }),
+  E('e_nod', 'Nod', '🙂', 0, 0, { dur: 1.4, pose(p, u) { p.headX = 0.08 + S(u * 12) * 0.3; p.mouthO = 0.7; } }),
+  E('e_no', 'No way', '🙅', 0, 0, { dur: 1.6, pose(p, u) {
+    p.armX[0] = -1.95; p.elbow[0] = -1.1; p.armZ[0] = 0.3 + S(u * 14) * 0.28; p.headY = S(u * 14) * 0.35; p.mouthO = 0.5;
+  } }),
+  E('e_cheer', 'Cheer', '🙌', 0, 0, { dur: 2, pose(p, u) {
+    p.armX = [-2.8, -2.8]; p.armZ = [0.45 + S(u * 10) * 0.12, 0.45 - S(u * 10) * 0.12]; p.elbow = [-0.15, -0.15]; p.lift = A(S(u * 7)) * 0.14; p.mouthO = 1.4; p.headX = -0.2;
+  } }),
+  E('e_jacks', 'Jumping jacks', '🤾', 0, 80, { loop: true, pose(p, u) {
+    const w = (1 - Math.cos(u * 7)) / 2;
+    p.armX = [0, 0]; p.armZ = [0.25 + 2.5 * w, 0.25 + 2.5 * w]; p.elbow = [-0.1, -0.1]; p.legZ = [0.04 + 0.32 * w, 0.04 + 0.32 * w]; p.lift = A(S(u * 7)) * 0.1; p.mouthO = 1;
+  } }),
+  E('e_sleep', 'Sleep', '😴', 0, 100, { loop: true, pose(p, u) {
+    p.rx = -1.42; p.lift = -0.6 + S(u * 1.6) * 0.012; p.armX = [-2.9, -2.9]; p.armZ = [0.6, 0.6]; p.elbow = [-2.2, -2.2]; p.legX = [-0.1, -0.3]; p.knee = [0, 0.4]; p.headX = -0.15; p.mouthO = 0.2;
+  } }),
+  E('e_heart', 'Heart hands', '❤️', 0, 120, { dur: 2.2, pose(p, u) {
+    p.armX = [-2.55, -2.55]; p.armZ = [0.18, 0.18]; p.elbow = [-1.65, -1.65]; p.headX = -0.12; p.headZ = S(u * 4) * 0.12; p.bounce = A(S(u * 4)) * 0.03; p.mouthO = 0.9;
+  } }),
+  E('e_moonwalk', 'Moonwalk', '🌙', 1, 300, { loop: true, pose(p, u) {
+    const w = S(u * 6);
+    p.legX = [w * 0.35, -w * 0.35]; p.knee = [Math.max(0, -w) * 0.9 + 0.05, Math.max(0, w) * 0.9 + 0.05]; p.armX = [-w * 0.3, w * 0.3]; p.armZ = [0.2, 0.2]; p.elbow = [-0.7, -0.7];
+    p.lean = -0.06; p.headY = 0.35; p.bounce = A(w) * 0.025; p.mouthO = 0.5;
+  } }),
+  E('e_chicken', 'Chicken dance', '🐔', 1, 280, { loop: true, pose(p, u) {
+    const f = A(S(u * 9));
+    p.armX = [0.3, 0.3]; p.armZ = [0.4 + f * 0.7, 0.4 + f * 0.7]; p.elbow = [-2.4, -2.4]; p.crouch = 0.08; p.lean = 0.18; p.headX = S(u * 9) * 0.22; p.knee = [0.35, 0.35]; p.legX = [-0.2, -0.2]; p.bounce = f * 0.04; p.mouthO = 0.8;
+  } }),
+  E('e_pushups', 'Push ups', '🏋️', 1, 300, { loop: true, pose(p, u) {
+    const d = (S(u * 4) + 1) / 2;
+    p.rx = 1.42; p.lift = -0.56 + d * 0.13; p.armX = [-1.5 + (1 - d) * 0.5, -1.5 + (1 - d) * 0.5]; p.armZ = [0.35, 0.35]; p.elbow = [-(1 - d) * 1.5, -(1 - d) * 1.5];
+    p.legX = [0, 0]; p.knee = [0, 0]; p.headX = -0.35; p.mouthO = 0.6 + (1 - d) * 0.6;
+  } }),
+  E('e_guitar', 'Air guitar', '🎸', 1, 320, { loop: true, pose(p, u) {
+    p.armX = [-0.6, -1.3]; p.armZ = [0.1, 0.6]; p.elbow = [-1.5 + S(u * 18) * 0.35, -0.4]; p.lean = -0.15; p.headX = S(u * 9) * 0.28; p.legX = [-0.3, 0.2]; p.knee = [0.45, 0.1]; p.crouch = 0.06; p.twist = 0.25; p.mouthO = 1.2;
+  } }),
+  E('e_drums', 'Air drums', '🥁', 1, 320, { loop: true, pose(p, u) {
+    const a = S(u * 14);
+    p.armX = [-1.0 - a * 0.35, -1.0 + a * 0.35]; p.elbow = [-1.4 + a * 0.4, -1.4 - a * 0.4]; p.armZ = [0.28, 0.28]; p.crouch = 0.12; p.knee = [0.6, 0.6]; p.legX = [-0.5, -0.5]; p.headX = A(a) * 0.16; p.mouthO = 1;
+  } }),
+  E('e_karate', 'Karate', '🥋', 1, 340, { dur: 2.6, pose(p, u) {
+    const b = Math.floor(u * 3) % 4;
+    p.crouch = 0.1; p.legZ = [0.28, 0.28]; p.knee = [0.35, 0.35]; p.armX = [-1.3, -1.3]; p.armZ = [0.2, 0.2]; p.elbow = [-2.2, -2.2]; p.mouthO = 0.6;
+    if (b === 0) { p.armX[0] = -1.57; p.elbow[0] = 0; p.twist = -0.35; }
+    else if (b === 1) { p.armX[1] = -1.57; p.elbow[1] = 0; p.twist = 0.35; }
+    else if (b === 2) { p.legX[0] = -1.6; p.knee[0] = 0; p.legZ[0] = 0.1; p.lean = -0.25; p.mouthO = 1.4; }
+  } }),
+  E('e_boxing', 'Shadow box', '🥊', 1, 300, { loop: true, pose(p, u) {
+    const j0 = Math.max(0, S(u * 8)), j1 = Math.max(0, -S(u * 8));
+    p.armX = [-1.3 - j0 * 0.3, -1.3 - j1 * 0.3]; p.armZ = [0.25, 0.25]; p.elbow = [-2.2 + j0 * 2.1, -2.2 + j1 * 2.1];
+    p.headX = 0.15; p.twist = (j1 - j0) * 0.3; p.legX = [-0.25, 0.2]; p.knee = [0.3, 0.3]; p.bounce = A(S(u * 8)) * 0.04; p.mouthO = 0.4;
+  } }),
+  E('e_dab', 'Dab', '😎', 1, 260, { dur: 1.4, pose(p) {
+    p.armX = [-2.35, -1.8]; p.armZ = [1.05, -0.65]; p.elbow = [0, -2.4]; p.headX = 0.55; p.headY = -0.45; p.lean = 0.1; p.mouthO = 0.3;
+  } }),
+  E('e_swim', 'Land swim', '🏊', 1, 300, { loop: true, pose(p, u) {
+    const a = u * 7;
+    p.armX = [-1.6 + S(a) * 1.4, -1.6 - S(a) * 1.4]; p.armZ = [0.3, 0.3]; p.elbow = [-0.25, -0.25]; p.lean = 0.35; p.headY = S(a) * 0.45;
+    p.legX = [S(a * 2) * 0.2, -S(a * 2) * 0.2]; p.mouthO = 0.9;
+  } }),
+  E('e_zombie', 'Zombie walk', '🧟', 1, 280, { loop: true, pose(p, u) {
+    p.armX = [-1.5 + S(u * 3) * 0.1, -1.5 - S(u * 3) * 0.1]; p.armZ = [0.05, 0.05]; p.elbow = [-0.1, -0.1]; p.headZ = 0.32; p.headX = 0.22;
+    p.legX = [S(u * 3) * 0.22, -S(u * 3) * 0.22]; p.knee = [0.15, 0.15]; p.lean = 0.12; p.rz = S(u * 3) * 0.06; p.mouthO = 1 + S(u * 5) * 0.3;
+  } }),
+  E('e_propose', 'Propose', '💍', 1, 350, { loop: true, pose(p, u) {
+    p.crouch = 0.34; p.legX = [-1.45, 0.25]; p.knee = [1.55, 1.95]; p.armX = [-1.35, -0.2]; p.armZ = [0.05, 0.2]; p.elbow = [-0.35, -0.4]; p.headX = -0.25; p.mouthO = 0.6 + S(u * 2) * 0.1;
+  } }),
+  E('e_spinkick', 'Spin kick', '🦵', 2, 700, { dur: 0.8, flip: true, pose(p, u, k) {
+    const e = S(k * PI); p.ry = 2 * PI * smooth(k); p.legX = [-1.45 * e, 0]; p.legZ = [0.6 * e, 0]; p.knee = [0, 0.3 * e]; p.armX = [0, 0]; p.armZ = [1.3, 1.3]; p.elbow = [-0.3, -0.3]; p.lift = e * 0.25; p.mouthO = 1.2;
+  } }),
+  E('e_sideflip', 'Side flip', '🔄', 2, 750, { dur: 0.7, flip: true, hop: true, pose(p, u, k) { p.rz = 2 * PI * smooth(k); tuck(p, k); } }),
+  E('e_corkscrew', 'Corkscrew', '🧬', 2, 900, { dur: 0.9, flip: true, hop: true, pose(p, u, k) { const s = smooth(k); p.rx = -2 * PI * s; p.ry = 2 * PI * s; tuck(p, k); } }),
+  E('e_levitate', 'Levitate', '✨', 2, 800, { loop: true, pose(p, u) {
+    p.legX = [-1.5, -1.5]; p.knee = [2.25, 2.25]; p.crouch = 0.1; p.armX = [-0.35, -0.35]; p.armZ = [0.95, 0.95]; p.elbow = [-0.2, -0.2];
+    p.lift = 0.8 + S(u * 1.6) * 0.1; p.ry = S(u * 0.8) * 0.45; p.headX = -0.1; p.mouthO = 0.3;
+  } }),
+  E('e_shuffle', 'Shuffle', '👟', 2, 650, { loop: true, pose(p, u) {
+    const w = S(u * 10), a = Math.max(0, w), b = Math.max(0, -w);
+    p.legX = [-a * 0.5, -b * 0.5]; p.legZ = [a * 0.45, b * 0.45]; p.knee = [a * 0.5, b * 0.5]; p.armX = [-0.6 - w * 0.5, -0.6 + w * 0.5]; p.elbow = [-1.4, -1.4]; p.armZ = [0.3, 0.3];
+    p.twist = w * 0.22; p.bounce = A(S(u * 20)) * 0.04; p.mouthO = 0.8;
+  } }),
+  E('e_handstand', 'Handstand', '🎪', 2, 750, { loop: true, pose(p, u) {
+    p.rx = PI; p.lift = 0.4; p.armX = [-3.0, -3.0]; p.armZ = [0.18, 0.18]; p.elbow = [0, 0]; p.headX = -0.5; p.legX = [S(u * 2) * 0.25, -S(u * 2) * 0.25]; p.legZ = [0.12, 0.12]; p.knee = [0.05, 0.05]; p.rz = S(u * 1.3) * 0.05; p.mouthO = 0.8;
+  } }),
+  E('e_party', 'Celebrate', '🎉', 2, 700, { dur: 2.5, pose(p, u) {
+    const j = A(S(u * 6)), up = S(u * 6) > 0;
+    p.lift = j * 0.35; p.armX = [up ? -2.9 : -1.8, up ? -1.8 : -2.9]; p.armZ = [0.4, 0.4]; p.elbow = [up ? -0.1 : -1.8, up ? -1.8 : -0.1]; p.knee = [j * 0.9, j * 0.9]; p.legX = [-j * 0.5, -j * 0.5]; p.mouthO = 1.5; p.headX = -0.2;
+  } }),
+  E('e_triple', 'Triple backflip', '☄️', 3, 8000, { dur: 0.95, flip: true, hop: true, pose(p, u, k) { p.rx = -6 * PI * smooth(k); tuck(p, Math.min(1, k * 1.05)); p.lift = S(Math.min(1, k) * PI) * 0.55; } }),
+  E('e_ascend', 'Ascension', '👼', 3, 9000, { dur: 4.5, pose(p, u, k) {
+    const up = smooth(Math.min(1, k * 2.5)) * (1 - smooth(Math.max(0, (k - 0.78) * 4.5)));
+    p.lift = up * (1.5 + S(u * 2) * 0.06); p.ry = u * 1.3; p.armX = [-0.3, -0.3]; p.armZ = [0.3 + up, 0.3 + up]; p.elbow = [-0.1, -0.1]; p.legX = [0.1, -0.1]; p.knee = [0.15, 0.45 * up]; p.headX = -0.45 * up; p.mouthO = 0.6 + up * 0.6;
+  } }),
+  E('e_tornado', 'Tornado', '⚡', 3, 8000, { dur: 1.6, flip: true, pose(p, u, k) {
+    const e = S(k * PI); p.ry = 8 * PI * smooth(k); p.lift = e * 0.9; p.rz = e * 0.12; p.armX = [0, 0]; p.armZ = [1.5, 1.5]; p.elbow = [0, 0]; p.legZ = [0.12, 0.12]; p.mouthO = 1.4;
+  } }),
+  E('e_herolanding', 'Hero landing', '🦸', 3, 7000, { dur: 2.4, pose(p, u, k) {
+    if (k < 0.3) { const e = S((k / 0.3) * PI); p.lift = e * 1.3; p.armX = [-2.8, -2.8]; p.armZ = [0.3, 0.3]; p.elbow = [-0.1, -0.1]; p.knee = [e * 0.6, e * 0.6]; p.mouthO = 1.2; return; }
+    p.crouch = 0.42; p.lean = 0.55; p.legX = [-1.15, 0.55]; p.knee = [1.9, 1.5]; p.armX = [-0.45, 0.9]; p.armZ = [0.12, 0.55]; p.elbow = [-0.2, -0.3]; p.headX = -0.5; p.mouthO = 0.35;
+  } }),
   // Not in the menu: what a wall jump does by itself.
   E('e_wallflip', 'Wall flip', '', 0, 0, { dur: 0.46, flip: true, hidden: true, pose(p, u, k) { p.rx = -2 * PI * smooth(k); tuck(p, k); } }),
 ];

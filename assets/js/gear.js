@@ -235,17 +235,269 @@ const HAIRS = {
   },
   hr_neon: (c = 0x0c3a48) => [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0x20c8e8, 0.6)], [puff(c, 0.008, 0, 0.14, 0.214, 0x20c8e8, 0.6), ...spikesOn(0x40f0ff, [[0.05, 1, 0.19, 0.05, 0], [0.4, 5, 0.19, 0.05, 0], [0.75, 7, 0.16, 0.045, 0.5]], 0x40f0ff, 2.2)]],
 };
+// ------------------------------------------- hats and hair added in 4.10.33
+// Little shapes that go on the surface of a ball: d out from the head's centre, th down from the top, ph round from the front.
+const dot = (r, th, ph, d, c, glow, gk) => radial(new THREE.SphereGeometry(r, 10, 8), th, ph, d, c, glow, gk);
+const turnY = (a, parts) => { const R = new THREE.Matrix4().makeRotationY(a); return parts.flat().map((p) => Object.assign({}, p, { m: R.clone().multiply(p.m) })); };
+// A chain of balls from a to b (x, y, z), each r0 to r1 wide: tails, braids, tentacles and dreadlocks.
+const strand = (a, b, n, r0, r1, c, wave = 0, glow, gk, sy = 1.2) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const k = n > 1 ? i / (n - 1) : 0, w = Math.sin(k * Math.PI * 2) * wave;
+    out.push(sph(r0 + (r1 - r0) * k, a[0] + (b[0] - a[0]) * k + w, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k + w * 0.5, c, 1, sy, 1, glow, gk));
+  }
+  return out;
+};
+// A horn: segments sweeping out from (x, y, z) along a curve, thinner as they go.
+const hornOf = (s, c, glow, gk, n = 8, len = 0.05, r0 = 0.04) => {
+  const out = [];
+  let x = s * 0.13, y = 0.17, z = 0.02, ax = s * 0.5, ay = 0.8, az = -0.2;
+  for (let i = 0; i < n; i++) {
+    const k = i / n, r = r0 * (1 - k * 0.85);
+    const l = Math.hypot(ax, ay, az), dx = ax / l, dy = ay / l, dz = az / l;
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz));
+    out.push(part(new THREE.CylinderGeometry(r * 0.85, r, len * 1.15, 10), new THREE.Matrix4().compose(new THREE.Vector3(x + dx * len / 2, y + dy * len / 2, z + dz * len / 2), q, new THREE.Vector3(1, 1, 1)), c, i >= n - 2 ? glow : undefined, gk));
+    x += dx * len; y += dy * len; z += dz * len;
+    ay -= 0.22; az -= 0.12; ax += s * 0.05;
+  }
+  out.push(cone(r0 * 0.18, 0.05, x, y, z, c, 0, 0, glow, gk));
+  return out;
+};
+const VISOR = fit(0.212, 0.125, -0.01);
+
+Object.assign(GEAR, {
+  // Common
+  sunvisor: () => tip(VISOR, [cuff(VISOR, 0.045, 0.012, 0xffffff), rim(VISOR, 0.01, 0x2a9aff, 0.045, 0.012), rim(VISOR, 0.01, 0x2a9aff, 0, 0.012), peak(VISOR, 0.14, 0.2, 0x2a9aff)]),
+  trucker: () => [...cap(0x1e5a8a, 0x1e5a8a), ...tip(CAP, [part(new THREE.SphereGeometry(CAP.r + 0.003, 22, 8, Math.PI / 2 - 0.62, 1.24, 0.42, CAP.th - 0.44), M(0, 0, 0), 0xf4f4f4),
+    dot(0.03, 0.75, 0, CAP.r + 0.006, 0xffb020), sph(0.02, 0, CAP.r, 0, 0x1e5a8a)])],
+  snapback: () => { const p = peak(CAP, 0.12, 0.19, 0xff4a8a, -0.55); return tip(CAP, [shell(CAP, 0x16161c), rim(CAP, 0.009, 0xff4a8a), sph(0.02, 0, CAP.r, 0, 0xff4a8a), ...turnY(Math.PI, [p]),
+    dot(0.034, 0.7, 0, CAP.r + 0.004, 0xff4a8a, undefined, undefined)]); },
+  bandana: () => { const f = fit(0.214, 0.13, -0.03), c = 0xc81e2e, out = [shell(f, c), rim(f, 0.012, 0xa01424, 0.003)];
+    for (let i = 0; i < 14; i++) out.push(dot(0.013, 0.25 + (i % 3) * 0.3, (i / 14) * Math.PI * 2 + (i % 2) * 0.2, f.r + 0.002, 0xffffff));
+    out.push(sph(0.032, 0, f.e + 0.01, -f.w - 0.02, c), box(0.036, 0.12, 0.012, 0.032, f.e - 0.045, -f.w - 0.04, c, 0.35, 0, -0.3), box(0.036, 0.12, 0.012, -0.032, f.e - 0.045, -f.w - 0.04, c, 0.35, 0, 0.3));
+    return tip(f, out); },
+  newsboy: () => tip(CAP, [shell(CAP, 0x6a6458), rim(CAP, 0.008, 0x4a4438), sph(0.236, 0, CAP.e + 0.055, 0.035, 0x6a6458, 1.02, 0.3, 1.1), peak(CAP, 0.1, 0.18, 0x5a5448, 0.32), sph(0.016, 0, CAP.e + 0.126, 0.035, 0x4a4438)]),
+  earmuffs: () => [over(0.226, 0.014, 0.25, Math.PI - 0.25, 0xe8e8f0), sph(0.072, 0.212, -0.01, 0, 0xff8ab8, 0.62, 1, 1), sph(0.072, -0.212, -0.01, 0, 0xff8ab8, 0.62, 1, 1),
+    sph(0.05, 0.236, -0.01, 0, 0xffb8d4, 0.4, 0.9, 0.9), sph(0.05, -0.236, -0.01, 0, 0xffb8d4, 0.4, 0.9, 0.9)],
+  bowler: () => { const f = fit(0.205, 0.14, 0.06); return tip(f, [part(new THREE.SphereGeometry(f.w + 0.012, 26, 12, 0, Math.PI * 2, 0, Math.PI / 2), M(0, f.e, 0, 1, 0.9, 1), 0x1a1a1e),
+    brim(f, f.w + 0.065, 0x1a1a1e, 0.028), brim(f, f.w + 0.012, 0x1a1a1e), tor(f.w + 0.008, 0.016, 0, f.e + 0.014, 0, 0x6a3a2a)]); },
+  // Rare
+  fedora: () => { const f = fit(0.205, 0.14, 0.06), c = 0x5a4a3a; return tip(f, [part(new THREE.CylinderGeometry(0.15, f.w + 0.012, 0.15, 26), M(0, f.e + 0.075, 0), c),
+    part(new THREE.SphereGeometry(0.15, 26, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0, f.e + 0.15, 0, 1, 0.3, 1.05), c), box(0.03, 0.02, 0.17, 0, f.e + 0.19, 0.0, 0x4a3a2c),
+    tor(f.w + 0.006, 0.024, 0, f.e + 0.024, 0, 0x1a1a1e), sph(0.02, f.w * 0.7, f.e + 0.03, -f.w * 0.7, 0xd84a2a, 1, 2.2, 0.6, 0, 0), brim(f, 0.31, c, 0.03), brim(f, f.w + 0.02, c)]); },
+  ushanka: () => { const f = fit(0.218, 0.14, -0.02), fur = 0x9a7a58, top = 0x4a3a2c; return tip(f, [shell(f, top, 1.08), cuff(f, 0.06, 0.03, fur), rim(f, 0.03, fur, 0.06, 0.004),
+    sph(0.09, 0.205, f.e - 0.02, -0.02, fur, 0.48, 1.1, 1.05), sph(0.09, -0.205, f.e - 0.02, -0.02, fur, 0.48, 1.1, 1.05), box(0.034, 0.034, 0.016, 0, f.e + 0.05, f.w + 0.034, 0xe8c040, -0.3)]); },
+  papercrown: () => { const out = [part(new THREE.CylinderGeometry(0.2, 0.19, 0.07, 30, 1, true), M(0, 0.165, 0), 0xffd84a)];
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; out.push(part(new THREE.ConeGeometry(0.06, 0.09, 3, 1, true), M(Math.sin(a) * 0.198, 0.243, Math.cos(a) * 0.198, 1, 1, 0.12, 0, a, 0), 0xffd84a)); }
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; out.push(sph(0.018, Math.sin(a) * 0.205, 0.165, Math.cos(a) * 0.205, [0xff4a6a, 0x4ab0ff, 0x6ad86a][i % 3], 1, 1, 0.5)); }
+    return out; },
+  straw: () => { const f = fit(0.205, 0.14, 0.06), c = 0xe8c878; return tip(f, [part(new THREE.CylinderGeometry(0.165, f.w + 0.012, 0.12, 26), M(0, f.e + 0.06, 0), c), part(new THREE.CircleGeometry(0.165, 26).rotateX(-Math.PI / 2), M(0, f.e + 0.12, 0), c),
+    tor(f.w + 0.006, 0.026, 0, f.e + 0.026, 0, 0xd8282a), brim(f, 0.37, c, -0.03), brim(f, f.w + 0.03, c), tor(0.37, 0.008, 0, f.e - 0.03, 0, 0xc8a858)]); },
+  hardhat: () => { const f = fit(0.216, 0.13, 0.0), c = 0xffc21a; return tip(f, [shell(f, c, 1.04), over(f.r * 1.04 + 0.004, 0.02, Math.PI / 2 - f.th + 0.12, Math.PI / 2 + f.th - 0.12, c, 0, true),
+    part(new THREE.CylinderGeometry(0.255, 0.265, 0.016, 30), M(0, f.e - 0.004, 0.035, 1, 1, 1.08), c), rim(f, 0.012, 0xe0a810, 0.004), box(0.07, 0.045, 0.01, 0, f.e + 0.07, f.w + 0.03, 0x2a2a2a, -0.5)]); },
+  jesterhat: () => { const f = fit(0.21, 0.13, 0.0), out = [shell(f, 0x8a1ac8), rim(f, 0.022, 0xffd24a, 0.006)];
+    for (const [ph, c] of [[Math.PI / 2, 0xd82a2a], [Math.PI, 0x2a6ad8], [-Math.PI / 2, 0xd82a2a]]) {
+      const v = (k) => new THREE.Vector3(Math.sin(0.95) * Math.sin(ph), Math.cos(0.95), Math.sin(0.95) * Math.cos(ph)).multiplyScalar(0.2 + k);
+      out.push(radial(new THREE.ConeGeometry(0.075, 0.26, 12), 0.95, ph, 0.33, c));
+      const t = v(0.28); out.push(sph(0.034, t.x, t.y - 0.03, t.z, 0xffd24a), sph(0.01, t.x, t.y - 0.055, t.z, 0x8a6a10));
+    }
+    return tip(f, out); },
+  unicorn: () => { const d = new THREE.Vector3(0, Math.cos(0.45), Math.sin(0.45)), b = new THREE.Vector3(0, 0.18, 0.05), out = [part(new THREE.ConeGeometry(0.042, 0.26, 14), new THREE.Matrix4().compose(b.clone().addScaledVector(d, 0.13), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d), new THREE.Vector3(1, 1, 1)), 0xfff4fa, 0xffc0ec, 0.5)];
+    for (let i = 0; i < 5; i++) { const k = 0.03 + i * 0.045, p = b.clone().addScaledVector(d, k); out.push(tor(0.042 * (1 - k / 0.26) + 0.003, 0.006, p.x, p.y, p.z, 0xffd24a, Math.PI / 2 + 0.45, 0, 0xffc040, 0.6)); }
+    out.push(cone(0.06, 0.12, 0.13, 0.19, -0.02, 0xfff4fa, 0, -0.42), cone(0.06, 0.12, -0.13, 0.19, -0.02, 0xfff4fa, 0, 0.42), cone(0.032, 0.07, 0.132, 0.19, 0.012, 0xffa0d0, 0, -0.42), cone(0.032, 0.07, -0.132, 0.19, 0.012, 0xffa0d0, 0, 0.42));
+    for (let i = 0; i < 6; i++) out.push(sph(0.03, 0, 0.215 - i * 0.03, -0.06 - i * 0.03, [0xff8ac0, 0xb08aff, 0x8ad0ff, 0x8affc0, 0xffe88a, 0xffa08a][i], 1, 1, 1.4));
+    return out; },
+  froghat: () => { const f = fit(0.216, 0.13, -0.01), g = 0x4ac84a; return tip(f, [shell(f, g, 1.1), rim(f, 0.016, 0x2a9a3a, 0.004),
+    sph(0.07, 0.09, f.e + 0.155, 0.1, g), sph(0.07, -0.09, f.e + 0.155, 0.1, g), sph(0.045, 0.092, f.e + 0.17, 0.148, 0xffffff), sph(0.045, -0.092, f.e + 0.17, 0.148, 0xffffff),
+    sph(0.024, 0.094, f.e + 0.172, 0.186, 0x101010), sph(0.024, -0.094, f.e + 0.172, 0.186, 0x101010), sph(0.02, 0.15, f.e + 0.09, 0.14, 0xff8ab0, 1, 0.6, 0.5), sph(0.02, -0.15, f.e + 0.09, 0.14, 0xff8ab0, 1, 0.6, 0.5)]); },
+  tiara: () => { const f = fit(0.2, 0.13, 0.06), S = 0xdde4f0, out = [tor(f.w + 0.012, 0.008, 0, f.e, 0, S)];
+    for (let i = -3; i <= 3; i++) { const a = i * 0.28, h = i === 0 ? 0.1 : 0.07 - Math.abs(i) * 0.012, R = f.w + 0.012; out.push(cone(0.016, h, Math.sin(a) * R, f.e + h / 2, Math.cos(a) * R, S, 0.12, 0), sph(0.012, Math.sin(a) * (R + 0.004), f.e + h + 0.004, Math.cos(a) * (R + 0.004), i === 0 ? 0xff5aa8 : 0xa8e8ff, 1, 1, 1, i === 0 ? 0xff5aa8 : 0x80d8ff, 1.4)); }
+    out.push(sph(0.026, 0, f.e + 0.03, f.w + 0.03, 0xff5aa8, 1, 1.3, 0.6, 0xff4aa0, 1.6));
+    return tip(f, out); },
+  aviator: () => { const f = fit(0.218, 0.15, -0.06), c = 0x6a4224, out = [shell(f, c), rim(f, 0.016, 0xe8dcc0, 0.002, 0.006), box(0.022, 0.13, 0.08, 0.214, f.e - 0.07, 0.0, c), box(0.022, 0.13, 0.08, -0.214, f.e - 0.07, 0.0, c)];
+    for (const s of [-1, 1]) { const p = new THREE.Vector3(s * 0.068, f.e + 0.075, 0).setZ(Math.sqrt(f.r * f.r - (s * 0.068) ** 2 - (f.e + 0.075) ** 2) + 0.03);
+      out.push(tor(0.048, 0.013, p.x, p.y, p.z, 0x8a96a8, -0.55, 0), part(new THREE.CircleGeometry(0.046, 18), M(p.x, p.y, p.z + 0.004, 1, 1, 1, -0.55), 0x60b8e0, 0x60c0ff, 0.5)); }
+    out.push(box(0.04, 0.02, 0.02, 0, f.e + 0.08, f.r - 0.005, 0x8a96a8, -0.55));
+    return tip(f, out); },
+  // Epic
+  ufo: () => { const y = 0.38, out = [sph(0.17, 0, y, 0, 0xc0cad8, 1, 0.2, 1), sph(0.078, 0, y + 0.03, 0, 0x60f0ff, 1, 0.8, 1, 0x40e0ff, 1.3), tor(0.165, 0.012, 0, y - 0.004, 0, 0x7a8698),
+    part(new THREE.CylinderGeometry(0.06, 0.12, 0.05, 20, 1, true), M(0, y - 0.04, 0), 0x8893a3), sph(0.03, 0, y - 0.06, 0, 0x9cff8a, 1, 0.6, 1, 0x9cff8a, 2.4)];
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2, c = i % 2 ? 0xffe14a : 0xff4a8a; out.push(sph(0.015, Math.sin(a) * 0.15, y - 0.012, Math.cos(a) * 0.15, c, 1, 1, 1, c, 3)); }
+    return out; },
+  crystalcrown: () => { const out = [tor(0.196, 0.016, 0, 0.162, 0, 0xc8d8ff, Math.PI / 2, 0, 0x80b0ff, 0.5)];
+    for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2, h = i % 2 ? 0.075 : 0.12, c = i % 3 === 0 ? 0xd0a0ff : 0xa8f0ff;
+      out.push(part(new THREE.OctahedronGeometry(0.036, 0), M(Math.sin(a) * 0.196, 0.162 + h * 0.55, Math.cos(a) * 0.196, 0.75, h / 0.06, 0.75, 0, a, 0), c, c, 1.5)); }
+    out.push(part(new THREE.OctahedronGeometry(0.03, 0), M(0, 0.215, 0.205, 0.8, 1.4, 0.6), 0xff70d0, 0xff50c0, 2.2));
+    return out; },
+  cybervisor: () => [part(new THREE.CylinderGeometry(0.214, 0.214, 0.062, 36, 1, true, -1.15, 2.3), M(0, 0.058, 0), 0xff3a5a, 0xff2a4a, 2.2),
+    part(new THREE.CylinderGeometry(0.212, 0.212, 0.05, 36, 1, true, 1.15, Math.PI * 2 - 2.3), M(0, 0.058, 0), 0x22262e),
+    tor(0.214, 0.006, 0, 0.09, 0, 0x5a6474), tor(0.214, 0.006, 0, 0.026, 0, 0x5a6474),
+    cyl(0.04, 0.04, 0.03, 0.214, 0.058, 0, 0x363c48, 0, Math.PI / 2), cyl(0.04, 0.04, 0.03, -0.214, 0.058, 0, 0x363c48, 0, Math.PI / 2),
+    cyl(0.022, 0.022, 0.034, 0.218, 0.058, 0, 0xff3a5a, 0, Math.PI / 2, 0xff2a4a, 2.4), cyl(0.022, 0.022, 0.034, -0.218, 0.058, 0, 0xff3a5a, 0, Math.PI / 2, 0xff2a4a, 2.4),
+    cyl(0.006, 0.006, 0.14, 0.22, 0.14, -0.02, 0x8893a3, 0, -0.15), sph(0.014, 0.23, 0.21, -0.02, 0xff3a5a, 1, 1, 1, 0xff2a4a, 3)],
+  jelly: () => { const out = [part(new THREE.SphereGeometry(0.212, 26, 10, 0, Math.PI * 2, 0, Math.PI / 2), M(0, 0.12, -0.01, 1.04, 0.72, 1.04), 0xff8ad8, 0xff60c8, 0.7),
+    tor(0.214, 0.014, 0, 0.12, -0.01, 0xffc0ee, Math.PI / 2, 0, 0xff90e0, 1.4)];
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; out.push(dot(0.02, 0.5, a, 0.16, 0xfff0ff, 0xffb0f0, 2.2)); }
+    for (let i = 0; i < 9; i++) { const a = Math.PI * 0.62 + (i / 8) * Math.PI * 0.76, x = Math.sin(a) * 0.218, z = Math.cos(a) * 0.218 - 0.01; out.push(...strand([x, 0.11, z], [x * 1.08, -0.2 - (i % 3) * 0.05, z * 1.1], 7, 0.016, 0.008, 0xff9ae0, 0.02, 0xff70d0, 1.2)); }
+    return out; },
+  raincloud: () => { const y = 0.42, c = 0x7a8498, out = [sph(0.095, 0, y, 0, c), sph(0.078, 0.095, y - 0.02, 0.01, c), sph(0.078, -0.095, y - 0.02, -0.01, c), sph(0.068, 0.04, y + 0.045, -0.05, c), sph(0.064, -0.05, y + 0.03, 0.06, c), sph(0.06, 0.02, y - 0.035, 0.07, 0x8a94a8)];
+    out.push(box(0.02, 0.08, 0.012, 0.03, y - 0.12, 0.03, 0xfff060, 0, 0, 0.5, 0xffe040, 3), box(0.02, 0.07, 0.012, 0.015, y - 0.18, 0.03, 0xfff060, 0, 0, -0.5, 0xffe040, 3));
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + 0.4; out.push(cone(0.012, 0.035, Math.sin(a) * 0.1, y - 0.11 - (i % 2) * 0.05, Math.cos(a) * 0.08, 0x8ad0ff, Math.PI, 0, 0x60b0ff, 1.6)); }
+    return out; },
+  nemes: () => { const f = fit(0.216, 0.15, -0.02), G = 0xe8b830, B = 0x1a3a9a, out = [shell(f, G, 1.02)];
+    for (let i = 0; i < 5; i++) out.push(rim(f, 0.012, B, 0.012 + i * 0.03, 0.002 - i * 0.004));
+    for (const s of [-1, 1]) for (let i = 0; i < 6; i++) out.push(box(0.03, 0.05, 0.1 - i * 0.004, s * (0.2 + i * 0.012), f.e - 0.05 - i * 0.05, 0.03 - i * 0.004, i % 2 ? B : G, 0, 0, s * 0.12));
+    out.push(rim(f, 0.02, G, 0.0, 0.008), cyl(0.012, 0.016, 0.07, 0, f.e + 0.05, f.w + 0.02, G, -0.3), sph(0.022, 0, f.e + 0.09, f.w + 0.008, G, 1.2, 1, 0.7), sph(0.009, 0, f.e + 0.03, f.w + 0.036, 0xff3040, 1, 1, 1, 0xff2030, 1.6));
+    return tip(f, out); },
+  // Legendary: lit from inside, some of them going round.
+  l_phoenix: () => { const out = []; for (let i = 0; i < 9; i++) { const th = -0.5 + i * 0.22, h = 0.16 + Math.sin((i / 8) * Math.PI) * 0.14, c = i % 2 ? 0xffd040 : 0xff7a20;
+      out.push(part(new THREE.ConeGeometry(0.045, h, 10), new THREE.Matrix4().compose(new THREE.Vector3(0, Math.cos(th) * (0.19 + h / 2), Math.sin(th) * (0.19 + h / 2) * -1), new THREE.Quaternion().setFromEuler(new THREE.Euler(-th, 0, 0)), new THREE.Vector3(1, 1, 0.35)), c, c === 0xffd040 ? 0xffb020 : 0xff5a10, 2.6)); }
+    for (const s of [-1, 1]) out.push(part(new THREE.ConeGeometry(0.03, 0.34, 8), M(s * 0.07, 0.02, -0.33, 1, 1, 0.4, -2.0, 0, s * 0.3), 0xff9a30, 0xff6a10, 2.4), sph(0.02, s * 0.12, -0.08, -0.4, 0xfff0a0, 1, 1, 1, 0xffd040, 3));
+    out.push(sph(0.028, 0, 0.17, 0.12, 0xff3a20, 1, 1, 0.6, 0xff3010, 2.8));
+    return out; },
+  l_galaxy: () => { const out = [tor(0.27, 0.006, 0, 0.34, 0, 0xd8c8ff, Math.PI / 2, 0, 0xb090ff, 2.2), tor(0.22, 0.004, 0, 0.36, 0, 0x8ad0ff, Math.PI / 2 + 0.25, 0, 0x60b0ff, 2.4)];
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, c = [0xffffff, 0xffe88a, 0xa8d8ff][i % 3]; out.push(part(new THREE.OctahedronGeometry(i % 4 ? 0.014 : 0.022, 0), M(Math.sin(a) * 0.27, 0.34 + Math.sin(a * 3) * 0.015, Math.cos(a) * 0.27, 1, 1.6, 1), c, c, 3.2)); }
+    out.push(sph(0.045, 0.22, 0.4, 0.0, 0x7a50e0, 1, 1, 1, 0x6a40d0, 1.0), tor(0.068, 0.006, 0.22, 0.4, 0.0, 0xffd8a0, Math.PI / 2 + 0.4, 0.3, 0xffc080, 1.6), sph(0.03, -0.2, 0.31, 0.1, 0x40d0ff, 1, 1, 1, 0x20b0ff, 1.4), sph(0.024, -0.05, 0.33, -0.25, 0xff7ab0, 1, 1, 1, 0xff5aa0, 1.6));
+    return out; },
+  l_frostcrown: () => { const out = [tor(0.198, 0.02, 0, 0.165, 0, 0xd8f6ff, Math.PI / 2, 0, 0x80e0ff, 1.2)];
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2, h = i % 2 ? 0.1 : 0.19; out.push(part(new THREE.OctahedronGeometry(0.04, 0), M(Math.sin(a) * 0.2, 0.165 + h * 0.5, Math.cos(a) * 0.2, 0.6, h / 0.075, 0.6, -Math.cos(a) * 0.15, 0, Math.sin(a) * 0.15), 0xe8fbff, 0x70d8ff, 2.4)); }
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + 0.3; out.push(part(new THREE.OctahedronGeometry(0.016, 0), M(Math.sin(a) * 0.3, 0.3 + (i % 2) * 0.06, Math.cos(a) * 0.3, 1, 1, 1), 0xffffff, 0xa0f0ff, 3.4)); }
+    out.push(part(new THREE.OctahedronGeometry(0.035, 0), M(0, 0.24, 0.215, 0.8, 1.5, 0.6), 0x60f0ff, 0x40e0ff, 3));
+    return out; },
+  l_voidhorns: () => [...hornOf(1, 0x14081e, 0xc070ff, 3), ...hornOf(-1, 0x14081e, 0xc070ff, 3), tor(0.21, 0.006, 0, 0.3, 0, 0x2a0a40, Math.PI / 2, 0, 0x9a40ff, 2.2),
+    ...[0, 1, 2, 3].map((i) => { const a = (i / 4) * Math.PI * 2; return sph(0.026, Math.sin(a) * 0.21, 0.3, Math.cos(a) * 0.21, 0x0a0410, 1, 1, 1, 0x7a20e0, 1.6); })],
+  l_neon: () => { const out = [tor(0.2, 0.01, 0, 0.16, 0, 0xff40d0, Math.PI / 2, 0, 0xff30c0, 3), tor(0.2, 0.008, 0, 0.3, 0, 0x30f0ff, Math.PI / 2, 0, 0x20e0ff, 3)];
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; out.push(cyl(0.007, 0.007, 0.14, Math.sin(a) * 0.2, 0.23, Math.cos(a) * 0.2, 0xff40d0, 0, 0, 0xff30c0, 3), sph(0.018, Math.sin(a) * 0.2, 0.32, Math.cos(a) * 0.2, 0x30f0ff, 1, 1, 1, 0x20e0ff, 3.4)); }
+    out.push(part(new THREE.OctahedronGeometry(0.03, 0), M(0, 0.38, 0, 1, 1.4, 1), 0xffffff, 0xff70e0, 3.6));
+    return out; },
+  l_holy: () => { const out = [tor(0.17, 0.016, 0, 0.36, 0, 0xfff4c0, Math.PI / 2, 0, 0xffe080, 3), tor(0.21, 0.006, 0, 0.36, 0, 0xffffff, Math.PI / 2, 0, 0xfff0c0, 2.6)];
+    for (const s of [-1, 1]) for (let i = 0; i < 5; i++) out.push(part(new THREE.SphereGeometry(0.05, 12, 8), M(s * (0.2 + i * 0.022), 0.08 + i * 0.03, -0.03 - i * 0.012, 0.28, 1.25 - i * 0.12, 0.62, -0.2, 0, s * (0.9 + i * 0.12)), 0xffffff, 0xfff0c0, 1.2));
+    return out; },
+});
+
+Object.assign(HAIRS, {
+  // Common
+  hr_buzz: (c = 0x2a2018) => [[...scalp(c, 0.13, -0.07, 0.3 * Math.PI, 0.206)], [puff(c, 0.002, 0, 0.14, 0.206)]],
+  hr_bowl: (c = 0x6a4020) => [[...scalp(c, 0.12, -0.05, 0.32 * Math.PI, 0.216), ...fringeOf(c, 7, -0.13, 0.13, 0.112, 0.112, 0.042), ...hangOf(c, 0.228, 0.11, 0.0, 0.25, 0.32 * Math.PI)],
+    [...crownOf(c, 0.232, 0.15, 0.02)]],
+  hr_messy: (c = 0x8a5a2a) => { const top = [puff(c, 0.01, -0.004)]; for (let i = 0; i < 9; i++) top.push(radial(new THREE.SphereGeometry(0.05, 10, 8), 0.25 + (i % 3) * 0.3, i * 2.3, 0.21, c));
+    return [[...scalp(c), ...fringeOf(c, 5, -0.1, 0.1, 0.126, 0.112, 0.042)], top]; },
+  hr_slick: (c = 0x16161c) => [[...scalp(c, 0.14, -0.08)], [puff(c, 0.014, -0.02), lump(0.08, 0, 0.17, -0.05, c, 1.5, 0.55, 2.0, -0.3), lump(0.05, 0, 0.2, 0.06, c, 1.6, 0.5, 1.2, 0.2)]],
+  hr_bangs: (c = 0x0e0e14) => [[...scalp(c), ...fringeOf(c, 8, -0.135, 0.135, 0.1, 0.1, 0.04), ...hangOf(c, 0.232, 0.1, -0.05, 0.5, 0.3 * Math.PI)], [...crownOf(c, 0.232, 0.16, 0.0)]],
+  hr_sidepart: (c = 0xb88a4a) => [[...scalp(c, 0.135, -0.07), ...fringeOf(c, 4, 0.0, 0.12, 0.13, 0.11, 0.04)],
+    [puff(c, 0.01, -0.004), lump(0.07, -0.06, 0.19, 0.08, c, 1.6, 0.55, 1.3, 0.4, 0, 0.3), lump(0.06, 0.07, 0.19, 0.07, c, 1.9, 0.55, 1.2, 0.4, 0, -0.5)]],
+  // Rare
+  hr_twin: (c = 0x30c0e0) => { const out = [];
+    for (const s of [-1, 1]) out.push(tor(0.026, 0.012, s * 0.15, 0.1, -0.13, 0xff5aa8, 0, s * 0.8), ...strand([s * 0.18, 0.06, -0.15], [s * 0.26, -0.36, -0.12], 12, 0.05, 0.03, c, 0.025));
+    return [[...scalp(c), ...fringeOf(c, 5, -0.1, 0.1, 0.122, 0.122, 0.04), ...out], [puff(c, 0.01, -0.004)]]; },
+  hr_topknot: (c = 0x2a1a10) => [[...scalp(c, 0.14, -0.08)], [puff(c, 0.012, -0.01), sph(0.07, 0, 0.225, -0.09, c, 1, 0.85, 1), tor(0.04, 0.01, 0, 0.19, -0.075, 0x8a2a1a, -0.6, 0)]],
+  hr_dreads: (c = 0x3a2614) => { const out = [];
+    for (let i = 0; i < 14; i++) { const a = Math.PI * 0.42 + (i / 13) * Math.PI * 1.16, x = Math.sin(a) * 0.21, z = Math.cos(a) * 0.21, L = 0.32 + (i % 3) * 0.05;
+      out.push(cyl(0.022, 0.018, L, x * 1.05, 0.04 - L / 2, z * 1.05, c, -z * 0.5, x * 0.5), sph(0.02, x * 1.08, 0.04 - L, z * 1.08, i % 4 ? c : 0xd8a840)); }
+    return [[...scalp(c, 0.132, -0.08), ...out], [puff(c, 0.012, -0.004), ...spikesOn(c, [[0.4, 6, 0.08, 0.03, 0.3]])]]; },
+  hr_quiff: (c = 0x2a1a12) => [[...scalp(c, 0.135, -0.07)], [puff(c, 0.01, -0.004), lump(0.1, 0, 0.21, 0.08, c, 1.2, 0.75, 1.3, -0.45), lump(0.07, 0, 0.26, 0.13, c, 1.2, 0.7, 1.0, -0.8)]],
+  hr_wavy: (c = 0xa85a28) => { const out = [];
+    for (let row = 0; row < 4; row++) for (let i = 0; i < 9; i++) { const a = Math.PI * 0.62 + (i / 8) * Math.PI * 0.76, r = 0.215 + row * 0.006; out.push(sph(0.05, Math.sin(a) * r + Math.sin(row * 2 + i) * 0.01, -0.08 - row * 0.075, Math.cos(a) * r - 0.01, c, 1, 1.3, 0.8)); }
+    return [[...scalp(c, 0.132, -0.1), ...fringeOf(c, 5, -0.1, 0.1, 0.122, 0.122, 0.04), ...hangOf(c, 0.224, 0.06, -0.05, 0.42, 0.3 * Math.PI), ...out], [...crownOf(c, 0.228, 0.165, 0.0)]]; },
+  hr_pixie: (c = 0xff6ab0) => [[...scalp(c, 0.135, -0.06), ...fringeOf(c, 6, -0.13, 0.08, 0.1, 0.135, 0.044)],
+    [puff(c, 0.01, -0.004), lump(0.06, -0.08, 0.2, 0.06, c, 1.8, 0.5, 1.1, 0.4, 0, 0.5), lump(0.05, 0.05, 0.21, -0.03, c, 1.8, 0.5, 1.2, 0.2, 0, -0.3)]],
+  hr_mullet: (c = 0x7a4a1e) => [[...scalp(c, 0.135, -0.08), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038),
+    part(new THREE.CylinderGeometry(0.2, 0.17, 0.26, 18, 1, true, Math.PI - 1.0, 2.0), M(0, -0.18, -0.01), c), lump(0.06, 0, -0.3, -0.16, c, 2.0, 0.8, 0.8)],
+    [puff(c, 0.01, -0.004), lump(0.06, 0, 0.21, 0.04, c, 1.8, 0.6, 1.4, 0.3)]],
+  hr_highpony: (c = 0xf0d070) => [[...scalp(c), ...fringeOf(c, 4, -0.08, 0.08, 0.124, 0.124, 0.038)],
+    [puff(c, 0.01, -0.004), tor(0.03, 0.012, 0, 0.19, -0.11, 0xff4a6a, -0.9, 0), ...strand([0, 0.2, -0.15], [0, -0.12, -0.3], 7, 0.055, 0.03, c, 0.0)]],
+  hr_silver: (c = 0xc8d0dc) => [[...scalp(c)], [puff(c, 0.008), ...spikesOn(c, [[0.25, 3, 0.2, 0.05, 0.25], [0.6, 6, 0.21, 0.052, 0], [0.95, 8, 0.17, 0.045, 0.5]])]],
+  // Epic
+  hr_golden: (c = 0xffc828) => [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0xffa010, 0.25)],
+    [puff(c, 0.01, 0, 0.14, 0.214, 0xffa010, 0.25), ...spikesOn(0xffd84a, [[0.05, 1, 0.3, 0.06, 0], [0.42, 5, 0.3, 0.06, 0], [0.8, 8, 0.26, 0.055, 0.5], [1.15, 7, 0.18, 0.05, 0.25]], 0xffb020, 0.7)]],
+  hr_ice: (c = 0xa8e8ff) => [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0x60c8ff, 0.4)],
+    [puff(c, 0.01, 0, 0.14, 0.214, 0x60c8ff, 0.4), ...spikesOn(0xe8faff, [[0.05, 1, 0.22, 0.05, 0], [0.4, 6, 0.22, 0.048, 0], [0.78, 8, 0.19, 0.045, 0.5]], 0x80e0ff, 1.6)]],
+  hr_rainbow: (c = 0x8a4ae0) => { const C = [0xff4a5a, 0xff9a2a, 0xffe14a, 0x5ae06a, 0x4aa8ff, 0xa66bff], top = [], low = [];
+    for (const [th, n, off] of [[0, 1, 0], [0.42, 6, 0], [0.8, 9, 0.5], [1.15, 8, 0.25]]) for (let i = 0; i < n; i++) top.push(radial(new THREE.SphereGeometry(0.056, 10, 8), th, ((i + off) / n) * Math.PI * 2, 0.205, C[(i + n) % 6]));
+    for (let i = 0; i < 9; i++) { const a = Math.PI * 0.6 + (i / 8) * Math.PI * 0.8, x = Math.sin(a) * 0.215, z = Math.cos(a) * 0.215; low.push(...strand([x, -0.05, z], [x * 1.05, -0.3, z * 1.05], 5, 0.042, 0.03, C[i % 6])); }
+    return [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.216), ...fringeOf(0xff4a5a, 5, -0.1, 0.1, 0.124, 0.124, 0.042), ...low], top]; },
+  hr_mane: (c = 0xd87a2a) => { const low = [];
+    for (let i = 0; i < 13; i++) { const ph = Math.PI * 0.5 + (i / 12) * Math.PI; low.push(radial(new THREE.ConeGeometry(0.06, 0.2, 8), 1.45 + (i % 2) * 0.35, ph, 0.27, i % 2 ? c : 0xb85a1a)); }
+    return [[...scalp(c, 0.132, -0.1), ...fringeOf(c, 5, -0.12, 0.12, 0.124, 0.124, 0.046), ...low], [puff(c, 0.012), ...spikesOn(c, [[0.35, 6, 0.2, 0.065, 0], [0.8, 9, 0.22, 0.06, 0.5], [1.15, 4, 0.2, 0.06, 0.25]])]]; },
+  hr_sakura: (c = 0xffb0d0) => { const fl = []; for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; fl.push(sph(0.022, 0.19, 0.08 + Math.sin(a) * 0.03, 0.07 + Math.cos(a) * 0.03, 0xffe8f4, 0.5, 1, 1, 0xffa0d0, 1.2)); }
+    fl.push(sph(0.016, 0.2, 0.08, 0.07, 0xffe14a, 0.6, 1, 1, 0xffd040, 2));
+    return [[...scalp(c, 0.132, -0.1), ...fringeOf(c, 5, -0.1, 0.1, 0.122, 0.122, 0.04), ...hangOf(c, 0.222, 0.06, -0.05, 0.5, 0.3 * Math.PI),
+      part(new THREE.CylinderGeometry(0.21, 0.19, 0.38, 22, 1, true, 0.4 * Math.PI, 1.2 * Math.PI), M(0, -0.24, -0.02), c), ...fl], [...crownOf(c, 0.228, 0.165, 0.0)]]; },
+  // Legendary: lit from inside.
+  hr_flame: (c = 0x6a1406) => { const top = [], low = [];
+    for (const [th, n, h, off] of [[0.05, 1, 0.34, 0], [0.45, 6, 0.3, 0], [0.85, 8, 0.24, 0.5]]) for (let i = 0; i < n; i++) { const k = (i + off) / n, col = (i + n) % 2 ? 0xffd040 : 0xff6a10; top.push(radial(new THREE.ConeGeometry(0.06, h, 10), th, k * Math.PI * 2, 0.19 + h / 2, col, col, 2.8)); }
+    for (let i = 0; i < 7; i++) { const ph = Math.PI * 0.7 + (i / 6) * Math.PI * 0.6; low.push(radial(new THREE.ConeGeometry(0.05, 0.16, 8), 1.6, ph, 0.27, 0xff8a20, 0xff6a10, 2.6)); }
+    return [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0xff3a08, 0.9), ...low], [puff(c, 0.008, 0, 0.14, 0.214, 0xff3a08, 0.9), ...top]]; },
+  hr_star: (c = 0x14104a) => { const st = [];
+    for (let i = 0; i < 22; i++) { const ph = Math.PI * 0.55 + ((i * 0.37) % 1) * Math.PI * 0.9, y = -0.05 - ((i * 0.61) % 1) * 0.3, R = 0.226 + 0.004 * (i % 3); st.push(part(new THREE.OctahedronGeometry(i % 5 ? 0.009 : 0.015, 0), M(Math.sin(ph) * R, y, Math.cos(ph) * R - 0.02), 0xffffff, i % 3 ? 0xfff0c0 : 0xa0d0ff, 3.4)); }
+    return [[...scalp(c, 0.132, -0.1, 0.3 * Math.PI, 0.214, 0x3020a0, 0.5), ...fringeOf(c, 5, -0.1, 0.1, 0.122, 0.122, 0.04),
+      part(new THREE.CylinderGeometry(0.212, 0.2, 0.42, 24, 1, true, 0.4 * Math.PI, 1.2 * Math.PI), M(0, -0.23, -0.02), c, 0x2a1a90, 0.6), ...st],
+      [...crownOf(c, 0.228, 0.165, 0.0, 0x3020a0, 0.5), ...[0, 1, 2, 3, 4].map((i) => dot(0.012, 0.3 + (i % 2) * 0.35, i * 1.3, 0.232, 0xffffff, 0xfff0c0, 3.4))]]; },
+  hr_plasma: (c = 0x0a3a5a) => [[...scalp(c, 0.132, -0.09, 0.3 * Math.PI, 0.214, 0x20e0ff, 0.9)],
+    [puff(c, 0.008, 0, 0.14, 0.214, 0x20e0ff, 0.9), ...spikesOn(0x60f8ff, [[0.05, 1, 0.26, 0.05, 0], [0.42, 6, 0.26, 0.05, 0], [0.82, 9, 0.22, 0.045, 0.5]], 0x30e8ff, 3),
+      ...spikesOn(0xffffff, [[0.42, 6, 0.3, 0.018, 0], [0.82, 9, 0.25, 0.016, 0.5]], 0xc0ffff, 3.4)]],
+  hr_aurora: (c = 0x10603a) => { const band = [], C = [[0x30ffb0, 0x20e090], [0x30d8ff, 0x20b8e0], [0xb070ff, 0x9050f0], [0xff70d0, 0xf050b0]];
+    C.forEach(([col, g], i) => band.push(part(new THREE.CylinderGeometry(0.214 - i * 0.004, 0.21 - i * 0.004, 0.11, 24, 1, true, 0.4 * Math.PI, 1.2 * Math.PI), M(0, -0.06 - i * 0.1, -0.02), col, g, 1.4)));
+    return [[...scalp(c, 0.132, -0.1, 0.3 * Math.PI, 0.214, 0x20e090, 0.8), ...fringeOf(0x30ffb0, 5, -0.1, 0.1, 0.122, 0.122, 0.04), ...band], [...crownOf(c, 0.228, 0.165, 0.0, 0x20e090, 0.8)]]; },
+});
 export const HAIR_TOP = {};
 for (const [id, make] of Object.entries(HAIRS)) { GEAR[id] = () => make()[0]; GEAR[id + '_top'] = () => make()[1]; HAIR_TOP[id] = id + '_top'; }
 // The owner's hair keeps its shell and long locks under a hat; the fringe, side locks and buns go.
 { const make = GEAR.hairgg; GEAR.hairgg = () => make().filter((p, i) => i === 0 || i > 5); GEAR.hairgg_top = () => make().filter((p, i) => i > 0 && i < 6); HAIR_TOP.hairgg = 'hairgg_top'; }
 // What a hat does to hair: 'all' hides it (closed helmets, the hood), 'top' hides the top layer, and the few that sit
 // around or beside the hair leave it.
-const LEAVES = new Set(['band_red', 'band_blue', 'halo', 'devil', 'antenna', 'catears', 'bunny', 'antlers', 'bolt', 'sunrays', 'phones', 'none']);
+const LEAVES = new Set(['band_red', 'band_blue', 'halo', 'devil', 'antenna', 'catears', 'bunny', 'antlers', 'bolt', 'sunrays', 'phones', 'none',
+  'sunvisor', 'earmuffs', 'papercrown', 'unicorn', 'tiara', 'ufo', 'crystalcrown', 'cybervisor', 'raincloud', 'l_galaxy', 'l_frostcrown', 'l_voidhorns', 'l_neon', 'l_holy']);
 export const coverOf = (id) => (id === 'knight' || id === 'astro' || id === 'hood' ? 'all' : LEAVES.has(id) || !id ? null : 'top');
 
 export const GEAR_AT = { hemgg: 'hips', glider: 'chest' };
 export const GEAR_ANIM = {};
+// Legendary faces' extras, round the eyes. EYE is the middle of the eye drawn on the left of the face as you look at it (the
+// same place as the monocle's lens), and the face looks out along it.
+const EYE = [-0.0865, 0.0552, 0.181];
+const eyeRot = (s) => { const l = Math.hypot(...EYE), N = [s * Math.abs(EYE[0]) / l, EYE[1] / l, EYE[2] / l]; return [-Math.asin(N[1]), Math.atan2(N[0], N[2])]; };
+// A rod from a to b.
+const link = (a, b, r, c, glow, gk) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length();
+  return part(new THREE.CylinderGeometry(r, r, L, 6), new THREE.Matrix4().compose(new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()), new THREE.Vector3(1, 1, 1)), c, glow, gk); };
+const gem = (r, x, y, z, c, glow, gk, sy = 1.6, rz = 0) => part(new THREE.OctahedronGeometry(r, 0), M(x, y, z, 1, sy, 1, 0, 0, rz), c, glow, gk);
+Object.assign(GEAR, {
+  f_inferno: () => { const out = [];
+    for (const s of [-1, 1]) {
+      [[0.12, 0.13, 0.15, 0.13, 0.024], [0.075, 0.15, 0.16, 0.1, 0.018], [0.155, 0.1, 0.12, 0.09, 0.016]].forEach(([x, y, z, h, r], i) => out.push(cone(r, h, s * x, y, z, i ? 0xffd040 : 0xff7a20, -0.35, -s * 0.45, i ? 0xffb020 : 0xff5a10, 3)));
+      out.push(sph(0.01, s * 0.1, 0.26, 0.12, 0xffe080, 1, 1, 1, 0xffc040, 3.4), sph(0.008, s * 0.15, 0.22, 0.08, 0xffe080, 1, 1, 1, 0xffc040, 3.4));
+    }
+    return out; },
+  f_void: () => { const out = [tor(0.28, 0.004, 0, 0.06, 0, 0x2a0a40, Math.PI / 2, 0, 0x9a40ff, 2.4)];
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; out.push(gem(i % 2 ? 0.016 : 0.024, Math.sin(a) * 0.28, 0.06 + Math.sin(a * 2) * 0.02, Math.cos(a) * 0.28, 0x0a0410, i % 2 ? 0xd080ff : 0x8a30f0, 2.6)); }
+    return out; },
+  f_galaxy: () => { const out = [];
+    for (const s of [-1, 1]) [[0.17, 0.12, 0.12, 0.018], [0.205, 0.04, 0.09, 0.012], [0.15, 0.19, 0.06, 0.012], [0.12, -0.04, 0.16, 0.009]].forEach(([x, y, z, r], i) => out.push(gem(r, s * x, y, z, 0xffffff, [0xffffff, 0xff9ae0, 0xa8d0ff, 0xfff0a0][i], 3.4, 1.8, s * 0.3)));
+    out.push(sph(0.022, 0.24, 0.16, 0.0, 0x7a50e0, 1, 1, 1, 0x6a40d0, 1.2), tor(0.036, 0.004, 0.24, 0.16, 0.0, 0xffd8a0, Math.PI / 2 + 0.5, 0.3, 0xffc080, 2));
+    return out; },
+  f_storm: () => { const out = [];
+    for (const s of [-1, 1]) for (const [dy, k] of [[0.03, 1], [-0.03, 0.8]]) {
+      const P = [[0.15, 0.06 + dy, 0.13], [0.19, 0.1 + dy, 0.09], [0.18, 0.06 + dy, 0.05], [0.22, 0.11 + dy, 0.0], [0.21, 0.07 + dy, -0.05]].slice(0, k === 1 ? 5 : 4);
+      for (let i = 0; i + 1 < P.length; i++) out.push(link([s * P[i][0], P[i][1], P[i][2]], [s * P[i + 1][0], P[i + 1][1], P[i + 1][2]], 0.006, 0xdffaff, 0x60d8ff, 3.2));
+    }
+    return out; },
+  f_divine: () => { const out = [tor(0.15, 0.01, 0, 0.34, 0, 0xfff4c0, Math.PI / 2, 0, 0xffe080, 3)];
+    for (const s of [-1, 1]) { const [rx, ry] = eyeRot(s), p = [s * Math.abs(EYE[0]) * 1.08, EYE[1] * 1.08, EYE[2] * 1.08]; out.push(tor(0.058, 0.004, p[0], p[1], p[2], 0xfff0b0, rx, ry, 0xffd860, 3)); }
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2, l = i % 2 ? 0.035 : 0.06; out.push(box(0.008, 0.008, l, Math.sin(a) * (0.165 + l / 2), 0.34, Math.cos(a) * (0.165 + l / 2), 0xfff0b0, 0, a, 0, 0xffd860, 2.6)); }
+    return out; },
+  f_overclock: () => { const s = 1, [rx, ry] = eyeRot(s), p = [Math.abs(EYE[0]) * 1.2, EYE[1] * 1.2, EYE[2] * 1.2], out = [tor(0.06, 0.005, p[0], p[1], p[2], 0x9af8ff, rx, ry, 0x30f0ff, 3), tor(0.072, 0.003, p[0], p[1], p[2], 0x9af8ff, rx, ry, 0x30f0ff, 2.2)];
+    out.push(box(0.008, 0.075, 0.1, 0.222, 0.06, 0.05, 0x30f0ff, 0, 0, 0, 0x20d8ff, 2.4), box(0.012, 0.09, 0.012, 0.222, 0.06, 0.1, 0x363c48), cyl(0.004, 0.004, 0.12, 0.22, 0.17, 0.0, 0x8893a3), sph(0.01, 0.22, 0.235, 0.0, 0x30f0ff, 1, 1, 1, 0x30f0ff, 3.4));
+    for (let i = 0; i < 3; i++) out.push(box(0.004, 0.006, 0.05 - i * 0.012, 0.228, 0.08 - i * 0.02, 0.05, 0xffffff, 0, 0, 0, 0xc0ffff, 3));
+    return out; },
+  f_frost: () => { const out = [];
+    for (const s of [-1, 1]) { out.push(gem(0.02, s * 0.165, 0.1, 0.12, 0xe8fbff, 0x70d8ff, 2.6, 2.2, -s * 0.6), gem(0.016, s * 0.19, 0.04, 0.1, 0xe8fbff, 0x70d8ff, 2.6, 2, -s * 1.2), gem(0.012, s * 0.15, 0.15, 0.1, 0xffffff, 0xa0f0ff, 3, 2, -s * 0.3), gem(0.01, s * 0.09, -0.015, 0.182, 0xffffff, 0x90e8ff, 3, 1.8)); }
+    return out; },
+  f_prism: () => { const C = [0xff4a5a, 0xff9a2a, 0xffe14a, 0x5ae06a, 0x4aa8ff, 0xa66bff], out = [];
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, c = C[i % 6]; out.push(gem(0.018, Math.sin(a) * 0.27, 0.07 + Math.sin(a * 3) * 0.018, Math.cos(a) * 0.27, c, c, 2.8, 1.5)); }
+    return out; },
+});
+for (const id of ['f_void', 'f_prism']) GEAR_ANIM[id] = 'spin';
+// Floating things that go round slowly.
+for (const id of ['ufo', 'l_galaxy']) GEAR_ANIM[id] = 'spin';
 
 // ---------------------------------------------------------------- the weapons
 // A gun is built with its grip at the origin, its barrel along +z and its top along +y. fore is where the other hand goes,

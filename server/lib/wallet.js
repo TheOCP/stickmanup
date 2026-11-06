@@ -223,7 +223,10 @@ class Wallet {
     const m = catalog.maps.find((x) => x.key === t);
     if (m) return { list: m.relics.slice() };
     if (all.includes(t)) return { list: [t] };
-    return { err: `There is no relic called "${String(text).slice(0, 30)}". They look like storm:0, storm:e, storm:w or forest:m0, or give a map name or all.` };
+    // Or the thing it opens, by name or id: "Venom Spitter" or w_venom gives the relic that opens it.
+    const it = this.findItem(text), need = it.key && catalog.need && catalog.need[it.key];
+    if (need && need.length) return { list: need.slice() };
+    return { err: `There is no relic called "${String(text).slice(0, 30)}". Give a relic like forest:h14, storm:0 or storm:w, the name of the thing it opens (Venom Spitter), a map name or all.` };
   }
   giveRelics(id, list, why) {
     return this.tx(() => {

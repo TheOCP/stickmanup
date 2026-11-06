@@ -15,7 +15,7 @@ const ITEM = { type: 3, name: 'item', description: 'Which item', required: true,
 const CONFIRM = { type: 5, name: 'confirm', description: 'Say true: this can not be undone', required: true };
 const ROLE = { type: 3, name: 'role', description: 'Which role', required: true, autocomplete: true, max_length: 16 };
 const PERM = { type: 3, name: 'perm', description: 'A command, a @group of them, or * for all', required: true, autocomplete: true, max_length: 24 };
-const RELIC = { type: 3, name: 'relic', description: 'Which relic: like storm:e, a map (all of its relics) or all', required: true, autocomplete: true, max_length: 24 };
+const RELIC = { type: 3, name: 'relic', description: 'Which relic: like forest:h14, or the thing it opens, a map (all of its relics) or all', required: true, autocomplete: true, max_length: 24 };
 const TAG = { type: 3, name: 'tag', description: 'What it says next to names', required: false, max_length: 12 };
 const COLOUR = { type: 3, name: 'color', description: 'Its colour, like #ff8800', required: false, max_length: 7 };
 const RANK = { type: 4, name: 'rank', description: 'Higher ranks can act on lower ones (owner 1000, admin 80, mod 50)', required: false, min_value: 1, max_value: 999 };
@@ -54,7 +54,13 @@ const COMMANDS = [
   cmd('takeitem', 'Take an item from a player', PLAYER, ITEM, REASON(false)),
   cmd('catalog', 'Everything you can give, and the names to use for items', { type: 3, name: 'search', description: 'Part of a name', required: false, max_length: 40 },
     { type: 3, name: 'kind', description: 'Only this kind of thing', required: false, choices: [{ name: 'suits', value: 'suit' }, { name: 'epic suits, faces and hats', value: 'epic' }, { name: 'legendary suits', value: 'legend' }, { name: 'faces', value: 'face' }, { name: 'hats', value: 'hat' }, { name: 'hair', value: 'hair' }, { name: 'emotes', value: 'emote' }, { name: 'weapons', value: 'weapon' }, { name: 'graffiti', value: 'spray' }] }, PAGE),
+  cmd('relics', 'Every relic, its name to use and what it opens', { type: 3, name: 'search', description: 'A map, or part of a name', required: false, max_length: 40 },
+    { type: 4, name: 'page', description: 'Which page', required: false, min_value: 1 }),
   cmd('giverelic', 'Give a player a relic, so what it opens can be bought', PLAYER, RELIC, REASON(false)),
+  // The same two by the names people try first.
+  cmd('reliclist', 'Every relic, its name to use and what it opens', { type: 3, name: 'search', description: 'A map, or part of a name', required: false, max_length: 40 },
+    { type: 4, name: 'page', description: 'Which page', required: false, min_value: 1 }),
+  cmd('relic', 'Give a player a relic, so what it opens can be bought', PLAYER, RELIC, REASON(false)),
   cmd('takerelic', 'Take a relic from a player', PLAYER, RELIC, REASON(false)),
   cmd('dailycap', 'The most coins one player can earn in a day', { type: 4, name: 'amount', description: 'The new limit. Empty just shows it', required: false, min_value: 0, max_value: 100000000 }),
   // Climbs
@@ -119,7 +125,7 @@ const COMMANDS = [
 // Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
 const GROUPS = {
   players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint', 'tp', 'clearsprays'],
-  coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'giverelic', 'takerelic', 'dailycap'],
+  coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'relics', 'reliclist', 'giverelic', 'relic', 'takerelic', 'dailycap'],
   climbs: ['climbs', 'climb'],
   bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
   anticheat: ['flags', 'suspects', 'clearflags', 'trust', 'untrust', 'anticheat', 'phone'],
@@ -134,7 +140,7 @@ const DISCORD_ONLY = new Set([...GROUPS.discord, 'admins']);
 const GAME_ONLY = new Set(['watch', 'join']);
 const IN_GAME = 'That works in the game: open the terminal there (staff have a Terminal button on the main menu and in the pause menu).';
 // Commands that only look at a player, or give them something. All the others need a higher rank than theirs, in the game.
-const GENTLE = new Set(['player', 'coins', 'items', 'history', 'notes', 'note', 'climbs', 'flags', 'baninfo', 'lastplayed', 'alts', 'ips', 'phone', 'perms', 'givecoins', 'giveitem', 'giverelic', 'tell']);
+const GENTLE = new Set(['player', 'coins', 'items', 'relics', 'reliclist', 'relic', 'history', 'notes', 'note', 'climbs', 'flags', 'baninfo', 'lastplayed', 'alts', 'ips', 'phone', 'perms', 'givecoins', 'giveitem', 'giverelic', 'tell']);
 
 // How far apart two words are, in letters changed, added, left out or swapped round.
 function dist(a, b) {
@@ -453,7 +459,7 @@ const RUN = {
     const u = target(ctx, d);
     if (!u) return undefined;
     const found = ctx.s.wallet.findItem(opt(d, 'item')), said = opt(d, 'reason'), why = said || 'no reason given';
-    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${esc(k)}\``).join(', ')}`, { color: 'warn' });
+    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${code(k)}\``).join(', ')}`, { color: 'warn' });
     if (!found.key) return ctx.reply('That item is not in the catalog. Try /catalog. The Hacker and GG Girl go with a flag: use /setrole.', { color: 'warn' });
     const item = found.key, name = ctx.s.wallet.itemName(item);
     if (!ctx.s.wallet.giveItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} already has that.`, { color: 'warn' });
@@ -464,7 +470,7 @@ const RUN = {
     const u = target(ctx, d);
     if (!u) return undefined;
     const text = opt(d, 'item'), found = ctx.s.wallet.findItem(text), said = opt(d, 'reason'), why = said || 'no reason given';
-    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${esc(k)}\``).join(', ')}`, { color: 'warn' });
+    if (found.many) return ctx.reply(`More than one item is called that. Use one of these: ${found.many.map((k) => `\`${code(k)}\``).join(', ')}`, { color: 'warn' });
     const item = found.key || text, name = ctx.s.wallet.itemName(item);
     if (!ctx.s.wallet.takeItem(u.id, item, `${ctx.whoShort}: ${why}`)) return ctx.reply(`${line(u)} does not have that.`, { color: 'warn' });
     tell(ctx, u, `An item was taken from you: ${name}.`, said);
@@ -476,7 +482,16 @@ const RUN = {
       (!kind || (kind === 'epic' ? kd.endsWith(':epic') : kd.split(':')[0] === kind)));
     const pages = Math.max(1, Math.ceil(all.length / per)), page = Math.min(pages, opt(d, 'page') || 1), shown = all.slice((page - 1) * per, page * per);
     const more = pages > 1 ? `\nPage ${page} of ${pages}.${page < pages ? ' Add page: ' + (page + 1) + ' for the next, or search for part of a name.' : ''}` : '';
-    return ctx.reply(`${all.length} items\n${shown.map(([k, name, price]) => `${esc(name)} \`${esc(k)}\` ${price ? n0(price) : 'not for sale'}`).join(', ')}${more}`);
+    return ctx.reply(`${all.length} items\n${shown.map(([k, name, price]) => `${esc(name)} \`${code(k)}\` ${price ? n0(price) : 'not for sale'}`).join(', ')}${more}`);
+  },
+  // Every relic there is, as the id to give and what it opens: a map's key shows that map's.
+  relics(ctx, d) {
+    const q = String(opt(d, 'search') || '').trim().toLowerCase(), per = 35;
+    const all = ctx.s.wallet.relicList().filter(([k, name]) => !q || k.startsWith(q + ':') || k.includes(q) || name.toLowerCase().includes(q));
+    if (!all.length) return ctx.reply(`No relic matches "${esc(String(opt(d, 'search')).slice(0, 40))}". Try a map like forest, or part of a name.`, { color: 'warn' });
+    const pages = Math.max(1, Math.ceil(all.length / per)), page = Math.min(pages, opt(d, 'page') || 1), shown = all.slice((page - 1) * per, page * per);
+    const more = pages > 1 ? `\nPage ${page} of ${pages}.${page < pages ? ' Add page: ' + (page + 1) + ' for the next, or search for a map or part of a name.' : ''}` : '';
+    return ctx.reply(`${all.length} relics\n${shown.map(([k, name]) => `\`${code(k)}\` ${esc(name)}`).join('\n')}${more}`);
   },
   dailycap(ctx, d) {
     const a = opt(d, 'amount');
@@ -656,7 +671,7 @@ const RUN = {
     return ctx.slow(async () => {
       const file = ctx.s.db.backup();
       ctx.s.admin.audit(ctx.who, 'backup', file);
-      return `Backup made: \`${esc(file)}\`. The last 7 days are kept.`;
+      return `Backup made: \`${code(file)}\`. The last 7 days are kept.`;
     });
   },
   audit(ctx, d) {
@@ -1124,5 +1139,8 @@ function suggest(s, data) {
   }
   return [];
 }
+
+RUN.reliclist = RUN.relics;
+RUN.relic = RUN.giverelic;
 
 module.exports = { COMMANDS, RUN, GROUPS, DISCORD_ONLY, GAME_ONLY, runCommand, runButton, runModal, suggest, playerLine, guardText, parseBang, usage, closest, didYouMean };

@@ -561,7 +561,8 @@ export class Stickman {
     if (!classic) { this.eyesP.material = faceMat(L.face, 'eyes', light); this.mouthP.material = faceMat(L.face, 'mouth', light); }
     // Hat, hair and the suit's own extras. Picked hair takes the place of a suit's own. A hat hides the hair's top layer
     // (or all of it, for a closed helmet) and sits a little bigger on what is left.
-    const want = new Set(S.gear || []), hatId = L.hat.id !== 'none' ? L.hat.id : null, picked = L.hair && L.hair.id !== 'none' ? L.hair.id : null;
+    // A legendary face brings its own things round the eyes.
+    const want = new Set([...(S.gear || []), ...(L.face.gear || [])]), hatId = L.hat.id !== 'none' ? L.hat.id : null, picked = L.hair && L.hair.id !== 'none' ? L.hair.id : null;
     let hair = picked;
     for (const id of want) if (HAIR_TOP[id]) { want.delete(id); hair = hair || id; }
     let cover = coverOf(hatId);

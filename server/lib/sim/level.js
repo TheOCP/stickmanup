@@ -120,6 +120,8 @@ export const MAPS = [
     ],
   },
 ];
+// The order the six are shown in the menus (their ids never change: saves, records and the server go by id).
+export const MAP_ORDER = [1, 2, 3, 4, 5, 0];
 // ---------------------------------------------------------------- generated maps
 // Maps 100 to 199: a hundred more climbs. Each is built on one of the six worlds above (its looks, its way up, its creatures)
 // with a seed of its own, its own colours (hue), a name, the zones in another order, a grade (how hard it is on any
@@ -353,9 +355,9 @@ const SIGNS = [
 ];
 
 const PIERS = [0.9, 2.47, 4.04, 5.61], PIER_R0 = 19, PIER_LEN = 13, PIER_W = 1.6;
-// Is this spot on a pier (or within m of one)?
-function onPier(x, z, m = 0) {
-  return PIERS.some((a) => {
+// Is this spot on a pier (or within m of one)? Each climb turns a pier that would run into something (placePiers).
+function onPier(x, z, m = 0, piers = PIERS) {
+  return piers.some((a) => {
     const u = x * Math.cos(a) + z * Math.sin(a), v = -x * Math.sin(a) + z * Math.cos(a);
     return u > PIER_R0 - m && u < PIER_R0 + PIER_LEN + m && Math.abs(v) < PIER_W + m;
   });
@@ -2884,6 +2886,7 @@ export function generateLevel(mapId = 0) {
 
   // ---------- build ----------
   const DIR0 = DIR;
+  let piers = PIERS;
   ring(2, CORE_R + 0.3, 19, 0, TAU, 'dock', false);
   // Four piers from the edge of the dock out over the water. They start where the dock ends: no overlap.
   for (const a of PIERS) {
@@ -3098,6 +3101,7 @@ export function generateLevel(mapId = 0) {
   // widening toward the foot exactly as the drawn wall does on the maps where it flares.
   if (ROUTE !== 'crater') add(makeCyl(0, (top - 1.2 - 40) / 2, 0, CORE_R + CORE_SKIN, (top - 1.2 + 40) / 2, coreFlare(MAP.key) > 1 ? { r1: CORE_R * coreFlare(MAP.key) + CORE_SKIN } : undefined), 'core');
   for (const t of TOWERS) add(makeBox(t.x, (top - 20) / 2, t.z, TW, (top + 20) / 2, TW, 0, -t.a, 0), 'tower');
+  placePiers();
 
   // Zone decorations, all visual only, different for each map.
   const dz = (k, n, f) => { for (let i = 0; i < n; i++) out.decor.push(Object.assign({ k }, f(i))); };
@@ -3121,7 +3125,7 @@ export function generateLevel(mapId = 0) {
     dz('fountain', 5, (i) => {
       const r = rr(22, 28);
       let a = (i / 5) * TAU + 0.3;
-      while (onPier(Math.cos(a) * r, Math.sin(a) * r, 2.6)) a += 0.08;
+      while (onPier(Math.cos(a) * r, Math.sin(a) * r, 2.6, piers)) a += 0.08;
       return { x: Math.cos(a) * r, y: 0.4, z: Math.sin(a) * r, s: rr(0.9, 1.2) };
     });
     dz('fish', 14, () => { const [x, z, a] = around(42, 85); return { x, y: 0, z, ry: a + Math.PI / 2, per: rr(3.5, 7), ph: R(), s: rr(0.8, 1.4) }; });
@@ -3151,7 +3155,7 @@ export function generateLevel(mapId = 0) {
   for (const c of out.traps) c.trap.sp = spAt(c.y);
 
   // Nothing on the island grows through a pier.
-  out.decor = out.decor.filter((d) => d.y > 1.5 || d.k === 'fountain' || !onPier(d.x, d.z, 1.0));
+  out.decor = out.decor.filter((d) => d.y > 1.5 || d.k === 'fountain' || !onPier(d.x, d.z, 1.0, piers));
 
   // A pillar is a column hanging 6 m under its top, but only its top was kept a head's height clear of the route below.
   // Over a walkway, a beam, a zone ring or the start dock the column could end just over your head, or lower: you hit it
@@ -3280,7 +3284,113 @@ export function generateLevel(mapId = 0) {
   out.obsZone = obsZone;
   // Forest: no decorative trees standing inside a side tree's climb.
   if (out.trees.length) out.decor = out.decor.filter((d) => d.k !== 'tree' || out.trees.every((t) => Math.hypot(d.x - t.x, d.z - t.z) > 11));
+  settleGround();
   return out;
+
+  // The four piers are laid before the climb, so a side tree's trunk (the Waterfall's stone pillars) or a skyscraper could
+  // end up standing on one, or a pier could run into its wall. Once everything is in place, a pier that meets anything
+  // solid near the ground turns round the island to the nearest angle where it is clear, staying well apart from the
+  // other piers. One that finds no clear angle stays where it was.
+  function placePiers() {
+    const pierCols = out.cols.filter((c) => c.kind === 'pier');
+    const low = out.cols.filter((c) => c.kind !== 'pier' && c.kind !== 'dock' && c.kind !== 'core' && c.miny < 5 && c.maxy > 0.3);
+    const M = 0.7;
+    const hits = (a) => {
+      const ca = Math.cos(a), sa = Math.sin(a);
+      for (let u = PIER_R0 + 0.2; u <= PIER_R0 + PIER_LEN; u += 0.4) {
+        for (let v = -PIER_W; v <= PIER_W + 0.01; v += 0.4) {
+          const x = ca * u - sa * v, z = sa * u + ca * v;
+          for (const c of low) {
+            if (x < c.minx - M - 1 || x > c.maxx + M + 1 || z < c.minz - M - 1 || z > c.maxz + M + 1) continue;
+            if (c.r !== undefined) {
+              if (Math.hypot(x - c.x, z - c.z) < Math.max(c.r, c.r1 || 0) + M) return true;
+            } else if (c.rx || c.rz) {
+              return true;
+            } else {
+              const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry);
+              if (Math.abs(dx * cs - dz * sn) < c.hx + M && Math.abs(dx * sn + dz * cs) < c.hz + M) return true;
+            }
+          }
+        }
+      }
+      return false;
+    };
+    piers = PIERS.slice();
+    piers.forEach((a0, k) => {
+      if (!hits(a0)) return;
+      for (let i = 1; i <= 20; i++) {
+        for (const a of [a0 + i * 0.04, a0 - i * 0.04]) {
+          if (piers.some((b, j) => j !== k && Math.abs(angDiff(a, b)) < 0.7) || hits(a)) continue;
+          piers[k] = a;
+          const old = pierCols[k], x = Math.cos(a) * (PIER_R0 + PIER_LEN / 2), z = Math.sin(a) * (PIER_R0 + PIER_LEN / 2);
+          const c = makeBox(x, 1.4, z, PIER_W, 0.6, PIER_LEN / 2, 0, -(a + Math.PI / 2), 0);
+          c.kind = old.kind; c.zone = old.zone;
+          out.cols[out.cols.indexOf(old)] = c;
+          return;
+        }
+      }
+    });
+  }
+
+  // Things on the island's ground and on the water round it (palms, trees, fountains, lily pads, boats) each need room of
+  // their own: never on the dock or a pier, never in a trunk, a tower, a crate or a stone of a hidden course, and never in
+  // each other (a palm in a fountain, two crowns in one). One that isn't clear moves to a free spot in its own ring, with
+  // random numbers of its own so the climb itself stays exactly the same; one that finds none is left out. Fountains
+  // first, the rest keep their order.
+  function settleGround() {
+    const RG = rng((MAP.seed ^ 0x6a3d5c) >>> 0);
+    const BAND = { fountain: [22, 28], palm: [20, 34], tree: [21, 75], lily: [39, 52], boat: [70, 180] };
+    const low = out.cols.filter((c) => c.kind !== 'dock' && c.kind !== 'core' && c.kind !== 'pier' && c.miny < 14 && c.maxy > -1);
+    // b: what stands on the ground (radius), t: the crown or spray up top (radius, centre tx tz, from height ty), h: how tall.
+    const shape = (d, x, z) => {
+      const s = d.s || 1;
+      if (d.k === 'palm') {
+        // The trunk bends out and the crown sits off to one side (worldview.js palms): where the crown really is.
+        const k = (1.35 - 6.8 * Math.sin((d.lean || 0) * 0.3)) * s;
+        return { b: 0.55 * s, t: 2.6 * s, tx: x + Math.cos(d.ry || 0) * k, tz: z - Math.sin(d.ry || 0) * k, ty: 5.5 * s, h: 9 * s };
+      }
+      if (d.k === 'tree') return { b: 0.7 * s, t: 3.2 * s, tx: x, tz: z, ty: 1.9 * s, h: 11 * s };
+      if (d.k === 'fountain') return { b: 1.85 * s, t: 1.5 * s, tx: x, tz: z, ty: 0.6, h: 4 * s };
+      if (d.k === 'lily') return { b: 1.0 * s, t: 0, tx: x, tz: z, ty: 0, h: 0.5 };
+      return { b: 3.8 * s, t: 0, tx: x, tz: z, ty: 0, h: 7 * s };
+    };
+    const inBox = (c, x, z, r) => x + r > c.minx && x - r < c.maxx && z + r > c.minz && z - r < c.maxz;
+    const placed = [];
+    const clear = (d, x, z, f) => {
+      if (Math.hypot(x, z) - f.b < 19.6 || onPier(x, z, f.b + 0.3, piers)) return false;
+      if (f.t && onPier(f.tx, f.tz, f.t * 0.8, piers)) return false;
+      for (const c of low) {
+        if (c.miny > f.h || c.maxy < -0.5) continue;
+        if (inBox(c, x, z, f.b)) return false;
+        if (f.t && c.maxy > f.ty && inBox(c, f.tx, f.tz, f.t * 0.8)) return false;
+      }
+      for (const p of placed) {
+        if (Math.hypot(x - p.x, z - p.z) < f.b + p.f.b + 0.3) return false;
+        if (f.t && p.f.t && Math.hypot(f.tx - p.f.tx, f.tz - p.f.tz) < (f.t + p.f.t) * 0.6) return false;
+        if (f.t && p.d.k === 'fountain' && Math.hypot(f.tx - p.x, f.tz - p.z) < f.t * 0.7 + p.f.b) return false;
+      }
+      return true;
+    };
+    const items = out.decor.filter((d) => BAND[d.k] && (d.y ?? 0) < 1.5);
+    items.sort((a, b) => (a.k === 'fountain' ? 0 : 1) - (b.k === 'fountain' ? 0 : 1));
+    const gone = new Set();
+    for (const d of items) {
+      let x = d.x, z = d.z, f = shape(d, x, z), ok = clear(d, x, z, f);
+      const [r0, r1] = BAND[d.k];
+      for (let t = 0; t < 80 && !ok; t++) {
+        const a = RG() * TAU, r = r0 + RG() * (r1 - r0);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
+        f = shape(d, x, z);
+        ok = clear(d, x, z, f);
+      }
+      if (!ok) { gone.add(d); continue; }
+      d.x = x;
+      d.z = z;
+      placed.push({ d, x, z, f });
+    }
+    if (gone.size) out.decor = out.decor.filter((d) => !gone.has(d));
+  }
 }
 
 // Which hidden paths a climb has: all of them, on every difficulty and with any rules (the hard ones used to be Hardcore and

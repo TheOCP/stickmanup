@@ -119,11 +119,12 @@ function canvasTex(w, h, draw) {
 }
 
 export class WorldView {
-  constructor(scene, level) {
+  // slow: built a little each frame by buildSlowly, and only put in the scene once done (main.js loadMapSoon).
+  constructor(scene, level, slow = false) {
     this.scene = scene;
     this.level = level;
     this.root = new THREE.Group();
-    scene.add(this.root);
+    if (!slow) scene.add(this.root);
     this.dyn = [];
     this.cps = [];
     this.rods = [];
@@ -157,40 +158,62 @@ export class WorldView {
     this.zoneMats = level.zones.map((z) => panelMat(z.tint));
     this.iceMat = panelMat(0xa8d8ee, { roughness: 0.18, metalness: 0.1 });
     this.crumbleMat = panelMat(0x7a4a44);
-    this.buildStatic();
-    this.buildDynamic();
-    this.buildRings();
-    this.buildCore();
-    this.buildSummit();
-    this.buildCheckpoints();
-    this.buildRods();
-    this.buildFans();
-    this.buildDecor();
-    this.buildDistant();
-    this.buildIsland();
-    this.buildMapDecor();
-    this.buildHooks();
-    this.buildDoors();
-    this.buildCreatures();
-    this.buildHazards();
-    this.buildSideTrees();
-    buildCoreDetail(this);
-    this.buildVolcano();
-    this.buildVentsRocks();
-    this.buildCity();
-    this.buildObstacles();
-    this.buildZips();
-    this.buildFlows();
-    this.buildKickers();
-    this.buildWaterPark();
-    buildScenery(this);
-    buildAnimals(this);
-    this.buildSmallFalls();
-    buildMist(this, this.mistSpots);
-    this.buildSecrets();
-    buildMazes(this);
-    buildStart(this);
-    this.freeze();
+    this.steps = [
+      () => this.buildStatic(),
+      () => this.buildDynamic(),
+      () => this.buildRings(),
+      () => this.buildCore(),
+      () => this.buildSummit(),
+      () => this.buildCheckpoints(),
+      () => this.buildRods(),
+      () => this.buildFans(),
+      () => this.buildDecor(),
+      () => this.buildDistant(),
+      () => this.buildIsland(),
+      () => this.buildMapDecor(),
+      () => this.buildHooks(),
+      () => this.buildDoors(),
+      () => this.buildCreatures(),
+      () => this.buildHazards(),
+      () => this.buildSideTrees(),
+      () => buildCoreDetail(this),
+      () => this.buildVolcano(),
+      () => this.buildVentsRocks(),
+      () => this.buildCity(),
+      () => this.buildObstacles(),
+      () => this.buildZips(),
+      () => this.buildFlows(),
+      () => this.buildKickers(),
+      () => this.buildWaterPark(),
+      () => buildScenery(this),
+      () => buildAnimals(this),
+      () => this.buildSmallFalls(),
+      () => buildMist(this, this.mistSpots),
+      () => this.buildSecrets(),
+      () => buildMazes(this),
+      () => buildStart(this),
+      () => this.freeze(),
+    ];
+    if (!slow) this.finish();
+  }
+
+  // All that is left of the building, now.
+  finish() {
+    while (this.steps.length) this.steps.shift()();
+  }
+
+  // A few build steps a frame, never more than about 8 ms of them unless one step is longer by itself, so a menu keeps
+  // moving while a map is made. Says whether it got done: stop() says another map was picked meanwhile.
+  async buildSlowly(stop) {
+    while (this.steps.length) {
+      const t0 = performance.now();
+      do this.steps.shift()();
+      while (this.steps.length && performance.now() - t0 < 8);
+      if (!this.steps.length) break;
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      if (stop()) return false;
+    }
+    return true;
   }
 
   // The maze gardens' inner walls, the way the colliders have them now (game.js setMaze after level.js applyMaze).

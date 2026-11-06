@@ -201,8 +201,18 @@ export class Game {
     if (this.loose.has(this.slot)) app.ui.toast('You start at the bottom. The cord ties on when you reach your team.', '');
   }
 
+  // Climb time. In a team game it follows the host's clock, but read once a frame and moved on smoothly (tick): read
+  // straight from the clock it lands wherever in the frame the reading happens, and jumps a little whenever the
+  // estimate of the host's clock improves, and both show as stutter at a steady frame rate.
   get time() {
-    return this.solo ? this.soloT : (this.s.now() - this.t0) / 1000 + this.base;
+    return this.solo ? this.soloT : this.clk ?? this.netTime();
+  }
+  netTime() {
+    return (this.s.now() - this.t0) / 1000 + this.base;
+  }
+  tick(dt) {
+    const want = this.netTime(), next = (this.clk ?? want) + dt, err = want - next;
+    this.clk = this.clk === undefined || Math.abs(err) > 0.25 ? want : next + err * Math.min(1, dt * 2);
   }
 
   // On the checkpoint's pad (never out by the edge): a spot on a small ring round its pole, far enough apart
@@ -427,7 +437,7 @@ export class Game {
     if (this.solo) {
       if (paused) return this.drawSmooth(dt);
       this.soloT += dt;
-    }
+    } else this.tick(dt);
     const T = this.time;
     const inp = paused ? NONE : app.input.read(this.cam.yaw);
 

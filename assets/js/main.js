@@ -2,7 +2,7 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, LEVEL_VERSION, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
+import { generateLevel, DIFFS, MAPS, MAP_ORDER, LEVEL_VERSION, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
 import { NavPath } from './navpath.js';
 import { EMOTES, EMOTE } from './emotes.js';
 import { SPRAYS, sprayUrl } from './sprays.js';
@@ -55,7 +55,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 
 // Picture: res = render resolution (share of the screen), autoRes lets it drop when the phone struggles,
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
-const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 0,
+const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 1,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
   camFollow: 1, aimHelp: 0.5, tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
@@ -617,42 +617,94 @@ const worlds = new Map();
 function loadMap(id) {
   if (!mapDef(id)) id = 0;
   clearTimeout(soonT);
+  soonId = -1; // a map being made slowly for a menu is not wanted any more
   if (app.level && app.level.map === id) return;
-  const R = app.renderer;
-  if (app.view) R.scene.remove(app.view.root);
   let w = worlds.get(id);
   if (!w) {
-    // The six worlds stay ready; of the generated maps only the last two, they are big.
+    const level = generateLevel(id);
+    applyDetail(getSafe());
+    w = { level, world: new World(level.cols), view: new WorldView(app.renderer.scene, level, true) };
+    w.view.finish();
+  }
+  useWorld(id, w);
+}
+// Puts a made map in the scene. The six worlds stay ready; of the generated maps only the last two, they are big.
+function useWorld(id, w) {
+  const R = app.renderer;
+  if (app.view) R.scene.remove(app.view.root);
+  if (!worlds.has(id)) {
     const gens = [...worlds.keys()].filter((k) => k >= MAPS.length);
     while (id >= MAPS.length && gens.length >= 2) {
       const k = gens.shift(), old = worlds.get(k);
+      if (R.mirror) R.mirror.forget(old.view.root);
       old.view.dispose();
       old.view.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
       worlds.delete(k);
     }
-    const level = generateLevel(id);
-    w = { level, world: new World(level.cols), view: null };
-    applyDetail(getSafe());
-    w.view = new WorldView(R.scene, level);
     worlds.set(id, w);
-  } else R.scene.add(w.view.root);
+  }
+  R.scene.add(w.view.root);
   app.level = w.level;
   app.world = w.world;
   app.view = w.view;
-  // The phone's renderer frees the map that just left at the next frame, before this one is sent (mirror.js).
+  // The phone's renderer frees what is too much of what just left (mirror.js).
   if (R.mirror) R.mirror.sweepSoon();
   if (auto) auto.settle();
   app.view.setCheckpoints(1, 0);
   app.titleStorm = new Storm(app.level, 1);
   R.setTheme(app.level.mapKey, app.level.look);
+  R.warmShaders();
   report('stage', { s: 'map', map: id });
 }
-// Paging through the generated maps with the arrows: a map is only built once you stop on it for a moment.
-let soonT = 0;
+
+// The level of a map, made in a worker so the page doesn't freeze, or right here when there is no worker for it.
+let levelW = null, levelN = 0;
+const levelWaits = new Map();
+function levelOf(id) {
+  if (levelW !== false && !levelW) {
+    try {
+      levelW = new Worker(new URL('./levelworker.js', import.meta.url), { type: 'module' });
+      levelW.onmessage = (e) => { const f = levelWaits.get(e.data && e.data.n); if (f) f(e.data); };
+      levelW.onerror = () => { levelW = false; for (const f of [...levelWaits.values()]) f({}); };
+    } catch (e) {
+      levelW = false;
+    }
+  }
+  if (!levelW) return Promise.resolve(generateLevel(id));
+  const n = ++levelN;
+  return new Promise((res) => {
+    const done = (d) => { clearTimeout(t); levelWaits.delete(n); res(d && d.level ? d.level : generateLevel(id)); };
+    const t = setTimeout(() => done({}), 6000);
+    levelWaits.set(n, done);
+    levelW.postMessage({ id, n });
+  });
+}
+
+// In the menus: the map is made in the background (its level in a worker, its view a few steps a frame) and shown
+// once ready, so paging through maps never freezes the menu. The one before stays until then.
+let soonT = 0, soonId = -1;
 function loadMapSoon(id) {
-  if (id < MAPS.length || worlds.has(id)) return loadMap(id);
+  if (!mapDef(id)) id = 0;
+  if (app.level && app.level.map === id) { soonId = -1; clearTimeout(soonT); return; }
+  if (worlds.has(id)) return loadMap(id);
+  if (id === soonId) return;
   clearTimeout(soonT);
-  soonT = setTimeout(() => { if (!app.game) loadMap(id); }, 650);
+  soonId = id;
+  soonT = setTimeout(() => makeSlowly(id), id < MAPS.length ? 0 : 350);
+}
+async function makeSlowly(id) {
+  const stop = () => soonId !== id || !!app.game;
+  const level = await levelOf(id);
+  if (stop()) return;
+  applyDetail(getSafe());
+  const view = new WorldView(app.renderer.scene, level, true);
+  const done = await view.buildSlowly(stop);
+  if (!done || stop() || worlds.has(id)) {
+    view.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    return;
+  }
+  soonId = -1;
+  useWorld(id, { level, world: new World(level.cols), view });
 }
 
 // ---------- the generated maps and the day's climb (level.js mapDef) ----------
@@ -689,13 +741,13 @@ function genActs(cur, set) {
 }
 
 function mapCards(sel) {
-  return `<div class="maps">${MAPS.map((m) => `<button class="map m${m.id} ${sel === m.id ? 'sel' : ''}" data-a="map" data-m="${m.id}"><b>${m.name}</b></button>`).join('')}</div>`;
+  return `<div class="maps">${MAP_ORDER.map((i) => MAPS[i]).map((m) => `<button class="map m${m.id} ${sel === m.id ? 'sel' : ''}" data-a="map" data-m="${m.id}"><b>${m.name}</b></button>`).join('')}</div>`;
 }
 
 function pickMap(id, redraw) {
   settings.map = id;
   saveSettings();
-  loadMap(id);
+  loadMapSoon(id);
   redraw();
 }
 
@@ -717,7 +769,7 @@ function lockedIf(ban, h) {
 function title() {
   app.screen = 'title';
   const save = validSave('save.solo'), best = bestOf(settings.map), M = mapDef(settings.map), acct = cloud.account(), today = mapDef(todayMap());
-  loadMap(settings.map);
+  loadMapSoon(settings.map);
   // The first time, and whenever the terms have changed, ask before anything else.
   if (!cloud.banned() && ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2')))) {
     store.set('welcomed2', 1);
@@ -754,7 +806,7 @@ function title() {
     records: () => { app.screen = 'records'; openRecords(shopCtx, title, settings.map); },
     cont: () => startSolo(save.map || 0, save.diff, save),
     solo: soloPick,
-    daily: () => { settings.map = todayMap(); settings.genAt = settings.map; saveSettings(); loadMap(settings.map); soloPick(); },
+    daily: () => { settings.map = todayMap(); settings.genAt = settings.map; saveSettings(); loadMapSoon(settings.map); soloPick(); },
     host: hostPick,
     join: () => joinScreen(cloud.serverUrl() ? 'server' : 'online'),
     browser: () => browserScreen(title),
@@ -885,7 +937,7 @@ function lobby(s) {
       <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div>${cloud.account() && s.players.size < MAX_PLAYERS ? '<button class="btn sm" data-a="invite" style="margin-top:10px">Invite friends</button>' : ''}</div>
       <div>
         <div class="kind" style="margin-bottom:6px">Map</div>
-        <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAPS.map((m) => `<button data-a="lmap" data-m="${m.id}" class="${lmapNow === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
+        <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAP_ORDER.map((i) => MAPS[i]).map((m) => `<button data-a="lmap" data-m="${m.id}" class="${lmapNow === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
         ${host && !resume ? genRow(lmapNow, false) : lmapNow >= MAPS.length ? `<div class="genrow ro">${genCard(lmapNow, true)}</div>` : ''}
         <div class="kind" style="margin-bottom:6px">Difficulty</div>
         <div class="dsel ${host && !resume ? '' : 'ro'}">${DIFFS.map((d) => `<button data-a="diff" data-d="${d.id}" class="${(resume ? mp.diff : s.lobby.diff) === d.id ? 'sel' : ''}"><b>${d.name}</b></button>`).join('')}</div>
@@ -902,7 +954,7 @@ function lobby(s) {
     back: () => { s.close(); title(); },
     share: () => shareText(room.kind === 'server' ? `Join my StickManUp climb! Open StickManUp, tap Join a game and type the code ${room.code}` : `Join my StickManUp climb! Open StickManUp, tap Join a game, then Online, and type the code ${room.code}`),
     diff: (b) => { if (host) s.setLobby({ diff: +b.dataset.d }); },
-    lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMap(settings.map); s.setLobby({ map: settings.map }); } },
+    lmap: (b) => { if (host) { settings.map = +b.dataset.m; saveSettings(); loadMapSoon(settings.map); s.setLobby({ map: settings.map }); } },
     ...genActs(() => lmapNow, (id) => { if (host && !resume) { settings.map = id; settings.genAt = id; saveSettings(); s.setLobby({ map: id }); } }),
     resume: (b) => s.setLobby({ resume: b.checked }),
     nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
@@ -1774,6 +1826,8 @@ function beginGame(s, g) {
   loadGhosts(app.game);
   app.traitor.begin(app.game);
   applyVanish(live.staff());
+  // The climbers, ghosts and the climb's own effects are in now: their shaders too.
+  app.renderer.warmShaders();
   keepAwake(true);
 }
 
@@ -2189,11 +2243,12 @@ function frame(now) {
     rafGaps[rafN++ & 31] = rg;
     if ((rafN & 31) === 0) rafPeriod = rafGaps.slice().sort()[16];
   }
-  // Frame limiter: never more frames than the chosen frame rate, on any screen. When the screen is a whole
-  // multiple of it (60 on 60, 60 on 120) it simply draws every first, or every second, tick: the steadiest
-  // there is. Timers in between would now and then land just short and skip a frame for nothing.
-  const iv = 1000 / (settings.cap || 60), ratio = rafPeriod ? iv / rafPeriod : 0, div = Math.round(ratio);
-  if (div >= 1 && Math.abs(ratio - div) < 0.1) {
+  // Frame limiter: always a whole number of screen refreshes per frame, the one that comes closest to the chosen
+  // frame rate (144 on a 165 Hz screen: every refresh; 60 on 144 Hz: every second one, 72 fps). Every frame then
+  // stays on screen equally long. Skipping refreshes unevenly to hit the number exactly (2, 3, 2, 2, 3...) looks
+  // like stutter even when the frame counter shows no drop at all.
+  const iv = 1000 / (settings.cap || 60), ratio = rafPeriod ? iv / rafPeriod : 0, div = Math.max(1, Math.round(ratio));
+  if (rafPeriod) {
     if (++rafCount < div) return;
     rafCount = 0;
     then = now;

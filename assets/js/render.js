@@ -600,6 +600,22 @@ export class Renderer {
     this.moon.position.set(x, y, z).addScaledVector(this.moonDir, 70);
   }
 
+  // Every shader the scene can need, made in the background now instead of the moment something first comes into view
+  // on the climb: that is a hitch a frame counter never shows. A moment later, so the map and its lights are all in.
+  // Only for WebGL; the phone's own renderer gets its programs ready itself (NRender prewarm).
+  warmShaders() {
+    if (!this.r || !this.r.compileAsync) return;
+    clearTimeout(this.warmT);
+    this.warmT = setTimeout(() => {
+      try {
+        const p = this.r.compileAsync(this.scene, this.camera);
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {
+        // Nothing lost: whatever isn't ready is made when first drawn, as before.
+      }
+    }, 400);
+  }
+
   render() {
     if (this.composer) this.composer.render();
     else if (this.native) this.mirror.sync(this.scene, this.camera, this.env());

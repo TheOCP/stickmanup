@@ -24,8 +24,13 @@ const FAR = 125;
 // A still object this far from the camera is only looked at one frame in eight. Most of the scene is like that.
 const NAP2 = 40 * 40;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
-// Out of the scene this many frames: forgotten here and freed on the phone (a map change frees at once).
-const GONE_AFTER = 600, SWEEP_EVERY = 120;
+// What the phone may keep of things out of the scene (maps left a moment ago, so going back is instant), counted in
+// characters of definitions sent: a map is 40 to 65 million. Past it the longest gone are freed first. Anything gone
+// for LONG_GONE frames is freed anyway. Checked every SWEEP_EVERY frames and right after a map change.
+const KEEP = 120e6, LONG_GONE = 36000, SWEEP_EVERY = 120;
+// New definitions sent in one frame at most (characters): a whole map at once froze the picture for a moment. The rest
+// of a new map follows over the next frames.
+const FRAME_DEFS = 4e6;
 // One definition message at most about this many characters: a map is tens of megabytes, and one string that big
 // could run the phone's Java side out of memory on its own.
 const PIECE = 1500000;
@@ -61,6 +66,9 @@ export class Mirror {
     this.geoAt = 0;
     this.sweepAt = 0;
     this.sweepNow = false;
+    this.dead = new WeakSet(); // roots that will never be shown again (a map dropped from the cache)
+    this.total = 0; // definitions the phone holds now (characters, roughly)
+    this.defUsed = 0; // sent this frame
     this.lost = 0; // messages the phone could not take
   }
 
@@ -69,20 +77,38 @@ export class Mirror {
     this.sweepNow = true;
   }
 
-  // Objects out of the scene for a while are forgotten, and with them the geometry, materials and textures nothing
-  // left uses; the phone is told to free them too. Without this every map ever loaded stayed in the phone's memory
-  // until the app ran out of it. Brought back later, an object is simply defined again under the same id.
-  sweep(scene, now) {
-    const seen = this.seen, keep = [], gone = [];
+  // A map that will never be shown again (main.js dropped it from its cache): everything under it is freed at the next
+  // sweep, whatever the budget. Kept, it would hold a whole map in memory here and on the phone for nothing.
+  forget(root) {
+    this.dead.add(root);
+    this.sweepNow = true;
+  }
+
+  // Objects out of the scene are forgotten once the phone holds too much (the longest gone first), and with them the
+  // geometry, materials and textures nothing left uses; the phone is told to free them too. Without this every map ever
+  // loaded stayed in the phone's memory until the app ran out of it. Brought back later, an object is simply defined
+  // again under the same id.
+  sweep(scene) {
+    const seen = this.seen, keep = [], out = [], gone = [];
     for (const e of this.list) {
       let r = e.obj;
       while (r.parent) r = r.parent;
       if (r === scene) { e.out = 0; keep.push(e); continue; }
       if (!e.out) e.out = seen;
-      if (now || seen - e.out >= GONE_AFTER) gone.push(e);
+      out.push(e);
+    }
+    if (!out.length) return;
+    out.sort((a, b) => a.out - b.out);
+    let total = this.total;
+    const limit = total > KEEP ? KEEP * 0.8 : Infinity;
+    for (const e of out) {
+      let r = e.obj;
+      while (r.parent) r = r.parent;
+      if (this.dead.has(r) || total > limit || seen - e.out >= LONG_GONE) { gone.push(e); total -= e.size; }
       else keep.push(e);
     }
     if (!gone.length) return;
+    this.total = Math.max(0, total);
     const drop = { o: [], g: [], m: [], t: [] };
     for (const e of gone) {
       drop.o.push(e.id);
@@ -171,7 +197,9 @@ export class Mirror {
   }
 
   attrDef(a) {
-    return { n: a.itemSize, d: b64(f32(a.array)) };
+    const d = b64(f32(a.array));
+    this.defUsed += d.length;
+    return { n: a.itemSize, d };
   }
 
   // Custom shaders only get the attributes their vertex shader reads (the ocean grid needs no normals or uvs).
@@ -190,6 +218,7 @@ export class Mirror {
     if (geo.index) {
       const big = geo.attributes.position.count > 65535;
       d.idx = b64(big ? Uint32Array.from(geo.index.array) : Uint16Array.from(geo.index.array));
+      this.defUsed += d.idx.length;
       d.it = big ? 32 : 16;
     }
     const s = geo.boundingSphere;
@@ -209,6 +238,7 @@ export class Mirror {
     if (this.texs.has(id)) return id;
     this.texs.add(id);
     const img = tex.image, url = img && img.toDataURL ? img.toDataURL('image/png') : '';
+    this.defUsed += url.length;
     this.defs().t.push({
       id, url, rs: tex.wrapS === THREE.RepeatWrapping ? 1 : 0, rt: tex.wrapT === THREE.RepeatWrapping ? 1 : 0,
       rep: [tex.repeat.x, tex.repeat.y], off: [tex.offset.x, tex.offset.y], flip: tex.flipY ? 1 : 0,
@@ -286,7 +316,7 @@ export class Mirror {
   }
 
   defineObject(o) {
-    const id = this.id(o);
+    const id = this.id(o), used0 = this.defUsed;
     const d = { id, ro: o.renderOrder, fc: o.frustumCulled ? 1 : 0 };
     d.kind = o.isSprite ? 'sprite' : o.isLineSegments ? 'lines' : 'mesh';
     d.g = o.isSprite ? 0 : this.defineGeometry(o.geometry, o.material);
@@ -295,6 +325,7 @@ export class Mirror {
       d.inst = o.count;
       d.im = b64(o.instanceMatrix.array);
       if (o.instanceColor) d.ic = b64(o.instanceColor.array);
+      this.defUsed += d.im.length + (d.ic ? d.ic.length : 0);
       o.computeBoundingSphere();
       const s = o.boundingSphere;
       d.bs = [s.center.x, s.center.y, s.center.z, s.radius];
@@ -306,7 +337,10 @@ export class Mirror {
     const geoOff = o.isSprite || o.isInstancedMesh ? 0 : o.geometry.boundingSphere.center.length();
     const e = { id, obj: o, vis: -1, dirty: true, stamp: 0, imv: o.isInstancedMesh ? o.instanceMatrix.version : 0,
       always: !o.frustumCulled || o.isInstancedMesh || geoR > 40 || geoOff > 20, bs: o.isInstancedMesh && o.frustumCulled ? d.bs : null,
-      mat: o.material, me: this.mats.get(d.m), eye: !!o.userData.eye, gid: d.g, out: 0 };
+      mat: o.material, me: this.mats.get(d.m), eye: !!o.userData.eye, gid: d.g, out: 0, size: 0 };
+    // What this object brought along that wasn't there yet: roughly what freeing it gives back.
+    e.size = this.defUsed - used0 + 100;
+    this.total += e.size;
     if (e.eye) d.eye = 1;
     this.objs.set(id, e);
     this.list.push(e);
@@ -355,10 +389,14 @@ export class Mirror {
     if (n.rend) {
       let e = n.e;
       if (e === null) {
-        let id = this.ids.get(o);
-        if (!id || !this.objs.has(id)) id = this.defineObject(o);
-        e = n.e = this.objs.get(id);
+        const id = this.ids.get(o);
+        if (id && this.objs.has(id)) e = n.e = this.objs.get(id);
+        // Over this frame's share: it comes a frame or two later.
+        else if (this.defUsed < FRAME_DEFS) e = n.e = this.objs.get(this.defineObject(o));
       }
+    }
+    if (n.rend && n.e !== null) {
+      const e = n.e;
       e.stamp = seen;
       if (moved) { e.dirty = true; n.rest = 0; n.nap = false; } else if (n.rest < 60) n.rest++;
       let near = all || e.always;
@@ -473,6 +511,7 @@ export class Mirror {
   //   h:<env>  c:<view16,proj16,camPos3>  o:<id,vis[,px,py,pz,qx,qy,qz,qw,sx,sy,sz]>...  u:<materials, see sendMat>
   //   a:<g|o|r|m>,id,name-or-start,payload;...
   sync(scene, camera, env) {
+    this.defUsed = 0;
     camera.updateMatrixWorld();
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, all = !!this.forceAll;
     this.forceAll = false;
@@ -508,11 +547,11 @@ export class Mirror {
       for (let c = (geos.length >> 5) + 1; c > 0 && i < geos.length; c--) this.checkGeo(geos[i++], au);
       this.geoAt = i;
     }
-    if (this.sweepNow || stamp - this.sweepAt >= SWEEP_EVERY) {
-      const now = this.sweepNow;
+    // Over what the phone may keep (a new map coming in): looked at every few frames, not only every two seconds.
+    if (this.sweepNow || stamp - this.sweepAt >= (this.total > KEEP ? 10 : SWEEP_EVERY)) {
       this.sweepNow = false;
       this.sweepAt = stamp;
-      this.sweep(scene, now);
+      this.sweep(scene);
     }
     if (this.def) this.flush();
     let msg = '';

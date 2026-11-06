@@ -243,9 +243,9 @@ public final class NRender {
             if (o == null) continue;
             byId[id] = null;
             gone.add(o);
-            if (o.vao != 0) gl.deleteVertexArray(o.vao);
-            if (o.imVbo != 0) gl.deleteBuffer(o.imVbo);
-            if (o.icVbo != 0) gl.deleteBuffer(o.icVbo);
+            doom(1, o.vao);
+            doom(0, o.imVbo);
+            doom(0, o.icVbo);
             o.vao = o.imVbo = o.icVbo = 0;
         }
         if (!gone.isEmpty()) {
@@ -259,8 +259,8 @@ public final class NRender {
             Geo g = id >= 0 && id < geos.length ? geos[id] : null;
             if (g == null) continue;
             geos[id] = null;
-            for (Attr a : g.attrs) if (a.vbo != 0) gl.deleteBuffer(a.vbo);
-            if (g.ibo != 0) gl.deleteBuffer(g.ibo);
+            for (Attr a : g.attrs) doom(0, a.vbo);
+            doom(0, g.ibo);
         }
         for (Object x : list(d.get("m"))) {
             int id = i(x);
@@ -268,9 +268,29 @@ public final class NRender {
         }
         for (Object x : list(d.get("t"))) {
             Tex t = texs.remove(i(x));
-            if (t != null && t.gl != 0) gl.deleteTexture(t.gl);
+            if (t != null) doom(2, t.gl);
         }
         sVao = sTex = sEmTex = -1;
+    }
+
+    /**
+     * GPU objects to delete, as {kind (0 buffer, 1 vertex array, 2 texture), handle, frame}. Deleted a few frames after
+     * they were last used, never while a frame that drew with them may still be on its way: some phone drivers crash on that.
+     */
+    private final java.util.ArrayDeque<int[]> doomed = new java.util.ArrayDeque<>();
+
+    private void doom(int kind, int handle) {
+        if (handle != 0) doomed.add(new int[]{kind, handle, frameId + 4});
+    }
+
+    private void reap() {
+        int[] d;
+        while ((d = doomed.peek()) != null && d[2] <= frameId) {
+            doomed.poll();
+            if (d[0] == 0) gl.deleteBuffer(d[1]);
+            else if (d[0] == 1) gl.deleteVertexArray(d[1]);
+            else gl.deleteTexture(d[1]);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -539,6 +559,8 @@ public final class NRender {
 
     /** New GL context (first start or after a loss): forget handles, everything is rebuilt lazily. */
     public void contextCreated() {
+        // Handles of the old context mean nothing now.
+        doomed.clear();
         for (Geo g : geos) {
             if (g == null) continue;
             g.ibo = 0;
@@ -567,6 +589,7 @@ public final class NRender {
     public void draw() {
         long t0 = System.nanoTime();
         drain();
+        reap();
         if (!framed || w == 0) {
             gl.bindFramebuffer(GLC.FRAMEBUFFER, 0);
             gl.clearColor(0.02f, 0.03f, 0.05f, 1);

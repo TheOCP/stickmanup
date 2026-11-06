@@ -513,8 +513,10 @@ export function buildScenery(view) {
   const tint = new THREE.Color();
   L.zones.forEach((z, zi) => {
     const f = F[Math.min(zi, F.length - 1)], n = (key === 'city' ? 14 : 9) - (DETAIL === 0 ? 4 : 0);
+    // The lowest islands float well clear of the ground: low down they sank into the beach, a palm or a pier.
+    const y0 = zi === 0 && key !== 'volcano' && key !== 'city' ? z.y0 + 12 : z.y0;
     for (let k = 0; k < n; k++) {
-      const y = z.y0 + R() * (z.y1 - z.y0);
+      const y = y0 + R() * (z.y1 - y0);
       let x, zz, s, top, ry = R() * TAU;
       if (key === 'volcano') {
         // A ledge sticking out of the crater wall.

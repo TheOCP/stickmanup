@@ -23,6 +23,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 
 // Only the game's own files ever load in here (see below), so it may use the slow software graphics as a last resort.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Laptops with two graphics chips: the fast one, not the power saving one built into the processor.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setAppUserModelId('io.stickmanup.desktop');

@@ -2182,6 +2182,15 @@ export class WorldView {
       e.o.visible = near;
       if (!near) continue;
       const p = storm.monsterPos(m, t, e.p), o = e.o;
+      // A creature after you moves in the physics' 1/60 s steps: drawn between the last two, like your climber, so it
+      // glides on a faster screen instead of stepping.
+      if (p.hunt) {
+        const k = Math.round(t * 60 + 1 - alpha), I = e.ip || (e.ip = { k: -9, x0: 0, z0: 0, x1: 0, z1: 0 });
+        if (k - I.k !== 1 && k !== I.k || Math.abs(p.x - I.x1) + Math.abs(p.z - I.z1) > 2) { I.x0 = I.x1 = p.x; I.z0 = I.z1 = p.z; }
+        else if (k !== I.k) { I.x0 = I.x1; I.z0 = I.z1; I.x1 = p.x; I.z1 = p.z; }
+        I.k = k;
+        p.x = I.x0 + (I.x1 - I.x0) * alpha; p.z = I.z0 + (I.z1 - I.z0) * alpha;
+      } else if (e.ip) e.ip.k = -9;
       const dx = p.hunt ? p.hx : (m.bx - m.ax) * p.dir, dz = p.hunt ? p.hz : (m.bz - m.az) * p.dir;
       if (e.beast) {
         // Walks on the floor (the hop is only for the blob monsters): a little sway in its stride, a shake when stunned. After

@@ -7,6 +7,7 @@ import { OutputPass } from 'three/addons/OutputPass.js';
 import { Mirror } from './mirror.js';
 import { useBakedNoise } from './pattern.js';
 import { hueShift } from './level.js';
+import { ON_PC } from './platform.js';
 
 export const QUALITY = {
   low: { dpr: 1.0, bloom: false, shadow: 0, rain: 1200, ocean: 48, samples: 0 },
@@ -75,6 +76,52 @@ float fbm(vec2 p){ return textureLod(uNoise, p / 16.0, 0.0).b; }`;
 // at runtime and fail at large render sizes, so on these GPUs the canvas stays under ~0.7 megapixels.
 const POWERVR = /powervr|imagination|img-?tec/i;
 
+// three.js works out where every object is, every frame, hidden or not, and most of a map is hidden at any moment
+// (other heights, far creatures, stickmen not in the game, the gun). Hidden ones now wait until they show again: a
+// change from above while they were hidden is kept in mind, so they come back in the right place.
+let hiddenSkipped = false;
+function skipHidden() {
+  if (hiddenSkipped) return;
+  hiddenSkipped = true;
+  const update = THREE.Object3D.prototype.updateMatrixWorld;
+  THREE.Object3D.prototype.updateMatrixWorld = function (force) {
+    if (!this.visible) {
+      if (force) this.matrixWorldNeedsUpdate = true;
+      return;
+    }
+    update.call(this, force);
+  };
+}
+
+// Draw order as three.js has it, except that a material's plain, instanced and coloured instanced uses are drawn
+// together. Each switch between them looks the shader up again and sends all its settings again, and in distance
+// order they took turns many times a frame.
+const kindOf = (o) => (o.isInstancedMesh ? (o.instanceColor ? 2 : 1) : 0);
+function opaqueSort(a, b) {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  if (a.material.id !== b.material.id) return a.material.id - b.material.id;
+  const k = kindOf(a.object) - kindOf(b.object);
+  if (k) return k;
+  if (a.z !== b.z) return a.z - b.z;
+  return a.id - b.id;
+}
+// The shadow pass draws every caster with one shared material, so it switched shader at every instanced mesh too.
+// Instanced ones get their own (one for each kind), the same as three.js would use otherwise.
+const DEPTH = [null, new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })];
+function ownDepth(scene) {
+  scene.traverse((o) => {
+    if (!o.isInstancedMesh || !o.castShadow || (o.customDepthMaterial && !o.userData.ownDepth)) return;
+    const m = o.material;
+    if (!m || Array.isArray(m) || m.alphaTest > 0 || (m.displacementMap && m.displacementScale !== 0) || (m.clippingPlanes && m.clippingPlanes.length)) {
+      if (o.userData.ownDepth) { o.customDepthMaterial = undefined; o.userData.ownDepth = false; }
+      return;
+    }
+    o.customDepthMaterial = DEPTH[kindOf(o)];
+    o.userData.ownDepth = true;
+  });
+}
+
 export class Renderer {
   // Built once per app launch and never torn down: on some phone GPUs, deleting shader programs, render
   // targets or the context crashes the driver. Changing quality restarts the app instead.
@@ -105,6 +152,9 @@ export class Renderer {
       if (safe >= 1) canvas.style.opacity = '0.995';
       // With bloom the scene is drawn into an offscreen buffer, so canvas antialiasing would be wasted memory.
       this.r = new THREE.WebGLRenderer({ canvas, antialias: !bloom && safe < 2, alpha: safe >= 1, powerPreference: safe >= 2 ? 'default' : 'high-performance' });
+      skipHidden();
+      this.r.setOpaqueSort(opaqueSort);
+      this.frameN = 0;
       this.r.outputColorSpace = THREE.SRGBColorSpace;
       this.r.toneMapping = THREE.ACESFilmicToneMapping;
       this.exp = 1.1;
@@ -170,7 +220,8 @@ export class Renderer {
       return;
     }
     // Megapixel budget for the drawing buffer; DPR is derived from it and the screen size.
-    this.maxPx = (this.powervr ? [0.6, 0.5, 0.35, 0.25, 0.2] : [2.4, 1.5, 0.8, 0.5, 0.3])[Math.min(L, 4)] * 1e6;
+    // A PC draws every pixel of a 1440p screen: below that the picture is scaled up and looks soft, most of all in motion.
+    this.maxPx = (this.powervr ? [0.6, 0.5, 0.35, 0.25, 0.2] : ON_PC ? [3.7, 2.4, 1.5, 0.8, 0.5] : [2.4, 1.5, 0.8, 0.5, 0.3])[Math.min(L, 4)] * 1e6;
     this.r.shadowMap.enabled = q.shadow > 0;
     this.moon.castShadow = q.shadow > 0;
     if (q.shadow) this.moon.shadow.mapSize.set(q.shadow, q.shadow);
@@ -639,6 +690,8 @@ export class Renderer {
   }
 
   render() {
+    // New things come and go with the map, so every second or so.
+    if (!this.native && this.q.shadow && this.frameN++ % 90 === 0) ownDepth(this.scene);
     if (this.composer) this.composer.render();
     else if (this.native) this.mirror.sync(this.scene, this.camera, this.env());
     else this.r.render(this.scene, this.camera);

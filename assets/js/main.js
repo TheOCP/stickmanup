@@ -2458,6 +2458,8 @@ function checkGpu() {
     judgePixels(rb.px);
     return;
   }
+  // A PC's driver that has drawn fine for the first 20 seconds keeps doing so, and each read still costs a hitch there.
+  if (ON_PC && health.healthy) return;
   if (now - health.t < (health.white ? 800 : 4000)) return;
   health.t = now;
   R.r.setRenderTarget(null);

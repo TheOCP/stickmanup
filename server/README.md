@@ -336,8 +336,8 @@ map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 ## What it does not do
 
 * **The host's phone still runs the climb.** The server passes messages along. If the host leaves, the room ends.
-* **Messages go over TCP**, so a bad connection stutters a little more than a direct one. The Online, WiFi and Bluetooth
-  ways of playing are all still in the game.
+* **Messages go over TCP**, so a bad connection stutters a little more than a direct one. Online games, where the
+  devices connect straight to each other, are still in the game too.
 * **No word filter** on room names and player names. Names are shown as plain text and nothing more.
 * **Limits**: 4 climbers in a room, 4 rooms per IP address, 1000 rooms and 5000 connections on the server, and 512 KB
   for one save. Password guesses, new rooms, joins and saves are all rate limited.

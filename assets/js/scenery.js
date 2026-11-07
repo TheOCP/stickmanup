@@ -273,8 +273,9 @@ const MODELS = {
   basaltcol: () => [P(cyl(0.9, 1.05, 1, 6), M(0, -0.5, 0), 0x2a1e1a)],
   basalttop: () => [P(cyl(0.82, 0.9, 0.08, 6), M(0, 0.02, 0), 0x3a2a26), P(ico(0.2, 0), M(0.34, 0.08, 0.2), 0x3a1a10, 0xff5a1a, 2.4), P(ico(0.14, 0), M(-0.36, 0.06, -0.26), 0x3a1a10, 0xff5a1a, 2.4)],
   // A skyscraper's roof: the building is one box below it, the roof has a lip with neon round it.
-  roofbox: () => [P(box(1.04, 1, 1.04), M(0, -0.5, 0), 0x2a2836)],
-  roofneon: () => [P(box(1.06, 0.07, 0.015), M(0, -0.04, 0.522), 0xffd0f0, 0xff4fd8, 2.4), P(box(1.06, 0.07, 0.015), M(0, -0.04, -0.522), 0xffd0f0, 0xff4fd8, 2.4), P(box(0.015, 0.07, 1.06), M(0.522, -0.04, 0), 0xc0f0ff, 0x40e0ff, 2.4), P(box(0.015, 0.07, 1.06), M(-0.522, -0.04, 0), 0xc0f0ff, 0x40e0ff, 2.4)],
+  // The round roof of a city skyscraper by a relic course (courseview.js), and the ring of light round its edge.
+  roofbox: () => [P(cyl(0.52, 0.52, 1, 24), M(0, -0.5, 0), 0x2a2836)],
+  roofneon: () => [P(new THREE.TorusGeometry(0.525, 0.03, 6, 40).rotateX(Math.PI / 2), M(0, -0.04, 0), 0xffd0f0, 0xff4fd8, 2.4)],
   birdU: () => bird(0x1a1a22, 0x24242e, 0xd8a020, 1),
   birdD: () => bird(0x1a1a22, 0x24242e, 0xd8a020, -1),
   gullU: () => bird(0xeeeae2, 0xb8bcc4, 0xe8a020, 1),

@@ -543,9 +543,9 @@ export function cityLands(view) {
     return Math.abs(u) < half + 40 + rad && Math.abs(w) < 40 + rad;
   };
   const FACADE = [0x1b2130, 0x232a3a, 0x2c303c, 0x342e2a, 0x1e2a2e, 0x2a2440].map(C), NEON = [0xff2a8a, 0x2ad8ff, 0xb05aff, 0xff8a2a, 0x3aff9a].map(C);
-  // Round towers, tapering ones, octagons, wedding cakes of round tiers and now and then a slab. Taller downtown (one side
+  // Round towers, tapering ones, octagons and wedding cakes of round tiers, nothing square. Taller downtown (one side
   // of the bay) and along the shore, lower out at the edges.
-  const KINDS = ['round', 'round', 'taper', 'oct', 'tiers', 'box'];
+  const KINDS = ['round', 'round', 'taper', 'oct', 'tiers'];
   const towers = [], nB = [110, 190, 260][d];
   for (let tries = 0; towers.length < nB && tries < nB * 20; tries++) {
     const a = R() * TAU, r = 160 + Math.pow(R(), 1.1) * 470, x = Math.cos(a) * r, z = Math.sin(a) * r;
@@ -573,10 +573,7 @@ export function cityLands(view) {
     const seed = (i * 0.618) % 1, lit = 0.25 + R() * 0.35, r = t.w / 2, nc = NEON[(R() * NEON.length) | 0];
     out.copy(FACADE[(R() * FACADE.length) | 0]).multiplyScalar(0.8 + R() * 0.4);
     let rt = r;
-    if (t.kind === 'box') {
-      bits.add(BOX, M(t.x, -2, t.z, t.w, t.h + 2, t.w * (0.7 + R() * 0.3)), out, [seed, 1, lit]);
-      rt = r * 0.6;
-    } else if (t.kind === 'tiers') {
+    if (t.kind === 'tiers') {
       let y = -2, rr = r;
       const n = 2 + ((R() * 2) | 0);
       for (let k = 0; k < n; k++) {
@@ -608,16 +605,16 @@ export function cityLands(view) {
         for (let k = 0; k < 4; k++) { const b = (k * Math.PI) / 2 + i; bits.add(BOX, M(t.x + Math.cos(b) * (r + 0.2), -2, t.z + Math.sin(b) * (r + 0.2), 0.5, t.h + 2, 0.5), nc, lamp); }
       }
     }
-    // The top: a spire with a red light, a dome, a ring of light, or plant rooms.
+    // The top: a spire with a red light, a dome, a ring of light, or a round plant room.
     const top = t.h, k = t.mark ? 0 : R();
     if (k < 0.22) {
       const sh = t.mark ? 70 : 24 + R() * 16;
       bits.add(CYL, M(t.x, top, t.z, 0.6, sh, 0.6), steelC);
       bits.add(BOX, M(t.x, top + sh, t.z, 1.6, 1.6, 1.6), red, lamp);
-    } else if (k < 0.45 && t.kind !== 'box') bits.add(DOME, M(t.x, top, t.z, rt * 0.92, rt * 0.55, rt * 0.92), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
+    } else if (k < 0.45) bits.add(DOME, M(t.x, top, t.z, rt * 0.92, rt * 0.55, rt * 0.92), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
     else if (k < 0.7) bits.add(BAND, M(t.x, top - 3, t.z, rt + 0.4, 1, rt + 0.4), nc, lamp);
     else {
-      bits.add(BOX, M(t.x + (R() - 0.5) * rt * 0.4, top, t.z + (R() - 0.5) * rt * 0.4, rt * 0.7, 4 + R() * 4, rt * 0.7), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
+      bits.add(ROUND, M(t.x, top, t.z, rt * 0.55, 4 + R() * 4, rt * 0.55), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
       if (t.h > 110) bits.add(BOX, M(t.x, top + 9, t.z, 1.2, 1.2, 1.2), red, lamp);
     }
   });

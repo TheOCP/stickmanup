@@ -367,13 +367,18 @@ export function buildCityLife(view) {
     view.add(o, false);
     koi.push({ o, r, sp, ph: R() * TAU, y: (z.y0 + z.y1) / 2 + (R() - 0.5) * 30 });
   });
-  view.onFrame.push((t) => {
+  const swim = (t) => {
     for (const k of koi) {
       const a = k.ph + t * k.sp, s = Math.sign(k.sp), fx = -Math.sin(a) * s, fz = Math.cos(a) * s;
       k.o.position.set(Math.cos(a) * k.r, k.y + Math.sin(t * 0.21 + k.ph) * 7, Math.sin(a) * k.r);
       k.o.rotation.set(0, Math.atan2(-fz, fx), Math.cos(t * 0.21 + k.ph) * 0.12, 'YXZ');
     }
-  });
+  };
+  // Everything here that moves is moved each frame (onFrame) and must not be frozen in place (worldview.js freeze); it is
+  // put where it belongs at once too, not left at the middle of the map until the first frame.
+  swim(0);
+  view.onFrame.push(swim);
+  view.anim.push(...koi.map((k) => k.o));
   // Screens hanging in the air, facing the tower, out past the needles.
   const ads = adsTex(), boards = [];
   for (let y = 26; y < top - 20; y += [70, 46, 34][d]) {
@@ -385,6 +390,7 @@ export function buildCityLife(view) {
   const boardMesh = new THREE.Mesh(stripGeo(boards), bm);
   boardMesh.frustumCulled = false;
   view.add(boardMesh, false);
+  bm.userData.live = true;
   view.onFrame.push((t) => { bm.color.setScalar(1.1 * (0.92 + 0.08 * Math.sin(t * 23) * Math.sin(t * 7.3))); });
   // Blimps far out, slowly round the city, a screen on each side.
   const hull = new THREE.MeshStandardMaterial({ color: 0x3a3a48, roughness: 0.55, metalness: 0.3 }), blimps = [];
@@ -419,13 +425,18 @@ export function buildCityLife(view) {
     view.add(g, false);
     blimps.push({ g, r, y, sp, ph: R() * TAU });
   });
-  view.onFrame.push((t) => {
+  const fly = (t) => {
     for (const b of blimps) {
       const a = b.ph + t * b.sp, s = Math.sign(b.sp), fx = -Math.sin(a) * s, fz = Math.cos(a) * s;
       b.g.position.set(Math.cos(a) * b.r, b.y + Math.sin(t * 0.1 + b.ph) * 4, Math.sin(a) * b.r);
       b.g.rotation.set(0, Math.atan2(-fz, fx), 0);
     }
-  });
+  };
+  fly(0);
+  view.onFrame.push(fly);
+  view.anim.push(...blimps.map((b) => b.g));
+  // Their parts too, as obstacles' parts are (worldview.js), so the phone's renderer moves them along with the hull.
+  for (const b of blimps) b.g.traverse((q) => { q.userData.anim = true; });
   // Searchlights from the shore, sweeping the sky.
   const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), lights = [];
   const sl = 520, slG = new THREE.CylinderGeometry(14, 0.8, sl, 18, 1, true).translate(0, sl / 2, 0);
@@ -436,13 +447,16 @@ export function buildCityLife(view) {
     view.add(o, false);
     lights.push({ o, a, sp: 0.12 + R() * 0.1, ph: R() * TAU });
   }
-  view.onFrame.push((t) => {
+  const sweep = (t) => {
     for (const l of lights) {
       const yaw = l.a + Math.PI + Math.sin(t * l.sp + l.ph) * 0.9, tilt = 0.32 + 0.22 * Math.sin(t * l.sp * 0.7 + l.ph * 2);
       dir.set(Math.sin(tilt) * Math.cos(yaw), Math.cos(tilt), Math.sin(tilt) * Math.sin(yaw));
       l.o.quaternion.setFromUnitVectors(up, dir);
     }
-  });
+  };
+  sweep(0);
+  view.onFrame.push(sweep);
+  view.anim.push(...lights.map((l) => l.o));
   // A sea of cloud at the foot of the Cloud Deck, lit from below by the city: you climb up through it.
   const cz = L.zones[7];
   if (cz) {

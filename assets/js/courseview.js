@@ -69,19 +69,17 @@ function underOf(key, st) {
   return null;
 }
 
-// Windows for the city's skyscrapers: a tile of the texture is 12.57 m wide and 42 m tall, as on the map's own towers.
+// Round skyscrapers for the city: a tile of the window texture is 12.57 m across and 42 m tall, a whole number of tiles round.
 function towerMesh(view, list) {
-  const pos = [], nor = [], uv = [], glo = [];
-  const face = (ax, az, bx, bz, nx, nz, w, h) => {
-    const u = w / 12.57, v = h / 42, tri = [[ax, 0, az, 0, 0], [bx, 0, bz, u, 0], [bx, h, bz, u, v], [ax, 0, az, 0, 0], [bx, h, bz, u, v], [ax, h, az, 0, v]];
-    for (const q of tri) { pos.push(q[0], q[1], q[2]); nor.push(nx, 0, nz); uv.push(q[3], q[4]); glo.push(0, 0, 0); }
-  };
+  const pos = [], nor = [], uv = [], glo = [], N = 20;
   for (const t of list) {
-    const e = t.w / 2, x0 = t.x - e, x1 = t.x + e, z0 = t.z - e, z1 = t.z + e;
-    face(x0, z1, x1, z1, 0, 1, t.w, t.top);
-    face(x1, z1, x1, z0, 1, 0, t.w, t.top);
-    face(x1, z0, x0, z0, 0, -1, t.w, t.top);
-    face(x0, z0, x0, z1, -1, 0, t.w, t.top);
+    const r = t.w / 2, h = t.top, tiles = Math.max(1, Math.round((TAU * r) / 12.57)), v = h / 42;
+    for (let i = 0; i < N; i++) {
+      const a0 = (i / N) * TAU, a1 = ((i + 1) / N) * TAU, u0 = (tiles * (N - i)) / N, u1 = (tiles * (N - i - 1)) / N;
+      const p = (a, y, u, w) => { pos.push(t.x + Math.cos(a) * r, y, t.z + Math.sin(a) * r); nor.push(Math.cos(a), 0, Math.sin(a)); uv.push(u, w); glo.push(0, 0, 0); };
+      p(a0, 0, u0, 0); p(a1, h, u1, v); p(a1, 0, u1, 0);
+      p(a0, 0, u0, 0); p(a0, h, u0, v); p(a1, h, u1, v);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -157,8 +155,8 @@ export function courseDecor(view, r, keep) {
       taken.push({ x: tx, z: tz, y0: 0, y1: top + 7, r: rad });
       towers.push({ x: tx, z: tz, w, top });
       list.push(['roofbox', mat4(tx, top + 0.4, tz, w, 0.4, w)], ['roofneon', mat4(tx, top + 0.4, tz, w, 1, w)]);
-      // One thing to a corner of the roof.
-      for (const [u, k] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) if (R() < 0.75) put(pick(R, ['acunit', 'acunit', 'tank', 'antenna', 'lamp']), tx + u * w * 0.26, top + 0.4, tz + k * w * 0.26, 1.1, R() * 6);
+      // A few things round the roof.
+      for (const [u, k] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) if (R() < 0.75) put(pick(R, ['acunit', 'acunit', 'tank', 'antenna', 'lamp']), tx + u * w * 0.2, top + 0.4, tz + k * w * 0.2, 1.1, R() * 6);
     }
     made++;
   }

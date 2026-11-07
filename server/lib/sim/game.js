@@ -6,7 +6,7 @@ import { Chain } from './chain.js';
 import { placeDyn, toLocal, toWorld, BOX } from './physics.js';
 import { COLORS } from './colors.js';
 import { Storm, QUAKE_AT, WAVE_H, LASER_R, CANNON_R, markShots, beeStep, beeReach } from './storm.js';
-import { DIFFS, LEVEL_VERSION, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
+import { DIFFS, layoutLV, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -139,7 +139,7 @@ export class Game {
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
-    const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === LEVEL_VERSION ? sf : null;
+    const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === layoutLV(sf.map) ? sf : null;
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
     // Real Hardcore or harder only: what is earned up there doesn't count with custom rules. The relic courses are always there.
     this.hardcore = this.diff >= 2 && !this.custom;
@@ -1775,7 +1775,7 @@ export class Game {
     if (this.flying && this.solo) return;
     const m = this.me, rs = this.rec ? this.rec.save() : undefined;
     cloud.climbSaved();
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: LEVEL_VERSION, climbId: cloud.runId(), rs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
+    store.set(this.solo ? 'save.solo' : 'save.mp', { v: layoutLV(this.map), climbId: cloud.runId(), rs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
   }
 
   finish(e) {

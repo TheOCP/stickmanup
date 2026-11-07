@@ -1,8 +1,8 @@
 // The middle column and the side pillars up close. The forest's giant trunk and its side trees get bark in plates with
 // deep furrows, lichen and moss, ivy climbing them, shelf fungi, and leafy branches that grow only where nothing of the
 // climb is near: no platform, obstacle, maze, zipline or flying thing, and the room above each of them (for jumping and
-// for the camera) stays empty. The side trees get full crowns. The storm and city towers get floors of offices with lit
-// windows and steel fins, the lighthouse real stonework, the waterfall's rock ledges with moss, ferns and hanging ivy.
+// for the camera) stays empty. The side trees get full crowns. The storm tower gets floors of offices with lit windows and
+// lightning conductors, the lighthouse real stonework, the waterfall's rock ledges with moss, ferns and hanging ivy.
 import * as THREE from 'three';
 import { canvasTex, HDR, panelMat } from './worldview.js';
 import { modelGeo, vegMat, detail } from './scenery.js';
@@ -185,105 +185,6 @@ export function facadeTex(seed, city) {
   return { map, glow };
 }
 
-// City skyscrapers, each its own kind: 'glass' (a curtain wall of mirror glass), 'grid' (concrete with punched
-// windows and air conditioners), 'neon' (dark panels, slit windows and light strips), 'deco' (brick with tall windows
-// between stone piers) and 'tech' (white modules with round cornered windows). One tile is one face across and tileH
-// metres up; the glow map has the lit rooms and lights. hue: the light strips' colour (neon, tech).
-export function cityFacade(style, seed, hue = 190) {
-  const R = rng(seed), W = 512, H = 1024;
-  const S = { glass: [10, 6], grid: [6, 6], neon: [5, 6], deco: [4, 5], tech: [4, 6] }[style], cols = S[0], floors = S[1], fh = H / floors, cw = W / cols;
-  const rooms = [];
-  for (let f = 0; f < floors; f++) for (let c = 0; c < cols; c++) rooms.push({ f, c, on: R() < (style === 'glass' ? 0.38 : 0.55), h: R(), l: R(), blind: R() < 0.3 ? R() * 0.7 : 0 });
-  const roomCol = (q, a = 1) => {
-    const [hu, sa] = q.h < 0.5 ? [36 + q.h * 30, 75] : q.h < 0.72 ? [200, 30] : q.h < 0.86 ? [hue, 70] : [300, 70];
-    return `hsla(${hu},${sa}%,${52 + q.l * 26}%,${a})`;
-  };
-  const noise = (g, n, a, light) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(${light && R() < 0.5 ? '255,255,255' : '0,0,0'},${a * R()})`; g.fillRect(R() * W, R() * H, 1 + R() * 3, 1 + R() * 3); } };
-  // Where each kind has its windows (x, y, w, h), floor f, column c.
-  const win = {
-    glass: (c, f) => [c * cw + 2, f * fh + 2, cw - 4, fh - 30],
-    grid: (c, f) => [c * cw + cw * 0.2, f * fh + fh * 0.2, cw * 0.6, fh * 0.52],
-    neon: (c, f) => [c * cw + 6, f * fh + fh * 0.36, cw - 12, fh * 0.26],
-    deco: (c, f) => [c * cw + cw * 0.24, f * fh + fh * 0.16, cw * 0.52, fh * 0.64],
-    tech: (c, f) => [c * cw + cw * 0.16, f * fh + fh * 0.2, cw * 0.68, fh * 0.5],
-  }[style];
-  const rrect = (g, x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
-  const shape = (g, x, y, w, h) => {
-    if (style === 'tech') rrect(g, x, y, w, h, 14);
-    else if (style === 'deco') { g.beginPath(); g.moveTo(x, y + h); g.lineTo(x, y + w / 2); g.arc(x + w / 2, y + w / 2, w / 2, Math.PI, 0); g.lineTo(x + w, y + h); g.closePath(); }
-    else { g.beginPath(); g.rect(x, y, w, h); }
-  };
-  const map = canvasTex(W, H, (g) => {
-    const bg = { glass: '#183a4c', grid: '#8c8a84', neon: '#17151f', deco: '#7a402c', tech: '#d6dae0' }[style];
-    g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    if (style === 'glass') {
-      const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#24566c'); gr.addColorStop(0.5, '#123040'); gr.addColorStop(1, '#1e4a5e');
-      g.fillStyle = gr; g.fillRect(0, 0, W, H);
-      // The sky in the glass: long bright slants.
-      for (let i = 0; i < 7; i++) { const x = R() * W * 1.5 - W * 0.25, w = 20 + R() * 70; g.fillStyle = `rgba(190,230,255,${0.05 + R() * 0.08})`; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w - 300, H); g.lineTo(x - 300, H); g.fill(); }
-      for (const q of rooms) { const [x, y, w, h] = win(q.c, q.f); g.fillStyle = `rgba(0,10,20,${R() * 0.3})`; g.fillRect(x, y, w, h); }
-      for (let f = 0; f < floors; f++) { g.fillStyle = '#0c1c26'; g.fillRect(0, f * fh + fh - 28, W, 28); g.fillStyle = 'rgba(160,210,230,0.25)'; g.fillRect(0, f * fh + fh - 28, W, 2); }
-      for (let c = 0; c <= cols; c++) { g.fillStyle = '#3a5464'; g.fillRect(c * cw - 2, 0, 4, H); }
-      return;
-    }
-    if (style === 'deco') {
-      // Brick courses, then stone piers and a band of stone at each floor.
-      for (let y = 0; y < H; y += 12) for (let x = ((y / 12) % 2) * 17 - 17; x < W; x += 34) { g.fillStyle = `hsl(${12 + R() * 10},${38 + R() * 14}%,${26 + R() * 10}%)`; g.fillRect(x + 1, y + 1, 32, 10); }
-      for (let c = 0; c <= cols; c++) { g.fillStyle = '#bba98a'; g.fillRect(c * cw - 11, 0, 22, H); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(c * cw + 9, 0, 3, H); }
-      for (let f = 0; f < floors; f++) { g.fillStyle = '#c8b898'; g.fillRect(0, f * fh, W, 12); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, f * fh + 12, W, 3); }
-    }
-    if (style === 'grid') {
-      for (let i = 0; i < 500; i++) { const x = R() * W, y = R() * H, r = 6 + R() * 30; wrap(W, H, x, y, r, (X, Y) => { g.fillStyle = `rgba(${R() < 0.5 ? '40,40,40' : '230,230,220'},${0.03 + R() * 0.05})`; g.beginPath(); g.arc(X, Y, r, 0, TAU); g.fill(); }); }
-      for (let f = 0; f < floors; f++) { g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, f * fh, W, 4); }
-    }
-    if (style === 'neon') {
-      for (let x = 0; x < W; x += 128) { g.fillStyle = '#26232f'; g.fillRect(x, 0, 3, H); }
-      for (let y = 0; y < H; y += fh / 2) { g.fillStyle = '#26232f'; g.fillRect(0, y, W, 3); }
-      for (let i = 0; i < 18; i++) { const x = R() * (W - 60), y = Math.floor(R() * floors) * fh + fh * 0.72; g.fillStyle = '#2c2a36'; g.fillRect(x, y, 50, 20); for (let k = 0; k < 5; k++) { g.fillStyle = '#0c0a12'; g.fillRect(x + 4, y + 3 + k * 3.5, 42, 1.5); } }
-    }
-    if (style === 'tech') {
-      for (let x = 0; x < W; x += 128) { g.fillStyle = '#b8bec8'; g.fillRect(x, 0, 2, H); }
-      for (let f = 0; f < floors; f++) { const gr = g.createLinearGradient(0, f * fh, 0, f * fh + fh); gr.addColorStop(0, 'rgba(255,255,255,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,0.12)'); g.fillStyle = gr; g.fillRect(0, f * fh, W, fh); g.fillStyle = '#9aa2ae'; g.fillRect(0, f * fh, W, 3); }
-    }
-    for (const q of rooms) {
-      const [x, y, w, h] = win(q.c, q.f);
-      if (style === 'grid' || style === 'deco') { g.fillStyle = 'rgba(0,0,0,0.45)'; shape(g, x - 4, y - 4, w + 8, h + 8); g.fill(); }
-      if (style === 'tech') { g.fillStyle = '#8a929e'; shape(g, x - 5, y - 5, w + 10, h + 10); g.fill(); }
-      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#34485a'); gr.addColorStop(1, '#10161e');
-      g.fillStyle = gr; shape(g, x, y, w, h); g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.14)'; g.fillRect(x + 4, y + 4, 4, h * 0.5);
-      if (style === 'grid') {
-        g.fillStyle = '#b4b2aa'; g.fillRect(x - 6, y + h + 2, w + 12, 6);
-        const st = g.createLinearGradient(0, y + h + 8, 0, y + h + 60); st.addColorStop(0, 'rgba(40,36,30,0.35)'); st.addColorStop(1, 'rgba(40,36,30,0)'); g.fillStyle = st; g.fillRect(x + w * 0.3, y + h + 8, 6, 52);
-        if (R() < 0.3) { g.fillStyle = '#a8aaa8'; g.fillRect(x + w * 0.15, y + h + 10, w * 0.5, 26); for (let k = 0; k < 5; k++) { g.fillStyle = '#6a6c6a'; g.fillRect(x + w * 0.15 + 4, y + h + 14 + k * 4, w * 0.5 - 8, 1.5); } }
-      }
-      if (style === 'deco') { g.fillStyle = '#d8c8a8'; g.fillRect(x - 8, y + h, w + 16, 8); g.fillStyle = '#0c0f14'; g.fillRect(x + w / 2 - 2, y, 4, h); g.fillRect(x, y + h * 0.55, w, 3); }
-      if (style === 'neon' || style === 'glass') { g.fillStyle = '#0a0a10'; g.fillRect(x + w - 3, y, 3, h); }
-    }
-    noise(g, 1800, 0.08, style !== 'neon');
-  });
-  const glow = canvasTex(W, H, (g) => {
-    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    for (const q of rooms) {
-      if (!q.on) continue;
-      const [x, y, w, h] = win(q.c, q.f), gr = g.createLinearGradient(0, y, 0, y + h);
-      gr.addColorStop(0, roomCol(q)); gr.addColorStop(1, roomCol(q, 0.45));
-      g.fillStyle = gr; shape(g, x, y, w, h); g.fill();
-      if (q.blind) for (let yy = y; yy < y + h * q.blind; yy += 6) { g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(x, yy, w, 3); }
-      if (style === 'deco') { g.fillStyle = '#000'; g.fillRect(x + w / 2 - 2, y, 4, h); g.fillRect(x, y + h * 0.55, w, 3); }
-      if (R() < 0.25) { g.fillStyle = 'rgba(0,0,0,0.7)'; const px = x + w * (0.2 + R() * 0.5); g.beginPath(); g.arc(px, y + h - h * 0.42, Math.min(w, h) * 0.07, 0, TAU); g.fill(); g.fillRect(px - Math.min(w, h) * 0.08, y + h - h * 0.35, Math.min(w, h) * 0.16, h * 0.35); }
-    }
-    if (style === 'neon') {
-      // A strip of light along every floor, a second colour every other floor; little lights on the vents.
-      for (let f = 0; f < floors; f++) { g.fillStyle = `hsl(${f % 2 ? hue : (hue + 120) % 360},100%,60%)`; g.fillRect(0, f * fh + 8, W, 5); }
-      for (let i = 0; i < 30; i++) { g.fillStyle = `hsl(${R() < 0.5 ? hue : 330},100%,65%)`; g.fillRect(R() * W, R() * H, 3, 3); }
-    }
-    if (style === 'tech') for (let f = 0; f < floors; f++) { g.fillStyle = `hsl(${hue},100%,62%)`; g.fillRect(0, f * fh + fh * 0.84, W, 3); for (let x = 30; x < W; x += 128) { g.fillStyle = R() < 0.5 ? '#3f6' : `hsl(${hue},100%,70%)`; g.fillRect(x, f * fh + fh * 0.1, 6, 3); } }
-    if (style === 'glass') for (let c = 1; c < cols; c += 3) { g.fillStyle = `hsla(${hue},100%,60%,0.6)`; g.fillRect(c * cw - 1, 0, 2, H); }
-  });
-  for (const t of [map, glow]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return { map, glow, tileH: floors * 3.4 };
-}
 
 // The storm tower: a weather station of weathered concrete in courses, riveted iron ribs and belts with hazard
 // stripes, a pipe running up, brass portholes (most lit warm), hatches, and rust and rain streaks down it all. One tile
@@ -576,7 +477,7 @@ function branch(R, C, out, p, d, len, thick, leaf, big = 1) {
 }
 
 // The forest's giant trunk: ivy, shelf fungi and branches. Side trees: crowns and a few branches. Waterfall: ferns, moss
-// and ivy on the rock. The other maps: steel fins and strips on the storm and city towers.
+// and ivy on the rock. Storm: lightning conductors up the tower.
 export function buildCoreDetail(view) {
   const L = view.level, key = view.key, D = detail(), R = rng(3301), top = L.top - 1.2;
   const out = batcher(view);
@@ -679,7 +580,6 @@ export function buildCoreDetail(view) {
     }
   }
   out.draw(geoOf, matOf);
-  // Storm and city: steel fins up the tower, a few of them lit, flush with the wall (inside its solid skin).
   if (key === 'storm') {
     // Copper lightning conductors up the tower on iron brackets.
     const R0 = L.top - 1.2, H = R0 + 40, y = (R0 - 40) / 2, n = 6, r = view.coreAt(y) + 0.32;
@@ -695,25 +595,5 @@ export function buildCoreDetail(view) {
     rod.frustumCulled = br.frustumCulled = false;
     view.add(rod, false);
     view.add(br, false);
-  }
-  if (key === 'city') {
-    const R0 = L.top - 1.2, H = R0 + 40, y = (R0 - 40) / 2, n = 16;
-    const fin = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 1, 0.18), panelMat(key === 'city' ? 0x3a3646 : 0x46505e, { metalness: 0.75, roughness: 0.35, pattern: 0 }), n);
-    const lit = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 1, 0.03), new THREE.MeshBasicMaterial({ color: HDR(key === 'city' ? 0xff40d0 : 0x5af0ff, 2.2) }), n / 4);
-    for (let k = 0, j = 0; k < n; k++) {
-      const a = (k / n) * TAU + 0.13, r = view.coreAt(y) + 0.1;
-      fin.setMatrixAt(k, place(Math.cos(a) * r, y, Math.sin(a) * r, 1, face(a), 0, H, 1));
-      if (k % 4 === 0) lit.setMatrixAt(j++, place(Math.cos(a) * (r + 0.1), y, Math.sin(a) * (r + 0.1), 1, face(a), 0, H, 1));
-    }
-    fin.frustumCulled = lit.frustumCulled = false;
-    view.add(fin, false);
-    view.add(lit, false);
-    // A steel ledge ring every twelve floors (42 m), flush.
-    const rings = [];
-    for (let yy = 42 - 20; yy < R0; yy += 42) rings.push(yy);
-    const ring = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.5, 64, 1, true), panelMat(key === 'city' ? 0x4a4658 : 0x56606e, { metalness: 0.7, roughness: 0.4, pattern: 0 }), rings.length);
-    rings.forEach((yy, i) => { const r = view.coreAt(yy) + 0.06; ring.setMatrixAt(i, new THREE.Matrix4().makeScale(r, 1, r).setPosition(0, yy, 0)); });
-    ring.frustumCulled = false;
-    view.add(ring, false);
   }
 }

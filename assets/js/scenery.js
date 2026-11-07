@@ -632,7 +632,7 @@ const FLORA = {
 };
 const pick = (list, R) => { let s = 0; for (const [, w] of list) s += w; let x = R() * s; for (const [k, w] of list) if ((x -= w) <= 0) return k; return list[0][0]; };
 
-// Floating islands round the climb (ledges on the crater wall, balconies on the city towers), trees and
+// Floating islands round the climb (ledges on the crater wall; none in the city), trees and
 // plants by zone, and small plants on the bigger ledges of the route.
 export function buildScenery(view) {
   const L = view.level, key = view.key, F = FLORA[key];
@@ -641,10 +641,11 @@ export function buildScenery(view) {
   // Plants are kept per height band (view.band) so only those near the camera are drawn.
   const put = (model, m, tint) => { const y = m.elements[13], k = model + '|' + Math.floor(y / 50); if (!inst.has(k)) inst.set(k, { model, y, list: [] }); inst.get(k).list.push([m, tint]); };
   const putIsle = (shape, pat, m) => { const k = shape + ':' + pat; if (!isles.has(k)) isles.set(k, { shape, pat, list: [] }); isles.get(k).list.push(m); };
-  const towers = view.cityTowers || [], trees = L.trees || [];
+  const trees = L.trees || [];
   const tint = new THREE.Color();
   L.zones.forEach((z, zi) => {
-    const f = F[Math.min(zi, F.length - 1)], n = (key === 'city' ? 14 : key === 'waterfall' ? 13 : 9) - (DETAIL === 0 ? 4 : 0);
+    // The city has no islands round the Nexus: its holograms and screens are there (cityview.js).
+    const f = F[Math.min(zi, F.length - 1)], n = key === 'city' ? 0 : (key === 'waterfall' ? 13 : 9) - (DETAIL === 0 ? 4 : 0);
     // The lowest islands float well clear of the ground: low down they sank into the beach, a palm or a pier.
     const y0 = zi === 0 && key !== 'volcano' && key !== 'city' ? z.y0 + 12 : z.y0;
     for (let k = 0; k < n; k++) {
@@ -653,20 +654,12 @@ export function buildScenery(view) {
       if (key === 'volcano') {
         // A ledge sticking out of the crater wall.
         const a = R() * TAU; x = Math.cos(a) * 21.8; zz = Math.sin(a) * 21.8; s = 2.5 + R() * 2.5; ry = -a;
-      } else if (key === 'city') {
-        // A balcony garden on a skyscraper's wall (worldview.js buildCity), kept off the route.
-        const tw = towers[(R() * towers.length) | 0];
-        if (!tw) continue;
-        const a = R() * TAU, d = tw.reach(a, y) + 0.7;
-        x = tw.t.x + Math.cos(a) * d; zz = tw.t.z + Math.sin(a) * d; s = 1.5; ry = -a;
-        if (L.cols.some((c) => c.kind !== 'tower' && Math.abs(c.y - y) < 4 + (c.hy || 0) && Math.hypot(c.x - x, c.z - zz) < 3 + Math.max(c.hx || 0, c.hz || 0, c.r || 0))) continue;
       } else {
         const a = R() * TAU, r = key === 'forest' ? 38 + R() * 10 : 26 + R() * 13;
         x = Math.cos(a) * r; zz = Math.sin(a) * r; s = 3 + R() * 4.5;
         if (trees.some((t) => Math.hypot(t.x - x, t.z - zz) < 10)) continue;
       }
       top = y;
-      if (key === 'city') { put('planter', M(x, top, zz, 1.4, 1.4, 1.4, 0, ry), null); (view.balconies || (view.balconies = [])).push({ x, y: top, z: zz, ry }); }
       putIsle(key === 'city' ? 'chamfer' : 'isle' + ((R() * 3) | 0), f.isle, M(x, top - 0.5 * (key === 'city' ? 0.5 : 1.2), zz, s, key === 'city' ? 0.5 : 1.2, key === 'city' ? 2.6 : s * (0.75 + R() * 0.25), 0, ry));
       const nt = key === 'city' ? 1 : 1 + ((R() * 2.6) | 0);
       for (let j = 0; j < nt; j++) {
@@ -1093,13 +1086,12 @@ export function buildAnimals(view) {
       swarm(view, 'hovercar', list, { light: 0.9, bank: 0.25 });
       swarm(view, 'hovercarL', list.map((c) => Object.assign({}, c, { tint: null })), { light: 0, glow: 2.6, bank: 0.25 });
     }
-    // Robots on the square at the foot of the spire and on the balcony gardens, going to and fro.
+    // Robots on the square at the foot of the Nexus, going to and fro.
     const bots = [], boxes = [];
     for (let k = 0; k < 10; k++) {
       const a = 0.9 + (k / 10) * (TAU - 1.8) + R() * 0.3, r = 15.5 + R() * 2.5;
       (k % 3 ? bots : boxes).push({ x: Math.cos(a) * r, y: 2, z: Math.sin(a) * r, ph: R(), R: 1 + R() * 1.6, sp: 0.35 + R() * 0.25, amp: 0, sz: 1.1, tint: null });
     }
-    for (const b of (view.balconies || []).slice(0, [8, 18, 28][DETAIL])) bots.push({ x: b.x, y: b.y, z: b.z, ph: R(), R: 0.5, sp: 0.3 + R() * 0.2, amp: 0, sz: 1, tint: null });
     for (const [k, list] of [['robot', bots], ['deliv', boxes]]) {
       if (!list.length) continue;
       const byBand = new Map();

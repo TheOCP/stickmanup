@@ -2,7 +2,7 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, MAP_ORDER, LEVEL_VERSION, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
+import { generateLevel, DIFFS, MAPS, MAP_ORDER, LEVEL_VERSION, layoutLV, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
 import { NavPath } from './navpath.js';
 import { EMOTES, EMOTE } from './emotes.js';
 import { SPRAYS, sprayUrl } from './sprays.js';
@@ -112,7 +112,7 @@ if (!mapDef(settings.map)) settings.map = 0;
 const saveSettings = () => store.set('settings', settings);
 // v2 keeps best times per map; earlier best times were all on the storm tower.
 if (!store.get('best2') && store.get('best')) { const b = {}; for (const [d, t] of Object.entries(store.get('best'))) b['0:' + d] = t; store.set('best2', b); }
-const validSave = (k) => { const s = store.get(k); return s && s.v === LEVEL_VERSION ? s : null; };
+const validSave = (k) => { const s = store.get(k); return s && s.v === layoutLV(s.map) ? s : null; };
 
 const app = { settings, game: null, paused: false, screen: '', back: null, room: null };
 
@@ -533,7 +533,7 @@ function sprayNow(id) {
   app.sound.spray();
   ui.haptic('tick');
   g.s.toHost(Object.assign({ k: 'spray', s: g.slot }, s));
-  cloud.postSpray(g.map, LEVEL_VERSION, s);
+  cloud.postSpray(g.map, layoutLV(g.map), s);
 }
 // Someone else's, from the room. Only with Graffiti from other climbers on.
 function onSpray(e) {
@@ -542,7 +542,7 @@ function onSpray(e) {
 // The ones the server keeps for this map.
 async function loadSprays(map) {
   if (!settings.graffiti || !app.graffiti) return;
-  const list = await cloud.fetchSprays(map, LEVEL_VERSION);
+  const list = await cloud.fetchSprays(map, layoutLV(map));
   if (!app.game || app.game.map !== map) return;
   for (const s of list) app.graffiti.add(s);
 }

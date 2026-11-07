@@ -41,12 +41,12 @@ smaller platforms, more obstacles, and everything moves faster.
   difficulties. After a fall it starts again below you, and a checkpoint lifts it to just under the checkpoint. It waits
   while you are in a maze garden or on a course outside. Stand on a vent when it erupts and it launches you to the ledge
   above; stand next to it and it shoves you off. Shadows show where boulders will land.
-* **Neon Skyline**: a ring of skyscrapers round a central spire at sunset, each its own shape and kind of building (a
-  round glass tower with lines of light winding up it, a neon octagon, a rounded concrete tower, a twisting white tower
-  and a twelve sided brick one) with neon signs, curved screens with adverts and its own roof. Climb round one tower,
-  cross to the next over a sky bridge, by zipline or on the roof of a flying car, and work your way round the ring to the
-  top. Hop over the laser bars across a flying car's way while it carries you. Flying cars stream round the city and
-  robots go about the square and the balconies. Conveyor belts, drones and laser gates.
+* **Neon Skyline**: a neon city on a bay at night. Climb round the Nexus, a glass tower with a diamond frame of steel
+  and pulses of light running up it, from the Night Market by the water up through the clouds to its crown, where a
+  beam of light shines into the sky. Now and then a flying car carries you out to a needle pylon (some float on
+  thrusters), you climb round it and ride back; hop over the laser bars across the car's way. Giant koi holograms swim
+  round the tower, screens hang in the air, blimps and traffic circle the city and searchlights sweep the sky over round
+  towers of every kind. Conveyor belts, drones and laser gates.
 * **Waterfall**: a water paradise. Zigzag up the face of a mossy rock in two lanes, short legs back and forth, with
   waterfalls pouring down it into a clear lagoon, past
   palms, lily pads, fountains, grass, herons wading and fish leaping in the lagoon, small islands with palms, and far

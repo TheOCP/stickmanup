@@ -28,9 +28,9 @@ const THEMES = {
   // Inside a volcano: light from the opening above, glow from the lava lake below (the "sea" is lava).
   volcano: { key: 'volcano', top: 0x1c0806, glow: 0xff8a3a, day: 0.25, sun: 0, sunCol: 0xff8040, cloud: 0.85, horK: 1.3, seaK: 0.35, hemiSky: 0xffb08a, hemiGround: 0xff5a20,
     hemi: 1.0, light: 0xffb88a, lightI: 1.3, dir: [0.2, 1, 0.1], deep: 0xff4a10, deepK: 2.4, shallow: 0xff4a10, shallowR: 0, amp: 0.22, foam: 0, scatter: 0x000000, clear: 0, shore: 0, lava: 1, rain: 0, fog: 0.008, exposure: 1.05, bloom: [1.0, 0.55, 0.7] },
-  // A city at sunset: low orange sun, purple sky, a dark bay.
-  city: { key: 'city', top: 0x221a4a, glow: 0xff9a6a, day: 0.55, sun: 0.65, sunCol: 0xff8a5a, cloud: 0.5, horK: 1.15, seaK: 0.9, hemiSky: 0xb0a0e0, hemiGround: 0x302040,
-    hemi: 0.95, light: 0xffa070, lightI: 1.7, dir: [0.7, 0.2, 0.4], deep: 0x0a1630, shallow: 0x0a1630, shallowR: 0, amp: 0.6, foam: 0.3, scatter: 0x1a3a6a, clear: 0, shore: 0, rain: 0, fog: 0.0045, exposure: 1.05, bloom: [0.8, 0.5, 0.72] },
+  // A neon city at night: a deep blue sky going pink where the city lights it, moonlight, a dark bay.
+  city: { key: 'city', top: 0x0b0a26, glow: 0xff6ab0, day: 0.12, sun: 0, sunCol: 0xc8d0ff, cloud: 0.6, horK: 1.3, seaK: 1.0, hemiSky: 0x9088e8, hemiGround: 0x5a2c50,
+    hemi: 0.95, light: 0xb4bcff, lightI: 1.0, dir: [0.4, 1, 0.3], deep: 0x060a1c, shallow: 0x060a1c, shallowR: 0, amp: 0.5, foam: 0.25, scatter: 0x2a1a5a, clear: 0, shore: 0, rain: 0, fog: 0.0045, exposure: 1.15, bloom: [0.95, 0.55, 0.62] },
 };
 
 // Waterfall: a bright tropical day over a crystal clear lagoon.

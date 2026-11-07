@@ -11,9 +11,10 @@ import { buildWildForest, buildWildlands } from './wildview.js';
 import { stormLands, sunnyLands, calderaLands, cityLands, fallLands } from './backdrop.js';
 import { buildMazes, showMaze, MAZE_BEAST } from './mazeview.js';
 import { buildVolcanoView } from './volcanoview.js';
+import { buildNexus, buildNeedles, buildCityLife } from './cityview.js';
 import { courseStones, courseDecor, courseGate, courseSweep, postMat, signTex, COMET_HEAD, WELL_HEAD, headMesh } from './courseview.js';
 import { buildStart, updateStart } from './startview.js';
-import { barkTex, rockTex as rockTexture, facadeTex, cityFacade, lighthouseTex, steelTex, stormTex, buildCoreDetail } from './coreview.js';
+import { barkTex, rockTex as rockTexture, facadeTex, lighthouseTex, steelTex, stormTex, buildCoreDetail } from './coreview.js';
 
 const _e = new THREE.Euler(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
@@ -82,90 +83,6 @@ function merge(parts) {
 
 const BOXG = new THREE.BoxGeometry(1, 1, 1);
 
-// City skyscrapers (solid out to level.js TOWER_R, 5.9 m): the shape of each kind across, at height y, as [x, z] round
-// its middle going the way the angle grows. Corners are listed twice so their edges stay sharp. rot turns it.
-function towerLoop(kind, rot) {
-  const poly = (n, r, a0) => () => { const out = []; for (let k = 0; k < n; k++) { const a = a0 + (k / n) * TAU, p = [Math.cos(a) * r, Math.sin(a) * r]; out.push(p, p.slice()); } return out; };
-  if (kind === 'neon') return poly(8, 6.15, rot + Math.PI / 8);
-  if (kind === 'deco') return poly(12, 6.0, rot);
-  if (kind === 'grid') {
-    // A square with big rounded corners.
-    const h = 5.45, rc = 3.4, c = h - rc, out = [];
-    for (let q = 0; q < 4; q++) {
-      const cx = q === 0 || q === 3 ? c : -c, cz = q < 2 ? c : -c;
-      for (let k = 0; k <= 6; k++) {
-        const a = (q + k / 6) * (Math.PI / 2), x = cx + Math.cos(a) * rc, z = cz + Math.sin(a) * rc;
-        out.push([x * Math.cos(rot) - z * Math.sin(rot), x * Math.sin(rot) + z * Math.cos(rot)]);
-      }
-    }
-    return () => out;
-  }
-  if (kind === 'tech') {
-    // An ellipse turning once every 320 m as it goes up.
-    return (y) => {
-      const ph = rot + (y / 320) * TAU, out = [];
-      for (let k = 0; k < 48; k++) { const a = (k / 48) * TAU, x = Math.cos(a) * 6.25, z = Math.sin(a) * 5.55; out.push([x * Math.cos(ph) - z * Math.sin(ph), x * Math.sin(ph) + z * Math.cos(ph)]); }
-      return out;
-    };
-  }
-  const circle = Array.from({ length: 64 }, (_, k) => [Math.cos((k / 64) * TAU) * 5.9, Math.sin((k / 64) * TAU) * 5.9]);
-  return () => circle;
-}
-// The wall of a skyscraper from y0 to y1 in rows: across, a whole number of texture tiles about tileW wide each; up,
-// a tile every tileH.
-function towerWall(loopAt, y0, y1, rows, tileW, tileH) {
-  const pos = [], uv = [], idx = [];
-  let N = 0, nT = 1;
-  for (let j = 0; j <= rows; j++) {
-    const y = y0 + ((y1 - y0) * j) / rows, loop = loopAt(y), len = [0];
-    for (let i = 1; i <= loop.length; i++) { const a = loop[i - 1], b = loop[i % loop.length]; len.push(len[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
-    if (!j) { N = loop.length; nT = Math.max(1, Math.round(len[N] / tileW)); }
-    for (let i = 0; i <= N; i++) { const p = loop[i % N]; pos.push(p[0], y, p[1]); uv.push((len[i] / len[N]) * nT, y / tileH); }
-  }
-  for (let j = 0; j < rows; j++) for (let i = 0; i < N; i++) {
-    const a = j * (N + 1) + i, b = a + N + 1;
-    idx.push(a, b, a + 1, a + 1, b, b + 1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  return g;
-}
-// A band round a loop at height y: out metres out from the wall, h tall (its outside, top and underside).
-function bandAt(list, loop, y, out, h) {
-  const n = loop.length, P = (p, k) => { const r = Math.hypot(p[0], p[1]) || 1; return [p[0] * (1 + k / r), p[1] * (1 + k / r)]; };
-  const quad = (p, q, r, u) => list.push(p, r, q, p, u, r);
-  for (let i = 0; i < n; i++) {
-    const a = loop[i], b = loop[(i + 1) % n];
-    if (a[0] === b[0] && a[1] === b[1]) continue;
-    const ao = P(a, out), bo = P(b, out), ai = P(a, -0.05), bi = P(b, -0.05), y2 = y + h;
-    quad([ao[0], y, ao[1]], [bo[0], y, bo[1]], [bo[0], y2, bo[1]], [ao[0], y2, ao[1]]);
-    quad([ao[0], y2, ao[1]], [bo[0], y2, bo[1]], [bi[0], y2, bi[1]], [ai[0], y2, ai[1]]);
-    quad([ai[0], y, ai[1]], [bi[0], y, bi[1]], [bo[0], y, bo[1]], [ao[0], y, ao[1]]);
-    quad([bi[0], y, bi[1]], [ai[0], y, ai[1]], [ai[0], y2, ai[1]], [bi[0], y2, bi[1]]);
-  }
-}
-// How far from the middle a loop reaches going out the way (nx, nz).
-function rayLoop(loop, nx, nz) {
-  let best = 0;
-  for (let i = 0, n = loop.length; i < n; i++) {
-    const a = loop[i], b = loop[(i + 1) % n], ex = b[0] - a[0], ez = b[1] - a[1], den = nx * ez - nz * ex;
-    if (Math.abs(den) < 1e-9) continue;
-    const s = (a[0] * nz - a[1] * nx) / den, t = (a[0] * ez - a[1] * ex) / den;
-    if (s >= -1e-6 && s <= 1 + 1e-6 && t > best) best = t;
-  }
-  return best;
-}
-function bandGeo(list) {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(list.flat(), 3));
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  return g;
-}
 const _up = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3();
 // Places a unit cylinder (along y) between two points.
 function stretchTo(m, ax, ay, az, bx, by, bz) {
@@ -481,8 +398,7 @@ export class WorldView {
   buildStatic() {
     const L = this.level, R = rng(99);
     // The maze gardens are drawn by mazeview.js.
-    // The city's skyscrapers are drawn by buildCity: a second box in the very same place made their windows flicker.
-    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret' && c.kind !== 'mfloor' && c.kind !== 'mwall' && c.kind !== 'mouter' && c.kind !== 'tower');
+    const boxes = L.cols.filter((c) => c.t === BOX && c.vis !== false && !c.dyn && !c.crumble && !c.blink && !c.trap && c.kind !== 'door' && c.kind !== 'secret' && c.kind !== 'mfloor' && c.kind !== 'mwall' && c.kind !== 'mouter');
     const cyls = L.cols.filter((c) => c.t !== BOX && !c.dyn && (c.kind === 'pillar' || c.kind === 'hub' || c.kind === 'post'));
     const mat = panelMat(0xffffff);
     const col = new THREE.Color();
@@ -683,22 +599,9 @@ export class WorldView {
     if (this.key === 'volcano') return;
     if (this.key === 'waterfall') return this.buildFallsCore();
     if (this.key === 'storm') return this.buildStormCore();
-    if (this.key !== 'storm' && this.key !== 'city') return this.buildCoreAlt();
-    const L = this.level, city = this.key === 'city';
-    const H = L.top - 1.2 + 40;
-    // Floors of offices (coreview.js): a tile is 6 bays by 12 floors, three tiles round.
-    // City: white modules with round windows (coreview.js cityFacade), four tiles round.
-    const { map, glow, tileH } = city ? cityFacade('tech', 41, 200) : Object.assign(facadeTex(5, false), { tileH: 42 });
-    for (const t of [map, glow]) t.repeat.set(city ? 4 : 3, H / tileH);
-    const m = panelMat(0xffffff, { map, metalness: 0.5, roughness: 0.4, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: 0.9, pattern: 0 });
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(CORE_R, CORE_R, H, 72, 1, true), m);
-    core.position.y = (L.top - 1.2 - 40) / 2;
-    this.add(core);
-    for (const z of L.zones) {
-      const t = new THREE.Mesh(new THREE.TorusGeometry(CORE_R + 0.06, 0.14, 8, 96).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: HDR(z.color, 2.2) }));
-      t.position.y = z.y0 - 1.4;
-      this.add(t, false);
-    }
+    // City: the Nexus (cityview.js).
+    if (this.key === 'city') return buildNexus(this);
+    return this.buildCoreAlt();
   }
 
   // Storm: a weather station tower (coreview.js stormTex), each zone marked by an iron band with amber lamps round it.
@@ -1468,6 +1371,8 @@ export class WorldView {
     const T = this.level.trees;
     if (!T.length) return;
     const R = rng(91), kind = T[0].kind || 'tree';
+    // City: needle pylons (cityview.js).
+    if (kind === 'needle') return buildNeedles(this);
     // Their own copies of the textures (coreview.js), wrapped once round: the geometry scales its uvs to its height.
     const once = (t) => { const c = t.clone(); c.repeat.set(1, 1); c.needsUpdate = true; return c; };
     const bark = kind === 'pylon' ? new THREE.MeshStandardMaterial({ map: steelTex(8), roughness: 0.42, metalness: 0.6 })
@@ -2176,76 +2081,19 @@ export class WorldView {
     buildVolcanoView(this);
   }
 
-  // City: the ring of skyscrapers (lit windows, billboards, roof antennas) and the conveyor belts.
+  // City: its life round the Nexus (cityview.js). Every map: the conveyor belts.
   buildCity() {
     const L = this.level;
-    if (this.key === 'city') {
-      const H = L.top + 20, y0 = -20, y1 = L.top;
-      // Every tower its own kind of building and its own shape (towerLoop), its walls from coreview.js cityFacade.
-      const KINDS = [['glass', 190, 0.75, 0.18], ['neon', 300, 0.5, 0.4], ['grid', 45, 0.08, 0.85], ['tech', 170, 0.3, 0.42], ['deco', 30, 0.05, 0.85]];
-      const roof = panelMat(0x2a2836, { metalness: 0.5, roughness: 0.6, pattern: 0 }), steel = panelMat(0x3a3e46, { metalness: 0.8, roughness: 0.35, pattern: 0 });
-      const ledgeM = panelMat(0x8a8e96, { metalness: 0.6, roughness: 0.5, pattern: 0, side: THREE.DoubleSide });
-      this.cityTowers = [];
-      for (const [ti, t] of L.towers.entries()) {
-        const [kind, hue, metal, rough] = KINDS[ti % KINDS.length], loopAt = towerLoop(kind, t.a);
-        const { map, glow, tileH } = cityFacade(kind, 51 + ti * 7, hue);
-        const look = panelMat(0xffffff, { map, metalness: metal, roughness: rough, emissive: 0xffffff, emissiveMap: glow, emissiveIntensity: kind === 'glass' ? 1.1 : 1.0, pattern: 0 });
-        const wall = new THREE.Mesh(towerWall(loopAt, y0, y1, kind === 'tech' ? Math.ceil((y1 - y0) / 4) : 1, 8.6, tileH), look);
-        wall.position.set(t.x, 0, t.z);
-        this.add(wall);
-        // The roof: the shape at the top, closed.
-        const top = loopAt(y1), sh = new THREE.Shape(top.map(([x, z]) => new THREE.Vector2(x, -z)));
-        const cap = new THREE.Mesh(new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2), roof);
-        cap.position.set(t.x, y1 + 0.01, t.z);
-        this.add(cap);
-        const glowM = new THREE.MeshBasicMaterial({ color: HDR(new THREE.Color().setHSL(hue / 360, 1, 0.58).getHex(), 2.0), side: THREE.DoubleSide });
-        // Ledges round it every so often (not on the twisting one), lines of light under some, and each kind's own trim.
-        const ledges = [], lights = [], every = { glass: 30, neon: 36, grid: 22, tech: 32, deco: 26 }[kind];
-        for (let y = y0 + every; y < y1 - 6; y += every) {
-          if (kind === 'tech') { bandAt(lights, loopAt(y), y, 0.06, 0.14); continue; }
-          bandAt(ledges, loopAt(y), y, 0.3, 0.32);
-          if (kind === 'glass' || kind === 'neon') bandAt(lights, loopAt(y), y - 0.1, 0.32, 0.06);
-        }
-        bandAt(ledges, top, y1 - 0.4, 0.22, 1.0);
-        for (const [list, m] of [[ledges, ledgeM], [lights, glowM]]) {
-          if (!list.length) continue;
-          const o = new THREE.Mesh(bandGeo(list), m);
-          o.position.set(t.x, 0, t.z);
-          this.add(o, m !== glowM);
-        }
-        if (kind === 'glass') {
-          // Two lines of light winding up round it.
-          for (const ph of [0, Math.PI]) {
-            const pts = [];
-            for (let y = y0; y <= y1; y += 2) { const a = ph + (y / 46) * TAU; pts.push(new THREE.Vector3(Math.cos(a) * 6.02, y, Math.sin(a) * 6.02)); }
-            const helix = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length, 0.07, 5, false), glowM);
-            helix.position.set(t.x, 0, t.z);
-            this.add(helix, false);
-          }
-        }
-        if (kind === 'neon' || kind === 'deco') {
-          // Neon down every corner of the octagon; stone piers up the twelve corners of the brick one.
-          const n = kind === 'neon' ? 8 : 12, r = kind === 'neon' ? 6.15 : 6.0, a0 = t.a + (kind === 'neon' ? Math.PI / 8 : 0);
-          const im = new THREE.InstancedMesh(BOXG, kind === 'neon' ? glowM : panelMat(0xc8b898, { roughness: 0.85, metalness: 0, pattern: 0 }), n);
-          for (let k = 0; k < n; k++) {
-            const a = a0 + (k / n) * TAU, w = kind === 'neon' ? 0.12 : 0.55;
-            im.setMatrixAt(k, mat4(t.x + Math.cos(a) * (r + (kind === 'neon' ? 0.02 : 0.1)), (y0 + y1) / 2, t.z + Math.sin(a) * (r + (kind === 'neon' ? 0.02 : 0.1)), w, y1 - y0, w, 0, -a, 0));
-          }
-          this.add(im, kind !== 'neon');
-        }
-        this.cityTowers.push({ t, kind, hue, loopAt, reach: (a, y) => rayLoop(loopAt(y), Math.cos(a), Math.sin(a)) });
-        this.cityRoof(t, y1, ti, hue, steel);
-      }
-      this.citySigns(H);
-    }
-    // Conveyor belts: chevrons scrolling the way the belt moves.
+    // City: holograms, screens, blimps, searchlights and a sea of cloud (cityview.js).
+    if (this.key === 'city') buildCityLife(this);
+    // Conveyor belts: chevrons pointing and scrolling the way the belt carries you (player.js: along the box's own x).
     const belts = L.cols.filter((c) => c.conv && !c.flow);
     if (!belts.length) return;
     const mat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 }, uA: { value: new THREE.Color(0x11141c) }, uB: { value: HDR(0xffc23d, 2.2) } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: `uniform float uTime; uniform vec3 uA, uB; varying vec2 vUv;
-        void main(){ float s = fract(vUv.x - uTime * 0.9 - abs(vUv.y - 0.5) * 0.8);
+        void main(){ float s = fract(vUv.x - uTime * 0.9 + abs(vUv.y - 0.5) * 0.8);
           float k = smoothstep(0.42, 0.5, s) * (1.0 - smoothstep(0.62, 0.7, s));
           gl_FragColor = vec4(mix(uA, uB, k), 1.0);
           #include <tonemapping_fragment>
@@ -2262,143 +2110,6 @@ export class WorldView {
       this.add(m, false);
     }
     this.convFx = mat;
-  }
-
-  // City: what stands on each tower's roof: a spire, a helipad, a stepped crown, a cluster of masts, or a water tank.
-  cityRoof(t, y, ti, hue, steel) {
-    const glowM = new THREE.MeshBasicMaterial({ color: HDR(new THREE.Color().setHSL(hue / 360, 1, 0.6).getHex(), 2.2) });
-    const red = new THREE.MeshBasicMaterial({ color: HDR(0xff3040, 1.6) });
-    const put = (geo, mat, x, yy, z, sx = 1, sy = 1, sz = 1, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(t.x + x, y + yy, t.z + z); m.scale.set(sx, sy, sz); m.rotation.y = ry; this.add(m, mat !== glowM && mat !== red); return m; };
-    const CY = new THREE.CylinderGeometry(1, 1, 1, 16), CO = new THREE.ConeGeometry(1, 1, 16), ry = -t.a;
-    switch (ti % 5) {
-      case 0: // a spire with rings of light
-        put(CY, steel, 0, 2, 0, 2.6, 4, 2.6);
-        put(CO, steel, 0, 4 + 14, 0, 1.4, 28, 1.4);
-        for (const k of [0, 1, 2, 3]) put(new THREE.TorusGeometry(1.2 - k * 0.25, 0.06, 6, 24).rotateX(Math.PI / 2), glowM, 0, 6 + k * 5, 0);
-        put(new THREE.SphereGeometry(0.4, 10, 8), red, 0, 32.4, 0);
-        break;
-      case 1: { // a helipad on legs, lights round its edge and an H
-        put(CY, steel, 0, 1.6, 0, 3.6, 0.3, 3.6);
-        for (const k of [0, 1, 2, 3]) put(CY, steel, Math.cos(k * 1.57 + 0.78) * 2.2, 0.75, Math.sin(k * 1.57 + 0.78) * 2.2, 0.15, 1.5, 0.15);
-        put(new THREE.TorusGeometry(3.5, 0.06, 6, 48).rotateX(Math.PI / 2), glowM, 0, 1.78, 0);
-        for (const [x, z, w, d] of [[-0.6, 0, 0.25, 1.8], [0.6, 0, 0.25, 1.8], [0, 0, 1.0, 0.25]]) put(BOXG, glowM, x, 1.77, z, w, 0.02, d, ry);
-        put(CY, steel, 2.6, 4, 2.6, 0.08, 6, 0.08);
-        put(new THREE.SphereGeometry(0.3, 10, 8), red, 2.6, 7.1, 2.6);
-        break;
-      }
-      case 2: // a stepped crown, each step edged with light
-        for (const [k, w] of [[0, 6.4], [1, 4.6], [2, 2.8]]) {
-          put(BOXG, steel, 0, 1.5 + k * 3, 0, w, 3, w, ry);
-          put(BOXG, glowM, 0, 3.02 + k * 3, 0, w + 0.1, 0.06, w + 0.1, ry);
-        }
-        put(CY, steel, 0, 13, 0, 0.12, 8, 0.12);
-        put(new THREE.SphereGeometry(0.35, 10, 8), red, 0, 17.2, 0);
-        break;
-      case 3: // masts and a dish
-        for (const [x, z, h] of [[-2, -1.5, 14], [1.8, -2, 9], [0.5, 2.2, 18]]) {
-          put(CY, steel, x, h / 2, z, 0.14, h, 0.14);
-          put(new THREE.SphereGeometry(0.28, 10, 8), red, x, h + 0.2, z);
-        }
-        put(new THREE.SphereGeometry(1.6, 16, 8, 0, TAU, 0, 1.0).rotateX(-1.1), steel, -1.5, 2.6, 1.5, 1, 1, 1, ry + 0.7);
-        put(BOXG, steel, 2, 1, 1.5, 2.2, 2, 1.4, ry);
-        break;
-      default: // a water tank on legs and a lit sign frame
-        put(CY, panelMat(0x8a6a4a, { roughness: 0.9, pattern: 3 }), 1.5, 4.2, 1.5, 1.6, 3.2, 1.6);
-        put(CO, steel, 1.5, 6.4, 1.5, 1.8, 1.2, 1.8);
-        for (const k of [0, 1, 2, 3]) put(CY, steel, 1.5 + Math.cos(k * 1.57) * 1.3, 1.3, 1.5 + Math.sin(k * 1.57) * 1.3, 0.1, 2.6, 0.1);
-        put(BOXG, steel, -1.8, 2.5, -1.2, 0.3, 5, 4, ry);
-        put(BOXG, glowM, -1.6, 2.5, -1.2, 0.05, 4.6, 3.6, ry);
-    }
-  }
-
-  // City: vertical neon signs on the towers' corners and big screens with adverts on their faces, each from one
-  // picture of all of them (a column per sign, a cell per screen).
-  citySigns(H) {
-    const L = this.level, R = rng(616), d = detail(), WORDS = ['HOTEL', 'RAMEN', 'ARCADE', 'BAR', '24H', 'ROBOTS', 'SUSHI', 'CYBER', 'NOODLE', 'TAXI', 'CLUB', 'NEON'];
-    const HUES = [190, 300, 45, 120, 330, 20, 270, 160];
-    const words = canvasTex(1536, 1024, (g) => {
-      g.fillStyle = '#000'; g.fillRect(0, 0, 1536, 1024);
-      WORDS.forEach((w, i) => {
-        const x = i * 128, hu = HUES[i % HUES.length], n = w.length, step = Math.min(150, 960 / n);
-        g.strokeStyle = `hsl(${hu},100%,62%)`; g.lineWidth = 8; g.strokeRect(x + 10, 10, 108, 1004);
-        g.fillStyle = `hsl(${hu},100%,${70}%)`; g.font = `bold ${Math.min(96, step * 0.82)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.shadowColor = `hsl(${hu},100%,55%)`; g.shadowBlur = 18;
-        for (let k = 0; k < n; k++) g.fillText(w[k], x + 64, 512 + (k - (n - 1) / 2) * step);
-        g.shadowBlur = 0;
-      });
-    });
-    const ADS = [['NEON COLA', 350, 'bottle'], ['SKYCAR', 190, 'car'], ['ROBOTIX', 120, 'bot'], ['MOON TRIPS', 260, 'moon'], ['PIXEL BURGER', 30, 'burger'], ['ZAP', 55, 'bolt']];
-    const ads = canvasTex(1536, 512, (g) => {
-      ADS.forEach(([text, hu, pic], i) => {
-        const x = (i % 3) * 512, y = Math.floor(i / 3) * 256, gr = g.createLinearGradient(x, y, x + 512, y + 256);
-        gr.addColorStop(0, `hsl(${hu},80%,22%)`); gr.addColorStop(1, `hsl(${(hu + 60) % 360},90%,12%)`);
-        g.fillStyle = gr; g.fillRect(x, y, 512, 256);
-        for (let k = 0; k < 12; k++) { g.fillStyle = `hsla(${hu},100%,70%,0.12)`; g.fillRect(x, y + k * 22, 512, 3); }
-        g.save(); g.translate(x + 120, y + 128); g.fillStyle = `hsl(${(hu + 180) % 360},100%,70%)`;
-        if (pic === 'bottle') { g.fillRect(-22, -30, 44, 100); g.fillRect(-10, -70, 20, 44); g.beginPath(); g.arc(0, -30, 22, Math.PI, 0); g.fill(); }
-        else if (pic === 'car') { g.beginPath(); g.ellipse(0, 10, 90, 26, 0, 0, TAU); g.fill(); g.beginPath(); g.ellipse(-10, -12, 44, 26, 0, Math.PI, 0); g.fill(); g.fillStyle = '#fff'; g.fillRect(70, 4, 18, 8); }
-        else if (pic === 'bot') { g.fillRect(-50, -50, 100, 80); g.fillStyle = '#000'; g.fillRect(-36, -26, 72, 18); g.fillStyle = '#7fd8ff'; g.fillRect(-30, -22, 60, 10); g.fillStyle = `hsl(${(hu + 180) % 360},100%,70%)`; g.fillRect(-4, -80, 8, 30); }
-        else if (pic === 'moon') { g.beginPath(); g.arc(0, 0, 70, 0, TAU); g.fill(); g.fillStyle = 'rgba(0,0,0,0.25)'; for (const [a, b, r] of [[-20, -20, 14], [24, 10, 18], [-10, 34, 10]]) { g.beginPath(); g.arc(a, b, r, 0, TAU); g.fill(); } }
-        else if (pic === 'burger') { g.beginPath(); g.ellipse(0, -20, 70, 40, 0, Math.PI, 0); g.fill(); g.fillStyle = '#5a3'; g.fillRect(-72, -18, 144, 12); g.fillStyle = '#842'; g.fillRect(-70, -6, 140, 22); g.fillStyle = `hsl(${(hu + 180) % 360},100%,70%)`; g.fillRect(-70, 16, 140, 20); }
-        else { g.beginPath(); g.moveTo(-10, -90); g.lineTo(40, -90); g.lineTo(10, -10); g.lineTo(45, -10); g.lineTo(-30, 90); g.lineTo(-5, 10); g.lineTo(-40, 10); g.closePath(); g.fill(); }
-        g.restore();
-        g.fillStyle = '#fff'; g.font = 'bold 60px sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
-        const tw = g.measureText(text).width;
-        if (tw > 256) g.font = `bold ${Math.floor(60 * 256 / tw)}px sans-serif`;
-        g.shadowColor = `hsl(${hu},100%,60%)`; g.shadowBlur = 16; g.fillText(text, x + 236, y + 128); g.shadowBlur = 0;
-        g.strokeStyle = `hsl(${hu},100%,65%)`; g.lineWidth = 6; g.strokeRect(x + 4, y + 4, 504, 248);
-      });
-    });
-    // Signs flat, facing out, just clear of the wall; screens bent round it. Each a strip of columns [x, z] going the
-    // way the angle grows.
-    const quads = { words: [], ads: [] }, backs = [];
-    const nSign = [5, 9, 13][d], nAd = [3, 6, 8][d];
-    for (const { t, loopAt, reach } of this.cityTowers) {
-      for (let k = 0; k < nSign + nAd; k++) {
-        const ad = k >= nSign, a = R() * TAU, y = 8 + R() * (H - 60), nx = Math.cos(a), nz = Math.sin(a);
-        const w = ad ? 5.6 : 1.1, h = ad ? 2.8 : 6 + R() * 3, ys = [y - h / 2, y, y + h / 2];
-        const wi = (R() * WORDS.length) | 0, ai = (R() * ADS.length) | 0;
-        const uv = ad ? [(ai % 3) / 3, 1 - (Math.floor(ai / 3) + 1) / 2, (ai % 3 + 1) / 3, 1 - Math.floor(ai / 3) / 2] : [wi / 12, 0, (wi + 1) / 12, 1];
-        if (ad) {
-          const r0 = Math.max(...ys.map((yy) => reach(a, yy))), span = w / r0, cols = [];
-          for (let j = 0; j <= 10; j++) {
-            const b = a + (j / 10 - 0.5) * span, r = Math.max(...ys.map((yy) => reach(b, yy))) + 0.22;
-            cols.push([t.x + Math.cos(b) * r, t.z + Math.sin(b) * r]);
-          }
-          quads.ads.push({ cols, y, h, uv });
-          continue;
-        }
-        let out = 0;
-        for (const yy of ys) for (const [x, z] of loopAt(yy)) out = Math.max(out, x * nx + z * nz);
-        const cx = t.x + nx * (out + 0.32), cz = t.z + nz * (out + 0.32);
-        quads.words.push({ cols: [[cx + nz * w / 2, cz - nx * w / 2], [cx - nz * w / 2, cz + nx * w / 2]], y, h, uv });
-        backs.push(mat4(t.x + nx * (out + 0.17), y, t.z + nz * (out + 0.17), 0.26, h + 0.3, w + 0.3, 0, -a, 0));
-      }
-    }
-    const build = (list, tex, k) => {
-      const pos = [], uvs = [], idx = [];
-      for (const q of list) {
-        const n = q.cols.length - 1, b0 = pos.length / 3;
-        q.cols.forEach(([x, z], j) => {
-          const u = q.uv[2] + (q.uv[0] - q.uv[2]) * (j / n);
-          pos.push(x, q.y - q.h / 2, z, x, q.y + q.h / 2, z);
-          uvs.push(u, q.uv[1], u, q.uv[3]);
-        });
-        for (let j = 0; j < n; j++) { const b = b0 + j * 2; idx.push(b, b + 2, b + 3, b, b + 3, b + 1); }
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-      g.setIndex(idx);
-      g.computeVertexNormals();
-      g.computeBoundingSphere();
-      this.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, color: HDR(0xffffff, k), side: THREE.DoubleSide })), false);
-    };
-    build(quads.words, words, 1.8);
-    build(quads.ads, ads, 1.3);
-    const bm = new THREE.InstancedMesh(BOXG, panelMat(0x1a1a22, { metalness: 0.7, roughness: 0.4, pattern: 0 }), backs.length);
-    backs.forEach((m, i) => bm.setMatrixAt(i, m));
-    this.add(bm);
   }
 
   // Far-off land round every map (backdrop.js, and wildview.js for the Wild Forest).

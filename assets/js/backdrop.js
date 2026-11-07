@@ -4,7 +4,7 @@
 //   Storm Tower: black sea cliffs and stacks, a coast of high peaks with snow, masts with red lights, a lighthouse.
 //   Sunny Isles: green volcanic islands with white beaches, palms and jungle.
 //   Volcano: the crater wall all round, black rock and ash with lava running down it, small cones in the lava lake.
-//   Neon City: towers with lit windows round the bay, a bridge hung with lights, the lit hills behind.
+//   Neon City: round, tapering and tiered towers with lit windows round the bay, a bridge hung with lights, the lit hills behind.
 //   Waterfall: green-topped rock pillars and a ring of high cliffs with white falls running down them.
 // Nothing here comes nearer the middle than 150 m: the climb and its hidden courses all stay inside 110 m.
 import * as THREE from 'three';
@@ -37,7 +37,8 @@ const ridgedOf = (N) => (x, z) => {
 };
 
 // ---------------------------------------------------------------- the shader
-// aD: x the crowns of trees up close (in towers: which tower), y rock up close (in towers: 1 a wall with windows, 2 a light),
+// aD: x the crowns of trees up close (in towers: which tower), y rock up close (in towers: 1 a wall with windows, 2 a light,
+// below 0 a round wall with windows, minus its radius),
 // z what glows: lava, the lights of a town, lit windows, white water, by the mode.
 const MODES = { plain: 0, lava: 1, lights: 2, windows: 3, falls: 4 };
 const LAND_VS = `#include <fog_pars_vertex>
@@ -67,10 +68,12 @@ const landFs = () => `#include <fog_pars_fragment>
         em = vC * 2.4;
         col = vec3(0.0);
       } else {
-        // Rows of windows, some lit. Far off, where a window is smaller than a pixel, their average instead.
-        vec2 w = abs(n.x) > abs(n.z) ? vec2(vW.z, vW.y) : vec2(vW.x, vW.y);
+        // Rows of windows, some lit. Far off, where a window is smaller than a pixel, their average instead. A round
+        // tower (detail y below 0: minus its radius) has them all the way round it.
+        float rad = max(-vD.y, 0.0);
+        vec2 w = rad > 0.0 ? vec2(atan(n.z, n.x) * rad, vW.y) : abs(n.x) > abs(n.z) ? vec2(vW.z, vW.y) : vec2(vW.x, vW.y);
         vec2 q = vec2(w.x / 2.4, w.y / 3.3), id = floor(q), f = fract(q);
-        float side = step(abs(n.y), 0.5) * vD.y;
+        float side = step(abs(n.y), 0.5) * (rad > 0.0 ? 1.0 : vD.y);
         float win = step(0.2, f.x) * step(f.x, 0.8) * step(0.22, f.y) * step(f.y, 0.86) * side;
         float lit = step(1.0 - vD.z, h21(id + vD.x * 61.7));
         float far = smoothstep(0.3, 0.9, length(fwidth(q)));
@@ -540,56 +543,82 @@ export function cityLands(view) {
     return Math.abs(u) < half + 40 + rad && Math.abs(w) < 40 + rad;
   };
   const FACADE = [0x1b2130, 0x232a3a, 0x2c303c, 0x342e2a, 0x1e2a2e, 0x2a2440].map(C), NEON = [0xff2a8a, 0x2ad8ff, 0xb05aff, 0xff8a2a, 0x3aff9a].map(C);
+  // Round towers, tapering ones, octagons, wedding cakes of round tiers and now and then a slab. Taller downtown (one side
+  // of the bay) and along the shore, lower out at the edges.
+  const KINDS = ['round', 'round', 'taper', 'oct', 'tiers', 'box'];
   const towers = [], nB = [110, 190, 260][d];
   for (let tries = 0; towers.length < nB && tries < nB * 20; tries++) {
-    const a = R() * TAU, r = 160 + Math.pow(R(), 0.9) * 470, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const w = 14 + R() * 18, dd = 14 + R() * 18, rad = Math.hypot(w, dd) / 2;
-    if (r < shoreR(x, z) + rad + 3 || river(x, z) || Math.abs(x * tx + z * tz) < 112 + rad && x * Math.cos(ba) + z * Math.sin(ba) > 0 || nearBridge(x, z, rad) || towers.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + 4 && Math.abs(t.z - z) < (t.d + dd) / 2 + 4)) continue;
-    // Taller in the middle of town (one side of the bay), lower out at the edges.
-    const downtown = Math.max(0, Math.cos(a - 3.6)) * (1 - smooth(260, 560, r));
-    const h = 26 + (60 + 260 * downtown) * Math.pow(R(), 1.6) + 60 * downtown;
-    towers.push({ x, z, w, d: dd, h });
+    const a = R() * TAU, r = 160 + Math.pow(R(), 1.1) * 470, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const w = 14 + R() * 20, rad = w * 0.75;
+    if (r < shoreR(x, z) + rad + 3 || river(x, z) || Math.abs(x * tx + z * tz) < 112 + rad && x * Math.cos(ba) + z * Math.sin(ba) > 0 || nearBridge(x, z, rad) || towers.some((t) => Math.hypot(t.x - x, t.z - z) < (t.w + w) * 0.62 + 4)) continue;
+    const downtown = Math.max(0, Math.cos(a - 3.6)) * (1 - smooth(260, 560, r)), shore = 1 - smooth(200, 330, r);
+    const h = 30 + (70 + 280 * downtown + 120 * shore) * Math.pow(R(), 1.4) + 60 * downtown;
+    towers.push({ x, z, w, h, kind: KINDS[(R() * KINDS.length) | 0] });
   }
-  // A few landmarks downtown, far taller than the rest.
-  for (let k = 0, tries = 0; k < 3 && tries < 200; tries++) {
-    const a = 3.6 + (R() - 0.5) * 1.1, r = 300 + R() * 160, x = Math.cos(a) * r, z = Math.sin(a) * r, w = 26 + R() * 8;
-    if (towers.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + 6 && Math.abs(t.z - z) < (t.d + w) / 2 + 6)) continue;
-    towers.push({ x, z, w, d: w, h: 330 + R() * 120, mark: true });
+  // Landmarks downtown, far taller than the rest: a needle with a lit pod, a tapering giant, a tiered one, a round one.
+  for (let k = 0, tries = 0; k < 4 && tries < 300; tries++) {
+    const a = 3.6 + (R() - 0.5) * 1.6, r = 230 + R() * 200, x = Math.cos(a) * r, z = Math.sin(a) * r, w = 26 + R() * 10;
+    if (river(x, z) || nearBridge(x, z, w) || towers.some((t) => t.mark && Math.hypot(t.x - x, t.z - z) < 70)) continue;
+    for (let i = towers.length - 1; i >= 0; i--) if (!towers[i].mark && Math.hypot(towers[i].x - x, towers[i].z - z) < (towers[i].w + w) * 0.62 + 6) towers.splice(i, 1);
+    towers.push({ x, z, w, h: 380 + R() * 200, kind: ['needle', 'taper', 'tiers', 'round'][k], mark: true });
     k++;
   }
-  const lamp = [0, 2, 0];
+  const ROUND = new THREE.CylinderGeometry(1, 1, 1, 20, 1).translate(0, 0.5, 0), TAPER = new THREE.CylinderGeometry(0.6, 1, 1, 20, 1).translate(0, 0.5, 0);
+  const OCT = new THREE.CylinderGeometry(1, 1, 1, 8, 1).translate(0, 0.5, 0), BAND = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true).translate(0, 0.5, 0);
+  const DOME = new THREE.SphereGeometry(1, 16, 6, 0, TAU, 0, Math.PI / 2);
+  // A round wall's detail: its windows' radius, so a whole number of them goes round.
+  const roundD = (seed, lit, r) => [seed, -(Math.max(3, Math.round((TAU * r) / 2.4)) * 2.4) / TAU, lit];
+  const lamp = [0, 2, 0], steelC = C(0x606878), red = C(0xff2030);
   towers.forEach((t, i) => {
-    const seed = (i * 0.618) % 1, lit = 0.25 + R() * 0.35, D = [seed, 1, lit], face = FACADE[(R() * FACADE.length) | 0];
-    out.copy(face).multiplyScalar(0.8 + R() * 0.4);
-    // Up to three tiers, each narrower.
-    const tiers = t.mark ? 3 : t.h > 120 ? 1 + ((R() * 3) | 0) : 1;
-    let y = -2, w = t.w, dd = t.d;
-    for (let k = 0; k < tiers; k++) {
-      const hk = k === tiers - 1 ? t.h - y : (t.h + 2) * (k === 0 ? 0.55 + R() * 0.15 : 0.25);
-      bits.add(BOX, M(t.x, y, t.z, w, hk, dd), out, D);
-      y += hk;
-      if (k < tiers - 1) { w *= 0.74; dd *= 0.74; }
-    }
-    // The top: a spire, a pointed roof, or plant rooms; red lights on the tall ones; neon on some.
-    const top = y, kind = t.mark ? 0 : R();
-    if (kind < 0.18 || t.mark) {
-      bits.add(CONE4, M(t.x, top, t.z, w * 0.62, t.mark ? 26 : 12, dd * 0.62), out, [seed, 0, 0]);
-      bits.add(CYL, M(t.x, top, t.z, 0.5, t.mark ? 70 : 30, 0.5), C(0x606878));
-      const tip = top + (t.mark ? 70 : 30);
-      bits.add(BOX, M(t.x, tip, t.z, 1.6, 1.6, 1.6), C(0xff2030), lamp);
-    } else {
-      bits.add(BOX, M(t.x + (R() - 0.5) * w * 0.3, top, t.z + (R() - 0.5) * dd * 0.3, w * 0.4, 4 + R() * 4, dd * 0.4), out.clone().multiplyScalar(0.8), [seed, 0, 0]);
-      if (t.h > 110) bits.add(BOX, M(t.x + w * 0.42, top, t.z + dd * 0.42, 1.2, 1.2, 1.2), C(0xff2030), lamp);
-    }
-    if (R() < 0.45) {
-      const nc = NEON[(R() * NEON.length) | 0];
-      if (R() < 0.5) {
-        // Light up the corners from the ground to the roof.
-        for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) bits.add(BOX, M(t.x + sx * (t.w / 2 + 0.2), -2, t.z + sz * (t.d / 2 + 0.2), 0.5, t.h * (tiers > 1 ? 0.55 : 1), 0.5), nc, lamp);
-      } else {
-        // A ring of light round the top.
-        bits.add(BOX, M(t.x, top - 3, t.z, w + 0.6, 0.9, dd + 0.6), nc, lamp);
+    const seed = (i * 0.618) % 1, lit = 0.25 + R() * 0.35, r = t.w / 2, nc = NEON[(R() * NEON.length) | 0];
+    out.copy(FACADE[(R() * FACADE.length) | 0]).multiplyScalar(0.8 + R() * 0.4);
+    let rt = r;
+    if (t.kind === 'box') {
+      bits.add(BOX, M(t.x, -2, t.z, t.w, t.h + 2, t.w * (0.7 + R() * 0.3)), out, [seed, 1, lit]);
+      rt = r * 0.6;
+    } else if (t.kind === 'tiers') {
+      let y = -2, rr = r;
+      const n = 2 + ((R() * 2) | 0);
+      for (let k = 0; k < n; k++) {
+        const hk = k === n - 1 ? t.h - y : (t.h + 2) * (k === 0 ? 0.5 : 0.22);
+        bits.add(ROUND, M(t.x, y, t.z, rr, hk, rr), out, roundD(seed, lit, rr));
+        bits.add(BAND, M(t.x, y + hk - 1.4, t.z, rr + 0.3, 0.7, rr + 0.3), nc, lamp);
+        y += hk;
+        if (k < n - 1) rr *= 0.72;
       }
+      rt = rr;
+    } else if (t.kind === 'needle') {
+      // A slim shaft, a wide round pod of lit windows high up, a mast.
+      const pod = t.h * 0.78;
+      bits.add(ROUND, M(t.x, -2, t.z, 6, t.h + 2, 6), out, roundD(seed, lit, 6));
+      bits.add(ROUND, M(t.x, pod, t.z, 22, 12, 22), out, roundD(seed, 0.7, 22));
+      for (const dy of [-0.4, 12]) bits.add(BAND, M(t.x, pod + dy, t.z, 22.4, 0.8, 22.4), nc, lamp);
+      rt = 5;
+    } else {
+      const geo = t.kind === 'taper' ? TAPER : t.kind === 'oct' ? OCT : ROUND;
+      bits.add(geo, M(t.x, -2, t.z, r, t.h + 2, r), out, roundD(seed, lit, t.kind === 'taper' ? r * 0.8 : r));
+      if (t.kind === 'taper') rt = r * 0.6;
+      // Neon: rings of light up it, or strips from the ground to the roof.
+      if (R() < 0.5) {
+        for (let y = 26 + R() * 20; y < t.h - 8; y += 40 + R() * 30) {
+          const rr = (t.kind === 'taper' ? r * (1 - (0.4 * (y + 2)) / (t.h + 2)) : r) + 0.3;
+          bits.add(BAND, M(t.x, y, t.z, rr, 0.8, rr), nc, lamp);
+        }
+      } else if (t.kind !== 'taper') {
+        for (let k = 0; k < 4; k++) { const b = (k * Math.PI) / 2 + i; bits.add(BOX, M(t.x + Math.cos(b) * (r + 0.2), -2, t.z + Math.sin(b) * (r + 0.2), 0.5, t.h + 2, 0.5), nc, lamp); }
+      }
+    }
+    // The top: a spire with a red light, a dome, a ring of light, or plant rooms.
+    const top = t.h, k = t.mark ? 0 : R();
+    if (k < 0.22) {
+      const sh = t.mark ? 70 : 24 + R() * 16;
+      bits.add(CYL, M(t.x, top, t.z, 0.6, sh, 0.6), steelC);
+      bits.add(BOX, M(t.x, top + sh, t.z, 1.6, 1.6, 1.6), red, lamp);
+    } else if (k < 0.45 && t.kind !== 'box') bits.add(DOME, M(t.x, top, t.z, rt * 0.92, rt * 0.55, rt * 0.92), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
+    else if (k < 0.7) bits.add(BAND, M(t.x, top - 3, t.z, rt + 0.4, 1, rt + 0.4), nc, lamp);
+    else {
+      bits.add(BOX, M(t.x + (R() - 0.5) * rt * 0.4, top, t.z + (R() - 0.5) * rt * 0.4, rt * 0.7, 4 + R() * 4, rt * 0.7), _c.copy(out).multiplyScalar(0.8), [seed, 0, 0]);
+      if (t.h > 110) bits.add(BOX, M(t.x, top + 9, t.z, 1.2, 1.2, 1.2), red, lamp);
     }
   });
   // The bridge: towers, the deck, cables hung with lights.

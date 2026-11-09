@@ -117,7 +117,8 @@ class Rooms {
       if (i < 1 || i > 8) return;
       const peer = ws.room.peers.get(+text.slice(0, i));
       const out = this.checkPlayers(ws, text.slice(i + 1));
-      if (peer && out !== null) this.send(peer, out);
+      // What starts with ! is the server's own word to a player (closed, promote): a host can't send that.
+      if (peer && out !== null && out[0] !== '!') this.send(peer, out);
       this.watch(ws, text.slice(i + 1));
     } else if (ws.role === 'peer') {
       const out = this.checkPlayers(ws, text);
@@ -142,7 +143,8 @@ class Rooms {
     const now = Date.now();
     if (!host && m.k === 'info' && now - ws.lookAt < 200) return null;
     ws.lookAt = now;
-    const me = host ? m.players.find((p) => p && p.slot === 0) : m;
+    // The host's own line is the one without an id (it used to be slot 0, until hosts could change mid climb).
+    const me = host ? m.players.find((p) => p && p.id === undefined) : m;
     if (ws.userId && me && me.look && !this.ownsLook(ws.userId, me.look)) {
       if (!ws.lookFlag) {
         ws.lookFlag = true;
@@ -163,7 +165,8 @@ class Rooms {
     const seen = new Set();
     for (const p of players) {
       if (!p || typeof p !== 'object') continue;
-      const who = p.slot === 0 ? host : host.room.peers.get(+p.id);
+      // No id: the host's own line. An id of 0: someone not back yet after the host changed, nobody's flag.
+      const who = p.id === undefined ? host : host.room.peers.get(+p.id);
       const real = who && !seen.has(who) && (who === host || p.name === who.sentName);
       if (real) seen.add(who);
       p.role = real ? this.flagOf(who) : '';
@@ -182,7 +185,8 @@ class Rooms {
     ws.lastCheck = now;
     let m;
     try { m = JSON.parse(text); } catch (e) { return; }
-    const s = ws.role === 'host' ? m.p && m.p[0] : m.s;
+    // o says which line is the host's own once the host changed (it isn't slot 0 then).
+    const s = ws.role === 'host' ? m.p && m.p[Number.isInteger(m.o) && m.o >= 0 && m.o < 8 ? m.o : 0] : m.s;
     if (!Array.isArray(s) || s.length < 3) return;
     // The physics can blow up on a phone for a moment, and the game puts that right by itself. It gains nothing.
     if (!s.slice(0, 6).every(Number.isFinite)) return undefined;
@@ -226,6 +230,8 @@ class Rooms {
     let m;
     try { m = JSON.parse(text.slice(1)); } catch (e) { return; }
     if (!m || typeof m !== 'object') return;
+    // The ping everyone sees: straight back, nothing else happens on the way.
+    if (m.t === 'ping') { if (ws.role) this.tell(ws, { t: 'pong', c: Number.isFinite(m.c) ? m.c : 0 }); return; }
     if (!ws.role) {
       // Only one thing at a time while a password is being worked out.
       if (ws.busy) return;
@@ -284,6 +290,8 @@ class Rooms {
     const room = {
       code, proto: m.proto, name: cleanText(m.name, 28) || `${hostName}'s climb`, hostName, pub: !!m.pub, salt, hash,
       map: mapNo(m.map), diff: small(m.diff), started: false, host: ws, peers: new Map(), nextId: 1, created: Date.now(),
+      // A game that can pass the room on: when the host leaves, someone still in it runs it (handOver).
+      move: m.move === 1, closing: false,
     };
     this.rooms.set(code, room);
     this.ipRooms.set(ws.ip, mine + 1);
@@ -330,9 +338,11 @@ class Rooms {
     const room = ws.room;
     if (!room) return;
     if (ws.role === 'host') {
-      this.rooms.delete(room.code);
       const r = (this.ipRooms.get(ws.ip) || 1) - 1;
       if (r > 0) this.ipRooms.set(ws.ip, r); else this.ipRooms.delete(ws.ip);
+      // The room goes on with whoever else is in it, unless an admin closed it.
+      if (room.move && !room.closing && room.peers.size && this.rooms.get(room.code) === room) return this.handOver(room);
+      this.rooms.delete(room.code);
       for (const peer of room.peers.values()) {
         this.tell(peer, { t: 'closed', why: 'The host left the game.' });
         peer.room = null;
@@ -342,6 +352,30 @@ class Rooms {
     } else if (ws.role === 'peer') {
       if (room.peers.delete(ws.peerId)) this.tell(room.host, { t: 'peer-', id: ws.peerId });
     }
+  }
+
+  // The host left: the one who has been in the room longest runs it now, under the same code. Their phone switches over
+  // (promote), the others say hello to it again (newhost), and the climb goes on.
+  handOver(room) {
+    let next = null;
+    for (const [id, peer] of room.peers) if (peer.readyState === WebSocket.OPEN && (!next || id < next[0])) next = [id, peer];
+    if (!next) {
+      this.rooms.delete(room.code);
+      for (const peer of room.peers.values()) { peer.room = null; peer.close(1000); }
+      room.peers.clear();
+      return;
+    }
+    const [id, ws] = next;
+    room.peers.delete(id);
+    room.host = ws;
+    room.hostName = cleanText(ws.sentName, 14) || 'Climber';
+    ws.role = 'host';
+    ws.peerId = 0;
+    ws.lastPos = null;
+    ws.fast = ws.said = 0;
+    this.ipRooms.set(ws.ip, (this.ipRooms.get(ws.ip) || 0) + 1);
+    this.tell(ws, { t: 'promote', code: room.code, name: room.name, pub: room.pub, locked: !!room.hash });
+    for (const peer of room.peers.values()) this.tell(peer, { t: 'newhost' });
   }
 
   heartbeat() {
@@ -365,11 +399,14 @@ class Rooms {
   closeRoom(code, why) {
     const r = this.rooms.get(code);
     if (!r) return false;
+    // Closed for everyone: nobody takes it over.
+    r.closing = true;
+    for (const peer of r.peers.values()) this.tell(peer, { t: 'closed', why });
     this.tell(r.host, { t: 'closed', why });
     r.host.close(1000);
     return true;
   }
-  // Out of whatever rooms they are in. A host going takes the room along, the same as when a host leaves.
+  // Out of whatever rooms they are in. A host going hands the room on to someone still in it, the same as when a host leaves.
   kickUser(id, why) {
     let n = 0;
     for (const ws of [...this.sockets]) {

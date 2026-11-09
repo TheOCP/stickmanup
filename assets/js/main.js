@@ -266,7 +266,9 @@ const ui = (app.ui = {
     }
     for (const el of document.querySelectorAll('#hPlayers div')) {
       const s = +el.dataset.s, p = s === g.slot ? me : g.vis && g.vis.get(s), pl = g.s.players.get(s);
-      putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (s !== g.slot && !g.s.isHost ? '' : pl && pl.ping ? ` · ${pl.ping} ms` : '') + (s === g.slot && !g.s.isHost ? ` · ${g.s.ping} ms` : ''));
+      // Everyone's ping, the host's too: this phone's own measures itself, the others' come from the host (net.js sharePings).
+      const ms = s === g.slot ? g.s.myPing : pl && pl.ping;
+      putText(el.querySelector('small'), (p ? Math.round(p.y - 2) + ' m' : '...') + (ms ? ` · ${ms} ms` : ''));
     }
   },
   // Inside a maze: how many hearts are left.
@@ -935,8 +937,22 @@ function busy(text, cancel) {
     <button class="btn sm" data-a="back">Cancel</button></div>`, { back: cancel });
 }
 
+// This phone's own key in rooms, kept for good: a room knows it again after it left and came back, and gives back its
+// checkpoint (game.js remember). Random, so it says nothing about who it is.
+function roomKey() {
+  let k = store.get('roomKey', '');
+  if (!/^[A-Za-z0-9]{16}$/.test(k)) {
+    const c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint32Array(16));
+    k = '';
+    for (const v of r) k += c[v % c.length];
+    store.set('roomKey', k);
+  }
+  return k;
+}
+
 async function hostWith(kind, roomOpts) {
   const s = new Session('host', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken(), room: Object.assign({ map: settings.map, diff: 1 }, roomOpts) } : undefined), myColor(), myLook(), myRole());
+  s.who = roomKey();
   let cancelled = false;
   busy(kind === 'server' ? 'Opening your room...' : 'Opening an online room...', () => { cancelled = true; s.close(); hostPick(); });
   wireLobby(s);
@@ -966,7 +982,35 @@ function wireLobby(s) {
     else if (s.isHost && app.room && app.room.kind === 'server') { if (app.game && app.game.s === s) { endGame(); message('Disconnected', e); } else if (app.screen === 'lobby') { s.close(); message('Disconnected', e); } }
   });
   s.on('start', (g) => beginGame(s, g));
+  s.on('pings', () => lobbyPings(s));
+  // The host left and the room goes on (net.js): this phone runs it now, or someone else does.
+  s.on('moving', () => ui.toast('The host left. New host...', ''));
+  s.on('promoted', (room) => {
+    const info = s.roomInfo || {};
+    app.room = Object.assign({ kind: info.kind, code: info.code, name: '', pub: false, locked: !!info.locked }, room || {}, { kind: info.kind });
+    if (!app.room.code) app.room.code = info.code;
+    ui.toast('You are the host now', 'good');
+    if (app.screen === 'lobby') lobby(s);
+  });
+  s.on('newHost', (slot) => {
+    const p = s.players.get(slot);
+    ui.toast(`${p ? p.name : 'Someone'} is the host now`, 'good');
+    if (app.screen === 'lobby') lobby(s);
+  });
   s.on('closed', (why) => { cloud.checkStanding(); if (app.game && app.game.s === s) { endGame(); message('Disconnected', why); } else if (app.screen === 'lobby') { message('Disconnected', why); } else if (app.screen === 'friends' && app.lobbyFriends === s) { app.lobbyFriends = null; message('Disconnected', why); } });
+}
+
+// A player's ping for the lobby: this phone measures its own, the host shares everyone else's (net.js sharePings).
+function pingOf(s, i) {
+  const p = s.players.get(i), ms = i === s.slot ? s.myPing : p && p.ping;
+  return ms ? ms + ' ms' : '';
+}
+// New pings every two seconds, written in place so the lobby isn't drawn again under someone's finger.
+function lobbyPings(s) {
+  if (app.screen !== 'lobby' || app.lobbyS !== s) return;
+  for (const el of document.querySelectorAll('#menu [data-ping]')) putText(el, pingOf(s, +el.dataset.ping));
+  const me = document.querySelector('#menu .myping');
+  if (me) putText(me, `Ping: ${s.myPing || '...'} ms`);
 }
 
 function lobby(s) {
@@ -975,13 +1019,13 @@ function lobby(s) {
   app.screen = 'lobby';
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
-  if (!host) info = `<div class="kind">Connected</div><p>Ping: ${s.ping || '...'} ms</p>`;
+  if (!host) info = `<div class="kind">Connected</div><p class="myping">Ping: ${s.myPing || '...'} ms</p>`;
   else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   else info = `<div class="kind">Online room</div><div class="code">${esc(room.code)}</div>${canShare() ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
   const slots = [];
   for (let i = 0; i < MAX_PLAYERS; i++) {
     const p = s.players.get(i);
-    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)"><span class="frname">${esc(p.name)}</span>${i === s.slot ? ' <span>(you)</span>' : ''}${i === 0 ? ' · <span>host</span>' : ''}</span>${roleTag(p)}<small>${p.ping ? p.ping + ' ms' : ''}</small></div>` : `<div class="slot empty">Open slot</div>`);
+    slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)"><span class="frname">${esc(p.name)}</span>${i === s.slot ? ' <span>(you)</span>' : ''}${i === s.hostSlot ? ' · <span>host</span>' : ''}</span>${roleTag(p)}<small data-ping="${i}">${pingOf(s, i)}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
   const lmapNow = resume ? mp.map || 0 : s.lobby.map || 0;
@@ -1018,7 +1062,7 @@ function lobby(s) {
       const save = s.lobby.resume && mp;
       const pos = {};
       if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: performance.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0,
+      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: s.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0,
         doors: save ? save.doors : null, pos: save ? pos : null });
     },
   });
@@ -1057,6 +1101,7 @@ function joinScreen(tab) {
 
 function joinWith(kind, target) {
   const s = new Session('client', settings.name, makeLink(kind, kind === 'server' ? { url: cloud.wsUrl(), token: cloud.roomToken() } : undefined), myColor(), myLook(), myRole());
+  s.who = roomKey();
   s.roomInfo = kind === 'server' ? { kind, code: target.code, locked: !!target.pass } : { kind, code: target, locked: false };
   s.roomPass = kind === 'server' ? String(target.pass || '') : '';
   const back = app.joinBack;
@@ -1947,7 +1992,7 @@ function pause() {
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
     <div class="row"><button class="btn sm" data-a="friends">Friends</button><button class="btn sm" data-a="ghosts">Ghosts</button><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
     ${app.traitor.on ? `<button class="btn" data-a="traitor"><b>Traitor mode</b><small>${app.traitor.over ? 'It is decided' : 'Clues and calling a vote'}</small></button>` : ''}
-    <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and end the game' : 'Leave the game') : 'Save and quit'}</b></button>
+    <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and leave' : 'Leave the game') : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
     ${padKeys()}</div>`, {
     back: resume,
@@ -2008,7 +2053,7 @@ function myRoom() {
 }
 
 // Off to someone else's climb: an invite, or Join or Watch on the Friends screen. A climb alone is saved to carry on later. A
-// game or lobby with others asks first, because when it is mine it ends for everyone in it.
+// game or lobby with others asks first, because leaving it is for good (the room goes on without this phone).
 function leaveThen(go, stay) {
   const g = app.game, lob = !g && app.lobbyS && (app.screen === 'lobby' || app.lobbyFriends) ? app.lobbyS : null;
   const away = () => {
@@ -2023,7 +2068,7 @@ function leaveThen(go, stay) {
   app.screen = 'msg';
   if (g) { app.input.enabled = false; app.input.reset(); }
   show(`<div class="panel" style="width:min(440px,100%)">${header(g ? 'Leave this game?' : 'Leave this lobby?')}
-    <p class="sub">${s.isHost ? (g ? 'You are the host, so it ends for everyone in it. The climb is saved.' : 'You are the host, so it ends for everyone in it.') : 'The others carry on without you.'}</p>
+    <p class="sub">${s.isHost && g ? 'The others carry on without you. The climb is saved.' : 'The others carry on without you.'}</p>
     <div class="row"><button class="btn sm" data-a="back">Stay</button><button class="btn primary sm" data-a="go">Leave</button></div></div>`, { back, go: away });
 }
 

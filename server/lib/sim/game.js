@@ -18,6 +18,8 @@ import { myLook } from './profile.js';
 // Near enough to count as having got to the top. The rerun (server/lib/verify-worker.mjs, case 'win') asks the same.
 const nearTop = (b, L, rope) => Math.hypot(b.x, b.z) < L.summit.r + rope * 3 && b.y > L.top - rope * 4;
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
+// A phone's key in a room (net.js WHO): who left with which checkpoint.
+const WHO_KEY = /^[A-Za-z0-9]{8,24}$/;
 // Flying (setFlying): metres a second, how much faster with the fast button, and how far out from the middle of the map.
 const FLY_SPEED = 14, FLY_FAST = 4, FLY_ROOM = 600;
 // Where SHIELD does something: Storm Tower (it takes a lightning strike) and the Wild Forest (it drives the bee swarm off).
@@ -87,6 +89,11 @@ export class Game {
       if (this.pcp[this.slot] !== undefined) this.cp = this.pcp[this.slot];
       this.pcp[this.slot] = this.cp;
     }
+    // The team's checkpoint as the host last said it, kept even while catching up: needed if this phone ever runs the room.
+    this.teamCp = this.cp;
+    // Who left the room, by their key (net.js who), and the checkpoint they had: they get it back if they come again.
+    this.left = {};
+    this.addLeft(g.left);
     this.me = new Body();
     const p = g.pos && g.pos[this.slot] ? g.pos[this.slot] : this.spawnPos(this.cp, this.slot);
     this.me.spawn(p[0], p[1], p[2]);
@@ -190,12 +197,19 @@ export class Game {
       if (lobbyRoster) lobbyRoster(slot, joined);
     });
     session.on('S', (m) => {
+      if (m.cp !== undefined) this.teamCp = m.cp;
       if (m.f !== undefined) this.falls = m.f;
       if (m.cp !== undefined && m.cp !== this.cp && !this.loose.has(this.slot)) { if (this.rec) this.rec.act('m', m.cp); this.cp = m.cp; app.view.setCheckpoints(this.cpl, this.cp); }
       if (m.mz !== undefined && m.mz !== this.mz) this.onEvent({ k: 'maze', v: m.mz });
       if (m.jp) this.jumpNet(m.jp);
     });
     session.on('snapshot', (slot) => this.snapshot(slot));
+    // Someone leaving, coming back to a new host, and this phone taking over as host (net.js).
+    session.on('gone', (p) => this.remember(p));
+    session.on('back', (slot, cp) => this.welcomeBack(slot, cp));
+    session.on('myCp', () => this.cp);
+    const lobbyPromoted = session.h.promoted;
+    session.on('promoted', (room) => { this.takeOver(); if (lobbyPromoted) lobbyPromoted(room); });
     // Names and colours can change mid-game (Settings): redraw stickmen, cords and name tags.
     const lobbyH = session.h.lobby;
     session.on('lobby', () => { this.refreshPlayers(); if (lobbyH) lobbyH(); });
@@ -204,7 +218,8 @@ export class Game {
     app.view.setCheckpoints(this.cpl, this.cp);
     // From here on the climb is written down, starting with everything it started from.
     this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t: this.simT, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
-    if (this.loose.has(this.slot)) app.ui.toast('You start at the bottom. The cord ties on when you reach your team.', '');
+    if (g.back && this.cp > 0) app.ui.toast(this.noCord ? 'Back at your checkpoint' : 'Back at your checkpoint. The cord ties on when you reach your team.', 'good');
+    else if (this.loose.has(this.slot)) app.ui.toast('You start at the bottom. The cord ties on when you reach your team.', '');
   }
 
   // Climb time. In a team game it follows the host's clock, but read once a frame and moved on smoothly (tick): read
@@ -243,10 +258,58 @@ export class Game {
     for (const [k, v] of this.storm.stun) stuns.push([k, v.from, v.until]);
     // Whoever joins starts at the start of the map, not next to the host. Without the cord they have their own checkpoints
     // anyway. On a tied team they climb on their own until they reach the others (catchUp): a cord that long would drag
-    // them all over the map.
-    this.pcp[slot] = 0;
+    // them all over the map. Someone who was here before and left starts again from the checkpoint they had then.
+    const p = this.s.players.get(slot), was = p && p.who && Object.prototype.hasOwnProperty.call(this.left, p.who) ? this.left[p.who] : 0;
+    const at = Number.isInteger(was) && this.L.cps[was] ? was : 0;
+    this.pcp[slot] = at;
     if (!this.noCord) this.setLoose([...this.loose, slot]);
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: 0, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden] };
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: at, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden], left: this.left, back: at > 0 };
+  }
+
+  // The checkpoints of those who left, from the host (event 'left', or with the snapshot). At most a few dozen.
+  addLeft(m) {
+    if (!m || typeof m !== 'object') return;
+    for (const k of Object.keys(m).slice(0, 40)) {
+      const i = m[k];
+      if (!WHO_KEY.test(k) || !Number.isInteger(i) || !this.L.cps[i]) continue;
+      delete this.left[k];
+      this.left[k] = i;
+    }
+    const ks = Object.keys(this.left);
+    for (let n = 0; n < ks.length - 40; n++) delete this.left[ks[n]];
+  }
+
+  // Someone left the room (net.js dropSlot): the room keeps the checkpoint they had, and everyone hears it, so whoever runs the
+  // room next knows it too.
+  remember(p) {
+    if (!this.s.isHost || this.solo || !p || !p.who || p.slot === this.slot) return;
+    const i = this.noCord || this.loose.has(p.slot) ? this.pcp[p.slot] || 0 : this.cp;
+    this.s.toAll({ k: 'left', m: { [p.who]: i } });
+  }
+
+  // Back with this phone after the host changed: their own checkpoint (they know it best), and what they may have missed.
+  welcomeBack(slot, cp) {
+    if (!this.s.isHost || this.solo) return;
+    if ((this.noCord || this.loose.has(slot)) && Number.isInteger(cp) && this.L.cps[cp]) this.pcp[slot] = cp;
+    if (!this.noCord) this.setLoose([...this.loose]);
+    this.s.toSlot(slot, { k: 'hide', s: [...this.hidden] });
+    for (const i of this.doors) this.s.toSlot(slot, { k: 'door', i });
+    if (Object.keys(this.left).length) this.s.toSlot(slot, { k: 'left', m: this.left });
+  }
+
+  // The host left and this phone runs the climb from here (net.js becomeHost). It heard everything a host decides as it
+  // happened, so it just carries on. Catching up on a tied team its own checkpoint was its own; the host holds the team's.
+  takeOver() {
+    if (this.solo) return;
+    if (!this.noCord && this.loose.has(this.slot)) {
+      this.pcp[this.slot] = this.cp;
+      this.cp = Number.isInteger(this.teamCp) && this.L.cps[this.teamCp] ? this.teamCp : 0;
+    }
+    this.pcp[this.slot] = this.noCord ? this.cp : this.pcp[this.slot] || 0;
+    this.locks = {};
+    this.catchT = 0;
+    this.saveAcc = 0;
+    if (this.app.traitor && this.app.traitor.takeOver) this.app.traitor.takeOver(this);
   }
 
   // The host says who isn't on the cord yet. The cord only goes between the others.
@@ -1643,6 +1706,8 @@ export class Game {
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
+        // Everyone keeps track of everyone's checkpoint, should they ever run the room (takeOver).
+        if (e.why === 'reset' && Number.isInteger(e.only)) this.pcp[e.only] = 0;
         if (e.mz !== undefined && e.mz !== this.mz) this.setMaze(e.mz);
         if (e.only !== null && e.only !== undefined && e.only !== this.slot) {
           // Someone else went back (no cord). Forget their old track so they don't glide across the map.
@@ -1688,6 +1753,10 @@ export class Game {
         break;
       }
       case 'cp':
+        if (Number.isInteger(e.i) && this.L.cps[e.i]) {
+          if (Number.isInteger(e.slot)) this.pcp[e.slot] = e.i;
+          else if (e.i > this.teamCp) this.teamCp = e.i;
+        }
         if (e.slot !== undefined && e.slot !== this.slot) {
           // No cord: someone else's checkpoint, not mine.
           const pl = this.s.players.get(e.slot), r = this.robots.get(e.slot);
@@ -1719,6 +1788,7 @@ export class Game {
         if (this.vis) for (const s of this.hidden) this.vis.delete(s);
         this.syncRoster();
         break;
+      case 'left': this.addLeft(e.m); break;
       case 'sling': if (e.to === this.slot) this.me.fling(e.v[0], e.v[1], e.v[2]); break;
       case 'maze': if (e.v !== this.mz) this.setMaze(e.v); break;
       case 'crumble': this.crumble(e.i); break;

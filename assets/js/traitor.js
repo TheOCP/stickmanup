@@ -50,13 +50,20 @@ export class Traitor {
     this.draw();
   }
   end() { this.reset(); this.draw(); }
+  // The host left and this phone runs the climb now (game.js takeOver). Who the traitor was left with the old host, so a new one
+  // is picked once the others are back with this phone. Already decided, it stays decided.
+  takeOver(g) {
+    if (!this.on || g !== this.g || this.host) return;
+    const T = g.time;
+    this.host = { slot: -1, at: T + 8, picked: this.over, again: !this.over, told: new Set(), wrong: this.wrong | 0, caught: false, win: this.over ? 'over' : '', vote: null, voteCd: 0, cd: {}, last: -1e9, start: T, jam: 0 };
+  }
   name(g, s) { const p = g.s.players.get(s); return p ? p.name : 'Someone'; }
   // Is the checkpoint jammed right now (the host's game.js asks before giving one).
   jammed(T) { return !!this.host && !this.host.win && T < this.host.jam; }
   // Who it was, for the end of the climb (game.js sends it with 'win').
   winInfo(g) {
     const h = this.host;
-    if (!h || !h.picked) return undefined;
+    if (!h || !h.picked || h.slot < 0) return undefined;
     return { s: h.slot, name: this.name(g, h.slot), win: h.win || 'traitor', caught: h.caught };
   }
 
@@ -80,6 +87,7 @@ export class Traitor {
       const r = crypto.getRandomValues(new Uint32Array(1))[0];
       h.slot = list[r % list.length];
       for (const s of g.s.players.keys()) h.told.add(s);
+      if (h.again) g.s.toAll({ k: 'tr', a: 'again' });
       g.s.toAll({ k: 'tr', a: 'on', n: list.length });
       g.s.toSlot(h.slot, { k: 'tr', a: 'you' });
       return;
@@ -185,6 +193,15 @@ export class Traitor {
         if (Array.isArray(e.clues)) this.clues = e.clues.filter((c) => typeof c === 'string').slice(-12).map((c) => c.slice(0, 160));
         if (Number.isInteger(e.wrong)) this.wrong = e.wrong;
         this.say(e.late ? 'This team has a traitor' : 'There is a traitor among you', 'Watch what happens, find the clues and vote them out before the top.', 'bad');
+        break;
+      // A new host, so a new traitor: whoever it was is just a climber again.
+      case 'again':
+        this.me = false;
+        this.vote = null;
+        this.cool = {};
+        this.coolAll = 0;
+        ui.toast('New host, new traitor', 'bad');
+        this.draw();
         break;
       case 'you':
         this.me = true;

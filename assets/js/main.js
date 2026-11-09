@@ -25,6 +25,7 @@ import * as live from './live.js';
 import { initUpdater } from './updater.js';
 import { initFriends, openFriends, friendBadge, endSpectate, watchPlayer, joinPlayerRoom } from './friends.js';
 import { initTerminal, openTerminal, termSay, close as closeTerminal, seen as termSeen } from './terminal.js';
+import { initChat, chatRoom, chatGot, openChat, closeChat, toggleChat, chatUnread } from './chat.js';
 import { Game, SHIELD_MAPS } from './game.js';
 import { COLORS, makePool } from './robot.js';
 import { css } from './colors.js';
@@ -58,7 +59,7 @@ const signInWith = (info) => (IS_WEB && !info.webReturn ? [] : info.providers);
 // sharp 0..1, aa = edge anti-aliasing, glow 0..1.5, cap = frame rate. Controls: btnSize, btnAlpha, lefty, btnPos.
 const settings = Object.assign({ quality: !N && !ON_PC ? 'low' : 'high', sens: 1, invert: false, music: 0.5, sfx: 0.8, haptics: true, fps: false, name: '', gfxSafe: 0, map: 1,
   res: 0.75, autoRes: true, autoLvl: 0, deadL: 0.16, deadR: 0.16, sharp: 0.35, aa: true, glow: 1, cap: 60, btnSize: 1, btnAlpha: 0.9, lefty: false, fpsPos: null, btnPos: null, aimSens: 1,
-  camFollow: 1, aimHelp: 0.5, bright: 0.5, pcRes: 'auto', tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
+  camFollow: 1, aimHelp: 0.5, bright: 0.5, pcRes: 'auto', tips: true, nav: true, relicMark: true, graffiti: true, cpEmote: '', ghosts: true, ghostMe: true, chatMute: false, chatBlock: [], ghostHide: [], color: 0, vsync: true, lang: 'auto', rules: { cps: -1, haz: -1, rope: -1 } }, store.get('settings', {}));
 // On a PC it goes from 60 to 144, and starts at the top: the screen is the real limit anyway.
 if (ON_PC && !settings.pcFps) { settings.pcFps = true; settings.cap = 144; }
 if (!(ON_PC ? [60, 90, 120, 144] : [30, 60, 90, 120]).includes(settings.cap)) settings.cap = ON_PC ? 144 : 60;
@@ -471,23 +472,24 @@ const ui = (app.ui = {
     const B = this.bubbles;
     if (B && B.size) {
       const now = performance.now();
-      for (const [slot, b] of B) {
-        const o = slot === g.slot ? g.me : g.vis && g.vis.get(slot);
-        if (now > b.until || !o || !b.el.isConnected) { b.el.remove(); B.delete(slot); continue; }
-        v.set(o.x, o.y + 1.6, o.z).project(cam);
+      for (const [key, b] of B) {
+        const slot = b.s, o = slot === g.slot ? g.me : g.vis && g.vis.get(slot);
+        if (now > b.until || !o || !b.el.isConnected) { b.el.remove(); B.delete(key); continue; }
+        v.set(o.x, o.y + b.up, o.z).project(cam);
         b.el.style.display = v.z > 1 ? 'none' : '';
         putXY(b.el, ((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H);
       }
     }
   },
-  bubble(slot, icon) {
-    const B = this.bubbles || (this.bubbles = new Map()), old = B.get(slot);
+  // An emoji over whoever did an emote, or (text) what they just said in the chat, a little higher and longer.
+  bubble(slot, icon, text) {
+    const B = this.bubbles || (this.bubbles = new Map()), key = text ? 'c' + slot : slot, old = B.get(key);
     if (old) old.el.remove();
     const el = document.createElement('span');
-    el.className = 'emoB';
+    el.className = text ? 'chatB' : 'emoB';
     el.textContent = icon;
     $('#tags').appendChild(el);
-    B.set(slot, { el, until: performance.now() + 2000 });
+    B.set(key, { el, s: slot, up: text ? 2.0 : 1.6, until: performance.now() + (text ? 5000 : 2000) });
   },
 });
 
@@ -824,6 +826,7 @@ function lockedIf(ban, h) {
 
 function title() {
   app.screen = 'title';
+  chatRoom(null);
   const save = validSave('save.solo'), best = bestOf(settings.map), M = mapDef(settings.map), acct = cloud.account(), today = mapDef(todayMap());
   loadMapSoon(settings.map);
   // The first time, and whenever the terms have changed, ask before anything else.
@@ -983,6 +986,7 @@ function wireLobby(s) {
   });
   s.on('start', (g) => beginGame(s, g));
   s.on('pings', () => lobbyPings(s));
+  s.on('chat', (m) => chatGot(s, m));
   // The host left and the room goes on (net.js): this phone runs it now, or someone else does.
   s.on('moving', () => ui.toast('The host left. New host...', ''));
   s.on('promoted', (room) => {
@@ -1016,6 +1020,7 @@ function lobbyPings(s) {
 function lobby(s) {
   if (cloud.banned()) { s.close(); return title(); }
   app.lobbyS = s;
+  chatRoom(s);
   app.screen = 'lobby';
   const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
   let info;
@@ -1032,7 +1037,7 @@ function lobby(s) {
   loadMapSoon(lmapNow);
   show(`<div class="panel">${header(host ? 'Your game' : 'Joined game')}
     <div class="lobby">
-      <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div>${cloud.account() && s.players.size < MAX_PLAYERS ? '<button class="btn sm" data-a="invite" style="margin-top:10px">Invite friends</button>' : ''}</div>
+      <div><div class="room">${info}</div><div class="slots">${slots.join('')}</div><div class="row lobrow"><button class="btn sm chatb" data-a="chat">💬 Chat<em class="chn" data-chatn>${chatUnread() ? (chatUnread() > 9 ? '9+' : chatUnread()) : ''}</em></button>${cloud.account() && s.players.size < MAX_PLAYERS ? '<button class="btn sm" data-a="invite">Invite friends</button>' : ''}</div></div>
       <div>
         <div class="kind" style="margin-bottom:6px">Map</div>
         <div class="dsel mrow ${host && !resume ? '' : 'ro'}" style="margin-bottom:10px">${MAP_ORDER.map((i) => MAPS[i]).map((m) => `<button data-a="lmap" data-m="${m.id}" class="${lmapNow === m.id ? 'sel' : ''}"><b>${m.name}</b></button>`).join('')}</div>
@@ -1057,6 +1062,7 @@ function lobby(s) {
     resume: (b) => s.setLobby({ resume: b.checked }),
     nocord: (b) => { if (host) s.setLobby({ noCord: b.checked }); },
     invite: () => { app.lobbyFriends = s; openFriends(() => { app.lobbyFriends = null; lobby(s); }); },
+    chat: openChat,
     rule: (b) => { if (host && !resume) s.setLobby({ rules: Object.assign({}, s.lobby.rules, { [b.dataset.k]: +b.dataset.v }) }); },
     start: () => {
       const save = s.lobby.resume && mp;
@@ -1947,6 +1953,8 @@ function beginGame(s, g) {
   app.ghostRec = new GhostRec();
   loadGhosts(app.game);
   app.traitor.begin(app.game);
+  chatRoom(app.game.solo ? null : s);
+  $('#hChat').hidden = app.game.solo;
   applyVanish(live.staff());
   // The climbers, ghosts and the climb's own effects are in now: their shaders too.
   app.renderer.warmShaders();
@@ -1961,6 +1969,8 @@ function endGame() {
   closeEmotes();
   if (app.game && !app.game.won) ghostEnd(app.game, false);
   if (app.game) { app.game.destroy(); app.game = null; }
+  chatRoom(null);
+  $('#hChat').hidden = true;
   app.graffiti.clear();
   app.ghosts.clear();
   $('#hGhost').hidden = true;
@@ -2277,6 +2287,7 @@ function boot() {
   $('#hPause').addEventListener('click', () => { app.sound.ui(); pause(); });
   app.input.onEmote = () => toggleEmotes(false);
   $('#hEmote').addEventListener('click', () => toggleEmotes(false));
+  $('#hChat').addEventListener('click', toggleChat);
   $('#emoteMenu').addEventListener('click', (e) => {
     // The checkpoint emote: the next one of yours, then none.
     if (e.target.closest('[data-cpe]')) {
@@ -2329,6 +2340,17 @@ function boot() {
   if (N && N.insets) { const i = JSON.parse(N.insets()); window.SMU_insets(i.l, i.t, i.r, i.b); }
   cloud.setTestServer(settings.server);
   cloud.start();
+  initChat({
+    app, settings, save: saveSettings, esc, roleTag, pc: ON_PC,
+    color: (c, slot) => css(c ?? COLORS[slot % 4]),
+    sound: () => { if (app.sound && app.sound.chat) app.sound.chat(); },
+    // Over the head of whoever said it, on the climb.
+    bubble: (slot, text) => { if (app.game && !app.game.solo && app.screen === 'game') ui.bubble(slot, text, true); },
+    toast: (t, k) => ui.toast(t, k),
+    // Vanished means nobody may know you are there.
+    canSay: () => { const st = live.staff(); if (app.game && app.game.flying && st && st.vanished) { ui.toast('You are vanished', 'bad'); return false; } return true; },
+    opened: () => { closeEmotes(); if (app.game) app.input.reset(); },
+  });
   initFriends({ app, show, esc, ui, header, busy, joinWith, roomPassword, loadMap, settings, N, account: accountScreen, title, leaveThen, myRoom, canShare, share: shareText, team: live.staff, openTerminal });
   initTerminal({
     esc,

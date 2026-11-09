@@ -9,6 +9,16 @@ export const PROTO = LEVEL_VERSION * 100 + 3;
 // A phone's key in a room (main.js roomKey), and how long the others have to come back to a new host.
 const WHO = /^[A-Za-z0-9]{8,24}$/;
 const MOVE_WAIT = 20000;
+// The chat (chat.js): how much each phone keeps, how much a newcomer gets to read back, and how long one message may be.
+const CHAT_KEEP = 60, CHAT_JOIN = 40, CHAT_LEN = 140;
+// No line breaks, no control characters, no direction tricks that turn the text around.
+const cleanSay = (t) => Array.from(String(t == null ? '' : t).slice(0, CHAT_LEN * 4).replace(/[\u0000-\u001f\u007f-\u009f\u200b\u200c\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, CHAT_LEN).join('');
+function cleanChat(m) {
+  if (!m || typeof m !== 'object') return null;
+  const t = cleanSay(m.t);
+  if (!t) return null;
+  return { s: slotOk(m.s), n: String(m.n || 'Climber').slice(0, 14), c: validColor(m.c), w: typeof m.w === 'string' && WHO.test(m.w) ? m.w : '', t, at: Number.isFinite(m.at) ? m.at : Date.now() };
+}
 
 // Whoever hosts a public room can be a complete stranger, and so can whoever joins yours. Nothing they send is believed:
 // whatever can reach the screen or your records is checked here, the one place every way of playing passes through.
@@ -305,6 +315,8 @@ export class Session {
     // This phone's own key (main.js), so a room knows someone again who left and came back (game.js remember).
     this.who = '';
     this.moving = false;
+    // What was said in the room, the last CHAT_KEEP (chat.js). Every phone keeps it, so a new host has it too.
+    this.chat = [];
     if (mode !== 'client') this.players.set(0, this.player(0, name, null, this.color, this.look, this.role));
     if (mode === 'host') this.pgT = setInterval(() => this.sharePings(), 2000);
   }
@@ -423,7 +435,7 @@ export class Session {
             break;
           }
           // Still in the lobby there while the climb started here: in they come, like anyone joining.
-          this.send(id, { k: 'welcome', slot: was.slot, hs: this.slot, players: this.list(), lobby: this.lobby, game: this.emitGet('snapshot', was.slot) });
+          this.send(id, { k: 'welcome', slot: was.slot, hs: this.slot, players: this.list(), lobby: this.lobby, game: this.emitGet('snapshot', was.slot), chat: this.chat.slice(-CHAT_JOIN) });
           this.sendLobby();
           break;
         }
@@ -431,7 +443,7 @@ export class Session {
         for (let i = 0; i < MAX_PLAYERS; i++) if (!this.players.has(i)) { slot = i; break; }
         if (slot < 0) return this.deny(id, 'This game is full (4 robots).');
         this.players.set(slot, Object.assign(this.player(slot, name, id, validColor(m.color), cleanLook(m.look), this.vouch(m.role)), { who, pid }));
-        this.send(id, { k: 'welcome', slot, hs: this.slot, players: this.list(), lobby: this.lobby, game: this.game ? this.emitGet('snapshot', slot) : null });
+        this.send(id, { k: 'welcome', slot, hs: this.slot, players: this.list(), lobby: this.lobby, game: this.game ? this.emitGet('snapshot', slot) : null, chat: this.chat.slice(-CHAT_JOIN) });
         this.sendLobby();
         this.emit('roster', slot, true);
         break;
@@ -446,6 +458,7 @@ export class Session {
         break;
       case 'st': if (p) { if (Number.isFinite(m.r) && m.r > 0) p.ping = Math.round(m.r); this.push(p, this.emitGet('gameTime'), m.s); } break;
       case 'ev': if (p && m.e && typeof m.e === 'object') this.emit('hostEvent', m.e, p.slot); break;
+      case 'chat': if (p) this.hostChat(p, m.t); break;
       case 'bye': this.drop(id); break;
     }
   }
@@ -499,6 +512,33 @@ export class Session {
     if (!this.link) return;
     const s = JSON.stringify(o);
     for (const p of this.players.values()) if (p.id) this.link.send(p.id, s);
+  }
+
+  // ----- chat (chat.js) -----
+  // Through the host like everything else. The host writes who said it, so nobody can speak as someone else.
+  say(text) {
+    const t = cleanSay(text);
+    if (!t) return;
+    if (this.isHost) this.hostChat(this.players.get(this.slot), t);
+    else this.send(this.hostId, { k: 'chat', t });
+  }
+  hostChat(p, text) {
+    const t = cleanSay(text);
+    if (!p || p.wait || !t) return;
+    // A few at once, then about one a second: nobody floods the room.
+    const now = Date.now();
+    p.chatB = Math.min(5, (p.chatB ?? 5) + (now - (p.chatT || now)) / 1000);
+    p.chatT = now;
+    if (p.chatB < 1) return;
+    p.chatB -= 1;
+    const m = { s: p.slot, n: p.name, c: p.color, w: (p.slot === this.slot ? this.who : p.who) || '', t, at: now };
+    this.addChat(m);
+    this.broadcast({ k: 'chat', m });
+    this.emit('chat', m);
+  }
+  addChat(m) {
+    this.chat.push(m);
+    if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
   }
 
   // Game events: clients ask the host, the host decides and tells everyone.
@@ -627,9 +667,16 @@ export class Session {
         this.lobby = cleanLobby(m.lobby);
         m.game = cleanGame(m.game);
         if (m.game) this.game = m.game;
+        // What was said before this phone came in.
+        if (Array.isArray(m.chat)) this.chat = m.chat.slice(-CHAT_KEEP).map(cleanChat).filter(Boolean);
         this.emit('welcome', m);
         break;
       case 'deny': this.emit('error', m.why); break;
+      case 'chat': {
+        const c = cleanChat(m.m);
+        if (c) { this.addChat(c); this.emit('chat', c); }
+        break;
+      }
       case 'pg':
         if (m.p && typeof m.p === 'object') for (const k in m.p) { const q = this.players.get(+k); if (q && +k !== this.slot) q.ping = Math.min(99999, count(m.p[k])); }
         this.emit('pings');

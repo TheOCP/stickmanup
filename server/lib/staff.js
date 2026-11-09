@@ -4,7 +4,8 @@
 //
 // A permission is the name of a command (ban, givecoins, watch...), a group of commands (@bans, @coins...), or * for all.
 // Ranks keep it in order: nobody can act on someone of the same rank or higher, or hand out a role, a rank or a permission
-// they don't have themselves. The owner role can always do everything, and the people on the Discord bot's list count as owners.
+// they don't have themselves. The owner role can always do everything, to anyone, other owners too, and the people on the
+// Discord bot's list count as owners.
 //
 // Vanish lives here too: a vanished player looks offline to their friends, and nobody is told when they watch.
 const { GROUPS, COMMANDS } = require('./botcommands');
@@ -184,8 +185,8 @@ class Staff {
     if (role && role.perms.length) return true;
     return this.userPerms(u.id).some((r) => r.allow);
   }
-  // Higher ranks can act on lower ones, and the owner on everyone else.
-  outranks(a, b) { return this.isOwner(a) ? !this.isOwner(b) || a.id === b.id : this.rankOf(a) > this.rankOf(b); }
+  // Higher ranks can act on lower ones. An owner on anyone at all, other owners included.
+  outranks(a, b) { return this.isOwner(a) || this.rankOf(a) > this.rankOf(b); }
 
   // ---------------------------------------------------------------- vanish
   // The time it started, or 0.

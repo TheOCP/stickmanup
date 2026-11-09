@@ -221,6 +221,8 @@ export class Sound {
   walljump() { this.tone(360, 820, 0.12, 'triangle', 0.24); this.noiseHit('highpass', 2200, 0.05, 0.16); }
   dash() { this.tone(900, 240, 0.16, 'sawtooth', 0.09); this.noiseHit('bandpass', 1600, 0.17, 0.3); }
   emote() { this.tone(660, 990, 0.09, 'triangle', 0.1); }
+  // A soft little two note pop for a chat message.
+  chat() { this.tone(988, 1319, 0.07, 'sine', 0.1); this.tone(1319, 1760, 0.09, 'sine', 0.08, 0.08); }
   // A can shaken twice, then the hiss of the paint.
   spray() { this.tone(2400, 2300, 0.03, 'square', 0.04); this.tone(2400, 2300, 0.03, 'square', 0.04, 0.09); this.noiseHit('highpass', 4200, 0.55, 0.32, 0.2); this.noiseHit('bandpass', 2600, 0.4, 0.15, 0.24); }
   land(v) { const k = Math.min(1, v / 22); this.tone(150, 50, 0.14, 'sine', 0.15 + k * 0.45); if (k > 0.5) this.noiseHit('lowpass', 500, 0.2, k * 0.4); }

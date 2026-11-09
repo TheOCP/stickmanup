@@ -1,6 +1,6 @@
 {
   "name": "stickmanup-server",
-  "version": "1.6.35",
+  "version": "1.6.36",
   "description": "Rooms, relay, accounts and saves for StickManUp",
   "private": true,
   "license": "MIT",

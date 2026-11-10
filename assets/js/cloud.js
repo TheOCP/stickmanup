@@ -7,6 +7,7 @@
 import { store } from './util.js';
 import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun, lookFromAccount, lookStamp } from './profile.js';
 import { DIFFS } from './level.js';
+import { dropTeamSavesBefore } from './saves.js';
 import { itemKey, setRoleTable } from './skins.js';
 import { Recorder, toBase64, fromBase64, deflate } from './replay.js';
 import { SIM_BUILD } from './simbuild.js';
@@ -673,10 +674,9 @@ export function checkpointReset(at) {
   const key = 'cpReset.' + acct.user.id;
   if (at <= store.get(key, 0)) return;
   store.set(key, at);
-  for (const k of ['save.solo', 'save.mp']) {
-    const s = store.get(k, null);
-    if (s && !(s.run && s.run.when > at)) store.del(k);
-  }
+  const s = store.get('save.solo', null);
+  if (s && !(s.run && s.run.when > at)) store.del('save.solo');
+  dropTeamSavesBefore(at);
   emit('cpReset', at);
 }
 

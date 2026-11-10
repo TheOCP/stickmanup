@@ -4,7 +4,8 @@
 // phone's own key (net.js who), not by a name anyone could take.
 const EMOJI = ['😀', '😂', '🥰', '😎', '🥳', '😭', '😱', '😴', '👍', '👋', '🙏', '💪', '❤️', '🔥', '⭐', '🎉', '💀', '🐢'];
 const QUICK = ['Hi! 👋', 'Wait for me!', 'Go go go!', 'Nice one!', 'Help!', 'Sorry!', 'GG 🎉'];
-const FEED_MS = 8000, FEED_MAX = 4, BLOCK_MAX = 100;
+// Pop ups: how long each stays before it fades out (style.css .chpop.out), and how many at once.
+const FEED_MS = 7000, FEED_FADE = 1300, FEED_MAX = 4, BLOCK_MAX = 100;
 const isText = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
 let o = null, el = null, feed = null, open = false, room = null, unread = 0;
@@ -152,7 +153,8 @@ function send(text) {
   if (o.pc) input.focus();
 }
 
-// Pops up on the left for a few seconds while the chat is closed. Never in the way of a tap.
+// Pops up at the bottom left for a few seconds while the chat is closed, then fades away. On unless the chat is muted (🔔).
+// Never in the way of a tap.
 function pop(m) {
   if (!feed) { feed = document.createElement('div'); feed.id = 'chatFeed'; document.body.appendChild(feed); }
   const d = document.createElement('div');
@@ -161,7 +163,7 @@ function pop(m) {
   d.innerHTML = `<b class="chname">${o.esc(m.n)}</b><span class="chtx">${o.esc(m.t)}</span>`;
   feed.appendChild(d);
   while (feed.children.length > FEED_MAX) feed.firstChild.remove();
-  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 450); }, FEED_MS);
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), FEED_FADE); }, FEED_MS);
 }
 
 export function openChat() {

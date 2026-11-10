@@ -528,4 +528,5 @@ export default [
   ["Help!", "¡Ayuda!", "Socorro!", "À l'aide !", "Hilfe!", "Помогите!", "Yardım!"],
   ["Sorry!", "¡Perdón!", "Desculpa!", "Pardon !", "Sorry!", "Прости!", "Pardon!"],
   ["GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉"],
+  ["Continuing a saved climb", "Continuando una escalada guardada", "Continuando uma escalada salva", "Suite d'une ascension sauvegardée", "Ein gespeicherter Aufstieg geht weiter", "Продолжение сохранённого подъёма", "Kayıtlı tırmanışa devam ediliyor"],
 ];

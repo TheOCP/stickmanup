@@ -19,6 +19,7 @@ import { Sound } from './audio.js';
 import { Storm } from './storm.js';
 import * as cloud from './cloud.js';
 import { Session, PROTO, makeLink, MAX_PLAYERS } from './net.js';
+import { teamSaves, cleanSave, offerOf, newClimbId } from './saves.js';
 import { fitText } from './fit.js';
 import { APP_VERSION, DESK, IS_WEB, ON_PC, canFullscreen, toggleFullscreen, keepAwake } from './platform.js';
 import * as live from './live.js';
@@ -962,9 +963,9 @@ async function hostWith(kind, roomOpts) {
   const r = await s.host();
   if (cancelled) return;
   if (!r.ok) { s.close(); ui.toast(r.err || 'Could not start the game', 'bad'); return hostPick(); }
-  const mp = validSave('save.mp');
   s.lobby.map = settings.map;
-  if (mp) s.lobby.diff = mp.diff;
+  // A saved climb with others: carrying it on is what is ticked to start with (roomSave picks which one).
+  if (teamSaves().some(cleanSave)) s.lobby.resume = true;
   app.room = { kind, code: r.code, name: r.name, pub: r.pub, locked: r.locked };
   s.roomInfo = { kind, code: r.code, locked: !!r.locked };
   s.roomPass = (roomOpts && roomOpts.pass) || '';
@@ -987,6 +988,7 @@ function wireLobby(s) {
   s.on('start', (g) => beginGame(s, g));
   s.on('pings', () => lobbyPings(s));
   s.on('chat', (m) => chatGot(s, m));
+  s.on('offer', () => { if (app.screen === 'lobby' && app.lobbyS === s) lobby(s); });
   // The host left and the room goes on (net.js): this phone runs it now, or someone else does.
   s.on('moving', () => ui.toast('The host left. New host...', ''));
   s.on('promoted', (room) => {
@@ -998,6 +1000,7 @@ function wireLobby(s) {
   });
   s.on('newHost', (slot) => {
     const p = s.players.get(slot);
+    if (!app.game) s.offer(teamSaves().map(offerOf));
     ui.toast(`${p ? p.name : 'Someone'} is the host now`, 'good');
     if (app.screen === 'lobby') lobby(s);
   });
@@ -1017,12 +1020,49 @@ function lobbyPings(s) {
   if (me) putText(me, `Ping: ${s.myPing || '...'} ms`);
 }
 
+// Which saved climb this room can carry on: of this phone's own and the ones the others offered (net.js 'sv'), the climb most
+// of the people here were part of, and of that one the newest save anyone has. So it doesn't matter who left last or who
+// hosts now: everyone gets the climb as far as it got.
+function roomSave(s) {
+  const here = [...s.players.values()].map((p) => (p.slot === s.slot ? s.who : p.who)).filter(Boolean);
+  const list = [...teamSaves(), ...[...s.offers.values()].flat()].map(cleanSave).filter(Boolean);
+  let best = null, bestN = -1;
+  for (const sv of list) {
+    const n = here.filter((w) => sv.team[w] || sv.left[w] !== undefined).length;
+    if (n > bestN || (n === bestN && best && sv.when > best.when)) { best = sv; bestN = n; }
+  }
+  return best;
+}
+
+// The start of a saved climb: everyone where they were and at their own checkpoint, by their key (saves.js), whatever place
+// in the room they have now. Whoever wasn't in it starts next to the team, or without the cord at the bottom. Whoever was in
+// it but isn't here yet gets theirs back when they come (game.js snapshot, left).
+function resumeGame(s, sv) {
+  const pos = {}, pcp = {}, loose = [], left = {}, here = new Set();
+  // Where the team is: anyone on the cord with a spot saved, or the one who saved it.
+  const onTeam = Object.values(sv.team).find((e) => e.length >= 4 && !e[4]), at = onTeam ? [onTeam[1], onTeam[2], onTeam[3]] : sv.pos;
+  for (const p of s.players.values()) {
+    const w = p.slot === s.slot ? s.who : p.who, e = w ? sv.team[w] : null, was = w && sv.left[w] !== undefined ? sv.left[w] : null;
+    if (w) here.add(w);
+    // Catching up on a tied team: on their own from their own checkpoint. Not the host, who holds the team's.
+    const behind = !sv.noCord && p.slot !== s.slot && ((e && e[4]) || (!e && was !== null));
+    if (e) pcp[p.slot] = e[0];
+    else if (was !== null) pcp[p.slot] = was;
+    if (behind) loose.push(p.slot);
+    if (e && e.length >= 4 && (sv.noCord || behind || !e[4])) pos[p.slot] = [e[1], e[2], e[3]];
+    else if (!sv.noCord && !behind) pos[p.slot] = [at[0] + p.slot * 0.3, at[1] + p.slot * 1.0, at[2]];
+  }
+  for (const [w, e] of Object.entries(sv.team)) if (!here.has(w)) left[w] = e[0];
+  for (const [w, i] of Object.entries(sv.left)) if (!here.has(w) && left[w] === undefined) left[w] = i;
+  return { map: sv.map, diff: sv.diff, noCord: sv.noCord, rules: sv.rules, t0: s.now(), base: sv.t, cp: sv.cp, pcp, loose, falls: sv.falls, mz: sv.mz, doors: sv.doors, pos, left, climb: sv.climb };
+}
+
 function lobby(s) {
   if (cloud.banned()) { s.close(); return title(); }
   app.lobbyS = s;
   chatRoom(s);
   app.screen = 'lobby';
-  const host = s.isHost, room = app.room || {}, mp = host ? validSave('save.mp') : null;
+  const host = s.isHost, room = app.room || {}, mp = host ? roomSave(s) : null;
   let info;
   if (!host) info = `<div class="kind">Connected</div><p class="myping">Ping: ${s.myPing || '...'} ms</p>`;
   else if (room.kind === 'server') info = `<div class="kind">${room.pub ? 'Public room' : 'Private room'}${room.locked ? ' · password' : ''}</div><div class="code">${esc(room.code)}</div><p><b>${esc(room.name)}</b></p>${N && N.share ? '<button class="btn sm" data-a="share" style="margin-top:8px">Share code</button>' : ''}`;
@@ -1033,6 +1073,13 @@ function lobby(s) {
     slots.push(p ? `<div class="slot" style="color:${pcol(s, i)}"><span class="dot"></span><span style="color:var(--tx)"><span class="frname">${esc(p.name)}</span>${i === s.slot ? ' <span>(you)</span>' : ''}${i === s.hostSlot ? ' · <span>host</span>' : ''}</span>${roleTag(p)}<small data-ping="${i}">${pingOf(s, i)}</small></div>` : `<div class="slot empty">Open slot</div>`);
   }
   const resume = s.lobby.resume && mp;
+  // Nothing left to carry on (whoever had it left): then it is a new climb.
+  if (host && s.lobby.resume && !mp) { s.lobby.resume = false; setTimeout(() => { if (!s.closed && !s.game) s.sendLobby(); }, 0); }
+  // Carrying a climb on: everyone sees its map and rules, not what was picked before.
+  if (resume && (s.lobby.map !== mp.map || s.lobby.diff !== mp.diff || s.lobby.noCord !== mp.noCord || JSON.stringify(s.lobby.rules || {}) !== JSON.stringify(mp.rules))) {
+    Object.assign(s.lobby, { map: mp.map, diff: mp.diff, noCord: mp.noCord, rules: mp.rules });
+    setTimeout(() => { if (!s.closed && !s.game) s.sendLobby(); }, 0);
+  }
   const lmapNow = resume ? mp.map || 0 : s.lobby.map || 0;
   loadMapSoon(lmapNow);
   show(`<div class="panel">${header(host ? 'Your game' : 'Joined game')}
@@ -1049,7 +1096,7 @@ function lobby(s) {
         ${friendlyFireHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         ${traitorHtml(resume ? mp.rules || {} : s.lobby.rules || {}, host && !resume)}
         <label class="toggle"><input type="checkbox" data-a="nocord" ${(resume ? mp.noCord : s.lobby.noCord) ? 'checked' : ''} ${host && !resume ? '' : 'disabled'}> Play without the cord</label>
-        ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${esc(mapName(mp.map || 0))}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : ''}
+        ${mp ? `<label class="toggle"><input type="checkbox" data-a="resume" ${resume ? 'checked' : ''}> Continue the saved climb (${esc(mapName(mp.map || 0))}, ${DIFFS[mp.diff].name}, ${Math.round(mp.pos[1] - 2)} m, ${fmtTime(mp.t)})</label>` : !host && s.lobby.resume ? '<p class="sub" style="margin-top:10px">Continuing a saved climb</p>' : ''}
         ${host ? `<button class="btn primary" data-a="start" style="margin-top:12px"><b>Start the climb</b><small>${s.players.size} climber${s.players.size > 1 ? 's' : ''} ready</small></button>`
     : `<p class="sub" style="margin-top:14px"><span class="spin"></span>&nbsp; Waiting for the host to start...</p>`}
       </div>
@@ -1065,11 +1112,9 @@ function lobby(s) {
     chat: openChat,
     rule: (b) => { if (host && !resume) s.setLobby({ rules: Object.assign({}, s.lobby.rules, { [b.dataset.k]: +b.dataset.v }) }); },
     start: () => {
-      const save = s.lobby.resume && mp;
-      const pos = {};
-      if (save) for (const k of s.players.keys()) pos[k] = [save.pos[0] + k * 0.3, save.pos[1] + k * 1.0, save.pos[2]];
-      s.startGame({ map: save ? save.map || 0 : s.lobby.map || 0, diff: save ? save.diff : s.lobby.diff, noCord: save ? !!save.noCord : !!s.lobby.noCord, rules: save ? save.rules || {} : cleanRules(s.lobby.rules, true), t0: s.now(), base: save ? save.t : 0, cp: save ? save.cp : 0, pcp: save ? save.pcp : null, falls: save ? save.falls : 0, mz: save ? save.mz | 0 : 0,
-        doors: save ? save.doors : null, pos: save ? pos : null });
+      const save = s.lobby.resume && roomSave(s);
+      if (save) return s.startGame(resumeGame(s, save));
+      s.startGame({ map: s.lobby.map || 0, diff: s.lobby.diff, noCord: !!s.lobby.noCord, rules: cleanRules(s.lobby.rules, true), t0: s.now(), base: 0, cp: 0, pcp: null, falls: 0, mz: 0, doors: null, pos: null, climb: newClimbId() });
     },
   });
 }
@@ -1113,7 +1158,7 @@ function joinWith(kind, target) {
   const back = app.joinBack;
   busy('Connecting...', () => { s.close(); if (back) back(); else joinScreen(kind); });
   wireLobby(s);
-  s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else lobby(s); });
+  s.on('welcome', (m) => { if (m.game) beginGame(s, m.game); else { lobby(s); s.offer(teamSaves().map(offerOf)); } });
   s.join(target);
 }
 
@@ -1921,7 +1966,7 @@ function howTo(back) {
     <div><b>Rules</b>Easy only switches on the gentler obstacles and runs them slower; Hardcore switches on all of them and speeds them up, and Insane runs them faster still with less grip and no late jumps. Under Rules you can pick checkpoints, obstacles and the cord length yourself instead (Auto follows the difficulty). Climbs with custom rules keep their own best times.</div>
     <div><b>Keyboard</b><kbd>WASD</kbd> move, <kbd>Space</kbd> jump, <kbd>C</kbd>${IS_WEB ? '' : ' or <kbd>Ctrl</kbd>'} grab, <kbd>E</kbd> reel, <kbd>Left Shift</kbd> dash, <kbd>T</kbd> emotes, <kbd>F</kbd> grapple/shoot, <kbd>Q</kbd> shield, mouse drag to look.</div>
     <div><b>Controller</b>Left stick move, right stick camera, <kbd>A</kbd> jump, <kbd>B</kbd> grab, <kbd>RB</kbd> reel, <kbd>Y</kbd> or <kbd>L3</kbd> dash, <kbd>LT</kbd> hold to aim, <kbd>RT</kbd> fire while aiming, <kbd>Down</kbd> on the direction pad emotes, <kbd>X</kbd> grapple, <kbd>LB</kbd> shield, <kbd>Start</kbd> pause, <kbd>Select</kbd> pause on Back to checkpoint, up on the direction pad reads the nearest tip. All menus work with it too, and Settings has a dead zone for each stick against stick drift.</div>
-    <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. Multiplayer: the host can continue the saved climb from the lobby.</div>
+    <div><b>Saving</b>Your climb saves itself. Solo: Continue on the title screen. With others: everyone who was in it can host a game and continue it from the lobby.</div>
   </div></div>`, { back });
 }
 
@@ -1962,6 +2007,9 @@ function beginGame(s, g) {
 }
 
 function endGame() {
+  // With others the climb is saved on the way out, however it ends (the host gone, the connection lost): while it still has
+  // the run it belongs to.
+  try { if (app.game && !app.game.solo && !app.game.won) app.game.save(false); } catch (e) { /* the last one stands */ }
   // Asked now because the game is still here: this is the last height Discord gets to see.
   cloud.checkStanding();
   cloud.runEnd();
@@ -2002,7 +2050,7 @@ function pause() {
     : `<button class="btn danger" data-a="respawn"><b>Restart the climb</b><small>${DIFFS[g.diff].name}: everyone back to the start</small></button>`}
     <div class="row"><button class="btn sm" data-a="friends">Friends</button><button class="btn sm" data-a="ghosts">Ghosts</button><button class="btn sm" data-a="settings">Settings</button><button class="btn sm" data-a="how">How to play</button>${live.staff() ? '<button class="btn sm" data-a="term">Terminal</button>' : ''}</div>
     ${app.traitor.on ? `<button class="btn" data-a="traitor"><b>Traitor mode</b><small>${app.traitor.over ? 'It is decided' : 'Clues and calling a vote'}</small></button>` : ''}
-    <button class="btn danger" data-a="quit"><b>${mp ? (g.s.isHost ? 'Save and leave' : 'Leave the game') : 'Save and quit'}</b></button>
+    <button class="btn danger" data-a="quit"><b>${mp ? 'Save and leave' : 'Save and quit'}</b></button>
     ${mp ? '<p class="note">The climb keeps going for everyone while this menu is open.</p>' : ''}
     ${padKeys()}</div>`, {
     back: resume,
@@ -2014,7 +2062,7 @@ function pause() {
     friends: () => openFriends(pause),
     invite: () => acceptInvite(pause),
     term: openTerminal,
-    quit: () => { if (g.s.isHost) g.save(); endGame(); title(); },
+    quit: () => { g.save(); endGame(); title(); },
   });
 }
 
@@ -2184,14 +2232,14 @@ window.SMU_back = () => {
   return true;
 };
 window.SMU_vis = (v) => {
-  if (!v) cloud.flush(); else cloud.checkNews();
+  if (!v) { try { if (app.game && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ } cloud.flush(); } else cloud.checkNews();
   if (!app.sound) return;
   app.sound.suspend(!v);
   if (!v && app.game && app.game.solo && !app.paused) pause();
 };
 // The page or window is closing: keep the climb, and send what the server hasn't got yet.
 window.SMU_leave = () => {
-  try { if (app.game && app.game.s.isHost && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ }
+  try { if (app.game && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ }
   return cloud.flush();
 };
 window.SMU_insets = (l, t, r, b) => {

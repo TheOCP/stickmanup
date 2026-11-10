@@ -47,6 +47,7 @@ function cleanGame(g) {
     map: mapOk(g.map), diff: inList(g.diff, DIFFS), rules: cleanRoomRules(g.rules), noCord: !!g.noCord, t0: num(g.t0), base: num(g.base), cp: count(g.cp), falls: count(g.falls), mz: count(g.mz),
     pcp: g.pcp && typeof g.pcp === 'object' ? g.pcp : {}, doors: Array.isArray(g.doors) ? g.doors : [], stuns: Array.isArray(g.stuns) ? g.stuns : [], pos: g.pos && typeof g.pos === 'object' ? g.pos : {}, loose: Array.isArray(g.loose) ? g.loose : [],
     left: g.left && typeof g.left === 'object' && !Array.isArray(g.left) ? g.left : {}, back: !!g.back,
+    climb: typeof g.climb === 'string' && /^[a-z0-9]{6,24}$/.test(g.climb) ? g.climb : undefined,
   });
 }
 const PREFIX = 'stickmanup-v1-';
@@ -317,6 +318,8 @@ export class Session {
     this.moving = false;
     // What was said in the room, the last CHAT_KEEP (chat.js). Every phone keeps it, so a new host has it too.
     this.chat = [];
+    // The saved climbs the others have (main.js roomSave), by slot: whoever hosts can carry on one they were all part of.
+    this.offers = new Map();
     if (mode !== 'client') this.players.set(0, this.player(0, name, null, this.color, this.look, this.role));
     if (mode === 'host') this.pgT = setInterval(() => this.sharePings(), 2000);
   }
@@ -386,8 +389,9 @@ export class Session {
     this.mode = 'host';
     this.hostSlot = this.slot;
     this.moving = false;
-    // Continuing a saved climb meant the old host's save, not this phone's.
+    // Continuing a saved climb meant the old host's choice. The others offer theirs again (main.js newHost).
     this.lobby.resume = false;
+    this.offers = new Map();
     clearInterval(this.pinger);
     clearInterval(this.pgT);
     this.pgT = setInterval(() => this.sharePings(), 2000);
@@ -459,6 +463,8 @@ export class Session {
       case 'st': if (p) { if (Number.isFinite(m.r) && m.r > 0) p.ping = Math.round(m.r); this.push(p, this.emitGet('gameTime'), m.s); } break;
       case 'ev': if (p && m.e && typeof m.e === 'object') this.emit('hostEvent', m.e, p.slot); break;
       case 'chat': if (p) this.hostChat(p, m.t); break;
+      // Their saved climbs, in the lobby (main.js cleans them before anything is done with them).
+      case 'sv': if (p && !this.game && Array.isArray(m.s)) { this.offers.set(p.slot, m.s.slice(0, 4)); this.emit('offer', p.slot); } break;
       case 'bye': this.drop(id); break;
     }
   }
@@ -479,6 +485,7 @@ export class Session {
     // Before they are gone from the list: the climb keeps their checkpoint for when they come back (game.js remember).
     this.emit('gone', p);
     this.players.delete(p.slot);
+    this.offers.delete(p.slot);
     this.sendLobby();
     this.emit('roster', p.slot, false);
   }
@@ -638,6 +645,9 @@ export class Session {
     if (!this.moving) { this.moving = true; this.emit('moving'); }
     if (this.link.isServer) this.hello();
   }
+
+  // This phone's saved climbs, for the host to carry one on (main.js roomSave).
+  offer(list) { if (!this.isHost && this.hostId && Array.isArray(list) && list.length) this.send(this.hostId, { k: 'sv', s: list.slice(0, 4) }); }
 
   pingNow() { this.send(this.hostId, { k: 'ping', c: performance.now(), r: this.myPing || undefined }); }
 

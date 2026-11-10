@@ -57,6 +57,13 @@ export const runRelic = (id) => sink.relic(id);
 export const runWin = (falls) => sink.win(falls);
 `);
 
+want.set('saves.js', `// Saved climbs stay on the phones. A rerun keeps none.
+export const CLIMB_ID = /^[a-z0-9]{6,24}$/;
+export const teamSave = () => null;
+export const putTeamSave = () => {};
+export const dropTeamSave = () => {};
+`);
+
 const buildFile = path.join(src, 'simbuild.js'), buildText = `// Written by dev/makesim.mjs: a fingerprint of the physics code, the same one the server has.\nexport const SIM_BUILD = '${build}';\n`;
 
 if (process.argv.includes('--check')) {

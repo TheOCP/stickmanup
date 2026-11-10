@@ -13,10 +13,14 @@ import * as cloud from './cloud.js';
 import { resolveLook, plainLook } from './skins.js';
 import { WEAPON, weaponOf } from './weapons.js';
 import { myLook } from './profile.js';
+import { teamSave, putTeamSave, dropTeamSave, CLIMB_ID } from './saves.js';
 
 // Near enough to count as having got to the top. The rerun (server/lib/verify-worker.mjs, case 'win') asks the same.
 const nearTop = (b, L, rope) => Math.hypot(b.x, b.z) < L.summit.r + rope * 3 && b.y > L.top - rope * 4;
 const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
+// Seconds between saves: alone (each one also a point the anticheat can pick the climb up from), and with others. With others
+// every SAVE_FULL-th one is that too, the rest only note where everyone is.
+const SAVE_SOLO = 2, SAVE_MP = 1, SAVE_FULL = 4;
 // A phone's key in a room (net.js WHO): who left with which checkpoint.
 const WHO_KEY = /^[A-Za-z0-9]{8,24}$/;
 // Flying (setFlying): metres a second, how much faster with the fast button, and how far out from the middle of the map.
@@ -72,7 +76,9 @@ export class Game {
     this.t0 = g.t0;
     this.base = g.base || 0;
     this.soloT = this.base;
-    this.cp = g.cp || 0;
+    this.cp = Number.isInteger(g.cp) && this.L.cps[g.cp] ? g.cp : 0;
+    // Which climb this is, whoever runs it: every phone in it saves its own copy under it (saves.js).
+    this.climb = typeof g.climb === 'string' && CLIMB_ID.test(g.climb) ? g.climb : null;
     this.falls = Math.max(0, Math.floor(+g.falls) || 0);
     this.slot = session.slot;
     this.noCord = !!g.noCord; // multiplayer option: climb without being tied together
@@ -83,7 +89,11 @@ export class Game {
     this.flying = false;
     // Checkpoints: tied together, the team shares one. Without the cord everyone has their own; the host
     // keeps track of them all by slot (pcp), and of whoever is still catching up with a tied team.
-    this.pcp = Object.assign({}, g.pcp);
+    this.pcp = {};
+    if (g.pcp && typeof g.pcp === 'object') for (const k of Object.keys(g.pcp)) if (Number.isInteger(+k) && Number.isInteger(g.pcp[k]) && this.L.cps[g.pcp[k]]) this.pcp[k] = g.pcp[k];
+    // Catching up on a tied team (a saved climb picked up again): from their own checkpoint, not the team's. A host keeps the
+    // team's in cp and its own in pcp.
+    if (!this.noCord && !session.isHost && this.loose.has(this.slot) && this.pcp[this.slot] !== undefined) this.cp = this.pcp[this.slot];
     if (this.noCord) {
       if (this.pcp[this.slot] !== undefined) this.cp = this.pcp[this.slot];
       this.pcp[this.slot] = this.cp;
@@ -102,6 +112,9 @@ export class Game {
     this.simT = this.time;
     this.sendAcc = 0;
     this.saveAcc = 0;
+    this.saveN = 0;
+    this.saveSoon = false;
+    this.savedRs = undefined;
     this.hudAcc = 0;
     this.bgBolt = 2;
     this.cpSent = new Set();
@@ -145,7 +158,8 @@ export class Game {
     for (const st of g.stuns || []) this.storm.stun.set(st[0], { from: st[1], until: st[2] });
     this.wind = { x: 0, z: 0 };
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
-    const sf = g.base > 0 && session.isHost ? store.get(this.solo ? 'save.solo' : 'save.mp') : null, sv = sf && sf.v === layoutLV(sf.map) ? sf : null;
+    // With others: this phone's own copy of this climb, when it was part of it before (the host's, or anyone's who left and came back).
+    const sf = this.solo ? (g.base > 0 ? store.get('save.solo') : null) : this.climb ? teamSave(this.climb) : null, sv = sf && sf.v === layoutLV(sf.map) ? sf : null;
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
     // Real Hardcore or harder only: what is earned up there doesn't count with custom rules. The relic courses are always there.
     this.hardcore = this.diff >= 2 && !this.custom;
@@ -154,7 +168,7 @@ export class Game {
     // Coins only count where the server can see the climb: alone, or in a room on the game server.
     this.earning = this.solo || !!(session.link && session.link.isServer);
     this.rec = null;
-    cloud.runStart({ map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: g.base > 0 && !!sv, run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
+    cloud.runStart({ map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: !!sv && (this.solo || (typeof sv.climbId === 'string' && Number.isInteger(sv.rs))), run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
     app.view.setSecrets(this.storm.sec);
     this.coinTaken = new Set((sv && sv.coins) || []);
     // The team moved this climber (teleport): this climb earns nothing more, picked up from a save or not.
@@ -262,7 +276,7 @@ export class Game {
     const at = Number.isInteger(was) && this.L.cps[was] ? was : 0;
     this.pcp[slot] = at;
     if (!this.noCord) this.setLoose([...this.loose, slot]);
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: at, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden], left: this.left, back: at > 0 };
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: at, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden], left: this.left, back: at > 0, climb: this.climb || undefined };
   }
 
   // The checkpoints of those who left, from the host (event 'left', or with the snapshot). At most a few dozen.
@@ -399,6 +413,7 @@ export class Game {
     this.tped = true;
     this.rec = null;
     cloud.runStop(why);
+    this.app.ui.toast('Teleported: no more coins on this climb', '');
   }
 
   // Vanished (the vanish command, main.js): gone for everyone else and flying, through anything, with nothing on the map able
@@ -600,8 +615,13 @@ export class Game {
       }
       else this.s.sendState(st);
     }
+    // Everyone saves, not only whoever runs the room: once it is empty, anyone who was in it can carry on (main.js roomSave).
     this.saveAcc += dt;
-    if (this.s.isHost && this.saveAcc > 4 && !this.won) { this.saveAcc = 0; this.save(); }
+    if (!this.won && (this.saveSoon || this.saveAcc >= (this.solo ? SAVE_SOLO : SAVE_MP))) {
+      this.saveAcc = 0;
+      this.saveSoon = false;
+      this.save(this.solo || this.saveN++ % SAVE_FULL === 0);
+    }
     this.recAcc += dt;
     if (this.recAcc > 3 && !this.won) { this.recAcc = 0; this.noteRun(); }
     this.drawSmooth(dt);
@@ -1702,6 +1722,8 @@ export class Game {
     const ui = this.app.ui;
     // With others, these come from elsewhere, so the rerun can't work them out and they get written down.
     if (this.rec && !this.solo && (e.k === 'respawn' || e.k === 'cp' || e.k === 'sling' || e.k === 'crumble' || e.k === 'door' || e.k === 'stun' || e.k === 'win' || e.k === 'ff' || e.k === 'maze' || e.k === 'loose')) this.rec.act('e', e);
+    // A checkpoint, a fall back to one, someone leaving: saved on this phone straight away (the next frame), not a second later.
+    if (!this.solo && (e.k === 'cp' || e.k === 'respawn' || e.k === 'loose' || e.k === 'left' || e.k === 'maze' || e.k === 'door')) this.saveSoon = true;
     switch (e.k) {
       case 'respawn': {
         this.falls = e.falls;
@@ -1837,21 +1859,59 @@ export class Game {
     this.app.view.setMaze(this.mz);
   }
 
-  save() {
+  // full: also a point the anticheat can pick the climb up from (alone every save is). With others the ones in between only
+  // note where everyone is, which costs next to nothing.
+  save(full = true) {
+    if (this.won) return;
     // Halfway through a physics step the climber isn't anywhere yet. It happens when the step is done.
     if (this.stepping) { this.saveLater = true; return; }
     // Alone, a save is where the server picks the climb up again, and it doesn't follow a flight. The last one from before it stands.
     if (this.flying && this.solo) return;
-    const m = this.me, rs = this.rec ? this.rec.save() : undefined;
-    cloud.climbSaved();
-    store.set(this.solo ? 'save.solo' : 'save.mp', { v: layoutLV(this.map), climbId: cloud.runId(), rs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.noCord ? this.pcp : undefined, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined });
+    const m = this.me;
+    if (full || this.solo) {
+      this.savedRs = this.rec ? this.rec.save() : undefined;
+      cloud.climbSaved();
+    }
+    const sv = { v: layoutLV(this.map), climbId: cloud.runId(), rs: this.savedRs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined };
+    if (this.solo) { store.set('save.solo', sv); return; }
+    if (!this.climb) return;
+    // With others: the team's checkpoint, and everyone's own checkpoint and spot by their key, so each of them gets their own
+    // back, whatever place in the room they have next time (main.js resumeGame).
+    sv.climb = this.climb;
+    sv.when = Date.now();
+    sv.cp = this.teamCheckpoint();
+    sv.team = {};
+    sv.left = {};
+    for (const p of this.s.players.values()) {
+      const who = p.slot === this.slot ? this.s.who : p.who;
+      if (!who) continue;
+      const loose = !this.noCord && this.loose.has(p.slot) ? 1 : 0, cp = this.cpOf(p.slot);
+      // Flying or vanished they can be anywhere: then only their checkpoint.
+      const at = p.slot === this.slot ? (this.flying ? null : [m.x, m.y + 0.3, m.z]) : !p.wait && !this.hidden.has(p.slot) && Array.isArray(p.last) && p.last.length >= 3 ? [p.last[0], p.last[1] + 0.3, p.last[2]] : null;
+      sv.team[who] = at && at.every(Number.isFinite) ? [cp, r3(at[0]), r3(at[1]), r3(at[2]), loose] : [cp];
+    }
+    for (const k of Object.keys(this.left)) if (!sv.team[k]) sv.left[k] = this.left[k];
+    putTeamSave(sv);
+  }
+
+  // The team's checkpoint: the host holds it in cp, everyone else hears it (teamCp), which is their own too unless catching up.
+  teamCheckpoint() {
+    return this.s.isHost || !Number.isInteger(this.teamCp) || !this.L.cps[this.teamCp] ? this.cp : this.teamCp;
+  }
+  // A climber's own checkpoint: the team's when tied to it, otherwise their own (pcp, and on this phone cp).
+  cpOf(slot) {
+    if (!this.noCord && !this.loose.has(slot)) return this.teamCheckpoint();
+    if (slot === this.slot && (this.noCord || !this.s.isHost)) return this.cp;
+    const i = this.pcp[slot];
+    return Number.isInteger(i) && this.L.cps[i] ? i : 0;
   }
 
   finish(e) {
     if (this.won) return;
     this.won = true;
     for (const r of this.robots.values()) r.cheer();
-    store.del(this.solo ? 'save.solo' : 'save.mp');
+    if (this.solo) store.del('save.solo');
+    else if (this.climb) dropTeamSave(this.climb);
     // Without the cord, or still catching up, someone else can get to the top while this climber is nowhere near it. The climb
     // ends for everyone, but the top and its bonus are only for those who are there. (The rerun checks the same.)
     const far = this.tped || ((this.noCord || this.loose.has(this.slot)) && !nearTop(this.me, this.L, this.rope));
@@ -2029,7 +2089,9 @@ export class Game {
     app.view.lavaY = this.lavaY;
     // One step back in time, the same moment the climber is drawn at: standing on a moving platform stays exact.
     app.view.update(T - STEP, dt, this.storm, this.alpha ?? 1);
-    app.pool.coins.update(dt, T, this.L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, this.coinB);
+    // Moved by the team (teleport), coins can't be picked up on this climb any more: then none are shown either.
+    if (!this.tped) app.pool.coins.update(dt, T, this.L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, this.coinB);
+    else if (app.pool.coins.mesh.visible) app.pool.coins.clear();
     app.pool.relic.show(this.nearRelic, T);
     // The soundtrack follows the map and gets busier the higher the climb.
     app.sound.setStyle(this.L.mapKey);

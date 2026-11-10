@@ -77,6 +77,19 @@ function lookChanged() {
   myResolved = null;
   if (app.game) { app.game.s.setMe(settings.name, myColor(), myLook(), myRole()); app.game.refreshPlayers(); }
 }
+// A name as the game keeps it: one line, nothing odd in it, 14 letters at most, and at least NAME_MIN.
+const NAME_MIN = 2;
+const cleanName = (v) => String(v || '').normalize('NFC').replace(/[\p{C}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 14).replace(/[\uD800-\uDBFF]$/, '').trim();
+// A new name: here, in the room straight away, and on the account a moment later (cloud.js setName).
+let nameT = 0;
+function setMyName(n) {
+  settings.name = n;
+  settings.named = true;
+  saveSettings();
+  lookChanged();
+  clearTimeout(nameT);
+  nameT = setTimeout(() => cloud.setName(settings.name), 1500);
+}
 // Custom rules for a new climb. -1 means Auto (follow the difficulty).
 const RULES = [
   ['cps', 'Checkpoints', ['Every zone', 'A few', 'None']],
@@ -110,6 +123,8 @@ if (settings.aimAssist === false) settings.aimHelp = 0;
 delete settings.camAssist;
 delete settings.aimAssist;
 if (!settings.name || /^Robot \d+$/.test(settings.name)) settings.name = 'Climber ' + (100 + ((Math.random() * 900) | 0));
+// Still on the made up name from the first start: asked once for a real one (nameScreen).
+if (settings.named === undefined) settings.named = !/^Climber \d+$/.test(settings.name);
 if (!mapDef(settings.map)) settings.map = 0;
 const saveSettings = () => store.set('settings', settings);
 // v2 keeps best times per map; earlier best times were all on the storm tower.
@@ -830,6 +845,8 @@ function title() {
   chatRoom(null);
   const save = validSave('save.solo'), best = bestOf(settings.map), M = mapDef(settings.map), acct = cloud.account(), today = mapDef(todayMap());
   loadMapSoon(settings.map);
+  // A name first, so the guest account the next screen can make has it.
+  if (!cloud.banned() && !settings.named) return nameScreen(title, true);
   // The first time, and whenever the terms have changed, ask before anything else.
   if (!cloud.banned() && ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2')))) {
     store.set('welcomed2', 1);
@@ -1258,8 +1275,11 @@ function browserScreen(back = title) {
 }
 
 function roomPassword(code, back, maybe) {
-  app.screen = 'roompass';
   app.joinBack = back;
+  // The team gets into any room on the game server without its password (the server checks: rooms.js canJoinAny).
+  const st = live.staff();
+  if (st && Array.isArray(st.cmds) && st.cmds.includes('join')) return joinWith('server', { code, pass: '' });
+  app.screen = 'roompass';
   show(`<div class="panel" style="width:min(460px,100%)">${header('Room ' + esc(code))}
     <p class="sub">${maybe ? 'If the room has a password, type it here. If not, leave this empty.' : 'This room needs a password.'}</p>
     <div class="field"><input id="jpass" maxlength="64" spellcheck="false" autocomplete="off" placeholder="Password"><button class="btn primary sm" data-a="go">Join</button></div></div>`, {
@@ -1267,6 +1287,28 @@ function roomPassword(code, back, maybe) {
     go: () => joinWith('server', { code, pass: $('#jpass').value }),
   });
   $('#jpass').focus();
+}
+
+// The player's name: on the first start (first, nothing to go back to), and from the account screen.
+function nameScreen(next, first) {
+  app.screen = 'name';
+  const cur = settings.named ? settings.name : '';
+  show(`<div class="panel" style="width:min(420px,100%)">${first ? '<div class="ph"><h2>Your name</h2></div>' : header('Your name')}
+    <div class="field"><input id="pname" maxlength="14" spellcheck="false" autocomplete="off" enterkeyhint="done" value="${esc(cur)}" placeholder="Your name"><button class="btn primary sm" data-a="ok"${cleanName(cur).length < NAME_MIN ? ' disabled' : ''}>OK</button></div></div>`, {
+    back: first ? null : next,
+    ok: () => {
+      const n = cleanName($('#pname').value);
+      if (n.length < NAME_MIN) return;
+      const changed = n !== settings.name;
+      setMyName(n);
+      if (!first && changed) ui.toast('Name saved', 'good');
+      next();
+    },
+  });
+  const inp = $('#pname'), ok = $('#menu [data-a="ok"]');
+  inp.addEventListener('input', () => { ok.disabled = cleanName(inp.value).length < NAME_MIN; });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!ok.disabled) handlers.ok(); } });
+  inp.focus();
 }
 
 // Who made the game, the terms, and the sign in buttons. Guests can always just go on.
@@ -1303,12 +1345,14 @@ async function accountScreen(back = title) {
   if (a && cloud.isGuest()) {
     const names = { discord: 'Discord', steam: 'Steam', google: 'Google' }, prov = info ? signInWith(info).filter((p) => names[p]) : [];
     show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
-      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>Player #${a.user.num}</small></div>
+      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b class="pname">${esc(settings.name)}</b></span><small>Player #${a.user.num}</small></div>
+      <button class="btn sm" data-a="name" style="margin-top:9px">Change name</button>
       <p class="sub" style="margin-top:10px">Your coins and items are safe on the server, but only this phone can reach them. Sign in to keep them on an account: they move there, and work on any phone.</p>
       ${prov.length ? `<div class="provs">${prov.map((p) => `<button class="btn sm prov ${p}" data-a="login" data-p="${p}">Sign in with ${names[p]}</button>`).join('')}</div>` : ''}
       <div class="row" style="margin-top:9px"><button class="btn sm" data-a="back">Back</button><button class="btn sm" data-a="out">Sign out</button></div>
       <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my guest account</button></div>`, {
       back,
+      name: () => nameScreen(() => accountScreen(back)),
       out: () => signOutFlow(back),
       login: async (b) => {
         app.afterLogin = back;
@@ -1333,11 +1377,13 @@ async function accountScreen(back = title) {
   if (a) {
     const when = cloud.lastSaved();
     show(`<div class="panel" style="width:min(520px,100%)">${header('Account')}${made}
-      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b>${esc(a.user.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')} · Player #${a.user.num}</small></div>
+      <div class="slot"><span class="dot"></span><span style="color:var(--tx)"><b class="pname">${esc(settings.name)}</b></span><small>${esc(({ discord: 'Discord', steam: 'Steam', google: 'Google' })[a.user.provider] || '')} <span class="pname">${esc(a.user.name)}</span> · <span>Player #${a.user.num}</span></small></div>
+      <button class="btn sm" data-a="name" style="margin-top:9px">Change name</button>
       <p class="sub" id="asave" style="margin-top:10px">Your coins and items are kept on the server. Your records and saved climb go there by themselves${when ? `. Last saved ${Date.now() - when < 60000 ? 'just now' : Math.round((Date.now() - when) / 60000) + ' min ago'}` : ''}.</p>
       <div class="row"><button class="btn primary sm" data-a="sync">Save now</button><button class="btn sm" data-a="out">Sign out</button></div>
       <button class="btn sm danger" data-a="del" style="margin-top:9px">Delete my account</button></div>`, {
       back,
+      name: () => nameScreen(() => accountScreen(back)),
       sync: async () => {
         if (await cloud.syncNow()) ui.toast('Saved', 'good');
         else ui.toast('Could not reach the server', 'bad');
@@ -1401,6 +1447,7 @@ function afterAccount(back) { app.afterLogin = null; back(); }
 
 cloud.on('signedIn', (u) => {
   cloud.checkStanding();
+  cloud.setName(settings.name);
   ui.toast(`Signed in as ${u.name}`, 'good');
   if (app.game) return;
   const next = app.afterLogin || title;
@@ -1620,11 +1667,8 @@ function settingsScreen(back) {
   $('#nm').addEventListener('input', (e) => {
     clearTimeout(nmT);
     nmT = setTimeout(() => {
-      const n = e.target.value.trim().slice(0, 14);
-      if (!n) return;
-      settings.name = n;
-      saveSettings();
-      lookChanged();
+      const n = cleanName(e.target.value);
+      if (n.length >= NAME_MIN && n !== settings.name) setMyName(n);
     }, 450);
   });
 }

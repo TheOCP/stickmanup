@@ -1447,6 +1447,7 @@ export class Game {
         // A streak of light along the way. It looks the same on everyone's phone as a shot would.
         const a = [r3(m.x), r3(m.y), r3(m.z)], b = [r3(m.x + e.x * 2.4), r3(m.y), r3(m.z + e.z * 2.4)];
         this.app.fx.tracer(this.slot, a, b, false);
+        this.noteShot(this.slot, a, b, false, '', this.time);
         this.s.toHost({ k: 'shot', s: this.slot, a, b, h: 0 });
         break;
       }

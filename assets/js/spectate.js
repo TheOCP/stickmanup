@@ -8,7 +8,7 @@ import { DIFFS, MAPS, mapName, mapDef, zoneAt, secretsFor, applyMaze, MAZE_WALL_
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
-import { weaponOf } from './weapons.js';
+import { weaponOf, WEAPON } from './weapons.js';
 import * as cloud from './cloud.js';
 
 const STEP = 1 / 60, DELAY = 0.25, KEEP = 48;
@@ -52,7 +52,13 @@ export function feedState(g, paused) {
     if (s !== g.slot && g.s.players.has(s)) p.push([s, r3(v.x), r3(v.y), r3(v.z), r3(v.vx), r3(v.vy), r3(v.vz), r3(v.yaw || 0), v.flags | 0, r3(v.reel || 0), r3(v.charge || 0), emote(s), r3(v.elev || 0)]);
   }
   // c: where this phone's camera looks, so whoever watches through the climber's eyes (in a maze) sees what they see.
-  const m = { t: 's', T: r3(g.time), f: g.falls, mz: g.mz, p, c: [r3(g.cam.yaw), r3(g.cam.pitch)] };
+  const m = { t: 's', T: r3(g.time), f: g.falls, mz: g.mz, p, c: [r3(g.cam.yaw), r3(g.cam.pitch)], cp: g.cp };
+  // The creatures after someone and what is stunned, so a watcher sees (and hears) them do what they do here.
+  const hu = [], st = [];
+  for (const [i, h] of g.storm.hunt) if (hu.length < 12) hu.push([i, r3(h.x), r3(h.z), r3(h.hx), r3(h.hz), r3(h.lunge || 0)]);
+  for (const [k, v] of g.storm.stun) if (v.until > g.time - 1 && st.length < 24) st.push([k, r3(v.from), r3(v.until)]);
+  if (hu.length) m.hu = hu;
+  if (st.length) m.st = st;
   if (g.feedShots && g.feedShots.length) m.sh = g.feedShots.splice(0).map((a) => a.map((v) => (typeof v === 'number' ? r3(v) : v)));
   const j = g.jumpPack();
   if (j.length) m.j = j;
@@ -126,7 +132,10 @@ export class Spectator {
   // The whole picture: which climb this is and who is in it.
   setGame(g) {
     const app = this.app, map = mapDef(g.map) ? g.map : 0, diff = inList(g.diff, DIFFS), rules = g.rules && typeof g.rules === 'object' ? g.rules : {};
+    // Just started watching, or another climb: what is already open or picked up makes no sound.
+    let fresh = !this.ready;
     if (map !== this.map || diff !== this.diff) {
+      fresh = true;
       this.hooks.loadMap(map);
       this.map = map;
       this.diff = diff;
@@ -157,6 +166,12 @@ export class Spectator {
       app.pool.coins.clear();
       app.pool.relic.show(null);
       this.coinTaken = new Set();
+      this.heardT = undefined;
+      this.maxZone = undefined;
+      this.stunHeard = new Map();
+      this.zaps = new Map();
+      this.hunts = [];
+      this.rodT = undefined;
       this.shots = [];
       this.shotAt.clear();
       this.frames.length = 0;
@@ -164,18 +179,28 @@ export class Spectator {
       this.snap = true;
     }
     if (Array.isArray(g.doors)) {
+      let opened = false;
       for (const i of g.doors) {
         if (!Number.isInteger(i) || !this.L.doors[i] || this.doors.has(i)) continue;
         this.doors.add(i);
         this.L.doors[i].col.on = false;
         app.view.openDoor(i);
+        opened = true;
       }
+      if (opened && !fresh) app.sound.door();
     }
     // As many coins as that climb has (a phone from before 4.10.48 doesn't say: then as many as the server gives now).
     const cx = coinXOk(Number.isInteger(g.cx) ? g.cx : cloud.coinX());
-    if (this.L.coinX !== cx) { placeCoins(this.L, cx); this.coinTaken = new Set(); }
+    if (this.L.coinX !== cx) { placeCoins(this.L, cx); this.coinTaken = new Set(); fresh = true; }
     if (!this.L.coinBuilt) { this.L.coinBuilt = true; this.L.coinB = this.L.coinB || {}; for (const c of this.L.coins) (this.L.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
-    if (g.ct !== undefined) this.coinTaken = coinSet(g.ct, this.L.coins.length);
+    if (g.ct !== undefined) {
+      const was = this.coinTaken, now = coinSet(g.ct, this.L.coins.length);
+      let got = 0;
+      for (const i of now) if (!was.has(i)) got++;
+      this.coinTaken = now;
+      // Picked up since the last time: the climbing phone's coin sound, from where that climber is.
+      if (got && got < 40 && !fresh) this.coinSound(got, Number.isInteger(g.me) ? g.me : this.focus);
+    }
     this.setMaze(g.mz);
     const noCord = !!g.noCord, seen = new Map();
     for (const p of Array.isArray(g.players) ? g.players.slice(0, 4) : []) {
@@ -224,7 +249,7 @@ export class Spectator {
     const T = +m.T;
     if (!this.ready || !Number.isFinite(T) || !Array.isArray(m.p)) return;
     // A new climb, or the same one picked up again.
-    if (T < this.lastT - 2) { this.frames.length = 0; this.clock = null; this.snap = true; }
+    if (T < this.lastT - 2) { this.frames.length = 0; this.clock = null; this.snap = true; this.heardT = undefined; }
     const off = T - performance.now() / 1000;
     this.clock = this.clock === null || Math.abs(off - this.clock) > 1 ? off : this.clock + (off - this.clock) * 0.05;
     this.falls = Number.isInteger(m.f) && m.f >= 0 ? m.f : 0;
@@ -232,6 +257,10 @@ export class Spectator {
     this.held = !!m.z;
     this.won = !!m.w;
     if (Array.isArray(m.j)) this.jump = m.j.slice(0, 80); else this.jump = [];
+    // The creatures after them and what is stunned, as the climbing phone has it (one from before 4.10.49 doesn't say).
+    const nums = (a, n) => Array.isArray(a) && a.length >= n && a.every((v) => Number.isFinite(v) && Math.abs(v) < 1e6);
+    this.hunts = Array.isArray(m.hu) ? m.hu.slice(0, 12).filter((a) => nums(a, 6) && Number.isInteger(a[0])) : [];
+    if (Array.isArray(m.st)) for (const a of m.st.slice(0, 24)) if (nums(a, 3) && Number.isInteger(a[0]) && a[0] >= 0) this.storm.stun.set(a[0], { from: a[1], until: a[2] });
     // Shots wait until the moment they were fired comes round, like everything else here.
     if (Array.isArray(m.sh)) for (const a of m.sh.slice(0, 16)) if (goodShot(a) && this.shots.length < 48) this.shots.push(a);
     if (T <= this.lastT && this.frames.length) return;
@@ -239,7 +268,7 @@ export class Spectator {
     const p = new Map();
     for (const a of m.p.slice(0, 4)) if (goodRow(a)) p.set(a[0], a);
     const c = Array.isArray(m.c) && m.c.length === 2 && m.c.every((v) => Number.isFinite(v) && Math.abs(v) < 1e6) ? [m.c[0], clamp(m.c[1], -1.6, 1.6)] : null;
-    this.frames.push({ t: T, p, c });
+    this.frames.push({ t: T, p, c, cp: Number.isInteger(m.cp) ? m.cp : -1, w: !!m.w });
     if (this.frames.length > KEEP) this.frames.shift();
   }
 
@@ -324,7 +353,7 @@ export class Spectator {
     for (const [slot, o] of this.vis) {
       const ev = this.storm.event(T, zoneAt(L, o.y)), calm = this.inMaze(o);
       if (!evM.has(slot)) evM.set(slot, new Map());
-      markShots(this.storm, evM.get(slot), ev, o.x, o.y - PR, o.z, T, calm);
+      if (markShots(this.storm, evM.get(slot), ev, o.x, o.y - PR, o.z, T, calm) && slot === this.focus) app.sound.warn();
       const B = beeStep(evB.get(slot), ev, o.x, o.y, o.z, dt, calm);
       evB.set(slot, B);
       if (beeReach(B, o.x, o.y, o.z, !!(o.flags & F.SHIELD)) === 'shield') app.fx.blast(slot, B.x, B.y, B.z, { beam: '', blast: 2.4 });
@@ -381,9 +410,21 @@ export class Spectator {
       R.bolt(at.x + Math.cos(a) * r, Math.max(0, at.y - 60 + Math.random() * 50), at.z + Math.sin(a) * r, 2.2);
       app.sound.thunder(r);
     }
-    app.sound.ambient(0.2 + (at.y / L.top) * 0.6 + (ev && (ev.kind === 'gust' || ev.kind === 'wave') && ev.on ? 0.8 : 0), false, 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
+    this.hear(T, dt, me);
+    const roar = ev && (ev.kind === 'gust' || ev.kind === 'wave') ? (ev.on ? 0.8 : ev.warn * 0.4) : 0, mine = !this.fly && me;
+    app.sound.ambient(0.2 + (at.y / L.top) * 0.6 + roar, !!mine && !!(mine.flags & F.REEL) && !!this.reelUp, mine && mine.flags & F.CHARGE ? mine.charge || 0 : 0, L.mapKey === 'storm' ? 1 - eye * 0.8 : 0, L.mapKey === 'waterfall' ? 1 : 0);
     app.view.camPos = cam.position;
     app.view.lavaY = null;
+    // Glided towards where the climbing phone last said, a dozen times a second.
+    const hd = this.huntDraw || (this.huntDraw = new Map());
+    this.storm.hunt.clear();
+    for (const a of this.hunts || []) {
+      let d = hd.get(a[0]);
+      if (!d || Math.abs(d.x - a[1]) + Math.abs(d.z - a[2]) > 4) d = { x: a[1], z: a[2] };
+      d.x = damp(d.x, a[1], 12, dt); d.z = damp(d.z, a[2], 12, dt);
+      hd.set(a[0], d);
+      this.storm.hunt.set(a[0], { x: d.x, z: d.z, hx: a[3], hz: a[4], wait: 0, lunge: a[5] });
+    }
     app.view.update(T - STEP, dt, this.storm, 1);
     app.pool.coins.update(dt, T, L.coins, this.coinTaken, cam.position.x, cam.position.y, cam.position.z, L.coinB);
     app.sound.setStyle(L.mapKey);
@@ -519,6 +560,110 @@ export class Spectator {
     return false;
   }
 
+  // What the climbers and their map sound like, the way their own phones play it (game.js bodyEvent, zap, strike, the
+  // stun event, the bees after them), as the moment it happened comes round. The climber followed is heard as if it were
+  // you, the others quieter the further they are from the camera.
+  hear(T, dt, me) {
+    const S = this.app.sound, L = this.L, cam = this.R.camera.position;
+    // Each update once, in order: what came before watching started is not heard, one that came late still is (unless it is
+    // too late to mean anything).
+    if (this.heardT === undefined) this.heardT = T;
+    for (let i = 1; i < this.frames.length; i++) {
+      const fr = this.frames[i], was = this.frames[i - 1];
+      if (fr.t <= this.heardT) continue;
+      if (fr.t > T) break;
+      this.heardT = fr.t;
+      if (fr.t < T - 1.5) continue;
+      for (const [slot, a] of fr.p) {
+        const b = was.p.get(slot);
+        if (!b) continue;
+        if (slot === this.focus) this.reelUp = a[9] > b[9] + 0.004;
+        S.at(this.loud(slot, a[1], a[2], a[3]), () => this.bodySound(b, a));
+      }
+      if (fr.cp > was.cp && was.cp >= 0) S.checkpoint();
+      if (fr.w && !was.w) S.win();
+      const f = fr.p.get(this.focus);
+      if (f) {
+        const z = zoneAt(L, f[2]);
+        if (this.maxZone === undefined) this.maxZone = z;
+        else if (z > this.maxZone) { this.maxZone = z; S.zone(); }
+      }
+    }
+    // A creature, a bat or a dummy stunned, as everyone in the room hears it.
+    const heard = this.stunHeard || (this.stunHeard = new Map());
+    for (const [k, v] of this.storm.stun) {
+      if (v.from > T || v.from < T - 2 || heard.get(k) === v.from) continue;
+      heard.set(k, v.from);
+      S.stun();
+    }
+    // The swarm after the one followed buzzes louder the closer it gets.
+    const B = me && this.evBees && this.evBees.get(this.focus);
+    if (B && !B.gone && (this.buzzT = (this.buzzT || 0) - dt) <= 0) {
+      const bd = Math.hypot(me.x - B.x, me.y - B.y, me.z - B.z);
+      this.buzzT = 0.38;
+      if (bd < 14) S.buzz(1 - bd / 14);
+    }
+    // The storm's lightning aimed at each climber: marked where they were when the warning started, it strikes there.
+    if (L.mapKey === 'storm') {
+      const zaps = this.zaps || (this.zaps = new Map());
+      for (const [slot, o] of this.vis) {
+        const th = this.storm.thunder(T, slot);
+        if (!th) continue;
+        let z = zaps.get(slot);
+        if (th.warn > 0 && (!z || z.k !== th.k)) {
+          z = { k: th.k, x: o.x, y: o.y - PR, z: o.z, struck: this.inMaze(o) };
+          zaps.set(slot, z);
+          if (slot === this.focus && !z.struck) S.warn();
+        }
+        if (!z || z.k !== th.k || z.struck || T < th.strikeAt) continue;
+        z.struck = true;
+        const cd = Math.hypot(cam.x - z.x, cam.y - z.y, cam.z - z.z);
+        if (cd < 90) { this.R.bolt(z.x, z.y, z.z, 1.3); S.thunder(cd * 0.4); }
+      }
+    }
+    // Lightning rods.
+    if (this.rodT !== undefined && T > this.rodT && T < this.rodT + 1) {
+      this.storm.strikes(this.rodT, T, (r) => {
+        const cd = Math.hypot(cam.x - r.x, cam.y - r.y, cam.z - r.z);
+        if (cd < 70) { this.R.bolt(r.x, r.y + 3.3, r.z, Math.max(0.4, 1 - cd / 70)); S.thunder(cd * 0.5); }
+      });
+    }
+    this.rodT = T;
+  }
+
+  // How loud a climber is: the one followed fully, the others less the further they are from the camera.
+  loud(slot, x, y, z) {
+    if (slot === this.focus && !this.fly) return 1;
+    const c = this.R.camera.position;
+    return clamp(1.25 - Math.hypot(x - c.x, y - c.y, z - c.z) / 28, 0, 1);
+  }
+
+  // From one update to the next of a climber (b, then a): what their body did, as their phone's sounds for it.
+  bodySound(b, a) {
+    const S = this.app.sound, fb = b[8] | 0, fa = a[8] | 0, on = fa & ~fb, off = fb & ~fa, vy = a[5];
+    // Back at a checkpoint, or moved by the team: nothing to hear on the way.
+    if (Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) + Math.abs(a[3] - b[3]) > 12) return;
+    if (a[2] < 0.3 && b[2] >= 0.3) S.splash();
+    if (on & F.GROUND) { const v = Math.max(0, -b[5]); if (v > 2) S.land(v); }
+    else if (off & F.GROUND && vy > 3) { if (vy > 14) S.pad(); S.jump(); }
+    else if (off & F.WALL && vy > 3) S.walljump();
+    else if (off & F.HANG && !(fa & F.GROUND)) { if (vy > 3) S.jump(); else S.release(); }
+    if (on & F.HANG) S.grab();
+    if (on & F.DASH) S.dash();
+    if (on & F.SHIELD) S.shield();
+    if (on & F.GRAPPLE) S.grapple();
+    if (on & F.STUN) S.bonk();
+  }
+
+  // Coins the climbing phone picked up: its sound, a step higher for each in a quick row.
+  coinSound(n, slot) {
+    const S = this.app.sound, o = this.vis.get(slot), now = performance.now();
+    if (now - (this.coinAt || 0) > 1500) this.coinRow = 0;
+    this.coinAt = now;
+    this.coinRow = (this.coinRow || 0) + n;
+    S.at(o ? this.loud(slot, o.x, o.y, o.z) : 1, () => S.coin(this.coinRow));
+  }
+
   // Every shot whose moment has come: the streak of light, its sound and its blast.
   playShots(T) {
     const app = this.app, cam = this.R.camera.position;
@@ -528,7 +673,10 @@ export class Spectator {
       if (a[9] > T && a[9] < T + 5) { i++; continue; }
       this.shots.splice(i, 1);
       if (a[9] < T - 2 || a[9] > T + 5) continue;
-      const gun = weaponOf(a[8]), from = [a[1], a[2], a[3]], to = [a[4], a[5], a[6]];
+      const from = [a[1], a[2], a[3]], to = [a[4], a[5], a[6]];
+      // No weapon: a dash. Its streak only, the way the climbers' phones show it; its sound comes with the climber (bodySound).
+      if (!Object.hasOwn(WEAPON, a[8])) { app.fx.tracer(a[0], from, to, false); continue; }
+      const gun = weaponOf(a[8]);
       this.shotAt.set(a[0], a[9]);
       app.fx.tracer(a[0], from, to, !!a[7], gun);
       if (gun.blast && a[7]) app.fx.blast(a[0], to[0], to[1], to[2], gun);

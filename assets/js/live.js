@@ -74,6 +74,7 @@ function heardFrom(text) {
     case 's': if (w) w.state(m); break;
     case 'g': if (w) w.game(m); break;
     case 'watching': if (w) w.ok(m); break;
+    case 'wroom': if (w && w.room) w.room(m); break;
     case 'over': watching = null; if (w) w.over(m.why); break;
     case 'err': watching = null; if (w) w.err(String(m.why || '')); break;
     // Whoever just came along needs the whole picture, not only the next small update. Someone of the team can be watching

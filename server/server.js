@@ -327,7 +327,7 @@ async function route(req, res) {
 
   // Everything below needs an account.
   if (!p.startsWith('/api/')) return json(res, 404, { err: 'Not found' });
-  const known = (p === '/api/wallet' && method === 'GET') || (p === '/api/ghosts' && method === 'GET') || (method === 'POST' && (p === '/api/spray' || p === '/api/ghost' || p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT')) || (p === '/api/friends' && method === 'GET') || (method === 'POST' && (p === '/api/friends/search' || p === '/api/friends/act' || p === '/api/friends/watch'));
+  const known = (p === '/api/wallet' && method === 'GET') || (p === '/api/ghosts' && method === 'GET') || (method === 'POST' && (p === '/api/spray' || p === '/api/ghost' || p === '/api/inbox/read' || p === '/api/wallet/import' || p === '/api/buy' || p === '/api/run/start' || p === '/api/run/report' || p === '/api/run/chunk' || p === '/api/device' || p === '/api/attest/challenge' || p === '/api/name')) || (p === '/api/me' && (method === 'GET' || method === 'DELETE')) || (p === '/api/logout' && method === 'POST') || (p === '/api/tos' && method === 'POST') || (p === '/api/save' && (method === 'GET' || method === 'PUT')) || (p === '/api/friends' && method === 'GET') || (method === 'POST' && (p === '/api/friends/search' || p === '/api/friends/act' || p === '/api/friends/watch'));
   if (!known) return json(res, 404, { err: 'Not found' });
   const me = signedIn(req);
   if (!me) return json(res, 401, { err: 'Please sign in' });
@@ -347,6 +347,13 @@ async function route(req, res) {
     return json(res, 200, { ok: true });
   }
   if (off) return json(res, 403, admin.showBan(off, user));
+  // The name this player goes by in the game (main.js nameScreen and Settings), for friends and the team's tools.
+  if (p === '/api/name') {
+    if (!limits.save.take(me.id)) return json(res, 429, { err: 'Too many requests' });
+    const b = await readJson(req);
+    const n = b && typeof b.name === 'string' ? admin.setGameName(me.id, b.name) : '';
+    return n ? json(res, 200, { ok: true, name: n }) : json(res, 400, { err: 'Bad name' });
+  }
   // Ghost racing (lib/ghosts.js).
   if (p === '/api/ghosts') {
     if (!limits.friends.take(me.id)) return json(res, 429, { err: 'Too many requests' });

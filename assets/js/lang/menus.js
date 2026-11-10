@@ -531,4 +531,6 @@ export default [
   ["GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉"],
   ["Continuing a saved climb", "Continuando una escalada guardada", "Continuando uma escalada salva", "Suite d'une ascension sauvegardée", "Ein gespeicherter Aufstieg geht weiter", "Продолжение сохранённого подъёма", "Kayıtlı tırmanışa devam ediliyor"],
   ["{}x coins on every map", "{}x monedas en cada mapa", "{}x moedas em todos os mapas", "{}x pièces sur chaque carte", "{}x Münzen auf jeder Karte", "{}x монет на каждой карте", "Her haritada {}x para"],
+  ["Change name", "Cambiar nombre", "Mudar nome", "Changer de nom", "Name ändern", "Сменить имя", "Adını değiştir"],
+  ["Name saved", "Nombre guardado", "Nome salvo", "Nom enregistré", "Name gespeichert", "Имя сохранено", "Ad kaydedildi"],
 ];

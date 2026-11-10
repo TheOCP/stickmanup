@@ -37,6 +37,16 @@ export class Sound {
     this.ctx = null;
     this.music = 0.5;
     this.sfx = 0.8;
+    // How loud the effects are made right now (at): someone watched from further away is heard quieter.
+    this.k = 1;
+  }
+
+  // fn's sounds at v times their loudness.
+  at(v, fn) {
+    if (!this.ctx || v < 0.05) return;
+    const k = this.k;
+    this.k = k * Math.min(1, v);
+    try { fn(); } finally { this.k = k; }
   }
 
   init() {
@@ -125,7 +135,7 @@ export class Sound {
     o.frequency.setValueAtTime(f0, t);
     o.frequency.exponentialRampToValueAtTime(f1, t + dur);
     o.connect(g);
-    this.env(g, t, 0.01, vol, dur);
+    this.env(g, t, 0.01, vol * this.k, dur);
     o.start(t);
     o.stop(t + dur + 0.05);
   }
@@ -134,7 +144,7 @@ export class Sound {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay, g = this.gain(0, this.sfxG);
     this.burst(dur + a, this.chain(this.filter(type, f, q), g), delay);
-    this.env(g, t, a, vol, dur);
+    this.env(g, t, a, vol * this.k, dur);
   }
 
   // An animal voice: an oscillator through a mouth shaped filter, its loudness shaken fast for a growl.

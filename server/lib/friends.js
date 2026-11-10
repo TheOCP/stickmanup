@@ -334,6 +334,10 @@ class Friends {
       ws.pres = cleanPresence(m);
       ws.presAt = Date.now();
       if (typeof m.name === 'string' && m.name !== ws.gameName) { ws.gameName = m.name; this.admin.setGameName(ws.uid, m.name); }
+      if (ws.watchers.size) {
+        const note = this.roomNote(ws), key = JSON.stringify(note);
+        if (key !== ws.roomSaid) { ws.roomSaid = key; for (const w of ws.watchers) this.send(w, note); }
+      }
       if (ws.pres.st !== 'climb') this.endWatchers(ws, 'ended');
     } else if (m.t === 'watch') this.watch(ws, m.num);
     else if (m.t === 'unwatch') this.stopWatching(ws);
@@ -477,7 +481,14 @@ class Friends {
     ws.teamWatch = team;
     ws.silent = team && this.vanished(ws.uid);
     this.send(ws, { t: 'watching', num: u.num, name: shownName(u) });
+    this.send(ws, this.roomNote(target));
     this.tellWatchers(target);
+  }
+
+  // The room the climber watched is in, as their game says, so whoever watches can join them (the game's Join button).
+  roomNote(target) {
+    const p = target.pres, r = p && (p.st === 'climb' || p.st === 'lobby') && p.room ? p.room : null;
+    return { t: 'wroom', room: r ? Object.assign({}, r) : null, n: (p && p.n) || 1 };
   }
 
   // The climbing phone starts or stops sending, and it can say who is looking.

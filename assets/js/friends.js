@@ -278,7 +278,17 @@ function joinFriend(num, back) {
 // ---------- watching ----------
 const setText = (el, text) => { if (el && el.dataset.v !== text) { el.dataset.v = text; el.textContent = text; } };
 
-function specScreen(spec, f, leave, back) {
+// The room the climber watched is in, as the server last said (watchFriend): Join shows while there is a free spot.
+const cleanRoom = (r) => (r && typeof r === 'object' && (r.kind === 'server' || r.kind === 'online') && /^[A-Z0-9]{5}$/.test(String(r.code)) ? { kind: r.kind, code: String(r.code), locked: !!r.locked } : null);
+const joinable = (w) => !!w && !!w.room && (w.n || 1) < 4 && !(ctx.myRoom() && ctx.myRoom().room.code === w.room.code);
+function paintJoin(w) {
+  const el = $('#spJoin');
+  if (!el) return;
+  const html = joinable(w) ? '<button class="btn primary sm spjoin" data-a="join">Join</button>' : '';
+  if (el.dataset.v !== html) { el.dataset.v = html; el.innerHTML = html; }
+}
+
+function specScreen(spec, f, leave, back, where) {
   const { app, show, esc } = ctx, L = app.level, top = L.top;
   const flyer = !!(ctx.team && ctx.team());
   const track = L.zones.map((z) => `<i style="bottom:${(z.y0 / top) * 100}%;height:${((z.y1 - z.y0) / top) * 100}%;background:#${z.color.toString(16).padStart(6, '0')}"></i>`).join('');
@@ -297,7 +307,7 @@ function specScreen(spec, f, leave, back) {
     <div class="spbot">
       <div class="spstats"><div><b id="spH">0 m</b><small>Height</small></div><div><b id="spTop">0 m</b><small>Top</small></div><div><b id="spF">0</b><small>Falls</small></div></div>
       <div class="spteam" id="spTeam"></div>
-      ${f && canJoin(f) ? '<button class="btn primary sm spjoin" data-a="join">Join</button>' : ''}
+      <span id="spJoin" style="display:contents"></span>
       ${flyer ? '<button class="btn sm spterm" id="spFlyB" data-a="fly">Fly</button><button class="btn sm spterm" data-a="term">Terminal</button>' : ''}
     </div>
   </div>`, {
@@ -306,10 +316,12 @@ function specScreen(spec, f, leave, back) {
     fly: () => spec.setFly(!spec.fly),
     flyto: () => spec.flyTo(),
     term: () => ctx.openTerminal && ctx.openTerminal(),
-    join: () => leave(null, () => joinRoom(f.room, back)),
+    // Into their climb: out of watching, into their room (past its password for the team, main.js roomPassword).
+    join: () => { const w = where(); if (joinable(w)) leave(null, () => joinRoom(w.room, back)); },
   }, false);
   $('#menu').classList.add('specm');
   app.screen = 'spec';
+  paintJoin(where());
   showTeam(spec);
   if (flyer) {
     bindFly(spec);
@@ -387,7 +399,8 @@ export function joinPlayerRoom(code, back) { joinRoom({ kind: 'server', code, lo
 function watchFriend(num, back, who, after) {
   const { app, ui, busy, settings, N } = ctx, f = who || (known && known.friends.find((x) => x.num === num));
   const toList = after || (() => openFriends(back));
-  let spec = null, done = false;
+  let spec = null, done = false, where = f && f.room ? { room: cleanRoom(f.room), n: f.n || 1 } : null;
+  const whereNow = () => where;
   // Everything that ends watching comes through here, once.
   const leave = (said, then) => {
     if (done) return;
@@ -424,11 +437,12 @@ function watchFriend(num, back, who, after) {
       if (!spec.ready) return;
       if (first || !app.spec) {
         app.spec = spec;
-        specScreen(spec, f, leave, back);
-      } else if (spec.shownMap !== spec.map) specScreen(spec, f, leave, back);
+        specScreen(spec, f, leave, back, whereNow);
+      } else if (spec.shownMap !== spec.map) specScreen(spec, f, leave, back, whereNow);
       spec.shownMap = spec.map;
     },
     state: (m) => { if (spec && !done) spec.state(m); },
+    room: (m) => { where = { room: cleanRoom(m.room), n: Number.isInteger(m.n) ? m.n : 1 }; if (app.screen === 'spec') paintJoin(where); },
     over: (why) => leave(why === 'closed' ? 'This friend no longer allows watching.' : why === 'lost' ? 'Lost the connection to the game server.' : 'The climb you were watching has ended.'),
     err: (why) => leave(why || 'Could not reach the game server.'),
   });

@@ -475,7 +475,7 @@ EOF
   cat >&2 <<EOF
 
 STEAM: needs no setup and no store page. It just works.
-  Optional, so players see their Steam name: get a Web API key at https://steamcommunity.com/dev/apikey
+  Optional: a Web API key from https://steamcommunity.com/dev/apikey. Steam names work without one.
 EOF
   if yes_no "Turn on Sign in through Steam?" y; then ENVV[STEAM_LOGIN]=1; else ENVV[STEAM_LOGIN]=0; fi
   if [ "$(get_env STEAM_LOGIN)" = 1 ]; then

@@ -58,7 +58,7 @@ Below, `ADDRESS` is your server address, for example `https://203-0-113-7.sslip.
 **Discord**: go to https://discord.com/developers/applications, then New Application, then OAuth2. Copy the Client ID
 and Client Secret. Under Redirects add exactly `ADDRESS/auth/discord/callback`.
 
-**Steam**: needs nothing. It just works, without a store page. Without a key players show up as "Steam player 1234".
+**Steam**: needs nothing. It just works, without a store page. Without a key the name comes from the public Steam profile.
 For their real Steam name, get a free Web API key at https://steamcommunity.com/dev/apikey.
 
 **Google**: needs a real domain name, because Google refuses raw IP addresses and may refuse free names like sslip.io.

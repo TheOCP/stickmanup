@@ -25,7 +25,9 @@ const URLS = {
   googleUser: 'https://openidconnect.googleapis.com/v1/userinfo',
   steamLogin: 'https://steamcommunity.com/openid/login',
   steamPlayers: 'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/',
+  steamProfile: 'https://steamcommunity.com/profiles/',
 };
+const unxml = (s) => String(s || '').replace(/&(lt|gt|quot|apos|amp);/g, (_, e) => ({ lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' })[e]);
 
 const token = (n = 32) => crypto.randomBytes(n).toString('base64url');
 const sha256url = (s) => crypto.createHash('sha256').update(s).digest('base64url');
@@ -181,19 +183,33 @@ class Auth {
     const text = await res.text();
     if (!/^is_valid:true$/m.test(text)) throw new Error('not confirmed');
     const steamId = m[1];
-    let name = `Steam player ${steamId.slice(-4)}`;
-    // The API key is optional: it only gets the display name.
+    const name = (await this.steamName(steamId)) || `Steam player ${steamId.slice(-4)}`;
+    return { subject: steamId, name };
+  }
+
+  // The name someone set on Steam. With an API key from the Web API, without one from the public profile page,
+  // which shows the name even when the rest of the profile is private.
+  async steamName(steamId) {
     if (this.cfg.steam.key) {
       try {
         const q = new URLSearchParams({ key: this.cfg.steam.key, steamids: steamId });
         const r = await fetch(`${this.urls.steamPlayers}?${q}`, { signal: AbortSignal.timeout(8000) });
         const p = r.ok ? (await r.json())?.response?.players?.[0] : null;
-        if (p && p.personaname) name = p.personaname;
+        if (p && cleanText(p.personaname, 32)) return p.personaname;
       } catch (e) {
         console.error('steam name lookup failed');
       }
     }
-    return { subject: steamId, name };
+    try {
+      const r = await fetch(`${this.urls.steamProfile}${steamId}/?xml=1`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(`answer ${r.status}`);
+      const m = /<steamID>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]*))<\/steamID>/.exec((await r.text()).slice(0, 65536));
+      const n = m && (m[1] ?? unxml(m[2]));
+      if (cleanText(n, 32)) return n;
+    } catch (e) {
+      console.error(`steam profile name lookup failed: ${e.message}`);
+    }
+    return '';
   }
 
   // A browser may not go back to the game by itself (it won't open an app on its own, or it asks and nobody answers), so

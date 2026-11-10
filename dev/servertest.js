@@ -48,12 +48,13 @@ const mockServer = http.createServer((req, res) => {
       return res.end(`ns:http://specs.openid.net/auth/2.0\nis_valid:${mock.steamValid && f.get('openid.mode') === 'check_authentication'}\n`);
     }
     if (u.pathname === '/steam/players') return send({ response: { players: [{ personaname: mock.name }] } });
+    if (u.pathname.startsWith('/steam/profiles/')) return res.end(`<?xml version="1.0"?><profile><steamID><![CDATA[${mock.name}]]></steamID></profile>`);
     res.writeHead(404); res.end();
   });
 });
 await new Promise((r) => mockServer.listen(0, '127.0.0.1', r));
 const M = `http://127.0.0.1:${mockServer.address().port}`;
-const DEV = { discordAuth: M + '/discord/auth', discordToken: M + '/discord/token', discordUser: M + '/discord/user', googleAuth: M + '/google/auth', googleToken: M + '/google/token', googleUser: M + '/google/user', steamLogin: M + '/steam/login', steamPlayers: M + '/steam/players' };
+const DEV = { discordAuth: M + '/discord/auth', discordToken: M + '/discord/token', discordUser: M + '/discord/user', googleAuth: M + '/google/auth', googleToken: M + '/google/token', googleUser: M + '/google/user', steamLogin: M + '/steam/login', steamPlayers: M + '/steam/players', steamProfile: M + '/steam/profiles/' };
 
 // ---------------------------------------------------------------- starting a server
 function startServer(env, wantReady = true) {

@@ -1292,7 +1292,8 @@ function roomPassword(code, back, maybe) {
 // The player's name: on the first start (first, nothing to go back to), and from the account screen.
 function nameScreen(next, first) {
   app.screen = 'name';
-  const cur = settings.named ? settings.name : '';
+  const a = cloud.account(), from = a && a.user.provider !== 'guest' && !/^Steam player \d{4}$/.test(a.user.name) ? cleanName(a.user.name) : '';
+  const cur = settings.named ? settings.name : from;
   show(`<div class="panel" style="width:min(420px,100%)">${first ? '<div class="ph"><h2>Your name</h2></div>' : header('Your name')}
     <div class="field"><input id="pname" maxlength="14" spellcheck="false" autocomplete="off" enterkeyhint="done" value="${esc(cur)}" placeholder="Your name"><button class="btn primary sm" data-a="ok"${cleanName(cur).length < NAME_MIN ? ' disabled' : ''}>OK</button></div></div>`, {
     back: first ? null : next,

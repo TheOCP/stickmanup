@@ -2292,7 +2292,7 @@ window.SMU_back = () => {
   return true;
 };
 window.SMU_vis = (v) => {
-  if (!v) { try { if (app.game && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ } cloud.flush(); } else cloud.checkNews();
+  if (!v) { try { if (app.game && !app.game.won) app.game.save(); } catch (e) { /* what was saved before stays */ } cloud.flush(); } else { cloud.checkNews(); cloud.resumeLogin(); }
   if (!app.sound) return;
   app.sound.suspend(!v);
   if (!v && app.game && app.game.solo && !app.paused) pause();
@@ -2471,6 +2471,8 @@ function boot() {
   if (!N) {
     // What the Android app tells the game itself.
     document.addEventListener('visibilitychange', () => window.SMU_vis(!document.hidden));
+    // On a PC the browser sits beside the game: clicking back into the game finishes a sign in waiting there.
+    window.addEventListener('focus', () => cloud.resumeLogin());
     window.addEventListener('pagehide', () => window.SMU_leave());
   }
   initUpdater(app);

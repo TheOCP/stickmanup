@@ -124,14 +124,45 @@ const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replac
 export async function startLogin(provider, termsVersion) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-  store.set('auth.pending', { verifier, server: serverUrl(), t: Date.now() });
-  const url = `${serverUrl()}/auth/${encodeURIComponent(provider)}/start?challenge=${challenge}&tos=${encodeURIComponent(termsVersion)}`;
+  // poll: this sign in's own random name, to ask the server about it (watchLogin).
+  const poll = b64url(crypto.getRandomValues(new Uint8Array(24)));
+  store.set('auth.pending', { verifier, server: serverUrl(), t: Date.now(), poll });
+  const url = `${serverUrl()}/auth/${encodeURIComponent(provider)}/start?challenge=${challenge}&tos=${encodeURIComponent(termsVersion)}&poll=${poll}`;
   if (N && N.openUrl) N.openUrl(url);
   // A web page goes there itself and gets sent back. The PC app opens the real browser, which comes back through a link.
   else if (IS_WEB) location.href = url + '&ret=web';
   else window.open(url, '_blank');
+  watchLogin();
 }
-export const cancelLogin = () => store.del('auth.pending');
+export const cancelLogin = () => { store.del('auth.pending'); clearTimeout(pollT); };
+
+// The browser is meant to come back to the game by itself (stickmanup://auth), but often it doesn't: a browser may not
+// open an app on its own, or it asks and nobody says yes, and the game waited for ever. So while a sign in waits, the
+// game also asks the server every couple of seconds, and right away when it is back on screen (resumeLogin). Whichever
+// brings the code first signs in; the other finds nothing left to do (finishLogin).
+const POLL_MS = 2000;
+let pollT = 0;
+function watchLogin(wait = POLL_MS) {
+  clearTimeout(pollT);
+  const p = store.get('auth.pending', null);
+  if (!p || !p.poll || Date.now() - p.t > PENDING_MAX || p.server !== serverUrl()) return;
+  pollT = setTimeout(async () => {
+    const r = await call('/auth/poll?id=' + encodeURIComponent(p.poll), { timeout: 8000 });
+    const now = store.get('auth.pending', null);
+    // Signed in, cancelled or started again meanwhile.
+    if (!now || now.poll !== p.poll) return;
+    // A server from before 1.6.41 doesn't know how: only the browser can bring it back there.
+    if (r.status === 404) return;
+    if (r.ok && typeof r.json.code === 'string') return finishLogin(r.json.code);
+    if (r.ok && typeof r.json.err === 'string') {
+      store.del('auth.pending');
+      return emit('loginFailed', r.json.err);
+    }
+    watchLogin();
+  }, wait);
+}
+// Back in the game (main.js SMU_vis): ask now instead of at the next turn.
+export function resumeLogin() { if (store.get('auth.pending', null)) watchLogin(150); }
 
 // The browser came back with a code. Without a sign in we started ourselves, it means nothing.
 export async function finishLogin(code) {
@@ -216,6 +247,7 @@ export async function start() {
     if (c) await finishLogin(c);
   }
   if (DESK) DESK.onAuth((c) => { finishLogin(c); });
+  watchLogin(300);
   if (IS_WEB) {
     const c = new URLSearchParams(location.search).get('code');
     if (c) {

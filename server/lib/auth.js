@@ -36,6 +36,8 @@ const same = (a, b) => {
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const VERIFIER = /^[A-Za-z0-9_-]{43,128}$/;
 const STEAM_ID = /^https?:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
+// The game's own random name for a sign in it started, to ask about it (poll).
+const POLL = /^[A-Za-z0-9_-]{32,64}$/;
 
 class Auth {
   constructor(cfg, db, termsVersion, admin) {
@@ -47,6 +49,7 @@ class Auth {
     this.webReturn = cfg.webReturn || WEB_RETURN;
     this.states = new Map();
     this.codes = new Map();
+    this.polls = new Map();
     this.sweep = setInterval(() => this.clean(), 60000);
     this.sweep.unref();
   }
@@ -63,19 +66,20 @@ class Auth {
     const now = Date.now();
     for (const [k, v] of this.states) if (v.exp < now) this.states.delete(k);
     for (const [k, v] of this.codes) if (v.exp < now) this.codes.delete(k);
+    for (const [k, v] of this.polls) if (v.exp < now) this.polls.delete(k);
   }
 
   callback(provider) { return `${this.cfg.publicUrl}/auth/${provider}/callback`; }
 
   // Where to send the browser. Null with a reason if it can't start.
-  start(provider, challenge, tos, ret) {
+  start(provider, challenge, tos, ret, poll) {
     if (!this.providers().includes(provider)) return { err: 'That sign in is not set up on this server.' };
     if (!CHALLENGE.test(challenge || '')) return { err: 'Please start signing in from the game.' };
     if (tos !== this.termsVersion) return { err: 'The terms have changed. Please accept them in the game and try again.' };
     if (this.states.size >= MAX_PENDING) this.clean();
     if (this.states.size >= MAX_PENDING) return { err: 'Too many people are signing in right now. Try again in a minute.' };
     const state = token();
-    this.states.set(state, { provider, challenge, web: ret === 'web', exp: Date.now() + STATE_TTL });
+    this.states.set(state, { provider, challenge, web: ret === 'web', poll: POLL.test(poll || '') ? poll : null, exp: Date.now() + STATE_TTL });
     if (provider === 'discord') {
       const q = new URLSearchParams({ client_id: this.cfg.discord.id, redirect_uri: this.callback('discord'), response_type: 'code', scope: 'identify', state });
       return { url: `${this.urls.discordAuth}?${q}` };
@@ -101,18 +105,20 @@ class Auth {
     // A state works once, for the provider it was made for.
     if (!pending || pending.exp < Date.now() || pending.provider !== provider) return { err: 'That sign in has expired. Please start again from the game.' };
     this.states.delete(state);
+    // The game waiting for it hears how it ended too (poll), whether the browser goes back to it or not.
+    const fail = (err) => { this.tellPoll(pending, { err }); return { err }; };
     let who;
     try {
       who = provider === 'steam' ? await this.steamUser(query, state) : await this.oauthUser(provider, query);
     } catch (e) {
       console.error(`sign in with ${provider} failed: ${e.message}`);
-      return { err: `${provider[0].toUpperCase() + provider.slice(1)} did not confirm the sign in. Please try again.` };
+      return fail(`${provider[0].toUpperCase() + provider.slice(1)} did not confirm the sign in. Please try again.`);
     }
-    if (!who) return { err: 'Sign in was cancelled. You can go back to the game.' };
+    if (!who) return fail('Sign in was cancelled. You can go back to the game.');
     const name = cleanText(who.name, 32) || 'Climber';
     // Someone banned can't get back in by deleting the account and signing in again.
     const banned = this.admin && (this.admin.banForIdentity(provider, who.subject) || this.admin.banRow('ip', ip));
-    if (banned) return { err: `You are banned from this server. Reason: ${banned.reason}` };
+    if (banned) return fail(`You are banned from this server. Reason: ${banned.reason}`);
     const isNew = !this.db.q.identity.get(provider, who.subject);
     const userId = this.db.signIn(provider, who.subject, name, this.termsVersion);
     if (this.admin) {
@@ -122,6 +128,7 @@ class Auth {
     if (this.codes.size >= MAX_PENDING) this.clean();
     const code = token();
     this.codes.set(code, { userId, challenge: pending.challenge, exp: Date.now() + CODE_TTL });
+    this.tellPoll(pending, { code });
     return { code, name, link: `${pending.web ? this.webReturn : APP_RETURN}?code=${encodeURIComponent(code)}` };
   }
 
@@ -187,6 +194,22 @@ class Auth {
       }
     }
     return { subject: steamId, name };
+  }
+
+  // A browser may not go back to the game by itself (it won't open an app on its own, or it asks and nobody answers), so
+  // the game asks here every few seconds while it waits. The code it gets is the same one the browser would bring, and as
+  // useless without the game's own secret (exchange).
+  tellPoll(pending, o) {
+    if (!pending.poll) return;
+    if (this.polls.size >= MAX_PENDING) this.clean();
+    if (this.polls.size < MAX_PENDING) this.polls.set(pending.poll, Object.assign({ exp: Date.now() + CODE_TTL }, o));
+  }
+  poll(id) {
+    if (!POLL.test(id || '')) return null;
+    const p = this.polls.get(id);
+    if (!p || p.exp < Date.now()) return { wait: true };
+    this.polls.delete(id);
+    return p.code ? { code: p.code } : { err: p.err };
   }
 
   // The game trades the one time code, with the secret from when it started, for a session.

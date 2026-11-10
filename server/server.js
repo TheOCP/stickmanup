@@ -110,6 +110,8 @@ friends.terminal = new Terminal(bot.s, bot);
 
 const limits = {
   auth: new Limiter(20, 20 / 60),
+  // Every 2 s from each game waiting on a sign in, and phones on one network can share an address.
+  poll: new Limiter(90, 3),
   api: new Limiter(120, 2),
   save: new Limiter(30, 30 / 60),
   wallet: new Limiter(120, 2),
@@ -240,13 +242,13 @@ async function route(req, res) {
   if (a && method === 'GET') {
     if (!limits.auth.take(ip)) return page(res, 429, 'Slow down', 'Too many tries. Wait a minute and start again from the game.');
     if (a[2] === 'start') {
-      const r = auth.start(a[1], url.searchParams.get('challenge'), url.searchParams.get('tos'), url.searchParams.get('ret'));
+      const r = auth.start(a[1], url.searchParams.get('challenge'), url.searchParams.get('tos'), url.searchParams.get('ret'), url.searchParams.get('poll'));
       if (r.err) return page(res, 400, 'Could not sign in', r.err);
       return send(res, 302, '', { Location: r.url });
     }
     const r = await auth.finish(a[1], url.searchParams, ip);
     if (r.err) return page(res, 400, 'Not signed in', r.err);
-    return page(res, 200, `Hi ${r.name}`, 'You are signed in. Going back to the game...', { href: r.link, text: 'Back to StickManUp' });
+    return page(res, 200, `Hi ${r.name}`, 'You are signed in. You can go back to the game now.', { href: r.link, text: 'Back to StickManUp' });
   }
 
   if (method === 'GET' && p === '/') return page(res, 200, 'StickManUp server', 'This server is running. Open StickManUp to play.');
@@ -266,6 +268,12 @@ async function route(req, res) {
     const proto = +url.searchParams.get('proto');
     if (!Number.isInteger(proto)) return json(res, 400, { err: 'Which version?' });
     return json(res, 200, { rooms: rooms.list(proto), online: rooms.stats() });
+  }
+  // The game asking whether the sign in it started has finished, for when the browser doesn't go back to it by itself.
+  if (method === 'GET' && p === '/auth/poll') {
+    if (!limits.poll.take(ip)) return json(res, 429, { err: 'Too many tries' });
+    const r = auth.poll(url.searchParams.get('id'));
+    return r ? json(res, 200, r) : json(res, 400, { err: 'Bad request' });
   }
   if (method === 'POST' && p === '/auth/exchange') {
     if (!limits.auth.take(ip)) return json(res, 429, { err: 'Too many tries' });

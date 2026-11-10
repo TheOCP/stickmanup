@@ -64,6 +64,7 @@ export default [
   ["A climber", "Un escalador", "Um escalador", "Un grimpeur", "Ein Kletterer", "Игрок", "Bir tırmanıcı"],
   ["Climber", "Escalador", "Escalador", "Grimpeur", "Kletterer", "Игрок", "Tırmanıcı"],
   ["{} joined", "{} se unió", "{} entrou", "{} a rejoint", "{} ist dabei", "{} присоединяется", "{} katıldı"],
+  ["{} left the game", "{} salió de la partida", "{} saiu do jogo", "{} a quitté la partie", "{} hat das Spiel verlassen", "{} покидает игру", "{} oyundan ayrıldı"],
   ["A climber left the game", "Un escalador salió de la partida", "Um escalador saiu do jogo", "Un grimpeur a quitté la partie", "Ein Kletterer hat das Spiel verlassen", "Игрок покинул игру", "Bir tırmanıcı oyundan ayrıldı"],
   ["Disconnected", "Desconectado", "Desconectado", "Déconnecté", "Getrennt", "Отключено", "Bağlantı kesildi"],
   ["Connected", "Conectado", "Conectado", "Connecté", "Verbunden", "Подключено", "Bağlandı"],
@@ -529,4 +530,5 @@ export default [
   ["Sorry!", "¡Perdón!", "Desculpa!", "Pardon !", "Sorry!", "Прости!", "Pardon!"],
   ["GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉", "GG 🎉"],
   ["Continuing a saved climb", "Continuando una escalada guardada", "Continuando uma escalada salva", "Suite d'une ascension sauvegardée", "Ein gespeicherter Aufstieg geht weiter", "Продолжение сохранённого подъёма", "Kayıtlı tırmanışa devam ediliyor"],
+  ["{}x coins on every map", "{}x monedas en cada mapa", "{}x moedas em todos os mapas", "{}x pièces sur chaque carte", "{}x Münzen auf jeder Karte", "{}x монет на каждой карте", "Her haritada {}x para"],
 ];

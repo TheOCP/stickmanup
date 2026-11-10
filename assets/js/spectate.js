@@ -4,11 +4,12 @@ import { F, PR } from './player.js';
 import { Chain } from './chain.js';
 import { COLORS, validColor } from './colors.js';
 import { Storm, QUAKE_AT, markShots, beeStep, beeReach } from './storm.js';
-import { DIFFS, MAPS, mapName, mapDef, zoneAt, secretsFor, applyMaze, MAZE_WALL_H } from './level.js';
+import { DIFFS, MAPS, mapName, mapDef, zoneAt, secretsFor, applyMaze, MAZE_WALL_H, placeCoins, coinXOk } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, r3 } from './util.js';
 import { resolveLook, plainLook, cleanLook, cleanRole } from './skins.js';
 import { weaponOf } from './weapons.js';
+import * as cloud from './cloud.js';
 
 const STEP = 1 / 60, DELAY = 0.25, KEEP = 48;
 const hit = { nx: 0, ny: 0, nz: 0, d: 0 };
@@ -20,7 +21,7 @@ const FLY_SPEED = 14, FLY_FAST = 4, FLY_ROOM = 600;
 export function feedGame(g) {
   const players = [];
   for (const [s, p] of g.s.players) players.push({ s, name: String(p.name || ''), color: g.colorOf(s), look: p.look || null, role: p.role || '' });
-  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], mz: g.mz, me: g.slot, players, ct: coinBits(g) };
+  return { t: 'g', map: g.map, diff: g.diff, rules: g.rules, noCord: g.noCord, rope: g.rope, doors: [...g.doors], mz: g.mz, me: g.slot, players, ct: coinBits(g), cx: g.L.coinX };
 }
 
 // The coins already taken, one bit each: a few hundred letters even for a whole climb.
@@ -155,8 +156,6 @@ export class Spectator {
       app.view.setSecrets(this.storm.sec);
       app.pool.coins.clear();
       app.pool.relic.show(null);
-      // Coins sorted into 8 m slices of height, the same as a climb does it.
-      if (!this.L.coinBuilt) { this.L.coinBuilt = true; this.L.coinB = this.L.coinB || {}; for (const c of this.L.coins) (this.L.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
       this.coinTaken = new Set();
       this.shots = [];
       this.shotAt.clear();
@@ -172,6 +171,10 @@ export class Spectator {
         app.view.openDoor(i);
       }
     }
+    // As many coins as that climb has (a phone from before 4.10.48 doesn't say: then as many as the server gives now).
+    const cx = coinXOk(Number.isInteger(g.cx) ? g.cx : cloud.coinX());
+    if (this.L.coinX !== cx) { placeCoins(this.L, cx); this.coinTaken = new Set(); }
+    if (!this.L.coinBuilt) { this.L.coinBuilt = true; this.L.coinB = this.L.coinB || {}; for (const c of this.L.coins) (this.L.coinB[Math.floor(c.y / 8)] ||= []).push(c); }
     if (g.ct !== undefined) this.coinTaken = coinSet(g.ct, this.L.coins.length);
     this.setMaze(g.mz);
     const noCord = !!g.noCord, seen = new Map();

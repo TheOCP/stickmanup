@@ -256,7 +256,7 @@ async function route(req, res) {
 
   if (method === 'GET' && p === '/api/info') {
     const tl = url.searchParams.get('lang'), termsLang = termsTr[tl] ? tl : 'en';
-    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms: termsTr[tl] || terms, termsLang, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, daily: admin.dailyPin ? admin.dailyPin.id : undefined, roles: staff.table() });
+    return json(res, 200, { name: 'StickManUp server', version: VERSION, credits: ['TheOCProductions', 'ShortGG'], terms: termsTr[tl] || terms, termsLang, termsVersion, providers: auth.providers(), webReturn: true, online: rooms.stats(), build: BUILD, announce: admin.liveAnnouncement(), maintenance: admin.maintenance || undefined, daily: admin.dailyPin ? admin.dailyPin.id : undefined, coins: admin.coinX, roles: staff.table() });
   }
   // Graffiti on a map, for everyone (lib/sprays.js).
   if (method === 'GET' && p === '/api/sprays') {
@@ -418,8 +418,12 @@ async function route(req, res) {
       return json(res, r.status, { err: r.err, wallet: r.wallet });
     }
     if (p === '/api/run/start') {
+      // The coins the climb has (assets/js/level.js placeCoins): the ones given now, or until a little while ago. The rerun
+      // places the same ones (verify-worker.mjs), so they go with the climb's rules.
+      const cx = admin.coinOk(b.cx);
+      if (!cx) return json(res, 200, { stop: 'coins' });
       if (b.name) admin.setGameName(me.id, b.name);
-      const run = wallet.startRun(me.id, b.rules ? Object.assign({}, b, { rules: cleanRules(b.rules) }) : b);
+      const run = wallet.startRun(me.id, Object.assign({}, b, { rules: Object.assign(b.rules ? cleanRules(b.rules) : {}, { cx }) }));
       if (run) admin.played(me.id, { map: b.map, diff: b.diff, h: 0, newClimb: false });
       return run ? json(res, 200, { run, build: BUILD }) : json(res, 400, { err: 'Bad climb' });
     }

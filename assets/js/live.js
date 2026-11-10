@@ -83,6 +83,7 @@ function heardFrom(text) {
     case 'req': emit('req', m); break;
     case 'friend': emit('friend', m); break;
     case 'cpreset': emit('cpreset', m); break;
+    case 'coinx': emit('coinx', m); break;
     case 'tp': emit('tp', m); break;
     case 'where': emit('where', m); break;
     case 'invite': emit('invite', m); break;

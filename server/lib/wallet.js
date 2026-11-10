@@ -347,12 +347,16 @@ class Wallet {
         if (got) this.q.log.run(id, Date.now(), got, why);
       };
 
-      // Coins: each one once, no faster than they can be collected.
-      const fresh = unique(o.coins, (i) => Number.isInteger(i) && i >= 0 && i < M.coins && !taken.has(i));
+      // Coins: each one once, no faster than they can be collected. A map with more coins on it (/coinboost, the climb's cx)
+      // has more of them, closer together.
+      let cx = 3;
+      try { const ru = JSON.parse(r.rules || '{}'); if (Number.isInteger(ru.cx) && ru.cx >= 1 && ru.cx <= 20) cx = ru.cx; } catch (e) { /* the usual */ }
+      const most = cx > 3 ? M.coinsMax || M.coins : M.coins, k = Math.max(1, cx / 3);
+      const fresh = unique(o.coins, (i) => Number.isInteger(i) && i >= 0 && i < most && !taken.has(i));
       let allow = fresh.length;
       if (!how.replay) {
-        allow = Math.min(fresh.length, Math.max(0, Math.floor(elapsed * this.rate + this.burst) - taken.size));
-        while (allow > 0 && !this.coinLimit.take(id, allow)) allow = Math.floor(allow / 2);
+        allow = Math.min(fresh.length, Math.max(0, Math.floor((elapsed * this.rate + this.burst) * k) - taken.size));
+        while (allow > 0 && !this.coinLimit.take(id, Math.ceil(allow / k))) allow = Math.floor(allow / 2);
       }
       out.accepted = fresh.slice(0, allow);
       out.later = fresh.slice(allow);

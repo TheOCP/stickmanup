@@ -5,7 +5,7 @@ import { Chain } from './chain.js';
 import { placeDyn, toLocal, toWorld, BOX } from './physics.js';
 import { COLORS } from './colors.js';
 import { Storm, QUAKE_AT, WAVE_H, LASER_R, CANNON_R, markShots, beeStep, beeReach } from './storm.js';
-import { DIFFS, layoutLV, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H } from './level.js';
+import { DIFFS, layoutLV, cpEnabled, zoneAt, secretsFor, applyMaze, mazeCellAt, mazeWay, mazeChase, MAZE_BODY, MAZE_WALL_H, placeCoins, coinXOk } from './level.js';
 import { EMOTE } from './emotes.js';
 import { clamp, damp, store, r3, hash } from './util.js';
 import { addCoins, firstWin, foundRelic, hasRelic, award, recordRun, addTotals, flushProfile } from './profile.js';
@@ -172,6 +172,10 @@ export class Game {
     // Coins, relics and the record of this climb. Picking a saved climb back up keeps all three.
     // With others: this phone's own copy of this climb, when it was part of it before (the host's, or anyone's who left and came back).
     const sf = this.solo ? (g.base > 0 ? store.get('save.solo') : null) : this.climb ? teamSave(this.climb) : null, sv = sf && sf.v === layoutLV(sf.map) ? sf : null;
+    // The coins: as many as the server gives right now (cloud.js coinX), or a climb picked up again keeps the ones it had (a save
+    // from before there was a choice had the usual). The server's rerun gets them the same way (verify-worker.mjs levelOf).
+    const cx = sv ? coinXOk(sv.cx) : cloud.coinX();
+    if (cx && this.L.coinX !== cx) placeCoins(this.L, cx);
     this.custom = ['cps', 'haz', 'rope'].some((k) => this.rules[k] !== undefined && this.rules[k] !== this.diff);
     // Real Hardcore or harder only: what is earned up there doesn't count with custom rules. The relic courses are always there.
     this.hardcore = this.diff >= 2 && !this.custom;
@@ -180,7 +184,7 @@ export class Game {
     // Coins only count where the server can see the climb: alone, or in a room on the game server.
     this.earning = this.solo || !!(session.link && session.link.isServer);
     this.rec = null;
-    cloud.runStart({ map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: !!sv && (this.solo || (typeof sv.climbId === 'string' && Number.isInteger(sv.rs))), run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
+    cloud.runStart({ cx: this.L.coinX, map: this.map, diff: this.diff, rules: this.rules, custom: this.custom, earning: this.earning, resumed: !!sv && (this.solo || (typeof sv.climbId === 'string' && Number.isInteger(sv.rs))), run: sv && sv.climbId, rs: sv && sv.rs, name: session.name, mode: session.mode });
     app.view.setSecrets(this.storm.sec);
     this.coinTaken = new Set((sv && sv.coins) || []);
     // The team moved this climber (teleport): this climb earns nothing more, picked up from a save or not.
@@ -216,10 +220,10 @@ export class Game {
     session.on('event', (e) => this.onEvent(e));
     session.on('hostEvent', (e, from) => this.hostEvent(e, from));
     const lobbyRoster = session.h.roster;
-    session.on('roster', (slot, joined) => {
+    session.on('roster', (slot, joined, gone) => {
       if (!joined && session.isHost && this.loose.has(slot)) this.setLoose([...this.loose].filter((s) => s !== slot));
       this.syncRoster();
-      if (lobbyRoster) lobbyRoster(slot, joined);
+      if (lobbyRoster) lobbyRoster(slot, joined, gone);
     });
     session.on('S', (m) => {
       if (m.cp !== undefined) this.teamCp = m.cp;
@@ -1890,7 +1894,7 @@ export class Game {
       this.savedRs = this.rec ? this.rec.save() : undefined;
       cloud.climbSaved();
     }
-    const sv = { v: layoutLV(this.map), climbId: cloud.runId(), rs: this.savedRs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined };
+    const sv = { v: layoutLV(this.map), cx: this.L.coinX, climbId: cloud.runId(), rs: this.savedRs, rest: this.solo ? this.rest : undefined, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, t: this.solo ? this.simT : this.time, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], pos: [m.x, m.y + 0.3, m.z], coins: [...this.coinTaken], run: this.run, tp: this.tped || undefined };
     if (this.solo) { store.set('save.solo', sv); return; }
     if (!this.climb) return;
     // With others: the team's checkpoint, and everyone's own checkpoint and spot by their key, so each of them gets their own

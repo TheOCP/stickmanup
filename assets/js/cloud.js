@@ -6,7 +6,7 @@
 // and only this copy of the game can use it, because only it knows the secret it started with (see server/lib/auth.js).
 import { store } from './util.js';
 import { flushProfile, mergeRecords, recordsOf, setRecords, setWallet, snapshot, restore, cleanRun, lookFromAccount, lookStamp } from './profile.js';
-import { DIFFS } from './level.js';
+import { DIFFS, COIN_X, coinXOk } from './level.js';
 import { dropTeamSavesBefore } from './saves.js';
 import { itemKey, setRoleTable } from './skins.js';
 import { Recorder, toBase64, fromBase64, deflate } from './replay.js';
@@ -426,6 +426,18 @@ export async function buyItem(item) {
   return r.json.err || 'That did not work. Please try again.';
 }
 
+// How many coins every map has, as the server says (its coinboost command): COIN_X unless the team changed it. Kept for when
+// there is no connection.
+let coinXv = coinXOk(store.get('coinX', COIN_X));
+export const coinX = () => coinXv;
+export function setCoinX(x) {
+  const v = coinXOk(x);
+  if (v === coinXv) return;
+  coinXv = v;
+  store.set('coinX', v);
+  emit('coinX', v);
+}
+
 export const runId = () => (climb ? climb.run : null);
 // Whether this climb is earning anything at all right now.
 export const counting = () => !!climb && !climb.dead;
@@ -438,7 +450,7 @@ export function runStart(o) {
   if (!account() || needsTerms || ban) { emit('notCounting', ban ? 'banned' : 'guest'); return; }
   // Picking up a save needs the climb it belongs to, or the server can't know how it got there.
   if (o.resumed && (typeof o.run !== 'string' || !Number.isInteger(o.rs))) { emit('notCounting', 'save'); return; }
-  climb = { run: o.resumed ? o.run : null, map: o.map, diff: o.diff, rules: o.rules || {}, mode: o.mode || 'solo', name: String(o.name || '').slice(0, 14), coins: [], relics: [], win: null, t: Date.now(), live: true, dead: false, seq: 0, fresh: true, resume: o.resumed ? o.rs : null, needSeq: !!o.resumed, queue: [], tail: null };
+  climb = { run: o.resumed ? o.run : null, cx: coinXOk(o.cx), map: o.map, diff: o.diff, rules: o.rules || {}, mode: o.mode || 'solo', name: String(o.name || '').slice(0, 14), coins: [], relics: [], win: null, t: Date.now(), live: true, dead: false, seq: 0, fresh: true, resume: o.resumed ? o.rs : null, needSeq: !!o.resumed, queue: [], tail: null };
   climbs.push(climb);
   while (climbs.length > 8) climbs.shift();
   saveClimbs();
@@ -565,8 +577,10 @@ async function sendClimbs() {
     recoverTail(c);
     if (c.queue.some((q) => !q.data)) await packNext();
     if (!c.run) {
-      const s = await call('/api/run/start', { auth: true, body: { map: c.map, diff: c.diff, custom: false, rules: c.rules, mode: c.mode, name: c.name, build: SIM_BUILD } });
+      const s = await call('/api/run/start', { auth: true, body: { map: c.map, diff: c.diff, custom: false, rules: c.rules, mode: c.mode, name: c.name, build: SIM_BUILD, cx: c.cx || COIN_X } });
       if (s.ok && s.json.run) c.run = s.json.run;
+      // The server won't take it: these coins aren't the ones it gives (changed a good while ago).
+      else if (s.ok && s.json.stop) { stopClimb(c, s.json.stop); continue; }
       else {
         // The server has to know about a climb from the start, or it can't believe how long it has been going.
         if (Date.now() - c.t > START_GRACE) stopClimb(c, 'offline');
@@ -706,6 +720,7 @@ export async function checkNews() {
   const info = await getInfo();
   if (!info) return;
   emit('maintenance', info.maintenance || '');
+  if (info.coins !== undefined) setCoinX(info.coins);
   // The day's climb, when the team picked it on the server (/daily); otherwise it goes by the date.
   emit('daily', Number.isInteger(info.daily) ? info.daily : -1);
   if (info.announce && info.announce.id !== store.get('news.seen', '')) {

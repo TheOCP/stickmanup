@@ -2,7 +2,7 @@
 import './detmath.js';
 import * as THREE from 'three';
 import { Renderer } from './render.js';
-import { generateLevel, DIFFS, MAPS, MAP_ORDER, LEVEL_VERSION, layoutLV, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS } from './level.js';
+import { generateLevel, DIFFS, MAPS, MAP_ORDER, LEVEL_VERSION, layoutLV, cpEnabled, MAZE_RELICS, hideSpots, mapDef, mapName, dailyMap, genList, GRADES, MUTATORS, COIN_X } from './level.js';
 import { NavPath } from './navpath.js';
 import { EMOTES, EMOTE } from './emotes.js';
 import { SPRAYS, sprayUrl } from './sprays.js';
@@ -848,6 +848,7 @@ function title() {
       <p class="ver">v${esc(VERSION)} · ${M.name} · ${Object.keys(best).length ? 'Best ' + Object.entries(best).map(([d, t]) => `${DIFFS[d].name} ${fmtTime(t)}`).join(' · ') : 'Not climbed yet'}</p>
       <p class="ver made">Made by TheOCProductions &amp; ShortGG</p>
       ${notice}
+      ${!ban && cloud.coinX() > COIN_X ? `<p class="notice coinx">🪙 ${tr(`${cloud.coinX()}x coins on every map`)}</p>` : ''}
       ${ban ? '' : `<button class="btn sm donate" data-a="donate">♥ Donate</button>`}
     </div>
     <div class="mainbtns">
@@ -975,9 +976,13 @@ async function hostWith(kind, roomOpts) {
 
 function wireLobby(s) {
   s.on('lobby', () => { if (app.screen === 'lobby') lobby(s); });
-  s.on('roster', (slot, joined) => {
+  // gone: who it was that left (net.js), as they are already off the list.
+  s.on('roster', (slot, joined, gone) => {
     if (app.screen === 'lobby') lobby(s);
-    if (app.game) { const p = s.players.get(slot); ui.toast(joined ? `${p ? p.name : 'A climber'} joined` : 'A climber left the game', joined ? 'good' : ''); }
+    if (app.game) {
+      const p = joined ? s.players.get(slot) : gone;
+      ui.toast(joined ? `${p ? p.name : 'A climber'} joined` : p && p.name ? `${p.name} left the game` : 'A climber left the game', joined ? 'good' : '');
+    }
   });
   s.on('error', (e) => {
     ui.toast(e, 'bad');
@@ -1422,6 +1427,7 @@ const NOT_COUNTING = {
   dead: 'This climb has stopped counting for coins',
   gap: 'This climb has stopped counting for coins',
   moved: 'The team moved you: this climb no longer earns coins',
+  coins: 'The coins changed: a new climb earns again',
 };
 const toldNot = new Set();
 cloud.on('notCounting', (why) => {
@@ -1437,6 +1443,8 @@ cloud.on('daily', (id) => {
 });
 cloud.on('announce', (text) => { app.announcement = text; if (app.screen === 'title') title(); else ui.toast(text); });
 cloud.on('maintenance', (text) => { app.maintenance = text; });
+// The team gave every map more coins, or the usual again (the coinboost command): the title says so, the next climb has them.
+cloud.on('coinX', () => { if (app.screen === 'title') title(); });
 // Out of whatever they were doing, straight away.
 cloud.on('banned', () => {
   const s = (app.game && app.game.s) || (app.screen === 'lobby' ? app.lobbyS : null);
@@ -2276,6 +2284,7 @@ function startLive() {
   // Refused by the server: its own answer says why, and whether that means being banned.
   live.on('off', () => cloud.checkStanding());
   live.on('cpreset', (m) => cloud.checkpointReset(m.at));
+  live.on('coinx', (m) => cloud.setCoinX(m.x));
   live.on('tp', (m) => { if (app.game) app.game.teleport(m); });
   // Not when the connection drops (s is null then): that must not drop anyone out of the air or show them.
   live.on('staff', (s) => { if (s) applyVanish(s); });

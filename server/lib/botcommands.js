@@ -100,6 +100,7 @@ const COMMANDS = [
   cmd('status', 'How the server is doing'),
   cmd('announce', 'Show a message to everyone in the game', { type: 3, name: 'text', description: 'The message. "off" removes it', required: true, max_length: 400 }, { type: 4, name: 'minutes', description: 'For how long (empty for until removed)', required: false, min_value: 1, max_value: 100000 }),
   cmd('maintenance', 'Stop sign ins, new climbs and rooms for a while', { type: 5, name: 'on', description: 'On or off', required: true }, { type: 3, name: 'message', description: 'What players are told', required: false, max_length: 300 }),
+  cmd('coinboost', 'How many coins every map has: 3 times is the usual, up to 20', { type: 4, name: 'times', description: 'Empty to see it', required: false, min_value: 1, max_value: 20 }),
   cmd('daily', "Pick today's climb for everyone, or let the date pick it again", { type: 3, name: 'map', description: 'Its number (0 to 5 the worlds, 100 to 199, 200 and up the holidays), its name, or auto', required: false, max_length: 40 }, { type: 4, name: 'days', description: 'For how many days (empty for until /daily auto)', required: false, min_value: 1, max_value: 365 }),
   cmd('logguests', 'Log new guests in the channel, or not', { type: 5, name: 'on', description: 'On or off', required: true }),
   cmd('backup', 'Make a backup of everything now'),
@@ -125,7 +126,7 @@ const COMMANDS = [
 // Commands come in groups, so a role can be given a whole group at once (@bans and so on). See staff.js.
 const GROUPS = {
   players: ['player', 'players', 'search', 'recent', 'lastplayed', 'new', 'online', 'top', 'stats', 'alts', 'ip', 'ips', 'rename', 'note', 'notes', 'signout', 'deleteplayer', 'tell', 'resetcheckpoint', 'tp', 'clearsprays'],
-  coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'relics', 'reliclist', 'giverelic', 'relic', 'takerelic', 'dailycap'],
+  coins: ['coins', 'givecoins', 'takecoins', 'setcoins', 'giveall', 'resetwallet', 'history', 'items', 'giveitem', 'takeitem', 'catalog', 'relics', 'reliclist', 'giverelic', 'relic', 'takerelic', 'dailycap', 'coinboost'],
   climbs: ['climbs', 'climb'],
   bans: ['ban', 'unban', 'tempban', 'banip', 'unbanip', 'banphone', 'unbanphone', 'bans', 'baninfo', 'kick'],
   anticheat: ['flags', 'suspects', 'clearflags', 'trust', 'untrust', 'anticheat', 'phone'],
@@ -645,6 +646,14 @@ const RUN = {
     const on = opt(d, 'on'), msg = opt(d, 'message') || 'The server is having some work done. Back soon!';
     ctx.s.admin.setMaintenance(on ? msg : '');
     return done(ctx, 'maintenance', on ? `on: ${msg}` : 'off', on ? 'Maintenance is on: no new sign ins, climbs or rooms. Games already running carry on.' : 'Maintenance is off.');
+  },
+  coinboost(ctx, d) {
+    const x = opt(d, 'times'), a = ctx.s.admin;
+    if (x === undefined) return ctx.reply(`Every map has **${a.coinX}x** coins${a.coinX === 3 ? ' (the usual)' : ''}. /coinboost with 1 to 20 changes it.`);
+    if (!Number.isInteger(x) || x < 1 || x > 20) return ctx.reply('Give a number from 1 to 20 (3 is the usual).', { color: 'bad' });
+    a.setCoinX(x);
+    if (ctx.s.friends) ctx.s.friends.coinsChanged(x);
+    return done(ctx, 'coinboost', `${x}x`, `Every map has **${x}x** coins now${x === 3 ? ' (the usual)' : ''}. New climbs get them, climbs going on keep theirs.${ctx.s.wallet.dayCap < 20000 * Math.max(1, x / 3) ? ` One player can still earn only ${n0(ctx.s.wallet.dayCap)} a day (/dailycap).` : ''}`);
   },
   daily(ctx, d) {
     const t = String(opt(d, 'map') || '').trim(), w = ctx.s.wallet, a = ctx.s.admin;

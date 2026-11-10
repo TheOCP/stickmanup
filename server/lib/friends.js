@@ -384,6 +384,11 @@ class Friends {
     if (id) { const ws = this.live.get(id); if (ws) tell(ws); return; }
     for (const ws of this.live.values()) tell(ws);
   }
+  // Every map has more coins now, or fewer (/coinboost): every game hears it straight away (the title says so).
+  coinsChanged(x) {
+    const msg = JSON.stringify({ t: 'coinx', x });
+    for (const ws of this.live.values()) this.sendText(ws, msg);
+  }
   rolesChanged() {
     const msg = JSON.stringify({ t: 'roles', roles: this.staff.table() });
     for (const ws of this.live.values()) this.sendText(ws, msg);

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const mem = new Map();
 globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
-const { generateLevel, MAPS, DIFFS, ALL_MAP_IDS, mapDef } = await import('../assets/js/level.js');
+const { generateLevel, MAPS, DIFFS, ALL_MAP_IDS, mapDef, placeCoins, COIN_X, COIN_X_MAX } = await import('../assets/js/level.js');
 const { SUITS, FACES, HATS, HAIRS, LEGENDS, OWNERS, itemKey } = await import('../assets/js/skins.js');
 const { EMOTES } = await import('../assets/js/emotes.js');
 const { WEAPONS } = await import('../assets/js/weapons.js');
@@ -38,11 +38,13 @@ for (const it of [...SUITS, ...LEGENDS, ...FACES, ...HATS, ...HAIRS, ...EMOTES, 
 const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)));
 // Every map: the six worlds, then the generated ones and the holiday ones (with their world's relics, in other places). The server finds them by id.
 const maps = ALL_MAP_IDS.map((id) => {
-  const M = mapDef(id), L = generateLevel(id);
+  const M = mapDef(id), L = generateLevel(id, COIN_X);
   L.coins.forEach((c, i) => { if (c.i !== i) throw new Error(`coin numbers on ${M.key} have holes`); });
+  // coins: how many at the usual COIN_X, coinsMax: at the most the team can give (/coinboost), the most a climb can claim then.
+  const coins = L.coins.length, coinsMax = placeCoins(L, COIN_X_MAX).coins.length;
   // open: the relics that are there on every difficulty (the epic vaults). The others only on real Hardcore and Insane.
   // dv: the one difficulty each hidden spot is there on (level.js hideSpots).
-  return { id, key: M.key, name: M.name, ...(M.gen ? { gen: 1 } : {}), coins: L.coins.length, relics: L.relics.map((r) => r.id), open: L.relics.filter((r) => r.kind === 'epic').map((r) => r.id), dv: Object.fromEntries(L.relics.filter((r) => r.dv !== undefined).map((r) => [r.id, r.dv])) };
+  return { id, key: M.key, name: M.name, ...(M.gen ? { gen: 1 } : {}), coins, coinsMax, relics: L.relics.map((r) => r.id), open: L.relics.filter((r) => r.kind === 'epic').map((r) => r.id), dv: Object.fromEntries(L.relics.filter((r) => r.dv !== undefined).map((r) => [r.id, r.dv])) };
 });
 const relicCount = SUIT_RELICS.length;
 // Which flags may wear the team suits.

@@ -487,7 +487,7 @@ export class Session {
     this.players.delete(p.slot);
     this.offers.delete(p.slot);
     this.sendLobby();
-    this.emit('roster', p.slot, false);
+    this.emit('roster', p.slot, false, p);
   }
 
   list() {
@@ -639,7 +639,8 @@ export class Session {
   // Someone else runs the room now. The old host is gone from the list; this phone says hello to the new one again.
   awaitHost(next) {
     const old = this.hostSlot;
-    if (old !== this.slot && this.players.has(old)) { this.players.delete(old); this.emit('roster', old, false); }
+    const gone = this.players.get(old);
+    if (old !== this.slot && gone) { this.players.delete(old); this.emit('roster', old, false, gone); }
     if (next !== undefined) this.hostSlot = next;
     this.bestRtt = 1e9;
     if (!this.moving) { this.moving = true; this.emit('moving'); }
@@ -738,7 +739,7 @@ export class Session {
       q.pid = typeof p.pid === 'string' ? p.pid.slice(0, 64) : '';
       before.delete(p.slot);
     }
-    for (const s of before) { this.players.delete(s); this.emit('roster', s, false); }
+    for (const s of before) { const gone = this.players.get(s); this.players.delete(s); this.emit('roster', s, false, gone); }
   }
 
   sendState(s) {

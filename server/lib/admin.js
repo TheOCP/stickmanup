@@ -15,6 +15,8 @@ const FLAG_KEEP = 180 * DAY;
 const AUDIT_KEEP = 365 * DAY;
 const SCORE_DAYS = 30;
 const ONLINE_FOR = 3 * 60000;
+// Coins on every map (coinX): the usual, the most, and how long the one before still counts after a change.
+const COIN_X = 3, COIN_X_MAX = 20, COIN_X_GRACE = 24 * 3600000;
 
 const hash = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const now = () => Date.now();
@@ -177,6 +179,27 @@ class Admin {
   }
   setDaily(id, days) { this.db.setSetting('daily', id >= 0 ? JSON.stringify({ id, until: days ? now() + days * 86400000 : 0 }) : ''); }
   setMaintenance(text) { this.db.setSetting('maintenance', text ? String(text).slice(0, 300) : ''); }
+  // How many coins every map has, as times what they used to have (/coinboost): 3 unless the team changed it, up to 20. The
+  // game places that many (assets/js/level.js placeCoins) and each climb says which it has (wallet.js startRun, coinOk).
+  get coinX() { const v = +this.db.setting('coinX'); return Number.isInteger(v) && v >= 1 && v <= COIN_X_MAX ? v : COIN_X; }
+  setCoinX(x) {
+    const was = this.coinX;
+    if (x === was) return;
+    // What it was until now still counts for a while: a climb started just before is only told to the server later.
+    const hist = this.coinXHist.filter(([v]) => v !== was && v !== x).slice(-8);
+    hist.push([was, now()]);
+    this.db.setSetting('coinXHist', JSON.stringify(hist));
+    this.db.setSetting('coinX', String(x));
+  }
+  get coinXHist() {
+    try { const h = JSON.parse(this.db.setting('coinXHist') || '[]'); return Array.isArray(h) ? h.filter((e) => Array.isArray(e) && Number.isInteger(e[0]) && Number.isFinite(e[1])) : []; } catch (e) { return []; }
+  }
+  // The coins a climb says it has: the ones given now, or ones given until less than COIN_X_GRACE ago. Otherwise 0.
+  coinOk(x) {
+    if (x === undefined || x === null) return COIN_X === this.coinX || this.coinXHist.some(([v, t]) => v === COIN_X && now() - t < COIN_X_GRACE) ? COIN_X : 0;
+    if (!Number.isInteger(x) || x < 1 || x > COIN_X_MAX) return 0;
+    return x === this.coinX || this.coinXHist.some(([v, t]) => v === x && now() - t < COIN_X_GRACE) ? x : 0;
+  }
   get logGuests() { return this.db.setting('logGuests') !== '0'; }
   setLogGuests(on) { this.db.setSetting('logGuests', on ? '1' : '0'); }
 

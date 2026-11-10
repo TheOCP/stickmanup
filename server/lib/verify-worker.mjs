@@ -5,7 +5,7 @@
 import './sim/env.js';
 import zlib from 'node:zlib';
 import { parentPort } from 'node:worker_threads';
-import { generateLevel, MAPS, secretOn, applyMaze } from './sim/level.js';
+import { generateLevel, MAPS, secretOn, applyMaze, coinXOk } from './sim/level.js';
 import { World } from './sim/physics.js';
 import { Game } from './sim/game.js';
 import * as cloud from './sim/cloud.js';
@@ -37,16 +37,18 @@ const nothing = new Proxy(function () {}, {
   has: () => true,
 });
 
+// A map as a climb has it: with the coins it had (cx, from the climb's rules: assets/js/level.js placeCoins).
 const levels = new Map();
-function levelOf(map) {
-  let e = levels.get(map);
+function levelOf(map, cx) {
+  const key = map + ':' + cx;
+  let e = levels.get(key);
   if (!e) {
     // With a hundred and more maps only the few played lately are kept built.
     while (levels.size >= 16) levels.delete(levels.keys().next().value);
-    const L = generateLevel(map);
+    const L = generateLevel(map, cx);
     e = { L, W: new World(L.cols) };
-  } else levels.delete(map);
-  levels.set(map, e);
+  } else levels.delete(key);
+  levels.set(key, e);
   return e;
 }
 
@@ -75,7 +77,7 @@ class FakeSession {
 }
 
 function makeGame(run, head) {
-  const { L, W } = levelOf(run.map);
+  const { L, W } = levelOf(run.map, coinXOk(run.rules && run.rules.cx));
   const secrets = L.cols.filter((c) => c.kind === 'secret');
   const app = {
     level: L, world: W, renderer: nothing, ui: nothing, sound: nothing, fx: nothing, input: nothing, settings: {}, finish: () => {},

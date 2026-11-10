@@ -601,7 +601,93 @@ const COURSE_NAMES = {
   waterfall: { sweep: 'Water jets', pendulum: 'Swinging boulder', crusher: 'Stone press', spikes: 'Sharp coral', ring: 'Water ring', comet: 'Falling boulder', well: 'Whirlpool', windmill: 'Water wheel blade' },
 };
 
-export function generateLevel(mapId = 0) {
+// ---------- coins ----------
+// Lines over platforms and arcs over the gaps between them along the route, only on things that stay put, never inside or
+// touching anything (any maze wall either, whichever way its walls stand) and never on top of each other. How many: x times what
+// the maps used to have, COIN_X unless the server says otherwise (its coinboost command, up to COIN_X_MAX). They are placed
+// once the map stands, from its own seed, so a phone and the server's rerun get the very same coins for the same x: a climb
+// tells the server which x it has (cloud.js runStart), and keeps it when it is picked up again (game.js).
+export const COIN_X = 3, COIN_X_MAX = 20;
+// How much faster the rows come above 3 times, so 20 times really is about 20 times as many (platforms fill up).
+const RATE_BEND = 7;
+export const coinXOk = (x) => (Number.isInteger(x) && x >= 1 && x <= COIN_X_MAX ? x : COIN_X);
+export function placeCoins(L, x = COIN_X) {
+  const X = coinXOk(x), K = L.coinIn, CR = rng((K.seed ^ 0xc0115 ^ Math.imul(X, 0x2545f491)) >>> 0), list = [];
+  const near = L.cols.map((c) => [c, (c.miny + c.maxy) / 2, (c.maxy - c.miny) / 2 + 1]);
+  const solid = (c, x, y, z) => {
+    if (c.t !== BOX) { const r = Math.hypot(x - c.x, z - c.z) - (c.r || 0), dy = Math.abs(y - c.y) - c.hh; return Math.max(r, dy) < 0.5; }
+    const ex = x - c.x, ey = y - c.y, ez = z - c.z, m = c.m;
+    const lx = Math.abs(ex * m[0] + ey * m[1] + ez * m[2]) - c.hx, ly = Math.abs(ex * m[3] + ey * m[4] + ez * m[5]) - c.hy, lz = Math.abs(ex * m[6] + ey * m[7] + ez * m[8]) - c.hz;
+    return Math.hypot(Math.max(lx, 0), Math.max(ly, 0), Math.max(lz, 0)) + Math.min(Math.max(lx, ly, lz), 0) < 0.5;
+  };
+  // Coins already there, by cell: none closer than GAP to another.
+  const GAP = 0.8, cells = new Map(), cell = (v) => Math.floor(v / GAP);
+  const crowded = (x, y, z) => {
+    for (let i = cell(x) - 1; i <= cell(x) + 1; i++) for (let j = cell(y) - 1; j <= cell(y) + 1; j++) for (let k = cell(z) - 1; k <= cell(z) + 1; k++) {
+      for (const c of cells.get(i + ',' + j + ',' + k) || []) if ((c.x - x) ** 2 + (c.y - y) ** 2 + (c.z - z) ** 2 < GAP * GAP) return true;
+    }
+    return false;
+  };
+  const free = (x, y, z) => {
+    if (crowded(x, y, z)) return false;
+    for (const [c, cy, ext] of near) if (Math.abs(cy - y) < ext && solid(c, x, y, z)) return false;
+    for (const d of L.decor) if ((d.k === 'tree' || d.k === 'mushroom') && y > d.y - 0.5 && y < d.y + 6 && Math.hypot(d.x - x, d.z - z) < 1.1) return false;
+    return true;
+  };
+  const push = (x, y, z) => {
+    const ph = CR() * TAU;
+    if (!free(x, y, z)) return;
+    const c = { i: list.length, x, y, z, ph }, key = cell(x) + ',' + cell(y) + ',' + cell(z);
+    list.push(c);
+    if (cells.has(key)) cells.get(key).push(c); else cells.set(key, [c]);
+  };
+  const ok = (c) => (c.kind === 'plat' || c.kind === 'beam') && c.t === BOX && !c.dyn && !c.blink && !c.trap && !c.crumble;
+  const P = L.cols.slice(0, K.n).filter(ok);
+  // A little line off the start so nobody misses what these are.
+  const s0 = L.cps[0];
+  for (let k = 1; k <= Math.min(16, 2 + 2 * X); k++) push(Math.cos(s0.th + K.dir0 * 0.1 * k) * 12.5, s0.y + 1.0, Math.sin(s0.th + K.dir0 * 0.1 * k) * 12.5);
+  // Rows over a platform: along its long side (line, and fill in between those coins), along its short side (cross), and a
+  // line higher up to jump for (high, hfill).
+  const row = (a, kind) => {
+    const ax = a.hx >= a.hz, len = Math.max(a.hx, a.hz), wid = Math.min(a.hx, a.hz), c = Math.cos(a.ry), s = Math.sin(a.ry);
+    const us = kind === 'fill' || kind === 'hfill' ? (len > 2.6 ? [-len / 3.6, len / 3.6] : []) : kind === 'cross' ? (wid > 1.1 ? [-wid / 1.8, wid / 1.8] : []) : len > 1.5 ? [-len / 1.8, 0, len / 1.8] : [0];
+    const along = kind === 'cross' ? !ax : ax, h = kind === 'high' || kind === 'hfill' ? 2.3 : 1.0;
+    for (const u of us) push(a.x + (along ? c * u : s * u), a.y + a.hy + h, a.z + (along ? -s * u : c * u));
+  };
+  // An arc along the jump to the next platform.
+  const arc = (a, b) => {
+    const topA = a.y + a.hy, topB = b.y + b.hy;
+    for (let k = 0; k < 5; k++) {
+      const f = (k + 0.5) / 5;
+      push(a.x + (b.x - a.x) * f, topA + (topB - topA) * f + 1.0 + Math.sin(f * Math.PI) * 1.5, a.z + (b.z - a.z) * f);
+    }
+  };
+  // There used to be a line or an arc every 7 to 14 platforms. Now about x times as many coins: closer together, and from
+  // about 10 times on on every platform, with more rows on each the higher it goes.
+  const rate = (X / 10.2) * (1 + Math.max(0, X - 3) / RATE_BEND);
+  let acc = CR() * 0.5;
+  for (let n = 2; n < P.length - 1; n++) {
+    acc += rate * (0.6 + CR() * 0.8);
+    if (acc < 1) continue;
+    const a = P[n], b = P[n + 1], d = Math.hypot(b.x - a.x, b.z - a.z), canArc = d > 2.6 && d < 9 && Math.abs(b.y + b.hy - (a.y + a.hy)) < 2.4;
+    const order = canArc && CR() < 0.55 ? ['arc', 'line', 'high', 'fill', 'cross', 'hfill'] : canArc ? ['line', 'arc', 'fill', 'high', 'cross', 'hfill'] : ['line', 'high', 'fill', 'cross', 'hfill'];
+    for (let g = 0; g < order.length && acc >= 1; g++, acc -= 1) {
+      if (order[g] === 'arc') arc(a, b);
+      else row(a, order[g]);
+    }
+    acc = Math.min(acc, 1);
+  }
+  L.coins = list;
+  L.coinX = X;
+  // By height, for the pickups and drawing (game.js, robot.js CoinPool).
+  L.coinB = {};
+  for (const c of list) { const b = Math.floor(c.y / 8); if (L.coinB[b]) L.coinB[b].push(c); else L.coinB[b] = [c]; }
+  L.coinBuilt = true;
+  return L;
+}
+
+// coinX: how many coins, as times what there used to be (placeCoins).
+export function generateLevel(mapId = 0, coinX = COIN_X) {
   const MAP = mapDef(mapId) || MAPS[0], ZONE_LIST = MAP.zones;
   const R = rng(MAP.seed);
   const rr = (a, b) => a + R() * (b - a);
@@ -2342,51 +2428,6 @@ export function generateLevel(mapId = 0) {
     out.cps.push(Object.assign({ i: out.cps.length, x, y, z, th, zone }, o));
   }
 
-  // ---------- coins ----------
-  // Lines over platforms and arcs over gaps, every so often along the route. Only on things that stay put.
-  function buildCoins() {
-    const CR = rng(MAP.seed ^ 0xc0115), list = (out.coins = []);
-    // Never inside or touching anything: a wall, a post, a door, a branch, a tree or a mushroom.
-    const near = out.cols.map((c) => [c, (c.miny + c.maxy) / 2, (c.maxy - c.miny) / 2 + 1]);
-    const solid = (c, x, y, z) => {
-      if (c.t !== BOX) { const r = Math.hypot(x - c.x, z - c.z) - (c.r || 0), dy = Math.abs(y - c.y) - c.hh; return Math.max(r, dy) < 0.5; }
-      const ex = x - c.x, ey = y - c.y, ez = z - c.z, m = c.m;
-      const lx = Math.abs(ex * m[0] + ey * m[1] + ez * m[2]) - c.hx, ly = Math.abs(ex * m[3] + ey * m[4] + ez * m[5]) - c.hy, lz = Math.abs(ex * m[6] + ey * m[7] + ez * m[8]) - c.hz;
-      return Math.hypot(Math.max(lx, 0), Math.max(ly, 0), Math.max(lz, 0)) + Math.min(Math.max(lx, ly, lz), 0) < 0.5;
-    };
-    const free = (x, y, z) => {
-      for (const [c, cy, ext] of near) if (Math.abs(cy - y) < ext && solid(c, x, y, z)) return false;
-      for (const d of out.decor) if ((d.k === 'tree' || d.k === 'mushroom') && y > d.y - 0.5 && y < d.y + 6 && Math.hypot(d.x - x, d.z - z) < 1.1) return false;
-      return true;
-    };
-    const push = (x, y, z) => { const ph = CR() * TAU; if (free(x, y, z)) list.push({ i: list.length, x, y, z, ph }); };
-    const ok = (c) => (c.kind === 'plat' || c.kind === 'beam') && c.t === BOX && !c.dyn && !c.blink && !c.trap && !c.crumble;
-    const P = out.cols.filter(ok);
-    // A little line off the start so nobody misses what these are.
-    const s0 = out.cps[0];
-    for (let k = 1; k <= 4; k++) push(Math.cos(s0.th + DIR0 * 0.1 * k) * 12.5, s0.y + 1.0, Math.sin(s0.th + DIR0 * 0.1 * k) * 12.5);
-    let next = 2 + ((CR() * 4) | 0);
-    for (let n = 0; n < P.length - 1; n++) {
-      if (n < next) continue;
-      const a = P[n], b = P[n + 1], topA = a.y + a.hy, topB = b.y + b.hy, d = Math.hypot(b.x - a.x, b.z - a.z);
-      if (d > 3 && d < 8 && Math.abs(topB - topA) < 2.2 && CR() < 0.55) {
-        // An arc along the jump between two platforms.
-        for (let k = 0; k < 5; k++) {
-          const f = (k + 0.5) / 5;
-          push(a.x + (b.x - a.x) * f, topA + (topB - topA) * f + 1.0 + Math.sin(f * Math.PI) * 1.5, a.z + (b.z - a.z) * f);
-        }
-      } else {
-        // A line along the platform's long side.
-        const ax = a.hx >= a.hz, len = Math.max(a.hx, a.hz), c = Math.cos(a.ry), s = Math.sin(a.ry), n3 = len > 1.5 ? 3 : 1;
-        for (let k = 0; k < n3; k++) {
-          const u = n3 === 1 ? 0 : ((k - 1) * len) / 1.8;
-          push(a.x + (ax ? c * u : s * u), topA + 1.0, a.z + (ax ? -s * u : c * u));
-        }
-      }
-      next = n + 7 + ((CR() * 8) | 0);
-    }
-  }
-
   // ---------- hidden places ----------
   // Every relic but the ones in the maze gardens waits at the end of its own parkour course, out in the open air past the
   // route. The course is put together from COURSE parts in a random order, with random sizes, heights and timing, so no two
@@ -3250,7 +3291,8 @@ export function generateLevel(mapId = 0) {
       out.startSign = { x: at[0], y: 2, z: at[1], ry: Math.atan2(sx - at[0], sz - at[1]), tx: f[0], ty: f[1] + 0.6, tz: f[2] };
     }
   }
-  buildCoins();
+  // The coins come once the whole map stands (placeCoins), from what is there now: the route as it is at this point.
+  out.coinIn = { seed: MAP.seed, dir0: DIR0, n: out.cols.length };
   // The generated maps have them too, under their world's names (storm:0, storm:h3...): each thing can be found on its world
   // and on every map built on it, in another place each time.
   buildSecrets();
@@ -3309,6 +3351,7 @@ export function generateLevel(mapId = 0) {
   if (out.trees.length) out.decor = out.decor.filter((d) => d.k !== 'tree' || out.trees.every((t) => Math.hypot(d.x - t.x, d.z - t.z) > 11));
   settleGround();
   fitHazards();
+  placeCoins(out, coinX);
   return out;
 
   // Moving hazards fitted to what stands round them. Each is laid across its own bridge or gap without looking at the

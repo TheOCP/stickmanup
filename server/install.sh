@@ -132,12 +132,26 @@ detect_pkg() {
   done
 }
 APT_UPDATED=0
+# The package lists, fetched again only when an install needs it. A server often has other programs' package sources too
+# (a web panel's, say), and one of those being down or gone is no reason to stop: apt still gets ours from the others.
+apt_refresh() {
+  [ "$APT_UPDATED" = 1 ] && return 0
+  APT_UPDATED=1
+  local out
+  out=$(apt-get update -qq 2>&1) || true
+  if printf '%s\n' "$out" | grep -qiE '^(E|W|Err):|failed to fetch'; then
+    note "Some of this server's own package sources could not be reached (not StickManUp's). Going on without them."
+  fi
+}
 pkg_install() {
   [ "$SKIP_PACKAGES" = 1 ] && return 0
   case "$PKG" in
     apt-get)
-      if [ "$APT_UPDATED" = 0 ]; then apt-get update -qq; APT_UPDATED=1; fi
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null ;;
+      # From what apt knows already, and only if that is not enough, with fresh lists.
+      if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null 2>&1; then
+        apt_refresh
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null
+      fi ;;
     dnf|yum) "$PKG" install -y -q "$@" >/dev/null ;;
     zypper) zypper --non-interactive --quiet install "$@" >/dev/null ;;
     pacman) pacman -Sy --noconfirm --needed "$@" >/dev/null ;;
@@ -155,8 +169,9 @@ install_basics() {
   command -v xz >/dev/null 2>&1 || { [ "$PKG" = apt-get ] && want+=(xz-utils) || want+=(xz); }
   command -v openssl >/dev/null 2>&1 || want+=(openssl)
   command -v ss >/dev/null 2>&1 || { case "$PKG" in dnf|yum) want+=(iproute) ;; zypper|pacman) want+=(iproute2) ;; *) want+=(iproute2) ;; esac; }
-  [ "$PKG" = apt-get ] && want+=(ca-certificates)
-  if [ ${#want[@]} -gt 0 ]; then pkg_install "${want[@]}" || die "Could not install: ${want[*]}"; fi
+  if [ "$PKG" = apt-get ] && ! dpkg-query -W -f='${Status}' ca-certificates 2>/dev/null | grep -q 'ok installed'; then want+=(ca-certificates); fi
+  [ ${#want[@]} -gt 0 ] || return 0
+  pkg_install "${want[@]}" || die "Could not install: ${want[*]}"
 }
 
 port_free() {

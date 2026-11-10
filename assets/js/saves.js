@@ -66,7 +66,14 @@ export function cleanSave(x) {
       team[w] = e.length >= 4 && [e[1], e[2], e[3]].every((v) => fin(v, 1e5)) ? [e[0], e[1], e[2], e[3], e[4] ? 1 : 0] : [e[0]];
     }
   }
-  if (x.left && typeof x.left === 'object') for (const w of Object.keys(x.left).slice(0, 40)) if (WHO.test(w) && int(x.left[w], 999)) left[w] = x.left[w];
+  // Who left before it was saved: [checkpoint] or [checkpoint, x, y, z] where they last stood (a plain number from 4.10.46).
+  if (x.left && typeof x.left === 'object') {
+    for (const w of Object.keys(x.left).slice(0, 40)) {
+      const v = x.left[w], e = Array.isArray(v) ? v : [v];
+      if (!WHO.test(w) || !int(e[0], 999)) continue;
+      left[w] = e.length >= 4 && [e[1], e[2], e[3]].every((n) => fin(n, 1e5)) ? [e[0], e[1], e[2], e[3]] : [e[0]];
+    }
+  }
   const doors = Array.isArray(x.doors) ? x.doors.filter((i) => int(i, 9999)).slice(0, 400) : [];
   return { v: x.v, climb: x.climb, when: fin(x.when, 1e14) ? x.when : 0, map: x.map, diff: x.diff, rules, noCord: !!x.noCord, t: x.t, cp: x.cp, falls: x.falls | 0, mz: x.mz | 0, doors, pos: x.pos.slice(), team, left };
 }

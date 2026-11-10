@@ -22,6 +22,9 @@ const STEP = 1 / 60, SEND = 1 / 20, DELAY = 0.11;
 // Seconds between saves: alone (each one also a point the anticheat can pick the climb up from), and with others. With others
 // every SAVE_FULL-th one is that too, the rest only note where everyone is.
 const SAVE_SOLO = 2, SAVE_MP = 1, SAVE_FULL = 4;
+// Standing, holding on or hanging: a spot to be put back at, never one in the middle of a fall.
+const FIRM = F.GROUND | F.ANCHOR | F.HANG;
+const spotOk = (q) => Array.isArray(q) && q.length >= 3 && Number.isFinite(q[0]) && Number.isFinite(q[1]) && Number.isFinite(q[2]) && Math.abs(q[0]) + Math.abs(q[1]) + Math.abs(q[2]) < 1e5;
 // A phone's key in a room (net.js WHO): who left with which checkpoint.
 const WHO_KEY = /^[A-Za-z0-9]{8,24}$/;
 // Flying (setFlying): metres a second, how much faster with the fast button, and how far out from the middle of the map.
@@ -105,7 +108,16 @@ export class Game {
     this.left = {};
     this.addLeft(g.left);
     this.me = new Body();
-    const p = g.pos && g.pos[this.slot] ? g.pos[this.slot] : this.spawnPos(this.cp, this.slot);
+    // Coming back to a climb going on: where the room last saw this climber stand (snapshot), or else where this phone's own copy
+    // of the climb has them (saves.js), as long as that isn't inside a maze garden whose walls may have moved since.
+    let gp = g.pos && spotOk(g.pos[this.slot]) ? g.pos[this.slot] : null, ownSpot = false;
+    if (!gp && g.join && !session.isHost && this.climb && session.who) {
+      const own = teamSave(this.climb), e = own && own.team && own.team[session.who];
+      if (Array.isArray(e) && e.length >= 4 && spotOk([e[1], e[2], e[3]]) && !this.mazeAround({ x: e[1], y: e[2], z: e[3] })) { gp = [e[1], e[2], e[3]]; ownSpot = true; }
+    }
+    const p = gp || this.spawnPos(this.cp, this.slot);
+    // Where this climber last stood (FIRM), for the saves.
+    this.firm = [p[0], p[1] - 0.3, p[2], 1];
     this.me.spawn(p[0], p[1], p[2]);
     this.robots = new Map();
     this.links = [];
@@ -232,7 +244,8 @@ export class Game {
     app.view.setCheckpoints(this.cpl, this.cp);
     // From here on the climb is written down, starting with everything it started from.
     this.rec = cloud.recorder({ mode: session.mode, slot: this.slot, map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t: this.simT, cp: this.cp, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns: g.stuns || [], pos: [p[0], p[1], p[2]], coins: [...this.coinTaken], resume: sv ? sv.rs : undefined, roster: [...session.players.keys()] });
-    if (g.back && this.cp > 0) app.ui.toast(this.noCord ? 'Back at your checkpoint' : 'Back at your checkpoint. The cord ties on when you reach your team.', 'good');
+    if (g.join && gp && (g.back || ownSpot)) app.ui.toast(this.noCord ? 'Back where you left off' : 'Back where you left off. The cord ties on when you reach your team.', 'good');
+    else if (g.back && this.cp > 0) app.ui.toast(this.noCord ? 'Back at your checkpoint' : 'Back at your checkpoint. The cord ties on when you reach your team.', 'good');
     else if (this.loose.has(this.slot)) app.ui.toast('You start at the bottom. The cord ties on when you reach your team.', '');
   }
 
@@ -273,21 +286,23 @@ export class Game {
     // Whoever joins starts at the start of the map, not next to the host. Without the cord they have their own checkpoints
     // anyway. On a tied team they climb on their own until they reach the others (catchUp): a cord that long would drag
     // them all over the map. Someone who was here before and left starts again from the checkpoint they had then.
-    const p = this.s.players.get(slot), was = p && p.who && Object.prototype.hasOwnProperty.call(this.left, p.who) ? this.left[p.who] : 0;
-    const at = Number.isInteger(was) && this.L.cps[was] ? was : 0;
+    // Back at the spot they last stood on even, when the room saw one (remember), unless it is in a maze garden: its walls move.
+    const p = this.s.players.get(slot), e = p && p.who && Object.prototype.hasOwnProperty.call(this.left, p.who) ? this.left[p.who] : null;
+    const at = e && this.L.cps[e[0]] ? e[0] : 0, spot = e && e.length >= 4 && !this.mazeAround({ x: e[1], y: e[2], z: e[3] }) ? [e[1], e[2], e[3]] : null;
     this.pcp[slot] = at;
     if (!this.noCord) this.setLoose([...this.loose, slot]);
-    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: at, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden], left: this.left, back: at > 0, climb: this.climb || undefined };
+    return { map: this.map, diff: this.diff, rules: this.rules, noCord: this.noCord, pcp: this.pcp, loose: [...this.loose], t0: this.t0, base: this.base, cp: at, pos: spot ? { [slot]: spot } : undefined, falls: this.falls, mz: this.mz, doors: [...this.doors], stuns, hide: [...this.hidden], left: this.left, back: at > 0 || !!spot, join: 1, climb: this.climb || undefined };
   }
 
-  // The checkpoints of those who left, from the host (event 'left', or with the snapshot). At most a few dozen.
+  // The checkpoints of those who left, and the spot they last stood on, from the host (event 'left', or with the snapshot), as
+  // [checkpoint] or [checkpoint, x, y, z]. A plain number is from an older phone. At most a few dozen.
   addLeft(m) {
     if (!m || typeof m !== 'object') return;
     for (const k of Object.keys(m).slice(0, 40)) {
-      const i = m[k];
+      const v = m[k], e = Array.isArray(v) ? v : [v], i = e[0];
       if (!WHO_KEY.test(k) || !Number.isInteger(i) || !this.L.cps[i]) continue;
       delete this.left[k];
-      this.left[k] = i;
+      this.left[k] = e.length >= 4 && spotOk([e[1], e[2], e[3]]) ? [i, e[1], e[2], e[3]] : [i];
     }
     const ks = Object.keys(this.left);
     for (let n = 0; n < ks.length - 40; n++) delete this.left[ks[n]];
@@ -297,8 +312,8 @@ export class Game {
   // room next knows it too.
   remember(p) {
     if (!this.s.isHost || this.solo || !p || !p.who || p.slot === this.slot) return;
-    const i = this.noCord || this.loose.has(p.slot) ? this.pcp[p.slot] || 0 : this.cp;
-    this.s.toAll({ k: 'left', m: { [p.who]: i } });
+    const i = this.noCord || this.loose.has(p.slot) ? this.pcp[p.slot] || 0 : this.cp, at = this.firmOf(p);
+    this.s.toAll({ k: 'left', m: { [p.who]: at ? [i, at[0], at[1], at[2]] : [i] } });
   }
 
   // Back with this phone after the host changed: their own checkpoint (they know it best), and what they may have missed.
@@ -616,6 +631,8 @@ export class Game {
       }
       else this.s.sendState(st);
     }
+    // Where everyone else last stood (firmOf), for the saves and for whoever leaves.
+    if (!this.solo) for (const p of this.s.players.values()) { const st = p.last; if (p.slot !== this.slot && Array.isArray(st) && st[7] & FIRM) p.firmS = st; }
     // Everyone saves, not only whoever runs the room: once it is empty, anyone who was in it can carry on (main.js roomSave).
     this.saveAcc += dt;
     if (!this.won && (this.saveSoon || this.saveAcc >= (this.solo ? SAVE_SOLO : SAVE_MP))) {
@@ -684,6 +701,7 @@ export class Game {
     this.env.wind = (b, o) => this.storm.wind(b, o, t, zone);
     if (this.rec && !this.solo && !this.noCord) for (const o of this.others) if (Math.abs(o.x - me.x) + Math.abs(o.y - me.y) + Math.abs(o.z - me.z) < 4) this.rec.partner(1, o.slot, o);
     me.step(STEP, inp, this.env);
+    if (me.flags & FIRM) { const f = this.firm; f[0] = me.x; f[1] = me.y; f[2] = me.z; f[3] = 1; }
     me.hanging = false;
 
     // The cord (see cord() in player.js): only my own climber is corrected; the partner's phone does theirs.
@@ -1887,12 +1905,18 @@ export class Game {
       const who = p.slot === this.slot ? this.s.who : p.who;
       if (!who) continue;
       const loose = !this.noCord && this.loose.has(p.slot) ? 1 : 0, cp = this.cpOf(p.slot);
-      // Flying or vanished they can be anywhere: then only their checkpoint.
-      const at = p.slot === this.slot ? (this.flying ? null : [m.x, m.y + 0.3, m.z]) : !p.wait && !this.hidden.has(p.slot) && Array.isArray(p.last) && p.last.length >= 3 ? [p.last[0], p.last[1] + 0.3, p.last[2]] : null;
-      sv.team[who] = at && at.every(Number.isFinite) ? [cp, r3(at[0]), r3(at[1]), r3(at[2]), loose] : [cp];
+      // Where they last stood. Flying or vanished they can be anywhere: then only their checkpoint.
+      const f = this.firm, at = p.slot === this.slot ? (this.flying || !f[3] ? null : [r3(f[0]), r3(f[1] + 0.3), r3(f[2])]) : this.firmOf(p);
+      sv.team[who] = at && spotOk(at) ? [cp, at[0], at[1], at[2], loose] : [cp];
     }
     for (const k of Object.keys(this.left)) if (!sv.team[k]) sv.left[k] = this.left[k];
     putTeamSave(sv);
+  }
+
+  // Where someone else last stood or held on, from what this phone heard of them (frame loop, firmS), lifted a little like a spawn.
+  firmOf(p) {
+    const st = p && !p.wait && !this.hidden.has(p.slot) ? p.firmS : null;
+    return st && spotOk(st) ? [r3(st[0]), r3(st[1] + 0.3), r3(st[2])] : null;
   }
 
   // The team's checkpoint: the host holds it in cp, everyone else hears it (teamCp), which is their own too unless catching up.

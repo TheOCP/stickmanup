@@ -1023,9 +1023,10 @@ function lobbyPings(s) {
 // Which saved climb this room can carry on: of this phone's own and the ones the others offered (net.js 'sv'), the climb most
 // of the people here were part of, and of that one the newest save anyone has. So it doesn't matter who left last or who
 // hosts now: everyone gets the climb as far as it got.
+const roomSaves = (s) => [...teamSaves(), ...[...s.offers.values()].flat()].map(cleanSave).filter(Boolean);
 function roomSave(s) {
   const here = [...s.players.values()].map((p) => (p.slot === s.slot ? s.who : p.who)).filter(Boolean);
-  const list = [...teamSaves(), ...[...s.offers.values()].flat()].map(cleanSave).filter(Boolean);
+  const list = roomSaves(s);
   let best = null, bestN = -1;
   for (const sv of list) {
     const n = here.filter((w) => sv.team[w] || sv.left[w] !== undefined).length;
@@ -1034,26 +1035,30 @@ function roomSave(s) {
   return best;
 }
 
-// The start of a saved climb: everyone where they were and at their own checkpoint, by their key (saves.js), whatever place
-// in the room they have now. Whoever wasn't in it starts next to the team, or without the cord at the bottom. Whoever was in
-// it but isn't here yet gets theirs back when they come (game.js snapshot, left).
-function resumeGame(s, sv) {
+// The start of a saved climb: everyone where they last stood and at their own checkpoint, by their key (saves.js), whatever
+// place in the room they have now. That goes for those who had left before it was saved too (left). Whoever wasn't in it starts
+// next to the team, or without the cord at the bottom. Whoever was in it but isn't here yet gets theirs back when they come
+// (game.js snapshot). A spot this save doesn't have comes from an older copy of the same climb (list), such as their own.
+function resumeGame(s, sv, list = []) {
   const pos = {}, pcp = {}, loose = [], left = {}, here = new Set();
+  const older = list.filter((x) => x !== sv && x.climb === sv.climb).sort((a, b) => b.when - a.when);
   // Where the team is: anyone on the cord with a spot saved, or the one who saved it.
   const onTeam = Object.values(sv.team).find((e) => e.length >= 4 && !e[4]), at = onTeam ? [onTeam[1], onTeam[2], onTeam[3]] : sv.pos;
   for (const p of s.players.values()) {
-    const w = p.slot === s.slot ? s.who : p.who, e = w ? sv.team[w] : null, was = w && sv.left[w] !== undefined ? sv.left[w] : null;
+    const w = p.slot === s.slot ? s.who : p.who, e = w ? sv.team[w] : null, gone = w && sv.left[w] ? sv.left[w] : null;
     if (w) here.add(w);
     // Catching up on a tied team: on their own from their own checkpoint. Not the host, who holds the team's.
-    const behind = !sv.noCord && p.slot !== s.slot && ((e && e[4]) || (!e && was !== null));
+    const behind = !sv.noCord && p.slot !== s.slot && ((e && e[4]) || (!e && !!gone));
+    let spot = e && e.length >= 4 ? [e[1], e[2], e[3]] : gone && gone.length >= 4 ? [gone[1], gone[2], gone[3]] : null;
+    if (!spot && w && (e || gone) && (sv.noCord || behind)) for (const x of older) { const o = x.team[w] || x.left[w]; if (o && o.length >= 4) { spot = [o[1], o[2], o[3]]; break; } }
     if (e) pcp[p.slot] = e[0];
-    else if (was !== null) pcp[p.slot] = was;
+    else if (gone) pcp[p.slot] = gone[0];
     if (behind) loose.push(p.slot);
-    if (e && e.length >= 4 && (sv.noCord || behind || !e[4])) pos[p.slot] = [e[1], e[2], e[3]];
+    if (spot && (sv.noCord || behind || !(e && e[4]))) pos[p.slot] = spot;
     else if (!sv.noCord && !behind) pos[p.slot] = [at[0] + p.slot * 0.3, at[1] + p.slot * 1.0, at[2]];
   }
-  for (const [w, e] of Object.entries(sv.team)) if (!here.has(w)) left[w] = e[0];
-  for (const [w, i] of Object.entries(sv.left)) if (!here.has(w) && left[w] === undefined) left[w] = i;
+  for (const [w, e] of Object.entries(sv.team)) if (!here.has(w)) left[w] = e.length >= 4 ? [e[0], e[1], e[2], e[3]] : [e[0]];
+  for (const [w, e] of Object.entries(sv.left)) if (!here.has(w) && left[w] === undefined) left[w] = e;
   return { map: sv.map, diff: sv.diff, noCord: sv.noCord, rules: sv.rules, t0: s.now(), base: sv.t, cp: sv.cp, pcp, loose, falls: sv.falls, mz: sv.mz, doors: sv.doors, pos, left, climb: sv.climb };
 }
 
@@ -1113,7 +1118,7 @@ function lobby(s) {
     rule: (b) => { if (host && !resume) s.setLobby({ rules: Object.assign({}, s.lobby.rules, { [b.dataset.k]: +b.dataset.v }) }); },
     start: () => {
       const save = s.lobby.resume && roomSave(s);
-      if (save) return s.startGame(resumeGame(s, save));
+      if (save) return s.startGame(resumeGame(s, save, roomSaves(s)));
       s.startGame({ map: s.lobby.map || 0, diff: s.lobby.diff, noCord: !!s.lobby.noCord, rules: cleanRules(s.lobby.rules, true), t0: s.now(), base: 0, cp: 0, pcp: null, falls: 0, mz: 0, doors: null, pos: null, climb: newClimbId() });
     },
   });

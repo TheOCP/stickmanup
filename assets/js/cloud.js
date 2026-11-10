@@ -166,7 +166,6 @@ export async function finishLogin(code) {
 }
 
 export let guestError = '';
-// Starting without signing in anywhere. They have just accepted the terms. A guest from before is simply picked up again.
 // The name this player goes by in the game, kept with the account for friends and the team's tools. A climb tells the
 // server too (runStart), so a try that doesn't get through is no loss.
 export async function setName(name) {
@@ -175,6 +174,7 @@ export async function setName(name) {
   return !!r.ok;
 }
 
+// Starting without signing in anywhere. They have just accepted the terms. A guest from before is simply picked up again.
 export async function startGuest(termsVersion, name) {
   if (account()) return true;
   const g = store.get('guestAcct', null);

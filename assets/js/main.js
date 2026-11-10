@@ -845,14 +845,14 @@ function title() {
   chatRoom(null);
   const save = validSave('save.solo'), best = bestOf(settings.map), M = mapDef(settings.map), acct = cloud.account(), today = mapDef(todayMap());
   loadMapSoon(settings.map);
-  // A name first, so the guest account the next screen can make has it.
-  if (!cloud.banned() && !settings.named) return nameScreen(title, true);
   // The first time, and whenever the terms have changed, ask before anything else.
   if (!cloud.banned() && ((cloud.termsNeeded() && !app.termsAsked) || (cloud.serverUrl() && !cloud.account() && !store.get('welcomed2')))) {
     store.set('welcomed2', 1);
     app.termsAsked = true;
     return accountScreen(title);
   }
+  // Then a name, for whoever still has the made up one (playing without coins too). Accepting the terms asks anyway.
+  if (!cloud.banned() && !settings.named) return nameScreen(title, true);
   const ban = cloud.banned();
   // Banned: every way into the game is grayed out. Account stays, because the terms promise everyone can delete their data there.
   const off = ban ? ' aria-disabled="true"' : '';
@@ -1338,7 +1338,7 @@ async function accountScreen(back = title) {
       <button class="btn primary sm" data-a="ok">I accept</button><button class="btn sm" data-a="out" style="margin-top:9px">No, sign me out</button></div></div></div>`, {
       back: decline,
       out: decline,
-      ok: async () => { if (await cloud.acceptTerms(info.termsVersion)) back(); else ui.toast('Could not reach the server', 'bad'); },
+      ok: async () => { if (await cloud.acceptTerms(info.termsVersion)) nameScreen(back, true); else ui.toast('Could not reach the server', 'bad'); },
     });
     return;
   }
@@ -1411,12 +1411,15 @@ async function accountScreen(back = title) {
     <div class="row" style="margin-top:9px"><button class="btn primary sm prov" data-a="guest" disabled>Play as guest</button><button class="btn sm" data-a="back">Play without coins</button></div></div></div></div>`, {
     back,
     tos: (b) => { for (const x of document.querySelectorAll('#menu .prov')) x.disabled = !b.checked; },
-    guest: async () => {
+    // The terms accepted: the player's name, then the guest account made with it.
+    guest: () => {
       if (!$('#tos').checked) return;
-      busy('Setting up your coins...', back);
-      if (await cloud.startGuest(info.termsVersion, settings.name)) { ui.toast('Welcome! Coins you find now count.', 'good'); back(); }
-      else if (cloud.banned()) back();
-      else { ui.toast(cloud.guestError || 'Could not reach the server', 'bad'); accountScreen(back); }
+      nameScreen(async () => {
+        busy('Setting up your coins...', back);
+        if (await cloud.startGuest(info.termsVersion, settings.name)) { ui.toast('Welcome! Coins you find now count.', 'good'); back(); }
+        else if (cloud.banned()) back();
+        else { ui.toast(cloud.guestError || 'Could not reach the server', 'bad'); accountScreen(back); }
+      }, true);
     },
     login: async (b) => {
       if (!$('#tos').checked) return;
@@ -1453,7 +1456,7 @@ cloud.on('signedIn', (u) => {
   const next = app.afterLogin || title;
   app.afterLogin = null;
   if (app.screen === 'signingin' || app.screen === 'account' || app.screen === 'title') {
-    if (cloud.termsNeeded()) accountScreen(next); else next();
+    if (cloud.termsNeeded()) accountScreen(next); else nameScreen(next, true);
   }
 });
 cloud.on('loginFailed', (why) => {

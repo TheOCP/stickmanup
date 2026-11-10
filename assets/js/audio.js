@@ -62,15 +62,15 @@ export class Sound {
     const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noise = buf;
-    // Rain: filtered noise bed. Wind: band-passed noise whose level follows altitude and gusts.
-    this.rainG = this.gain(0.12, this.ambG);
+    // Rain: filtered noise bed. Wind: band-passed noise whose level follows altitude and gusts. Both only where it rains
+    // (ambient), and silent until it says so: elsewhere they are nothing but a hiss.
+    this.rainG = this.gain(0, this.ambG);
     this.loop(this.chain(this.filter('highpass', 900), this.filter('lowpass', 7000), this.rainG));
-    // Waterfall: a deep rushing roar plus a brighter hiss of spray.
+    // Waterfall: a deep rushing roar, no hiss.
     this.fallsG = this.gain(0, this.ambG);
     this.loop(this.chain(this.filter('lowpass', 650), this.gain(0.8, this.fallsG)), 0.9);
-    this.loop(this.chain(this.filter('bandpass', 2400, 0.6), this.gain(0.25, this.fallsG)), 1.3);
     this.windF = this.filter('bandpass', 380, 0.7);
-    this.windG = this.gain(0.06, this.ambG);
+    this.windG = this.gain(0, this.ambG);
     this.loop(this.chain(this.windF, this.windG), 0.7);
     this.reelO = c.createOscillator();
     this.reelO.type = 'sawtooth';
@@ -295,11 +295,12 @@ export class Sound {
     if (near > 0.6) this.noiseHit('highpass', 1800, 0.18, near * 0.6, delay);
   }
 
-  // Continuous state: wind level (0..1+), reel hum and rain amount.
+  // Continuous state: wind level (0..1+), reel hum and rain amount. Wind blows only with the rain (the storm map): on every
+  // other map it was a hiss that matched nothing there.
   ambient(wind, reeling, charge, rain, falls = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.windG.gain.setTargetAtTime(0.04 + Math.min(1.2, wind) * 0.3, t, 0.25);
+    this.windG.gain.setTargetAtTime(rain > 0 ? 0.04 + Math.min(1.2, wind) * 0.3 : 0, t, 0.25);
     this.windF.frequency.setTargetAtTime(300 + Math.min(1.2, wind) * 700, t, 0.3);
     this.reelG.gain.setTargetAtTime(reeling ? 0.05 + charge * 0.05 : 0, t, 0.05);
     this.reelO.frequency.setTargetAtTime(70 + charge * 160 + (reeling ? 20 : 0), t, 0.08);
